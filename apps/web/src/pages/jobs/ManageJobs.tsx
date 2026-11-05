@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
-import { Loader2, Briefcase, Building2, Clock, Edit2, Copy, Link2, Trash2, Search, Download, Star, Users, LayoutGrid, List, BarChart3, ChevronDown, Rocket, Lock, Unlock, FileEdit, CalendarClock } from 'lucide-react';
+import { Briefcase, Building2, Clock, Edit2, Copy, Link2, Trash2, Search, Download, Star, Users, LayoutGrid, List, BarChart3, ChevronDown, Rocket, Lock, Unlock, FileEdit, CalendarClock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,10 @@ import {
   fetchHiringJobs, setApplicationStatus, setShortlisted, setJobOpen, deleteJob, type HiringJob, type HiringApplicant,
 } from '@/lib/jobs/hiringApi';
 import { cn } from '@/lib/utils';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { undoable } from '@/lib/undoable';
+import { friendlyError } from '@cinecraft/core';
 
 type SortKey = 'match' | 'newest' | 'rating';
 
@@ -43,6 +47,7 @@ const ManageJobs = () => {
   const { toast } = useToast();
   const [jobs, setJobs] = useState<HiringJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [tab, setTab] = useState<'pipeline' | 'list' | 'analytics'>('pipeline');
   const [openAppId, setOpenAppId] = useState<string | null>(null);
@@ -61,7 +66,9 @@ const ManageJobs = () => {
       // Closes postings whose deadline has passed, so the list shows the truth.
       await (supabase as any).rpc('close_overdue_jobs'); // PostgREST builders only run when awaited
       setJobs(await fetchHiringJobs(user.id));
+      setLoadFailed(false);
     } catch (e) {
+      setLoadFailed(true);
       console.error('Error loading hiring data', e);
       toast({ title: 'Could not load your postings', variant: 'destructive' });
     } finally {
@@ -85,7 +92,7 @@ const ManageJobs = () => {
       .channel(`hiring_${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_applications' }, schedule)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_interviews' }, schedule)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs', filter: `posted_by=eq.${user.id}` }, schedule)
       .subscribe();
     return () => {
       clearTimeout(reloadTimer.current);
@@ -115,15 +122,24 @@ const ManageJobs = () => {
       setRejecting(a);
       return;
     }
-    // optimistic
-    setJobs((prev) => prev.map((j) => ({ ...j, applications: j.applications.map((x) => (x.id === a.id ? { ...x, status } : x)) })));
-    try {
-      await setApplicationStatus(a.id, status);
-      toast({ title: `Moved to ${PIPELINE_STAGES.find((s) => s.key === status)?.label}`, description: 'The candidate was notified.' });
-    } catch (e: any) {
-      toast({ title: 'Could not move the candidate', description: e?.message, variant: 'destructive' });
-      load();
-    }
+    // The board shows the move at once, but the candidate is only notified after the Undo window closes.
+    const previous = a.status;
+    const setStatusLocal = (st: ApplicationStatus) =>
+      setJobs((prev) => prev.map((j) => ({ ...j, applications: j.applications.map((x) => (x.id === a.id ? { ...x, status: st } : x)) })));
+    undoable({
+      title: `Moved to ${PIPELINE_STAGES.find((s) => s.key === status)?.label}`,
+      description: 'The candidate is notified in a few seconds. Undo to cancel.',
+      apply: () => setStatusLocal(status),
+      revert: () => setStatusLocal(previous),
+      commit: async () => {
+        try {
+          await setApplicationStatus(a.id, status);
+        } catch (e: any) {
+          toast({ title: 'Could not move the candidate', description: friendlyError(e), variant: 'destructive' });
+          load();
+        }
+      },
+    });
   };
 
   const confirmReject = async (reason: string) => {
@@ -135,22 +151,33 @@ const ManageJobs = () => {
       await setApplicationStatus(a.id, 'rejected', reason);
       toast({ title: 'Candidate rejected', description: 'They were notified.' });
     } catch (e: any) {
-      toast({ title: 'Could not reject', description: e?.message, variant: 'destructive' });
+      toast({ title: 'Could not reject', description: friendlyError(e), variant: 'destructive' });
       load();
     }
   };
 
   const bulkMove = async (status: ApplicationStatus) => {
     if (selected.length === 0 || status === 'rejected') return;
-    try {
-      await Promise.all(selected.map((id) => setApplicationStatus(id, status)));
-      toast({ title: `Moved ${selected.length} candidate${selected.length === 1 ? '' : 's'}`, description: 'They were notified.' });
-      setSelected([]);
-      load();
-    } catch (e: any) {
-      toast({ title: 'Some candidates could not be moved', description: e?.message, variant: 'destructive' });
-      load();
-    }
+    const ids = [...selected];
+    const before = new Map<string, ApplicationStatus>();
+    jobs.forEach((j) => j.applications.forEach((x) => { if (ids.includes(x.id)) before.set(x.id, x.status as ApplicationStatus); }));
+    const setLocal = (pick: (id: string) => ApplicationStatus) =>
+      setJobs((prev) => prev.map((j) => ({ ...j, applications: j.applications.map((x) => (ids.includes(x.id) ? { ...x, status: pick(x.id) } : x)) })));
+    undoable({
+      title: `Moved ${ids.length} candidate${ids.length === 1 ? '' : 's'}`,
+      description: 'They are notified in a few seconds. Undo to cancel.',
+      apply: () => { setLocal(() => status); setSelected([]); },
+      revert: () => setLocal((id) => before.get(id) as ApplicationStatus),
+      commit: async () => {
+        try {
+          await Promise.all(ids.map((id) => setApplicationStatus(id, status)));
+          load();
+        } catch (e: any) {
+          toast({ title: 'Some candidates could not be moved', description: friendlyError(e), variant: 'destructive' });
+          load();
+        }
+      },
+    });
   };
 
   const bulkShortlist = async (value: boolean) => {
@@ -159,12 +186,16 @@ const ManageJobs = () => {
       setSelected([]);
       load();
     } catch (e: any) {
-      toast({ title: 'Could not update the shortlist', description: e?.message, variant: 'destructive' });
+      toast({ title: 'Could not update the shortlist', description: friendlyError(e), variant: 'destructive' });
     }
   };
 
   const exportCsv = (job: HiringJob, apps: HiringApplicant[]) => {
-    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    // a leading = + - @ would run as a formula when opened in Excel, so those cells are prefixed with an apostrophe
+    const esc = (v: any) => {
+      const t = String(v ?? '');
+      return `"${(/^[=+\-@]/.test(t) ? `'${t}` : t).replace(/"/g, '""')}"`;
+    };
     const rows = [
       ['Name', 'Craft', 'Location', 'Stage', 'Match %', 'Rating', 'Shortlisted', 'Applied', 'Showreel'],
       ...apps.map((a) => [
@@ -187,18 +218,35 @@ const ManageJobs = () => {
       toast({ title: job.is_draft ? 'Job published' : job.is_active ? 'Applications closed' : 'Job reopened' });
       load();
     } catch (e: any) {
-      toast({ title: 'Could not update the job', description: e?.message, variant: 'destructive' });
+      toast({ title: 'Could not update the job', description: friendlyError(e), variant: 'destructive' });
     }
   };
 
   const removeDraft = async (job: HiringJob) => {
-    if (!window.confirm('Delete this draft? This cannot be undone.')) return;
+    if (!await confirmDialog('This cannot be undone.', { title: 'Delete this draft?', confirmLabel: 'Delete draft' })) return;
     try {
       await deleteJob(job.id);
       setExpandedId(null);
       load();
     } catch (e: any) {
-      toast({ title: 'Could not delete the draft', description: e?.message, variant: 'destructive' });
+      toast({ title: 'Could not delete the draft', description: friendlyError(e), variant: 'destructive' });
+    }
+  };
+
+  /** A closed posting can be removed for good (open postings must be closed first, so nobody loses a live listing by accident). */
+  const removeClosedJob = async (job: HiringJob) => {
+    const n = job.applications.length;
+    const detail = n > 0
+      ? `This permanently deletes the posting and its ${n} application${n === 1 ? '' : 's'}. This cannot be undone.`
+      : 'This permanently deletes the posting. This cannot be undone.';
+    if (!await confirmDialog(detail, { title: 'Delete this job?', confirmLabel: 'Delete job' })) return;
+    try {
+      await deleteJob(job.id);
+      setExpandedId(null);
+      toast({ title: 'Job deleted' });
+      load();
+    } catch (e: any) {
+      toast({ title: 'Could not delete the job', description: friendlyError(e), variant: 'destructive' });
     }
   };
 
@@ -231,13 +279,7 @@ const ManageJobs = () => {
   const drafts = jobs.filter((j) => j.is_draft);
   const published = jobs.filter((j) => !j.is_draft);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  if (loading) return <ScreenSkeleton variant="list" />;
 
   const renderJob = (job: HiringJob) => {
     const state = jobState(job);
@@ -247,7 +289,7 @@ const ManageJobs = () => {
     const apps = visibleApps(job);
 
     return (
-      <div key={job.id} className="rounded-3xl border border-border/60 bg-card/60 backdrop-blur-xl overflow-hidden shadow-sm">
+      <div key={job.id} className="rounded-3xl border border-border/60 bg-card/60 overflow-hidden shadow-sm">
         <button className="w-full text-left p-5 sm:p-6 flex items-start gap-4 hover:bg-muted/20 transition-colors" onClick={() => setExpandedId(open ? null : job.id)}>
           <div className="w-14 h-14 rounded-2xl bg-muted/40 border border-border/50 flex items-center justify-center shrink-0 overflow-hidden">
             {job.company_pages?.logo_url ? <img loading="lazy" decoding="async" src={job.company_pages.logo_url} alt="" className="w-full h-full object-cover" /> : <Building2 className="w-6 h-6 text-muted-foreground/50" />}
@@ -255,8 +297,8 @@ const ManageJobs = () => {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-black tracking-tight truncate">{job.title}</h3>
-              <span className={cn('text-[10px] font-black uppercase tracking-widest rounded-full px-2.5 py-1', state.tone)}>{state.label}</span>
-              {job.company_pages && <Badge variant="secondary" className="text-[10px] font-black uppercase">{job.company_pages.name}</Badge>}
+              <span className={cn('text-[12px] font-black uppercase tracking-widest rounded-full px-2.5 py-1', state.tone)}>{state.label}</span>
+              {job.company_pages && <Badge variant="secondary" className="text-[12px] font-black uppercase">{job.company_pages.name}</Badge>}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground font-semibold">
               <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> Posted {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}</span>
@@ -294,6 +336,9 @@ const ManageJobs = () => {
                   <Button variant="outline" size="sm" className={cn('rounded-full', job.is_active && 'text-red-500 border-red-500/30')} onClick={() => toggleOpen(job)}>
                     {job.is_active ? <><Lock className="w-4 h-4 mr-1.5" /> Close applications</> : <><Unlock className="w-4 h-4 mr-1.5" /> Reopen</>}
                   </Button>
+                  {!job.is_active && (
+                    <Button variant="outline" size="sm" className="rounded-full text-red-500 border-red-500/30" onClick={() => removeClosedJob(job)}><Trash2 className="w-4 h-4 mr-1.5" /> Delete job</Button>
+                  )}
                   <Button variant="outline" size="sm" className="rounded-full" onClick={() => copyLink(job)}><Link2 className="w-4 h-4 mr-1.5" /> Copy link</Button>
                   <Button variant="ghost" size="sm" className="rounded-full" asChild><Link to={`/jobs/${job.id}`}>View posting</Link></Button>
                 </>
@@ -354,12 +399,12 @@ const ManageJobs = () => {
                     <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-primary/10 border border-primary/20 px-4 py-2.5">
                       <span className="text-sm font-black">{selected.length} selected</span>
                       <Select onValueChange={(v) => bulkMove(v as ApplicationStatus)}>
-                        <SelectTrigger className="w-[150px] h-8 rounded-full text-xs"><SelectValue placeholder="Move to…" /></SelectTrigger>
+                        <SelectTrigger className="w-[150px] h-10 md:h-8 rounded-full text-xs"><SelectValue placeholder="Move to…" /></SelectTrigger>
                         <SelectContent>{PIPELINE_STAGES.filter((s) => s.key !== 'rejected').map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
                       </Select>
-                      <Button size="sm" variant="outline" className="rounded-full h-8" onClick={() => bulkShortlist(true)}>Shortlist</Button>
-                      <Button size="sm" variant="ghost" className="rounded-full h-8" onClick={() => bulkShortlist(false)}>Remove shortlist</Button>
-                      <Button size="sm" variant="ghost" className="rounded-full h-8 ml-auto" onClick={() => setSelected([])}>Clear</Button>
+                      <Button size="sm" variant="outline" className="rounded-full h-10 md:h-8" onClick={() => bulkShortlist(true)}>Shortlist</Button>
+                      <Button size="sm" variant="ghost" className="rounded-full h-10 md:h-8" onClick={() => bulkShortlist(false)}>Remove shortlist</Button>
+                      <Button size="sm" variant="ghost" className="rounded-full h-10 md:h-8 ml-auto" onClick={() => setSelected([])}>Clear</Button>
                     </div>
                   )}
 
@@ -370,12 +415,14 @@ const ManageJobs = () => {
                       {apps.map((a) => {
                         const name = a.applicant?.full_name || a.applicant?.username || 'Applicant';
                         return (
-                          <div key={a.id} className="flex items-center gap-3 p-3 hover:bg-muted/30 cursor-pointer" onClick={() => setOpenAppId(a.id)}>
-                            <Checkbox
-                              checked={selected.includes(a.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              onCheckedChange={() => setSelected((prev) => (prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id]))}
-                            />
+                          <div key={a.id} className="flex items-center gap-3 p-3 hover:bg-muted/30 cursor-pointer" role="button" tabIndex={0} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => setOpenAppId(a.id)}>
+                            <span className="-m-3 p-3 flex" onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                aria-label={`Select ${name}`}
+                                checked={selected.includes(a.id)}
+                                onCheckedChange={() => setSelected((prev) => (prev.includes(a.id) ? prev.filter((x) => x !== a.id) : [...prev, a.id]))}
+                              />
+                            </span>
                             <Avatar className="w-10 h-10">
                               <AvatarImage src={a.applicant?.avatar_url || ''} className="object-cover" />
                               <AvatarFallback className="bg-primary/15 text-primary font-black">{name[0]?.toUpperCase()}</AvatarFallback>
@@ -406,12 +453,12 @@ const ManageJobs = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background pt-16 md:pt-20 pb-24 selection:bg-primary/30">
+    <div className="min-h-dvh bg-background pt-16 md:pt-20 pb-24 selection:bg-primary/30">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 md:px-8 relative z-10 space-y-8">
+      <div className="max-w-[1400px] mx-auto px-4 md:px-8 relative z-10 space-y-8">
         <BackButton label="BACK TO JOBS" to="/jobs" className="mb-2" />
 
         <PageHeader
@@ -426,7 +473,13 @@ const ManageJobs = () => {
           }
         />
 
-        {jobs.length === 0 ? (
+        {loadFailed && jobs.length === 0 ? (
+          <div className="py-24 text-center">
+            <h3 className="text-xl font-black mb-2">Could not load your postings</h3>
+            <p className="text-sm text-muted-foreground mb-4">Check your connection and try again. Your postings are safe.</p>
+            <Button variant="outline" className="rounded-full" onClick={() => { setLoading(true); load(); }}>Try again</Button>
+          </div>
+        ) : jobs.length === 0 ? (
           <div className="bg-card/40 border border-border/50 border-dashed rounded-[3rem] text-center py-24">
             <div className="w-20 h-20 rounded-[2rem] bg-primary/10 flex items-center justify-center mx-auto mb-6"><Search className="w-8 h-8 text-primary" /></div>
             <h3 className="text-2xl font-black tracking-tight mb-2">No postings yet</h3>

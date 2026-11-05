@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, ViewStyle, StyleProp, StatusBar } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, StyleSheet, Animated, Easing, ViewStyle, StyleProp, StatusBar } from 'react-native';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { calmLoop, prefersReducedMotion } from '../../utils/motion';
 
 interface SkeletonProps {
   width?: number | string;
@@ -9,6 +10,34 @@ interface SkeletonProps {
   style?: StyleProp<ViewStyle>;
 }
 
+// One pulse for every skeleton box on screen, so they breathe together and only one animation runs.
+const sharedPulse = new Animated.Value(0.3);
+let pulseUsers = 0;
+let pulseAnim: Animated.CompositeAnimation | null = null;
+const useSharedPulse = () => {
+  useEffect(() => {
+    pulseUsers += 1;
+    if (pulseUsers === 1) {
+      sharedPulse.setValue(prefersReducedMotion() ? 0.5 : 0.3); // reduced motion: hold at a readable level
+      pulseAnim = calmLoop(
+        Animated.sequence([
+          Animated.timing(sharedPulse, { toValue: 0.7, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(sharedPulse, { toValue: 0.3, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ])
+      );
+      pulseAnim.start();
+    }
+    return () => {
+      pulseUsers -= 1;
+      if (pulseUsers === 0 && pulseAnim) {
+        pulseAnim.stop();
+        pulseAnim = null;
+      }
+    };
+  }, []);
+  return sharedPulse;
+};
+
 export const Skeleton: React.FC<SkeletonProps> = ({
   width = '100%',
   height = 20,
@@ -16,24 +45,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   style,
 }) => {
   const { isDark } = useUserSettings();
-  const opacity = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    const pulse = Animated.sequence([
-      Animated.timing(opacity, {
-        toValue: 0.7,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 0.3,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-    ]);
-
-    Animated.loop(pulse).start();
-  }, [opacity]);
+  const opacity = useSharedPulse();
 
   const defaultBg = isDark ? 'rgba(255, 255, 255, 0.14)' : '#E5E7EB';
 
@@ -445,3 +457,48 @@ export const FeedSkeletonScreen: React.FC = () => {
 
 export default Skeleton;
 
+
+/**
+ * Full-screen placeholder shown while a screen loads (replaces centred spinners).
+ * detail: avatar row + media + text, list: rows with avatar.
+ */
+export const ScreenSkeleton: React.FC<{ variant?: 'detail' | 'list' }> = ({ variant = 'detail' }) => {
+  const { isDark } = useUserSettings();
+  const card = isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF';
+  const border = isDark ? 'rgba(255,255,255,0.12)' : '#E5E7EB';
+  return (
+    <View style={{ padding: 16, gap: 16 }} accessible accessibilityLabel="Loading" accessibilityRole="progressbar">
+      {variant === 'detail' ? (
+        <>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Skeleton width={48} height={48} borderRadius={24} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <Skeleton width="40%" height={14} />
+              <Skeleton width="25%" height={12} />
+            </View>
+          </View>
+          <Skeleton height={200} borderRadius={16} />
+          <View style={{ gap: 8 }}>
+            <Skeleton width="70%" height={20} />
+            <Skeleton height={14} />
+            <Skeleton width="85%" height={14} />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Skeleton width={110} height={44} borderRadius={22} />
+            <Skeleton width={110} height={44} borderRadius={22} />
+          </View>
+        </>
+      ) : (
+        [0, 1, 2, 3, 4, 5].map((i) => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: border, backgroundColor: card }}>
+            <Skeleton width={48} height={48} borderRadius={24} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <Skeleton width="55%" height={14} />
+              <Skeleton width="80%" height={12} />
+            </View>
+          </View>
+        ))
+      )}
+    </View>
+  );
+};

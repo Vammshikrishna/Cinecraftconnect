@@ -134,7 +134,7 @@ export function CookieConsentBanner() {
       ].join(' ')}
     >
       {/* Backdrop blur strip */}
-      <div className="bg-card/95 backdrop-blur-xl border-t border-border shadow-[0_-8px_40px_rgba(0,0,0,0.25)]">
+      <div className="bg-card/95 border-t border-border shadow-[0_-8px_40px_rgba(0,0,0,0.25)]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
 
           {/* ── Top row ── */}
@@ -163,7 +163,7 @@ export function CookieConsentBanner() {
                 variant="ghost"
                 size="sm"
                 onClick={() => setExpanded(e => !e)}
-                className="text-xs text-muted-foreground hover:text-foreground gap-1 h-8 px-3 rounded-lg"
+                className="text-xs text-muted-foreground hover:text-foreground gap-1 h-10 md:h-8 px-3 rounded-lg"
               >
                 Customise
                 {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -172,14 +172,14 @@ export function CookieConsentBanner() {
                 variant="outline"
                 size="sm"
                 onClick={rejectOptional}
-                className="text-xs h-8 px-4 rounded-lg border-border hover:bg-muted"
+                className="text-xs h-10 md:h-8 px-4 rounded-lg border-border hover:bg-muted"
               >
                 Reject Optional
               </Button>
               <Button
                 size="sm"
                 onClick={acceptAll}
-                className="text-xs h-8 px-5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all"
+                className="text-xs h-10 md:h-8 px-5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition"
               >
                 Accept All
               </Button>
@@ -196,7 +196,7 @@ export function CookieConsentBanner() {
           {/* ── Expandable customise panel ── */}
           <div
             className={[
-              'overflow-hidden transition-all duration-300 ease-in-out',
+              'overflow-hidden transition duration-300 ease-in-out',
               expanded ? 'max-h-96 opacity-100 mt-4' : 'max-h-0 opacity-0 mt-0',
             ].join(' ')}
           >
@@ -234,7 +234,7 @@ export function CookieConsentBanner() {
               <Button
                 size="sm"
                 onClick={saveCustom}
-                className="text-xs h-8 px-5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
+                className="text-xs h-10 md:h-8 px-5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-bold"
               >
                 Save My Preferences
               </Button>
@@ -261,7 +261,7 @@ interface ConsentCategoryProps {
 function ConsentCategory({ icon, title, description, enabled, locked, onChange }: ConsentCategoryProps) {
   return (
     <div className={[
-      'flex flex-col gap-2 p-3 rounded-xl border transition-all duration-200',
+      'flex flex-col gap-2 p-3 rounded-xl border transition duration-200',
       enabled ? 'bg-primary/5 border-primary/20' : 'bg-muted/30 border-border/50',
     ].join(' ')}>
       <div className="flex items-center justify-between">
@@ -269,7 +269,7 @@ function ConsentCategory({ icon, title, description, enabled, locked, onChange }
           {icon}
           <span className="text-xs font-bold text-foreground">{title}</span>
           {locked && (
-            <span className="text-[9px] font-black uppercase tracking-widest text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded-full">
+            <span className="text-[12px] font-black uppercase tracking-widest text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded-full">
               Always On
             </span>
           )}
@@ -295,7 +295,7 @@ function ConsentCategory({ icon, title, description, enabled, locked, onChange }
           />
         </button>
       </div>
-      <p className="text-[11px] text-muted-foreground leading-relaxed">{description}</p>
+      <p className="text-[12px] text-muted-foreground leading-relaxed">{description}</p>
     </div>
   );
 }

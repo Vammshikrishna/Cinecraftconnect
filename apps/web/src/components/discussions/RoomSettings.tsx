@@ -37,6 +37,10 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
+import { friendlyError } from '@cinecraft/core';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import { ShareIcon } from '@/components/icons/ShareIcon';
+import { loadRoomPrefs, saveRoomPrefs } from '@/hooks/useRoomPrefs';
 
 interface RoomSettingsProps {
   roomId: string;
@@ -60,10 +64,18 @@ export const RoomSettings = ({
   defaultTab
 }: RoomSettingsProps) => {
   const { toast } = useToast();
+  // removing someone from the room asks first (it cannot be undone from here)
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<{ id: string; name: string } | null>(null);
   const [title, setTitle] = useState(currentTitle);
   const [description, setDescription] = useState(currentDescription || '');
+  useEffect(() => { setTitle(currentTitle); }, [currentTitle]);
+  useEffect(() => { setDescription(currentDescription || ''); }, [currentDescription]);
   const [categoryId, setCategoryId] = useState(currentCategory);
   const [isPrivate, setIsPrivate] = useState(false);
+  // 'Who can find this room' (private rooms only). null = the column does not exist yet (SQL part FS not run): the setting is hidden.
+  const [discoverability, setDiscoverability] = useState<'hidden' | 'listed' | null>(null);
+  const [discoverabilityLoaded, setDiscoverabilityLoaded] = useState<'hidden' | 'listed' | null>(null);
   const [memberLimit, setMemberLimit] = useState<number | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
@@ -103,6 +115,9 @@ export const RoomSettings = ({
   const isCurrentUserCreator = Boolean(currentUserId && creatorId && currentUserId === creatorId);
   const isCurrentUserAdmin = Boolean(members.find(m => m.user_id === currentUserId)?.role === 'admin' || isCurrentUserCreator);
   const isCreator = isCurrentUserCreator;
+  const [showShareSheet, setShowShareSheet] = useState(false);
+  // public rooms and listed private rooms: any member can share; hidden private rooms: admins only
+  const canShareRoom = !isPrivate || discoverability === 'listed' || isCurrentUserAdmin;
 
   const [isLeaving, setIsLeaving] = useState(false);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
@@ -146,7 +161,7 @@ export const RoomSettings = ({
       push('/discussion-rooms', { noScroll: true });
     } catch (err: any) {
       console.error('Error leaving room:', err);
-      toast({ title: "Failed to leave room", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to leave room", description: friendlyError(err), variant: "destructive" });
     } finally {
       setIsLeaving(false);
     }
@@ -166,10 +181,24 @@ export const RoomSettings = ({
   }, [roomId]);
 
   useEffect(() => {
-    if (isCreator) {
+    if (isCurrentUserAdmin) {
       fetchRequests();
     }
-  }, [roomId, isCreator, fetchRequests]);
+  }, [roomId, isCurrentUserAdmin, fetchRequests]);
+
+  // read the discoverability column on its own, so a project that has not run SQL part FS yet keeps working (the setting just does not show)
+  useEffect(() => {
+    if (!roomId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await (supabase as any).from('discussion_rooms').select('discoverability').eq('id', roomId).maybeSingle();
+      if (cancelled) return;
+      if (error || !data) { setDiscoverability(null); setDiscoverabilityLoaded(null); return; }
+      const v = data.discoverability === 'listed' ? 'listed' : 'hidden';
+      setDiscoverability(v); setDiscoverabilityLoaded(v);
+    })();
+    return () => { cancelled = true; };
+  }, [roomId]);
 
   useEffect(() => {
     const performSearch = async () => {
@@ -203,24 +232,24 @@ export const RoomSettings = ({
     return () => clearTimeout(timer);
   }, [searchQuery, members]);
 
-  const handleApproveRequest = async (requestId: number, userId: string) => {
+  const handleApproveRequest = async (requestId: string | number, userId: string) => {
     try {
       await approveJoinRequest(requestId, userId, roomId);
-      toast({ title: "Approved", description: "User has been approved and added to the room." });
+      toast({ title: "Approved", description: "The person was added to the room and has been told." });
       fetchRequests();
       fetchMembers();
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Error", description: friendlyError(err), variant: "destructive" });
     }
   };
 
-  const handleDenyRequest = async (requestId: number) => {
+  const handleDenyRequest = async (requestId: string | number) => {
     try {
       await denyJoinRequest(requestId);
-      toast({ title: "Denied", description: "Join request has been denied." });
+      toast({ title: "Denied", description: "The request was declined and the person has been told." });
       fetchRequests();
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Error", description: friendlyError(err), variant: "destructive" });
     }
   };
 
@@ -248,7 +277,7 @@ export const RoomSettings = ({
       console.error('Error inviting member:', err);
       toast({
         title: "Failed to Invite",
-        description: err.message,
+        description: friendlyError(err),
         variant: "destructive"
       });
     }
@@ -283,10 +312,7 @@ export const RoomSettings = ({
       if (profilesError) throw profilesError;
 
       // 3. Fetch user roles to identify internal staff
-      const { data: rolesData } = await supabase
-        .from('user_roles')
-        .select('user_id, role')
-        .in('user_id', userIds);
+      const { data: rolesData } = await (supabase as any).rpc('staff_roles_for', { p_ids: userIds });
 
       // 4. Merge data and filter out internal staff
       const internalRoles = ['moderator', 'admin', 'super_admin'];
@@ -373,21 +399,11 @@ export const RoomSettings = ({
             if (s.onlyAdminsEdit !== undefined) setOnlyAdminsEdit(s.onlyAdminsEdit);
           }
 
-          // Load personal per-user notification preferences
-          const userKey = user?.id || 'anonymous';
-          const localNotif = localStorage.getItem(`room_notif_${roomId}_${userKey}`);
-          if (localNotif) {
-            try {
-              const parsed = JSON.parse(localNotif);
-              if (parsed.muteRoom !== undefined) setMuteRoom(parsed.muteRoom);
-              if (parsed.mentionsOnly !== undefined) setMentionsOnly(parsed.mentionsOnly);
-              if (parsed.soundAlerts !== undefined) setSoundAlerts(parsed.soundAlerts);
-            } catch {}
-          } else if (roomData.settings) {
-            if (roomData.settings.muteRoom !== undefined) setMuteRoom(roomData.settings.muteRoom);
-            if (roomData.settings.mentionsOnly !== undefined) setMentionsOnly(roomData.settings.mentionsOnly);
-            if (roomData.settings.soundAlerts !== undefined) setSoundAlerts(roomData.settings.soundAlerts);
-          }
+          // Personal notification prefs: server copy merged with the local cache (newest wins)
+          const loaded = await loadRoomPrefs(roomId, user?.id);
+          setMuteRoom(loaded.muteRoom);
+          setMentionsOnly(loaded.mentionsOnly);
+          setSoundAlerts(loaded.soundAlerts);
         }
       } catch (err) {
         console.error('Error fetching room details:', err);
@@ -401,17 +417,11 @@ export const RoomSettings = ({
   }, [roomId, user?.id]);
 
   const saveLocalNotifPrefs = (newMute: boolean, newMentions: boolean, newSound: boolean) => {
-    const userKey = user?.id || 'anonymous';
     if (roomId) {
-      localStorage.setItem(`room_notif_${roomId}_${userKey}`, JSON.stringify({
-        muteRoom: newMute,
-        mentionsOnly: newMentions,
-        soundAlerts: newSound,
-      }));
+      // Local cache first, then synced to the server (failures are silent, retried on next change)
+      void saveRoomPrefs(roomId, user?.id, { muteRoom: newMute, mentionsOnly: newMentions, soundAlerts: newSound });
     }
   };
-
-
 
   const handleAddTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim()) && tags.length < 10) {
@@ -425,6 +435,11 @@ export const RoomSettings = ({
   };
 
   const handleSave = async () => {
+    // a room cannot be saved without a name (it would show as a blank room in every list)
+    if (!title.trim()) {
+      toast({ title: 'Room name is required', description: 'Give the room a name before saving.', variant: 'destructive' });
+      return;
+    }
     setSubmitting(true);
     try {
       const roomSettings = {
@@ -447,7 +462,7 @@ export const RoomSettings = ({
       const { error } = await supabase
         .from('discussion_rooms')
         .update({
-          title,
+          title: title.trim(),
           description,
           category_id: categoryId,
           room_type: isPrivate ? 'private' : 'public',
@@ -457,6 +472,16 @@ export const RoomSettings = ({
         .eq('id', roomId);
 
       if (error) throw error;
+
+      // who can find the room: only when the column exists; a public room is never "listed" (it is visible anyway)
+      if (discoverability !== null) {
+        const next = isPrivate ? discoverability : 'hidden';
+        if (next !== discoverabilityLoaded) {
+          const { error: discErr } = await (supabase as any).from('discussion_rooms').update({ discoverability: next }).eq('id', roomId);
+          if (discErr) throw discErr;
+          setDiscoverabilityLoaded(next);
+        }
+      }
 
       // Broadcast settings update in real-time to active room members
       try {
@@ -481,7 +506,7 @@ export const RoomSettings = ({
       toast({ title: "Success", description: "Room settings have been updated." });
       onClose();
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "Error", description: friendlyError(error), variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -496,7 +521,7 @@ export const RoomSettings = ({
       toast({ title: "Room Deleted", description: "The room has been permanently deleted." });
       onClose();
     } catch (error: any) {
-      toast({ title: "Error Deleting Room", description: error.message, variant: "destructive" });
+      toast({ title: "Error Deleting Room", description: friendlyError(error), variant: "destructive" });
     } finally {
       setSubmitting(false);
       setConfirmingDelete(false);
@@ -579,6 +604,20 @@ export const RoomSettings = ({
 
   return (
     <DialogContent className="max-w-4xl max-h-[90vh] h-[90vh] md:h-[600px] overflow-hidden p-0 gap-0 border-border shadow-2xl bg-background text-foreground flex flex-col">
+      <UniversalShareSheet
+        isOpen={showShareSheet}
+        onOpenChange={setShowShareSheet}
+        shareType="room"
+        shareId={roomId}
+        shareData={{
+          roomId,
+          title,
+          category: categories.find(c => c.id === categoryId)?.name,
+          memberCount: members.length,
+          roomType: isPrivate ? 'private' : 'public',
+          isActive: false
+        }}
+      />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col md:flex-row h-full w-full">
 
         {/* Sidebar Navigation */}
@@ -589,14 +628,14 @@ export const RoomSettings = ({
             </div>
             <div>
               <DialogTitle className="font-bold text-lg leading-tight">Room Settings</DialogTitle>
-              <DialogDescription className="text-[10px] text-muted-foreground font-medium">Manage preferences</DialogDescription>
+              <DialogDescription className="text-[12px] text-muted-foreground font-medium">Manage preferences</DialogDescription>
             </div>
           </div>
 
           <TabsList className="flex flex-row md:flex-col overflow-x-auto md:overflow-visible h-auto bg-transparent gap-2 p-0 justify-start w-full no-scrollbar">
             <TabsTrigger
               value="general"
-              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
               <Tag className="h-4 w-4 shrink-0" />
               <span>{isCurrentUserAdmin ? "General" : "Room Info"}</span>
@@ -605,7 +644,7 @@ export const RoomSettings = ({
             {isCurrentUserAdmin && (
               <TabsTrigger
                 value="privacy"
-                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
               >
                 <Lock className="h-4 w-4 shrink-0" />
                 <span>Privacy</span>
@@ -614,7 +653,7 @@ export const RoomSettings = ({
 
             <TabsTrigger
               value="notifications"
-              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
               <Bell className="h-4 w-4 shrink-0" />
               <span>Notifications</span>
@@ -623,7 +662,7 @@ export const RoomSettings = ({
             {isCurrentUserAdmin && (
               <TabsTrigger
                 value="moderation"
-                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
               >
                 <Filter className="h-4 w-4 shrink-0" />
                 <span>Moderation</span>
@@ -633,7 +672,7 @@ export const RoomSettings = ({
             {isCurrentUserAdmin && (
               <TabsTrigger
                 value="appearance"
-                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
               >
                 <Smile className="h-4 w-4 shrink-0" />
                 <span>Appearance</span>
@@ -642,7 +681,7 @@ export const RoomSettings = ({
 
             <TabsTrigger
               value="members"
-              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
               <Users className="h-4 w-4 shrink-0" />
               <span>Participants</span>
@@ -651,7 +690,7 @@ export const RoomSettings = ({
             {isCurrentUserAdmin && (
               <TabsTrigger
                 value="requests"
-                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+                className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
               >
                 <UserCheck className="h-4 w-4 shrink-0" />
                 <span>Join Requests</span>
@@ -660,7 +699,7 @@ export const RoomSettings = ({
 
             <TabsTrigger
               value="advanced"
-              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive hover:bg-destructive/5 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive hover:bg-destructive/5 transition-colors duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
               <Shield className="h-4 w-4 shrink-0" />
               <span>{isCurrentUserAdmin ? "Danger Zone" : "Leave Room"}</span>
@@ -697,7 +736,7 @@ export const RoomSettings = ({
                         placeholder="e.g. Cinematography 101"
                         maxLength={100}
                       />
-                      {isCurrentUserAdmin && <p className="text-[10px] text-muted-foreground text-right">{title.length}/100</p>}
+                      {isCurrentUserAdmin && <p className="text-[12px] text-muted-foreground text-right">{title.length}/100</p>}
                     </div>
 
                     <div className="space-y-2">
@@ -711,7 +750,7 @@ export const RoomSettings = ({
                         placeholder="What is this discussion about?"
                         maxLength={500}
                       />
-                      {isCurrentUserAdmin && <p className="text-[10px] text-muted-foreground text-right">{description.length}/500</p>}
+                      {isCurrentUserAdmin && <p className="text-[12px] text-muted-foreground text-right">{description.length}/500</p>}
                     </div>
 
                     <div className="space-y-2">
@@ -759,6 +798,18 @@ export const RoomSettings = ({
                         )}
                       </div>
                     </div>
+
+                    {canShareRoom && (
+                      <div className="pt-2 border-t border-border space-y-2">
+                        <Button type="button" variant="outline" className="w-full justify-start gap-2" onClick={() => setShowShareSheet(true)}>
+                          <ShareIcon className="h-4 w-4" />
+                          Share this room
+                        </Button>
+                        {isPrivate && (
+                          <p className="text-xs text-muted-foreground">This room is private, so the person you share it with will need to request to join.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </TabsContent>
@@ -783,8 +834,30 @@ export const RoomSettings = ({
                             : 'Anyone in the community can discover, view, and join this room.'}
                         </p>
                       </div>
-                      <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
+                      <Switch aria-label="Private room" checked={isPrivate} onCheckedChange={setIsPrivate} />
                     </div>
+
+                    {isPrivate && discoverability !== null && (
+                      <div className="p-5 border border-border rounded-xl bg-muted/30 space-y-3" role="radiogroup" aria-label="Who can find this room">
+                        <Label className="text-base font-semibold text-foreground">Who can find this room</Label>
+                        {([
+                          ['hidden', 'Hidden', 'Only members and invited people can see it.'],
+                          ['listed', 'Listed', 'Everyone can see the room card and request to join.'],
+                        ] as const).map(([value, name, help]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            role="radio"
+                            aria-checked={discoverability === value}
+                            onClick={() => setDiscoverability(value)}
+                            className={`w-full text-left rounded-lg border p-3 transition ${discoverability === value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}
+                          >
+                            <span className="block text-sm font-semibold">{name}</span>
+                            <span className="block text-xs text-muted-foreground">{help}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="space-y-3 pt-4 border-t border-border">
                       <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Member Limit</Label>
@@ -832,7 +905,7 @@ export const RoomSettings = ({
                           Silence all notifications from this room. You can still read messages.
                         </p>
                       </div>
-                      <Switch 
+                      <Switch aria-label="Mute this room" 
                         checked={muteRoom} 
                         onCheckedChange={(val) => {
                           setMuteRoom(val);
@@ -851,7 +924,7 @@ export const RoomSettings = ({
                           Only get notified when someone mentions you directly.
                         </p>
                       </div>
-                      <Switch 
+                      <Switch aria-label="Mentions Only" 
                         checked={mentionsOnly} 
                         onCheckedChange={(val) => {
                           setMentionsOnly(val);
@@ -871,7 +944,7 @@ export const RoomSettings = ({
                           Play a sound when new messages arrive in this room.
                         </p>
                       </div>
-                      <Switch 
+                      <Switch aria-label="Sound alerts" 
                         checked={soundAlerts} 
                         onCheckedChange={(val) => {
                           setSoundAlerts(val);
@@ -903,7 +976,7 @@ export const RoomSettings = ({
                               Limit how often members can send messages.
                             </p>
                           </div>
-                          <Switch checked={slowMode} onCheckedChange={setSlowMode} />
+                          <Switch aria-label="Slow Mode" checked={slowMode} onCheckedChange={setSlowMode} />
                         </div>
                         {slowMode && (
                           <div className="flex items-center gap-3 pt-2 border-t border-border animate-in fade-in duration-200">
@@ -934,7 +1007,7 @@ export const RoomSettings = ({
                             Let members share images, videos, and files in this room.
                           </p>
                         </div>
-                        <Switch checked={allowMediaSharing} onCheckedChange={setAllowMediaSharing} />
+                        <Switch aria-label="Allow Media Sharing" checked={allowMediaSharing} onCheckedChange={setAllowMediaSharing} />
                       </div>
 
                       <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
@@ -947,7 +1020,7 @@ export const RoomSettings = ({
                             Let members share external links in messages.
                           </p>
                         </div>
-                        <Switch checked={allowLinks} onCheckedChange={setAllowLinks} />
+                        <Switch aria-label="Allow Links" checked={allowLinks} onCheckedChange={setAllowLinks} />
                       </div>
 
                       <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
@@ -960,7 +1033,7 @@ export const RoomSettings = ({
                             Automatically filter out inappropriate language.
                           </p>
                         </div>
-                        <Switch checked={profanityFilter} onCheckedChange={setProfanityFilter} />
+                        <Switch aria-label="Profanity Filter" checked={profanityFilter} onCheckedChange={setProfanityFilter} />
                       </div>
 
                       <div className="pt-6 border-t border-border">
@@ -1059,7 +1132,7 @@ export const RoomSettings = ({
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <Avatar className="h-8 w-8 border border-border/10">
                                   <AvatarImage src={profile.avatar_url} />
-                                  <AvatarFallback className="bg-primary/5 text-primary text-[10px] font-bold">
+                                  <AvatarFallback className="bg-primary/5 text-primary text-[12px] font-bold">
                                     {profile.full_name?.substring(0, 2).toUpperCase() || profile.username?.substring(0, 2).toUpperCase() || "CC"}
                                   </AvatarFallback>
                                 </Avatar>
@@ -1068,7 +1141,7 @@ export const RoomSettings = ({
                                     {profile.full_name || "Unknown User"}
                                   </p>
                                   {profile.username && (
-                                    <p className="text-[9px] text-muted-foreground truncate">
+                                    <p className="text-[12px] text-muted-foreground truncate">
                                       @{profile.username}
                                     </p>
                                   )}
@@ -1076,7 +1149,7 @@ export const RoomSettings = ({
                               </div>
                               <Button
                                 size="sm"
-                                className="h-7 px-3 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-[11px] rounded-lg"
+                                className="h-10 md:h-8 px-3 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-[12px] rounded-lg"
                                 onClick={() => handleInviteMember(profile.id)}
                               >
                                 Add
@@ -1110,10 +1183,10 @@ export const RoomSettings = ({
                             <div className="min-w-0">
                               <p className="text-sm font-bold truncate flex items-center gap-1.5">
                                 {member.profiles?.full_name || member.profiles?.username || "Unknown User"}
-                                {isCreator && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">Owner</span>}
-                                {!isCreator && isAdmin && <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-bold">Admin</span>}
+                                {isCreator && <span className="text-[12px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">Owner</span>}
+                                {!isCreator && isAdmin && <span className="text-[12px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-bold">Admin</span>}
                               </p>
-                              <p className="text-[10px] text-muted-foreground truncate">
+                              <p className="text-[12px] text-muted-foreground truncate">
                                 joined {new Date(member.joined_at).toLocaleDateString()}
                               </p>
                             </div>
@@ -1122,7 +1195,7 @@ export const RoomSettings = ({
                           {!isCreator && (isCurrentUserCreator || (isCurrentUserAdmin && !isAdmin)) && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                                <Button aria-label="More options" variant="ghost" size="icon" className="h-8 w-8 rounded-full">
                                   <MoreVertical className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -1137,7 +1210,7 @@ export const RoomSettings = ({
                                   </DropdownMenuItem>
                                 )}
                                 <DropdownMenuItem 
-                                  onClick={() => handleMemberAction(member.user_id, 'remove')}
+                                  onClick={() => setMemberToRemove({ id: member.user_id, name: member.profiles?.full_name || member.profiles?.username || 'this person' })}
                                   className="text-destructive focus:bg-destructive/10"
                                 >
                                   <Trash2 className="h-4 w-4 mr-2" /> Remove from Group
@@ -1153,7 +1226,7 @@ export const RoomSettings = ({
               </TabsContent>
 
               {/* Requests Tab */}
-              {isCreator && (
+              {isCurrentUserAdmin && (
                 <TabsContent value="requests" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
                   <div>
                     <div className="flex items-center justify-between mb-6">
@@ -1182,20 +1255,23 @@ export const RoomSettings = ({
                                 {request.profiles?.full_name || request.profiles?.username || "Unknown User"}
                               </p>
                               {request.profiles?.username && (
-                                <p className="text-[10px] text-muted-foreground truncate">
+                                <p className="text-[12px] text-muted-foreground truncate">
                                   @{request.profiles.username}
                                 </p>
                               )}
-                              <p className="text-[9px] text-muted-foreground">
+                              <p className="text-[12px] text-muted-foreground">
                                 requested {new Date(request.created_at).toLocaleDateString()}
                               </p>
+                              {request.message && (
+                                <p className="text-[12px] text-foreground/80 italic line-clamp-2">"{request.message}"</p>
+                              )}
                             </div>
                           </div>
 
                           <div className="flex gap-2 shrink-0">
                             <Button
                               size="sm"
-                              className="bg-primary hover:bg-primary/90 text-primary-foreground h-8 font-bold"
+                              className="bg-primary hover:bg-primary/90 text-primary-foreground h-10 md:h-8 font-bold"
                               onClick={() => handleApproveRequest(request.id, request.user_id)}
                             >
                               Approve
@@ -1203,7 +1279,7 @@ export const RoomSettings = ({
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-8 text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
+                              className="h-10 md:h-8 text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
                               onClick={() => handleDenyRequest(request.id)}
                             >
                               Deny
@@ -1262,7 +1338,7 @@ export const RoomSettings = ({
                           placeholder="Pin an important message at the top of the room..."
                           maxLength={300}
                         />
-                        <p className="text-[10px] text-muted-foreground text-right">{pinnedMessage.length}/300</p>
+                        <p className="text-[12px] text-muted-foreground text-right">{pinnedMessage.length}/300</p>
                       </div>
 
                       <div className="space-y-2">
@@ -1277,7 +1353,7 @@ export const RoomSettings = ({
                           placeholder="Message shown to new members when they join..."
                           maxLength={300}
                         />
-                        <p className="text-[10px] text-muted-foreground text-right">{welcomeMessage.length}/300</p>
+                        <p className="text-[12px] text-muted-foreground text-right">{welcomeMessage.length}/300</p>
                       </div>
                     </div>
                   </div>
@@ -1405,7 +1481,7 @@ export const RoomSettings = ({
                             </p>
                             <Button 
                               variant="destructive" 
-                              onClick={handleLeaveRoom} 
+                              onClick={() => setConfirmLeave(true)} 
                               disabled={isLeaving}
                             >
                               {isLeaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -1437,6 +1513,30 @@ export const RoomSettings = ({
           </div>
         </div>
       </Tabs>
+      <AlertDialog open={confirmLeave} onOpenChange={setConfirmLeave}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Leave this room?</AlertDialogTitle>
+            <AlertDialogDescription>You will stop receiving its messages. A public room can be joined again; a private room needs a new invite or an approved request.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Stay</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setConfirmLeave(false); void handleLeaveRoom(); }}>Leave room</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={!!memberToRemove} onOpenChange={(open) => { if (!open) setMemberToRemove(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {memberToRemove?.name} from this room?</AlertDialogTitle>
+            <AlertDialogDescription>They will lose access to the chat. A public room can be joined again by them; a private room needs a new invite.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (memberToRemove) handleMemberAction(memberToRemove.id, 'remove'); setMemberToRemove(null); }}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DialogContent>
   );
 };

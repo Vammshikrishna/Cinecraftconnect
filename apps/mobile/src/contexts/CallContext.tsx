@@ -1,3 +1,6 @@
+import { Alert } from 'react-native';
+import { useAccountType } from '../hooks/useAccountType';
+import { canStartCalls, FAN_CALL_TOOLTIP } from '../utils/fanCallRule';
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { setAutoPipEnabled } from '../services/pipService';
 import { useUserSettings } from '../hooks/useUserSettings';
@@ -25,6 +28,8 @@ export interface ActiveCallState {
   isSpeaking: boolean;
   isVideoOff: boolean;
   callStatus: 'Connecting' | 'Connected' | 'Reconnecting';
+  /** 1:1 direct call: the other person dropped and we are waiting out the 20 s grace before ending. */
+  partnerReconnecting?: boolean;
 }
 
 interface CallContextType {
@@ -36,7 +41,9 @@ interface CallContextType {
     partnerName?: string;
     partnerId?: string;
     isVideo?: boolean;
-  }) => void;
+    /** true when this starts a NEW call (not answering or joining one): fan accounts are refused */
+    starting?: boolean;
+  }) => boolean;
   endCall: () => void;
   minimizeCall: () => void;
   maximizeCall: () => void;
@@ -56,7 +63,7 @@ const defaultCallState: ActiveCallState = {
 
 const CallContext = createContext<CallContextType>({
   callState: defaultCallState,
-  startCall: () => {},
+  startCall: () => false,
   endCall: () => {},
   minimizeCall: () => {},
   maximizeCall: () => {},
@@ -68,6 +75,7 @@ export const useGlobalCall = () => useContext(CallContext);
 export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   const [callState, setCallState] = useState<ActiveCallState>(defaultCallState);
   const { settings } = useUserSettings();
+  const { accountType } = useAccountType();
 
   // Keep Android OS auto-PiP enabled whenever a call is active if PiP is allowed in settings
   useEffect(() => {
@@ -153,7 +161,12 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     partnerName?: string;
     partnerId?: string;
     isVideo?: boolean;
+    starting?: boolean;
   }) => {
+    if (params.starting && !canStartCalls(accountType)) {
+      Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+      return false;
+    }
     setCallState({
       isActive: true,
       isMinimized: false,
@@ -170,7 +183,8 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       isVideoOff: !params.isVideo || !!settings.call_video_off_on_join,
       callStatus: 'Connecting',
     });
-  }, [settings.call_mute_mic_on_join, settings.call_video_off_on_join]);
+    return true;
+  }, [accountType, settings.call_mute_mic_on_join, settings.call_video_off_on_join]);
 
   const endCall = useCallback(() => {
     setAutoPipEnabled(false);

@@ -1,296 +1,207 @@
-import { useRef, useState, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronRight } from 'lucide-react';
-import { motion, useInView } from 'framer-motion';
+import { ArrowDown, ArrowRight, BadgeCheck, Bell, Building2, Lock, Megaphone, MessagesSquare, ShieldCheck, Star, Sparkles } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 import Footer from '@/components/Footer';
 import SEO from '@/components/common/SEO';
+import Walkthrough from '@/components/landing/Walkthrough';
+import HeroStage from '@/components/landing/HeroStage';
+import FilmJourney from '@/components/landing/FilmJourney';
+import TiltCard from '@/components/landing/TiltCard';
+import { canDrawWebGL } from '@/components/landing/film3d/filmStore';
+import { BG, CARD, FAINT, INK, LINE, MONO, MUTED, ORANGE, ORANGE_INK, SANS, SERIF } from '@/components/landing/tokens';
 
-/* ─── Design Tokens ─────────────────────────── */
-const CREAM = '#F8F5F0';
-const INK   = '#0D0D0D';
-const ORANGE = '#f97316';
-const SERIF = "'Lora', Georgia, serif";
-const MONO  = "'Inconsolata', 'Courier New', monospace";
-const SANS  = "'Work Sans', system-ui, sans-serif";
+/* The landing page tells one story. The hero and the "How content gets made" journey sit on a 3D studio (fixed, behind the page): 24 craft
+   characters, in the order content is made, and the camera follows your scroll. When the journey ends the page turns solid and shows the
+   product: an interactive walkthrough of the app, then the rest of the platform. It keeps its own light palette on purpose (it is the
+   first thing a visitor sees, whatever theme the signed-in app uses). Everything moves less under "reduce motion", and nothing hijacks
+   scrolling. Without WebGL, on a data-saver connection, or while the 3D loads, the page is a normal light page. */
 
-/* ─── Film Grain ─────────────────────────────
-   Subtle texture overlay so content feels printed
-   ─────────────────────────────────────────── */
-const FilmGrain = () => (
-  <div aria-hidden style={{
-    position: 'fixed', inset: 0, zIndex: 998, pointerEvents: 'none',
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'repeat', backgroundSize: '220px', opacity: 0.025, mixBlendMode: 'multiply',
-  }} />
-);
+// the 3D background is a separate chunk (three.js), loaded after the page has painted
+const FilmWorld = lazy(() => import('@/components/landing/film3d/FilmWorld'));
 
-/* ─── Typewriter ────────────────────────────── */
-const ROLES = ['Directors','YouTubers','Cinematographers','TV Producers','Editors','Instagram Creators','Writers','Ad Film Makers','VFX Artists','Music Video Directors','Sound Designers','Content Creators','Showrunners','Podcast Creators'];
-const TypewriterRole = () => {
-  const [idx, setIdx] = useState(0);
-  const [txt, setTxt] = useState('');
-  const [del, setDel] = useState(false);
-  useEffect(() => {
-    const word = ROLES[idx];
-    let t: ReturnType<typeof setTimeout>;
-    if (!del && txt.length < word.length) t = setTimeout(() => setTxt(word.slice(0, txt.length + 1)), 68);
-    else if (!del && txt.length === word.length) t = setTimeout(() => setDel(true), 1800);
-    else if (del && txt.length > 0) t = setTimeout(() => setTxt(word.slice(0, txt.length - 1)), 34);
-    else { setDel(false); setIdx((p: number) => (p + 1) % ROLES.length); }
-    return () => clearTimeout(t);
-  }, [txt, del, idx]);
-  return (
-    <span style={{ color: ORANGE }}>
-      {txt}<span style={{ color: ORANGE, animation: 'pulse 1s infinite' }}>|</span>
-    </span>
-  );
-};
-
-/* ─── Reveal wrapper ────────────────────────── */
-const Reveal = ({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => {
-  const ref = useRef(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-  return (
-    <motion.div ref={ref}
-      initial={{ opacity: 0, y: 32 }}
-      animate={inView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.65, delay, ease: [0.22, 1, 0.36, 1] }}
-    >{children}</motion.div>
-  );
-};
-
-/* ─── Slug line ─────────────────────────────── */
-const Slug = ({ text }: { text: string }) => (
-  <div style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.35)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-    <span style={{ width: 6, height: 6, borderRadius: '50%', background: ORANGE, display: 'inline-block' }} />
-    {text}
-  </div>
-);
-
-/* ─── Launch Pillars ────────────────────────── */
-const PILLARS = [
-  { val: 'Free', lbl: 'To Join' },
-  { val: 'E2EE', lbl: 'Encrypted Chat' },
-  { val: 'All',  lbl: 'Platforms' },
-  { val: '24/7', lbl: 'Uptime Goal' },
+const MORE = [
+  { icon: MessagesSquare, title: 'Discussion rooms', desc: 'Craft communities across film, TV, digital, music, advertising and podcasting.' },
+  { icon: Building2, title: 'Company pages', desc: 'Studios, agencies and production houses show their portfolio and list jobs.' },
+  { icon: ShieldCheck, title: 'Verified vendors', desc: 'Trusted partners for your next shoot, from catering to VFX houses.' },
+  { icon: Star, title: 'Ratings and reviews', desc: 'Build credibility with transparent ratings after a project is completed.' },
+  { icon: Megaphone, title: 'Industry announcements', desc: 'Share festival selections, casting calls and news with your followers.' },
+  { icon: Bell, title: 'Job alerts', desc: 'Hear first about roles that match your craft, city and pay.' },
 ];
 
-/* ─── Feature list ──────────────────────────── */
-const FEATURES = [
-  { n:'01', title:'Creator Network',        desc:'Connect with professionals across films, TV shows, YouTube channels, Instagram brands, ad agencies, and music videos. Smart craft-based discovery.' },
-  { n:'02', title:'Project Spaces',          desc:'Collaborative rooms with end-to-end encrypted chat for any production — from feature films to Reels campaigns. Script feedback, shot lists, and scheduling, all in one place.' },
-  { n:'03', title:'Job Board',               desc:'Browse and post roles across every format — film sets, YouTube productions, ad campaigns, brand shoots, podcast studios, OTT shows, and more.' },
-  { n:'04', title:'Equipment Marketplace',   desc:'Rent and list professional gear — cinema cameras, lenses, lighting, audio, drones, and studio equipment — from verified creators and studios.' },
-  { n:'05', title:'Story Pitching',          desc:'Pitch your concepts directly to producers, brands, and studios. Submit showreels, storyboards, and concept decks from your profile.' },
-  { n:'06', title:'Discussion Rooms',        desc:'Craft-specific communities for every corner of the entertainment industry — film, TV, digital, music, advertising, and podcasting.' },
-  { n:'07', title:'Company Pages',           desc:'Dedicated profiles for studios, agencies, and production houses to showcase portfolios and list jobs.' },
-  { n:'08', title:'Verified Vendors',        desc:'Find trusted service providers for your next production, from catering to VFX houses.' },
-  { n:'09', title:'Ratings & Reviews',       desc:'Build professional credibility with transparent ratings after successful project completion.' },
-  { n:'10', title:'Industry Announcements',  desc:'Broadcast major updates, festival selections, and casting calls to your entire network.' },
+const TIERS = [
+  { type: 'Fan account', desc: 'For enthusiasts and fans.', access: 'View-only access to public feeds and discussions.', limits: 'Cannot post jobs, rent equipment, pitch stories or message professionals.', featured: false },
+  { type: 'Creator Pro', desc: 'For individual filmmakers and creators.', access: 'Full access to the creator network, project spaces, job board and marketplace.', limits: 'Standard platform fees apply.', featured: true },
+  { type: 'Studio or company', desc: 'For production houses and agencies.', access: 'Everything in Pro, plus company pages and multi-user project management.', limits: 'Requires official business verification.', featured: false },
 ];
 
-/* ─── Index Page ────────────────────────────── */
+const btnBase: React.CSSProperties = { fontFamily: SANS, fontSize: 16, fontWeight: 700, padding: '15px 26px', borderRadius: 14, display: 'inline-flex', alignItems: 'center', gap: 10, textDecoration: 'none', cursor: 'pointer', border: 'none', minHeight: 52 };
+
+const eyebrow: React.CSSProperties = { fontFamily: MONO, fontSize: 14, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ORANGE_INK, margin: '0 0 14px' };
+const h2: React.CSSProperties = { fontFamily: SANS, fontWeight: 700, fontSize: 'clamp(32px, 4.2vw, 54px)', lineHeight: 1.06, letterSpacing: '-0.03em', color: INK, margin: 0 };
+
 const Index = () => {
+  const reduce = useReducedMotion();
+  // can this visitor have the 3D studio? (WebGL, not on a data-saver connection.) Decided once, so the page reserves its space from the first paint.
+  const [canFilm] = useState(() => {
+    if (typeof navigator === 'undefined') return false;
+    const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    return !conn?.saveData && canDrawWebGL();
+  });
+  // ...and it starts loading once the page is on screen
+  const [film, setFilm] = useState(false);
+  useEffect(() => {
+    if (!canFilm) return;
+    // start once the browser is idle (the text and buttons are already on screen), but no later than 1.5 s
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(() => setFilm(true), { timeout: 1500 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const id = window.setTimeout(() => setFilm(true), 600);
+    return () => window.clearTimeout(id);
+  }, [canFilm]);
+
   return (
-    <div style={{ background: CREAM, color: INK, fontFamily: SANS, overflowX: 'hidden' }}>
+    <div className="landing-root" style={{ position: 'relative', zIndex: 1, background: canFilm ? 'transparent' : BG, color: INK, fontFamily: SANS, overflowX: 'clip' }}>
+      {film && <Suspense fallback={null}><FilmWorld /></Suspense>}
+      <style>{`
+        .landing-root { --s: 1; --hs: 1; }
+        @media (min-width: 1600px) { .landing-root { --hs: 1.1; } }
+        @media (min-width: 1900px) { .landing-root { --hs: 1.18; } }
+        @media (min-width: 2400px) { .landing-root { --hs: 1.5; } }
+        @media (max-width: 1279px) { .landing-root { --s: .9; } }
+        @media (max-width: 639px) { .landing-root { --s: .64; } }
+        @keyframes landing-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+        .landing-float { animation: landing-float 7s ease-in-out infinite; will-change: transform; }
+        @media (prefers-reduced-motion: reduce) { .landing-float { animation: none; will-change: auto; } }
+        .landing-btn { transition: transform 160ms cubic-bezier(.23,1,.32,1), background-color 160ms, box-shadow 160ms; -webkit-user-select: none; user-select: none; }
+        .landing-btn:active { transform: scale(.97); }
+        @media (hover: hover) and (pointer: fine) {
+          .landing-btn-ink:hover { background-color: ${ORANGE_INK} !important; }
+          .landing-btn-orange:hover { background-color: #FF6A55 !important; }
+          .landing-btn-ghost:hover { background-color: rgba(20,17,15,0.05) !important; }
+        }
+        .landing-focus:focus-visible { outline: 2px solid ${ORANGE}; outline-offset: 3px; }
+        html { scroll-behavior: smooth; }
+        @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+        .hero-veil { background: linear-gradient(90deg, rgba(251,250,248,0.94) 0%, rgba(251,250,248,0.8) 34%, rgba(251,250,248,0) 60%), linear-gradient(0deg, rgba(251,250,248,0.9) 0%, rgba(251,250,248,0) 22%); }
+        @media (max-width: 1023px) { .hero-veil { background: linear-gradient(180deg, rgba(251,250,248,0.97) 0%, rgba(251,250,248,0.93) 56%, rgba(251,250,248,0) 82%); } }
+        @keyframes landing-nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+        .landing-nudge { animation: landing-nudge 1.8s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) { .landing-nudge { animation: none; } }
+      `}</style>
       <SEO
         title="CineCraft Connect — The Entertainment Industry Network"
-        description="Connect with directors, YouTubers, TV producers, ad filmmakers, Instagram creators, and every professional in the entertainment industry. One platform for all content formats."
+        description="Where entertainment talent, opportunities and production come together. Find crew and jobs, run your production in an encrypted project space, rent gear and build a profile of confirmed credits. For films, TV and OTT, YouTube, Instagram, ad films, music videos and podcasts."
       />
-      <FilmGrain />
 
-      {/* ── HERO ────────────────────────────── */}
-      <header className="pt-[80px] md:pt-32 pb-16 md:pb-24 px-6 md:px-12 max-w-[1440px] mx-auto relative">
-        {/* Top-right decorative film frame corners */}
-        <div style={{ position: 'absolute', top: 100, right: 48, width: 80, height: 80, borderTop: `2px solid ${ORANGE}`, borderRight: `2px solid ${ORANGE}`, opacity: 0.3 }} className="hidden md:block" />
-        <div style={{ position: 'absolute', bottom: 60, left: 32, width: 48, height: 48, borderBottom: `2px solid ${ORANGE}`, borderLeft: `2px solid ${ORANGE}`, opacity: 0.2 }} className="hidden md:block" />
-
-        <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}>
-          <Slug text="EXT. Platform Landing — Entertainment Industry" />
-
-          {/* Issue-style eyebrow */}
-          <div style={{ fontFamily: MONO, fontSize: 11, color: 'rgba(13,13,13,0.4)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span>Now Launching</span>
-            <span style={{ width: 40, height: 1, background: 'rgba(13,13,13,0.2)', display: 'inline-block' }} />
-            <span>2026</span>
+      {/* ── HERO: the 3D studio is the picture, the words sit beside it ── */}
+      <header style={{ position: 'relative', isolation: 'isolate', minHeight: '100svh', display: 'flex', alignItems: 'center' }}>
+        {/* keeps the words readable over the scene: light on the left, clear on the right */}
+        <div aria-hidden="true" className={canFilm ? 'hero-veil' : undefined} style={{ position: 'absolute', inset: 0, zIndex: -1, background: canFilm ? undefined : 'radial-gradient(52% 60% at 82% 28%, rgba(255,75,51,0.2), rgba(255,75,51,0) 70%), radial-gradient(40% 50% at 8% 4%, rgba(255,180,120,0.2), rgba(255,180,120,0) 70%)' }} />
+        <div className={`max-w-[1760px] mx-auto w-full px-6 md:px-12 2xl:px-20 pt-[104px] pb-[88px] xl:grid xl:grid-cols-[minmax(0,1fr)_calc(720px*var(--hs))] xl:gap-10 xl:items-center ${canFilm ? 'max-lg:pb-[48vh]' : ''}`}>
+          <motion.div style={{ maxWidth: 'min(760px, 100%)' }} initial={reduce ? false : { opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}>
+            <h1 className="[text-wrap:balance]" style={{ fontFamily: SANS, fontWeight: 700, fontSize: 'clamp(36px, 3.9vw, 78px)', lineHeight: 1.04, letterSpacing: '-0.035em', color: INK, margin: '0 0 22px' }}>
+              Where Entertainment Talent, Opportunities and Production{' '}
+              <span style={{ fontFamily: SERIF, fontStyle: 'italic', fontWeight: 500, color: ORANGE_INK }}>Come Together.</span>
+            </h1>
+            <p className="[text-wrap:pretty]" style={{ fontSize: 19, color: MUTED, lineHeight: 1.6, maxWidth: 540, margin: '0 0 24px' }}>
+              Films, series, YouTube, Instagram, ads, music videos and podcasts: whatever you make, find crew and jobs, run your shoot in an encrypted project space, rent gear and build a profile of credits confirmed by the people you worked with.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', marginBottom: 28 }}>
+              <Link to="/register" className="landing-btn landing-btn-ink landing-focus" style={{ ...btnBase, background: INK, color: '#fff' }}>
+                Create your profile <ArrowRight size={18} aria-hidden="true" />
+              </Link>
+              <a href={canFilm ? '#film-journey' : '#how-it-works'} className="landing-btn landing-btn-ghost landing-focus" style={{ ...btnBase, background: 'rgba(255,255,255,0.7)', color: INK, border: `1px solid ${LINE}` }}>
+                {canFilm ? 'See how content gets made' : 'See how it works'}
+              </a>
+            </div>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: '10px 26px', fontSize: 15, color: MUTED }}>
+              {[[BadgeCheck, 'Free to join'], [Lock, 'End-to-end encrypted chat'], [Sparkles, 'Films, TV, YouTube, Instagram, ads, music and podcasts']].map(([Icon, label]) => {
+                const I = Icon as typeof BadgeCheck;
+                return <li key={label as string} style={{ display: 'flex', alignItems: 'center', gap: 8 }}><I size={17} color={ORANGE} aria-hidden="true" />{label as string}</li>;
+              })}
+            </ul>
+          </motion.div>
+          <div className="hidden xl:block"><HeroStage /></div>
+        </div>
+        {canFilm && (
+          <div aria-hidden="true" className="landing-nudge" style={{ position: 'absolute', left: '50%', bottom: 26, marginLeft: -60, width: 120, textAlign: 'center', fontFamily: MONO, fontSize: 13, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: INK }}>
+            Scroll <ArrowDown size={14} style={{ display: 'inline', verticalAlign: '-2px' }} />
           </div>
-
-          {/* Main headline — big editorial */}
-          <h1 style={{ fontFamily: SERIF, fontSize: 'clamp(32px, 5.5vw, 68px)', fontWeight: 300, lineHeight: 1.05, letterSpacing: '-0.02em', color: INK, marginBottom: 24, maxWidth: 900 }}>
-            Where <TypewriterRole /><br />
-            <em style={{ fontStyle: 'italic', color: 'rgba(13,13,13,0.55)' }}>build their next project.</em>
-          </h1>
-
-          <p style={{ fontSize: 16, color: 'rgba(13,13,13,0.6)', maxWidth: 520, lineHeight: 1.6, marginBottom: 32 }}>
-            The professional network for the entire entertainment industry — films, TV, YouTube, Instagram, ad films, music videos, podcasts, and every format in between.
-          </p>
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-            <Link to="/register">
-              <button style={{ background: INK, color: CREAM, fontFamily: SANS, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', padding: '14px 28px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'background 0.25s', borderRadius: 4 }}
-                onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = ORANGE)}
-                onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = INK)}
-              >
-                Create Crew Profile <ArrowRight size={14} />
-              </button>
-            </Link>
-            <Link to="/auth">
-              <button style={{ background: 'transparent', color: INK, fontFamily: SANS, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: `1px solid ${INK}`, padding: '13px 28px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'background 0.25s, color 0.25s', borderRadius: 4 }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = INK; (e.currentTarget as HTMLButtonElement).style.color = CREAM; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = INK; }}
-              >
-                [ Sign In ]
-              </button>
-            </Link>
-          </div>
-
-          {/* Scene metadata */}
-          <div style={{ fontFamily: MONO, fontSize: 10, color: 'rgba(13,13,13,0.25)', letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: 48, display: 'flex', gap: 20 }}>
-            <span>Scene 01</span><span>•</span><span>Roll A</span><span>•</span><span>24.00 FPS</span>
-          </div>
-        </motion.div>
+        )}
       </header>
 
-      {/* ── LAUNCH PILLARS ──────────────────────── */}
-      <Reveal>
-        <div style={{ background: INK }} className="px-6 md:px-12">
-          <div className="max-w-[1440px] mx-auto grid grid-cols-2 md:grid-cols-4">
-            {PILLARS.map((s, i) => (
-              <div key={i} className={`py-12 px-8 text-center ${i % 2 === 0 ? 'border-r border-white/10' : ''} md:border-r md:border-white/10 md:last:border-r-0 ${i < 2 ? 'border-b border-white/10 md:border-b-0' : ''}`}>
-                <div style={{ fontFamily: SERIF, fontSize: 'clamp(32px,4vw,52px)', fontWeight: 300, color: ORANGE, marginBottom: 8 }}>{s.val}</div>
-                <div style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(248,245,240,0.35)' }}>{s.lbl}</div>
+      {/* ── HOW A FILM GETS MADE: the 3D journey through the 24 crafts ── */}
+      {canFilm && <FilmJourney />}
+
+      {/* ── from here the page is solid: the product ── */}
+      <div style={{ position: 'relative', background: BG }}>
+        <Walkthrough />
+
+        {/* ── EVERYTHING ELSE ── */}
+        <section className="max-w-[1280px] mx-auto px-6 md:px-12 pb-20 md:pb-28">
+          <p style={eyebrow}>And there is more</p>
+          <h2 className="[text-wrap:balance]" style={{ ...h2, maxWidth: 760, marginBottom: 40 }}>Everything else a production runs on.</h2>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {MORE.map(({ icon: Icon, title, desc }) => (
+              <li key={title}>
+                <TiltCard style={{ background: CARD, border: `1px solid ${LINE}`, borderRadius: 24, padding: 26, boxShadow: '0 24px 50px -34px rgba(20,17,15,0.4)' }}>
+                  <span style={{ width: 46, height: 46, borderRadius: 14, background: '#FFF1EE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}><Icon size={22} color={ORANGE} aria-hidden="true" /></span>
+                  <h3 style={{ fontFamily: SANS, fontWeight: 700, fontSize: 21, letterSpacing: '-0.02em', color: INK, margin: '0 0 8px' }}>{title}</h3>
+                  <p className="[text-wrap:pretty]" style={{ fontSize: 16, color: MUTED, lineHeight: 1.6, margin: 0 }}>{desc}</p>
+                </TiltCard>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* ── ACCOUNT TYPES ── */}
+        <section className="max-w-[1280px] mx-auto px-6 md:px-12 pb-20 md:pb-28">
+          <p style={eyebrow}>Join</p>
+          <h2 className="[text-wrap:balance]" style={{ ...h2, marginBottom: 36 }}>Choose how you join.</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {TIERS.map((t) => (
+              <div key={t.type} style={{ padding: 28, borderRadius: 24, background: CARD, border: `1px solid ${t.featured ? ORANGE : LINE}`, boxShadow: t.featured ? '0 30px 60px -34px rgba(255,75,51,0.6)' : 'none' }}>
+                <h3 style={{ fontFamily: SANS, fontWeight: 700, fontSize: 24, letterSpacing: '-0.02em', margin: '0 0 6px' }}>{t.type}</h3>
+                <p style={{ fontSize: 15, color: MUTED, margin: '0 0 20px' }}>{t.desc}</p>
+                <p style={{ fontFamily: MONO, fontSize: 13, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: ORANGE_INK, margin: '0 0 4px' }}>What you get</p>
+                <p style={{ fontSize: 15, color: INK, lineHeight: 1.55, margin: '0 0 16px' }}>{t.access}</p>
+                <p style={{ fontFamily: MONO, fontSize: 13, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: FAINT, margin: '0 0 4px' }}>Limits</p>
+                <p style={{ fontSize: 15, color: MUTED, lineHeight: 1.55, margin: 0 }}>{t.limits}</p>
               </div>
             ))}
           </div>
-        </div>
-      </Reveal>
+        </section>
 
-      {/* ── MANIFESTO ───────────────────────── */}
-      <Reveal>
-        <section className="max-w-[1440px] mx-auto px-6 md:px-12 py-16 md:py-24 grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-20 items-start">
-          <div>
-            <Slug text="INT. Manifesto Room — Continuous" />
-            <h2 style={{ fontFamily: SERIF, fontSize: 'clamp(28px,3vw,42px)', fontWeight: 300, color: INK, lineHeight: 1.25, marginBottom: 20 }}>
-                Built for the entire entertainment industry.
+        {/* ── CLOSING ── */}
+        <section className="px-6 md:px-12 pb-20 md:pb-28">
+          <div style={{ position: 'relative', isolation: 'isolate', overflow: 'hidden', maxWidth: 1280, margin: '0 auto', borderRadius: 32, background: INK, color: '#fff', padding: 'clamp(48px, 8vw, 96px) clamp(24px, 6vw, 80px)', textAlign: 'center' }}>
+            <div aria-hidden="true" style={{ position: 'absolute', inset: 0, zIndex: -1, background: 'radial-gradient(60% 90% at 50% 130%, rgba(255,75,51,0.55), rgba(255,75,51,0) 70%)' }} />
+            <h2 className="[text-wrap:balance]" style={{ fontFamily: SANS, fontWeight: 700, fontSize: 'clamp(34px, 5vw, 64px)', lineHeight: 1.04, letterSpacing: '-0.035em', margin: '0 0 18px' }}>
+              Ready to frame your{' '}
+              <span style={{ fontFamily: SERIF, fontStyle: 'italic', fontWeight: 500, color: '#FF8A78' }}>next production?</span>
             </h2>
-            <div style={{ fontFamily: MONO, fontSize: 11, color: 'rgba(13,13,13,0.3)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>[ File: CC_MANIFESTO.TXT ]</div>
-          </div>
-          <div style={{ fontSize: 16, color: 'rgba(13,13,13,0.65)', lineHeight: 1.75 }}>
-            <p style={{ marginBottom: 20 }}>
-              Whether you're making feature films, TV shows, YouTube videos, Instagram content, ad films, or music videos — CineCraft Connect is the professional home for every creator in the entertainment industry.
+            <p className="[text-wrap:pretty]" style={{ fontSize: 18, color: 'rgba(255,255,255,0.78)', maxWidth: 520, margin: '0 auto 34px', lineHeight: 1.6 }}>
+              Create your account, set up your encryption backup key, and start working with the people who make entertainment.
             </p>
-            <p>
-              One platform, every format. End-to-end encrypted messaging in project spaces, a unified crew network, a verified equipment marketplace, and a job board that spans all of entertainment.
-            </p>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── FEATURES LIST ───────────────────── */}
-      <Reveal>
-        <section className="max-w-[1440px] mx-auto px-6 md:px-12 pb-16 md:pb-24">
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', gap: 24, marginBottom: 56, paddingBottom: 32, borderBottom: '1px solid rgba(13,13,13,0.1)' }}>
-            <div>
-              <Slug text="EXT. Ecosystem Specs — Sequence Index" />
-              <h2 style={{ fontFamily: SERIF, fontSize: 'clamp(28px,3vw,44px)', fontWeight: 300, color: INK }}>Platform Modules</h2>
-            </div>
-            <p style={{ fontSize: 14, color: 'rgba(13,13,13,0.5)', maxWidth: 280, lineHeight: 1.6, textAlign: 'left' }}>
-              Unified pipelines for casting, pitching, and secure coordination.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-            {FEATURES.map((f, i) => (
-              <div key={i} className="py-10 md:py-10 pr-0 md:pr-0 border-b border-black/10 md:[&:nth-last-child(-n+2)]:border-b-0 md:odd:border-r md:odd:pr-12 md:even:pl-12 last:border-b-0">
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
-                  <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, color: ORANGE, marginTop: 3 }}>[ {f.n} ]</span>
-                  <h3 style={{ fontFamily: SERIF, fontSize: 22, fontWeight: 400, color: INK, lineHeight: 1.2 }}>{f.title}</h3>
-                </div>
-                <p style={{ fontSize: 14, color: 'rgba(13,13,13,0.58)', lineHeight: 1.7, paddingLeft: 32 }}>{f.desc}</p>
-                <div style={{ paddingLeft: 32, marginTop: 16 }}>
-                  <Link to="/features" style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: ORANGE, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    Learn More <ChevronRight size={11} />
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── ACCOUNT TIER SUMMARY ────────────── */}
-      <Reveal>
-        <section className="max-w-[1440px] mx-auto px-6 md:px-12 pb-16 md:pb-24">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 48, paddingBottom: 32, borderBottom: '1px solid rgba(13,13,13,0.1)' }}>
-            <div>
-              <Slug text="INT. Gateway Controls — Membership" />
-              <h2 style={{ fontFamily: SERIF, fontSize: 'clamp(28px,3vw,44px)', fontWeight: 300, color: INK }}>Account Tiers</h2>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              { type: 'Fan Account', desc: 'Designed for enthusiasts and fans.', access: 'View-only access to public feeds and discussions.', restrictions: 'Cannot post jobs, rent equipment, pitch stories, or message professionals.' },
-              { type: 'Creator Pro', desc: 'For individual filmmakers and creators.', access: 'Full access to the creator network, project spaces, job board, and marketplace.', restrictions: 'Standard platform fees apply.' },
-              { type: 'Studio / Company', desc: 'For production houses and agencies.', access: 'Everything in Pro, plus Company Pages and multi-user project management.', restrictions: 'Requires official business verification.' }
-            ].map((acc, i) => (
-              <div key={i} style={{ padding: '32px', border: '1px solid rgba(13,13,13,0.1)', borderRadius: 4 }}>
-                <h3 style={{ fontFamily: SERIF, fontSize: 22, fontWeight: 400, color: INK, marginBottom: 8 }}>{acc.type}</h3>
-                <p style={{ fontSize: 13, color: 'rgba(13,13,13,0.6)', marginBottom: 20 }}>{acc.desc}</p>
-                <div style={{ marginBottom: 16 }}>
-                  <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: ORANGE, display: 'block', marginBottom: 6 }}>Access</span>
-                  <p style={{ fontSize: 13, color: 'rgba(13,13,13,0.7)', lineHeight: 1.5 }}>{acc.access}</p>
-                </div>
-                <div>
-                  <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.4)', display: 'block', marginBottom: 6 }}>Restrictions</span>
-                  <p style={{ fontSize: 13, color: 'rgba(13,13,13,0.5)', lineHeight: 1.5 }}>{acc.restrictions}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </Reveal>
-
-      {/* ── DARK CTA ────────────────────────── */}
-      <Reveal>
-        <section style={{ background: INK, color: CREAM, padding: '100px 48px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-          {/* Ghost watermark */}
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: SERIF, fontSize: '28vw', fontWeight: 900, color: 'rgba(248,245,240,0.025)', pointerEvents: 'none', userSelect: 'none', letterSpacing: '-0.05em' }}>
-            CUT.
-          </div>
-          {/* Top accent line */}
-          <div style={{ position: 'absolute', top: 0, left: '10%', right: '10%', height: 1, background: 'linear-gradient(90deg, transparent, rgba(249,115,22,0.4), transparent)' }} />
-
-          <div style={{ position: 'relative', maxWidth: 680, margin: '0 auto' }}>
-            <Slug text="EXT. The Next Scene — Night" />
-            <h2 style={{ fontFamily: SERIF, fontSize: 'clamp(36px,5vw,64px)', fontWeight: 300, color: CREAM, lineHeight: 1.15, marginBottom: 24 }}>
-              Ready to frame your next production?
-            </h2>
-            <p style={{ fontSize: 16, color: 'rgba(248,245,240,0.5)', maxWidth: 480, margin: '0 auto 40px', lineHeight: 1.7 }}>
-              Create your crew account, set up cryptographic backup keys, and start collaborating on a beautiful, distraction-free film network.
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, justifyContent: 'center' }}>
-              <Link to="/register">
-                <button style={{ background: ORANGE, color: CREAM, fontFamily: SANS, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', padding: '15px 32px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'background 0.25s', borderRadius: 4 }}
-                  onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = '#ea6c10')}
-                  onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = ORANGE)}
-                >
-                  Join Community <ArrowRight size={14} />
-                </button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, justifyContent: 'center', alignItems: 'center' }}>
+              <Link to="/register" className="landing-btn landing-btn-orange landing-focus" style={{ ...btnBase, background: ORANGE, color: INK }}>
+                Join CineCraft Connect <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              <Link to="/auth">
-                <button style={{ background: 'transparent', color: 'rgba(248,245,240,0.6)', fontFamily: SANS, fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: '1px solid rgba(248,245,240,0.15)', padding: '14px 32px', cursor: 'pointer', transition: 'all 0.25s', borderRadius: 4 }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(248,245,240,0.4)'; (e.currentTarget as HTMLButtonElement).style.color = CREAM; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(248,245,240,0.15)'; (e.currentTarget as HTMLButtonElement).style.color = 'rgba(248,245,240,0.6)'; }}
-                >
-                  Sign In
-                </button>
+              <Link to="/auth" className="landing-focus" style={{ padding: '12px 6px', fontSize: 16, fontWeight: 600, color: '#fff', textDecoration: 'underline', textUnderlineOffset: 5, textDecorationColor: 'rgba(255,255,255,0.4)' }}>
+                Sign in
               </Link>
             </div>
           </div>
         </section>
-      </Reveal>
+      </div>
 
-      <Footer />
+      {/* positioned and solid, like the sections above: otherwise the fixed 3D background paints over the footer */}
+      <div style={{ position: 'relative', background: BG }}>
+        <Footer />
+      </div>
     </div>
   );
 };

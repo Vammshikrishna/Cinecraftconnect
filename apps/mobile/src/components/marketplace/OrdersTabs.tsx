@@ -5,21 +5,22 @@ import { useUserSettings } from '../../hooks/useUserSettings';
 const ORANGE = '#FF4B33';
 
 /** Bookings (gear and locations) and Quotes (services) are two halves of one "Orders" area. */
-export const OrdersTabs = ({ current, navigation }: { current: 'bookings' | 'quotes'; navigation: any }) => {
+export const OrdersTabs = ({ current, navigation }: { current: 'bookings' | 'quotes' | 'disputes'; navigation: any }) => {
   const { themeColors: T } = useUserSettings();
-  const tab = (key: 'bookings' | 'quotes', label: string, route: string) => (
+  const tab = (key: 'bookings' | 'quotes' | 'disputes', label: string, route: string) => (
     <TouchableOpacity
       key={key}
       style={[styles.tab, current === key && { backgroundColor: T.bgCard }]}
       onPress={() => current !== key && navigation.replace(route)}
     >
-      <Text style={{ color: current === key ? ORANGE : T.textSecondary, fontSize: 13, fontWeight: '800' }}>{label}</Text>
+      <Text style={{ color: current === key ? ORANGE : T.textSecondary, fontSize: 13, fontWeight: '700' }}>{label}</Text>
     </TouchableOpacity>
   );
   return (
     <View style={[styles.wrap, { backgroundColor: T.inputBg }]}>
       {tab('bookings', 'Bookings', 'MyBookings')}
       {tab('quotes', 'Quotes', 'MyQuotes')}
+      {tab('disputes', 'Disputes', 'MarketplaceDisputes')}
     </View>
   );
 };

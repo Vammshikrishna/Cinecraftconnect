@@ -1,6 +1,6 @@
 import { CachedImage } from '../common/CachedImage';
 import { ReportModal } from '../modals/ReportModal';
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,12 +17,25 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { MentionInput } from '../common/MentionInput';
+import { insertMentions, stillMentioned, type MentionUser } from '../../utils/mentions';
 import { VerificationBadge } from '../common/VerificationBadge';
 import { FormattedText } from '../common/FormattedText';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { DropdownTrigger, DropdownItem } from '../common/DropdownMenu';
+import { useAppRole } from '../../hooks/useAppRole';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
+/** Longest comment allowed; the database enforces the same limit. */
+const MAX_COMMENT_LENGTH = 2000;
+/** Top-level comments shown at a time; "View more comments" adds this many again. */
+const PAGE_SIZE = 20;
+const PROFILE_FIELDS = 'id, full_name, username, avatar_url, craft, is_verified';
+const COMMENT_FIELDS = `id, content, created_at, edited_at, user_id, parent_id, reply_to_user_id, is_pinned, is_hidden, like_count, profiles:user_id(${PROFILE_FIELDS}), reply_to:reply_to_user_id(username, full_name)`;
+// the older columns only, for a database that has not had part BG yet
+const LEGACY_COMMENT_FIELDS = `id, content, created_at, user_id, parent_id, profiles:user_id(${PROFILE_FIELDS})`;
 
 interface CommentsSheetProps {
   visible: boolean;
@@ -38,6 +51,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
   navigation,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isInternal } = useAppRole(); // staff read comments, they do not write them
   const [comments, setComments] = useState<any[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,46 +59,93 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
   const [replyTo, setReplyTo] = useState<any | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [reportCommentId, setReportCommentId] = useState<string | null>(null);
+  const [postAuthorId, setPostAuthorId] = useState<string | null>(null);
+  const [sort, setSort] = useState<'newest' | 'top'>('newest');
+  const [topLimit, setTopLimit] = useState(PAGE_SIZE);
+  const [hasMore, setHasMore] = useState(false);
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
   const flatRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  const pickedMentionsRef = useRef<Record<string, MentionUser>>({});
 
   const fetchComments = useCallback(async () => {
     if (!postId) return;
     setLoading(true);
     try {
       const supabase = getSupabaseClient();
-      const { data } = await supabase
-        .from('post_comments' as any)
-        .select(`
-          id,
-          content,
-          created_at,
-          user_id,
-          parent_id,
-          profiles:user_id (
-            id,
-            full_name,
-            username,
-            avatar_url,
-            craft,
-            is_verified
-          )
-        `)
-        .eq('post_id', postId)
-        .order('created_at', { ascending: true });
+      const loadTop = (fields: string, legacy: boolean) => {
+        let q: any = (supabase as any).from('post_comments').select(fields).eq('post_id', postId).is('parent_id', null);
+        if (!legacy) q = q.order('is_pinned', { ascending: false });
+        q = !legacy && sort === 'top'
+          ? q.order('like_count', { ascending: false }).order('created_at', { ascending: false })
+          : q.order('created_at', { ascending: false });
+        return q.limit(topLimit + 1);
+      };
 
-      if (data) setComments(data);
+      let legacy = false;
+      let top = await loadTop(COMMENT_FIELDS, false);
+      if (top.error) {
+        // part BG is not installed yet: fall back to the plain comment list
+        legacy = true;
+        top = await loadTop(LEGACY_COMMENT_FIELDS, true);
+      }
+      const topRows: any[] = top.data || [];
+      setHasMore(topRows.length > topLimit);
+      const pageTop = topRows.slice(0, topLimit);
+      const ids = pageTop.map((c) => c.id);
+
+      let replies: any[] = [];
+      if (ids.length > 0) {
+        const res = await (supabase as any)
+          .from('post_comments')
+          .select(legacy ? LEGACY_COMMENT_FIELDS : COMMENT_FIELDS)
+          .in('parent_id', ids)
+          .order('created_at', { ascending: true });
+        replies = res.data || [];
+      }
+      const all = [...pageTop, ...replies];
+
+      // people I blocked or muted are not shown, as in the feed
+      const me = (await supabase.auth.getSession()).data.session?.user?.id;
+      const hidden = new Set<string>();
+      if (me) {
+        const [blocked, muted] = await Promise.all([
+          (supabase as any).from('blocked_users').select('blocked_user_id').eq('user_id', me),
+          (supabase as any).from('muted_authors').select('author_id').eq('user_id', me),
+        ]);
+        (blocked.data || []).forEach((x: any) => x.blocked_user_id && hidden.add(x.blocked_user_id));
+        (muted.data || []).forEach((x: any) => x.author_id && hidden.add(x.author_id));
+        if (!legacy && all.length > 0) {
+          const { data: mine } = await (supabase as any)
+            .from('comment_likes')
+            .select('comment_id')
+            .eq('user_id', me)
+            .in('comment_id', all.map((c) => c.id));
+          setLikedIds(new Set((mine || []).map((l: any) => l.comment_id)));
+        }
+      }
+      setComments(all.filter((c) => !hidden.has(c.user_id)));
+
+      const { data: post } = await supabase.from('posts').select('author_id').eq('id', postId).maybeSingle();
+      setPostAuthorId((post as any)?.author_id ?? null);
     } catch (e) {
       console.warn('[CommentsSheet] Fetch error:', e);
     } finally {
       setLoading(false);
     }
-  }, [postId]);
+  }, [postId, sort, topLimit]);
+
+  // the realtime handlers below always call the latest version
+  const fetchRef = useRef(fetchComments);
+  fetchRef.current = fetchComments;
+
+  useEffect(() => {
+    if (visible && postId) fetchComments();
+  }, [visible, postId, fetchComments]);
 
   useEffect(() => {
     if (!visible || !postId) return;
-
-    fetchComments();
 
     // Resolve current user
     const getUser = async () => {
@@ -106,23 +167,8 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
           table: 'post_comments',
           filter: `post_id=eq.${postId}`,
         },
-        async (payload) => {
-          // Fetch author profile
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('id, full_name, username, avatar_url, craft, is_verified')
-            .eq('id', payload.new.user_id)
-            .single();
-
-          const enriched = { ...(payload.new as any), profiles: profile };
-
-          setComments((prev) => {
-            const exists = prev.find((c) => c.id === (enriched as any).id);
-            if (exists) return prev;
-            return [...prev, enriched];
-          });
-
-          setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 100);
+        () => {
+          fetchRef.current();
         }
       )
       .on(
@@ -142,7 +188,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [visible, postId, fetchComments]);
+  }, [visible, postId]);
 
   const handleReplyPress = (comment: any) => {
     setReplyTo(comment);
@@ -155,6 +201,30 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
 
   const handleSend = async () => {
     if (!input.trim()) return;
+    if (editingId) {
+      if (input.trim().length > MAX_COMMENT_LENGTH) {
+        Alert.alert('Comment is too long', `Please keep it under ${MAX_COMMENT_LENGTH} characters.`);
+        return;
+      }
+      setSending(true);
+      try {
+        const supabase = getSupabaseClient();
+        const { error } = await (supabase as any).from('post_comments').update({ content: input.trim() }).eq('id', editingId);
+        if (error) throw error;
+        setEditingId(null);
+        setInput('');
+        fetchComments();
+      } catch (e: any) {
+        Alert.alert('Could not save your change', friendlyError(e, 'Please try again.'));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+    if (input.trim().length > MAX_COMMENT_LENGTH) {
+      Alert.alert('Comment is too long', `Please keep it under ${MAX_COMMENT_LENGTH} characters.`);
+      return;
+    }
     setSending(true);
     const draft = input.trim();
     setInput('');
@@ -174,9 +244,15 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
         });
 
       if (error) throw error;
+      // same rows as web: the comment's mentions point at the post
+      const mentionIds = stillMentioned(draft, pickedMentionsRef.current, user.id);
+      pickedMentionsRef.current = {};
+      if (mentionIds.length > 0) await insertMentions({ mentionerId: user.id, mentionedIds: mentionIds, relatedId: postId, relatedType: 'post' });
       setReplyTo(null);
+      fetchComments();
+      setTimeout(() => flatRef.current?.scrollToOffset({ offset: 0, animated: true }), 150);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not post comment.');
+      Alert.alert('Error', friendlyError(e, 'Could not post comment.'));
       setInput(draft); // restore
     } finally {
       setSending(false);
@@ -184,8 +260,8 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
   };
 
   const handleDelete = (commentId: string, userId: string) => {
-    if (userId !== currentUserId) {
-      Alert.alert('Permission denied', 'You can only delete your own comments.');
+    if (userId !== currentUserId && postAuthorId !== currentUserId) {
+      Alert.alert('Permission denied', 'You can only delete your own comments, or comments on your own post.');
       return;
     }
     Alert.alert('Delete comment', 'Are you sure?', [
@@ -196,18 +272,73 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
         onPress: async () => {
           try {
             const supabase = getSupabaseClient();
-            await supabase
+            const { error } = await supabase
               .from('post_comments' as any)
               .delete()
               .eq('id', commentId);
+            if (error) throw error;
             setComments((prev) => prev.filter((c) => c.id !== commentId));
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Could not delete comment.');
+            Alert.alert('Error', friendlyError(e, 'Could not delete comment.'));
           }
         },
       },
     ]);
   };
+
+  const toggleLike = async (commentId: string, liked: boolean) => {
+    if (!currentUserId) return;
+    setLikedIds((prev) => { const next = new Set(prev); liked ? next.delete(commentId) : next.add(commentId); return next; });
+    setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, like_count: Math.max(0, (c.like_count || 0) + (liked ? -1 : 1)) } : c));
+    const supabase: any = getSupabaseClient();
+    const { error } = liked
+      ? await supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', currentUserId)
+      : await supabase.from('comment_likes').insert({ comment_id: commentId, user_id: currentUserId });
+    if (error) {
+      Alert.alert('Could not update your like', friendlyError(error));
+      fetchComments();
+    }
+  };
+
+  const moderate = async (commentId: string, changes: { is_pinned?: boolean; is_hidden?: boolean }) => {
+    const supabase: any = getSupabaseClient();
+    const { error } = await supabase.from('post_comments').update(changes).eq('id', commentId);
+    if (error) {
+      Alert.alert('Could not do that', friendlyError(error));
+      return;
+    }
+    fetchComments();
+  };
+
+  const commentMenuItems = (item: any): DropdownItem[] => {
+    const mine = item.user_id === currentUserId;
+    const iAmPostAuthor = !!currentUserId && postAuthorId === currentUserId;
+    const options: DropdownItem[] = [];
+    if (mine) {
+      options.push({
+        label: 'Edit',
+        icon: 'edit-2',
+        onPress: () => { setReplyTo(null); setEditingId(item.id); setInput(item.content); inputRef.current?.focus(); },
+      });
+    }
+    if (iAmPostAuthor && !item.parent_id) {
+      options.push({ label: item.is_pinned ? 'Unpin' : 'Pin to top', icon: 'pin', onPress: () => moderate(item.id, { is_pinned: !item.is_pinned }) });
+    }
+    if (iAmPostAuthor && !mine) {
+      options.push({ label: item.is_hidden ? 'Show again' : 'Hide comment', icon: item.is_hidden ? 'eye' : 'eye-off', onPress: () => moderate(item.id, { is_hidden: !item.is_hidden }) });
+    }
+    return options;
+  };
+
+  // each top-level comment followed by its replies
+  const displayItems = useMemo(() => {
+    const out: any[] = [];
+    comments.filter((c) => !c.parent_id).forEach((top) => {
+      out.push(top);
+      comments.filter((c) => c.parent_id === top.id).forEach((reply) => out.push({ ...reply, _isReply: true, _parentAuthorId: top.user_id }));
+    });
+    return out;
+  }, [comments]);
 
   const navigateToUser = (userId?: string, creatorName?: string) => {
     if (!navigation) return;
@@ -226,7 +357,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
       : '';
 
     return (
-      <View style={styles.commentItem}>
+      <View style={[styles.commentItem, item._isReply && { marginLeft: 34 }]}>
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={() => navigateToUser(author.id || item.user_id, author.full_name || author.username)}
@@ -266,15 +397,15 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
             <View style={styles.commentHeaderRight}>
               <Text style={[styles.timeText, { color: themeColors.textMuted }]}>{timeAgo}</Text>
               {!isOwn && !!currentUserId && (
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Report"
                   onPress={() => setReportCommentId(item.id)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Icon name="flag" size={12} color={themeColors.textMuted} />
+                  <Icon name="flag" size={12} color={themeColors.iconMuted} />
                 </TouchableOpacity>
               )}
-              {isOwn && (
-                <TouchableOpacity
+              {(isOwn || (!!currentUserId && postAuthorId === currentUserId)) && (
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete"
                   onPress={() => handleDelete(item.id, item.user_id)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
@@ -286,7 +417,12 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
 
           <Text style={styles.commentCraft}>
             {(author.craft || 'CREATOR').toUpperCase()}
+            {item.is_pinned ? '  ·  PINNED' : ''}
+            {item.is_hidden ? '  ·  HIDDEN' : ''}
           </Text>
+          {item._isReply && item.reply_to?.username && item.reply_to_user_id !== item._parentAuthorId && !String(item.content || '').trimStart().startsWith('@') && (
+            <Text style={{ color: ORANGE, fontSize: 12, marginBottom: 2 }}>@{item.reply_to.username}</Text>
+          )}
 
           <FormattedText
             text={item.content}
@@ -301,14 +437,38 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
             }}
           />
 
-          {/* Reply Button */}
-          <TouchableOpacity
-            style={styles.replyBtn}
-            onPress={() => handleReplyPress(item)}
-          >
-            <Icon name="corner-up-left" size={11} color={themeColors.textSecondary} />
-            <Text style={[styles.replyBtnText, { color: themeColors.textSecondary }]}>Reply</Text>
-          </TouchableOpacity>
+          {!!item.edited_at && (
+            <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 2 }}>(edited)</Text>
+          )}
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 6 }}>
+            <TouchableOpacity style={styles.replyBtn} onPress={() => handleReplyPress(item)}>
+              <Icon name="corner-up-left" size={11} color={themeColors.iconSecondary} />
+              <Text style={[styles.replyBtnText, { color: themeColors.textSecondary }]}>Reply</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.replyBtn}
+              accessibilityRole="button"
+              accessibilityLabel={likedIds.has(item.id) ? 'Unlike comment' : 'Like comment'}
+              onPress={() => toggleLike(item.id, likedIds.has(item.id))}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Icon name="heart" size={12} color={likedIds.has(item.id) ? ORANGE : themeColors.textSecondary} fill={likedIds.has(item.id) ? ORANGE : 'none'} />
+              {(item.like_count || 0) > 0 && (
+                <Text style={[styles.replyBtnText, { color: likedIds.has(item.id) ? ORANGE : themeColors.textSecondary }]}>{item.like_count}</Text>
+              )}
+            </TouchableOpacity>
+            {(item.user_id === currentUserId || (!!currentUserId && postAuthorId === currentUserId)) && (
+              <DropdownTrigger
+                style={styles.replyBtn}
+                accessibilityLabel="More options"
+                items={() => commentMenuItems(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Icon name="more-horizontal" size={14} color={themeColors.iconSecondary} />
+              </DropdownTrigger>
+            )}
+          </View>
         </View>
       </View>
     );
@@ -335,11 +495,11 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                 <Text style={[styles.sheetTitle, { color: themeColors.textPrimary }]}>
                   Comments ({comments.length})
                 </Text>
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                   onPress={onClose}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -350,8 +510,41 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
               ) : (
                 <FlatList
                   ref={flatRef}
-                  data={comments}
+                  data={displayItems}
                   renderItem={renderComment}
+                  ListHeaderComponent={
+                    comments.length > 1 || hasMore || sort === 'top' ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingBottom: 8 }}>
+                        {(['newest', 'top'] as const).map((value) => (
+                          <TouchableOpacity
+                            key={value}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: sort === value }}
+                            onPress={() => { setSort(value); setTopLimit(PAGE_SIZE); }}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 5,
+                              borderRadius: 14,
+                              borderWidth: 1,
+                              borderColor: sort === value ? ORANGE : themeColors.border,
+                              backgroundColor: sort === value ? ORANGE : 'transparent',
+                            }}
+                          >
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: sort === value ? '#FFFFFF' : themeColors.textSecondary }}>
+                              {value === 'newest' ? 'Newest' : 'Top'}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : null
+                  }
+                  ListFooterComponent={
+                    hasMore ? (
+                      <TouchableOpacity onPress={() => setTopLimit((n) => n + PAGE_SIZE)} style={{ paddingVertical: 12, alignItems: 'center' }}>
+                        <Text style={{ color: themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>View more comments</Text>
+                      </TouchableOpacity>
+                    ) : null
+                  }
                   keyExtractor={(item) => item.id}
                   contentContainerStyle={styles.list}
                   ListEmptyComponent={
@@ -359,10 +552,30 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                       No comments yet. Start the conversation!
                     </Text>
                   }
-                  onContentSizeChange={() =>
-                    flatRef.current?.scrollToEnd({ animated: false })
-                  }
                 />
+              )}
+
+              {editingId && (
+                <View
+                  style={[
+                    styles.replyBanner,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 75, 51, 0.12)' : '#FFF7F5',
+                      borderTopColor: isDark ? 'rgba(255, 75, 51, 0.25)' : '#FFE5DF',
+                    },
+                  ]}
+                >
+                  <Icon name="edit-2" size={14} color={ORANGE} />
+                  <Text style={[styles.replyBannerText, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                    Editing your comment
+                  </Text>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel editing"
+                    onPress={() => { setEditingId(null); setInput(''); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Icon name="x" size={14} color={themeColors.iconSecondary} />
+                  </TouchableOpacity>
+                </View>
               )}
 
               {/* Reply context banner */}
@@ -379,20 +592,25 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                   <Icon name="corner-up-left" size={14} color={ORANGE} />
                   <Text style={[styles.replyBannerText, { color: themeColors.textSecondary }]} numberOfLines={1}>
                     Replying to{' '}
-                    <Text style={{ fontWeight: '800', color: themeColors.textPrimary }}>
+                    <Text style={{ fontWeight: '700', color: themeColors.textPrimary }}>
                       {replyTo.profiles?.full_name || 'Crew Member'}
                     </Text>
                     : {replyTo.content}
                   </Text>
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                     onPress={() => setReplyTo(null)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Icon name="x" size={14} color={themeColors.textSecondary} />
+                    <Icon name="x" size={14} color={themeColors.iconSecondary} />
                   </TouchableOpacity>
                 </View>
               )}
 
+              {isInternal ? (
+                <View style={[styles.inputBar, { borderTopColor: themeColors.border, backgroundColor: themeColors.bgCard, justifyContent: 'center' }]}>
+                  <Text style={{ color: themeColors.textSecondary, fontSize: 13, textAlign: 'center' }}>Staff accounts can read comments but not write them.</Text>
+                </View>
+              ) : (
               <View
                 style={[
                   styles.inputBar,
@@ -402,10 +620,13 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                   },
                 ]}
               >
-                <TextInput
+                <MentionInput
                   ref={inputRef}
+                  containerStyle={{ flex: 1 }}
+                  onMentionSelected={(u) => { pickedMentionsRef.current = { ...pickedMentionsRef.current, [u.id]: u }; }}
                   style={[
                     styles.input,
+                    { flex: 0 },
                     {
                       backgroundColor: themeColors.inputBg,
                       color: themeColors.textPrimary,
@@ -418,9 +639,10 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                   placeholderTextColor={themeColors.textMuted}
                   value={input}
                   onChangeText={setInput}
+                  maxLength={MAX_COMMENT_LENGTH}
                   multiline
                 />
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Send" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={[
                     styles.sendBtn,
                     (!input.trim() || sending) && {
@@ -437,6 +659,7 @@ export const CommentsSheet: React.FC<CommentsSheetProps> = ({
                   )}
                 </TouchableOpacity>
               </View>
+              )}
             </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
         </View>
@@ -470,6 +693,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 16,
     elevation: 24,
+    // on a tablet the sheet is a centred panel (it used to hug the left edge at half width)
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -492,7 +719,7 @@ const styles = StyleSheet.create({
   sheetTitle: {
     color: '#0D0D0D',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   list: {
     padding: 16,
@@ -526,7 +753,7 @@ const styles = StyleSheet.create({
   commentAvatarFallbackText: {
     color: '#FF4B33',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   commentContent: {
     flex: 1,
@@ -559,18 +786,18 @@ const styles = StyleSheet.create({
   },
   authorName: {
     color: '#0D0D0D',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     flex: 1,
   },
   timeText: {
     color: '#9CA3AF',
-    fontSize: 10,
+    fontSize: 12,
   },
   commentCraft: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     marginBottom: 4,
   },
   commentText: {
@@ -585,8 +812,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   replyBtnText: {
-    color: '#6B7280',
-    fontSize: 10.5,
+    color: '#64748B',
+    fontSize: 12,
     fontWeight: '700',
   },
   replyBanner: {
@@ -601,8 +828,8 @@ const styles = StyleSheet.create({
   },
   replyBannerText: {
     flex: 1,
-    color: '#6B7280',
-    fontSize: 11,
+    color: '#64748B',
+    fontSize: 12,
   },
   inputBar: {
     flexDirection: 'row',

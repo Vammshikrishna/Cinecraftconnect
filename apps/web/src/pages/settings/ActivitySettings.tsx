@@ -1,9 +1,10 @@
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { SettingsPageHeader, SettingsSection, SettingsToggleRow } from '@/components/settings/SettingsUI';
+import { SettingsPageHeader, SettingsSection, SettingsToggleRow, SettingsLoading } from '@/components/settings/SettingsUI';
 
 const ActivitySettings = () => {
-  const { settings, updateSetting } = useUserSettings();
+  const { settings, updateSetting, loading } = useUserSettings();
   const s = settings || {};
+  if (loading) return <SettingsLoading />;
   return (
     <>
       <SettingsPageHeader title="Activity status" description="What people can see about your activity." />

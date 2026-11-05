@@ -91,7 +91,7 @@ export const MentionTextarea = React.forwardRef<HTMLTextAreaElement, MentionText
           ref={internalRef}
           value={value}
           onChange={handleTextChange}
-          className={cn("pr-10 transition-all", className)}
+          className={cn("pr-10 transition-[color,background-color,border-color,box-shadow]", className)}
         />
         
         {isSuggesting && (suggestions.length > 0 || isLoading) && (
@@ -114,7 +114,7 @@ export const MentionTextarea = React.forwardRef<HTMLTextAreaElement, MentionText
                         </Avatar>
                         <div className="flex flex-col">
                           <span className="text-sm font-medium">{user.full_name}</span>
-                          <span className="text-[10px] text-muted-foreground">@{user.username}</span>
+                          <span className="text-[12px] text-muted-foreground">@{user.username}</span>
                         </div>
                       </CommandItem>
                     ))

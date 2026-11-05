@@ -7,22 +7,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useAppRole } from '@/hooks/useAppRole';
-import { 
-  Users, 
-  Lock, 
-  Globe, 
-  MessageSquare,
-  Calendar,
-  ShieldAlert,
-  ArrowLeft,
-  UserPlus,
-  Share2
-} from 'lucide-react';
+import { Users, Lock, Globe, MessageSquare, Calendar, ShieldAlert, ArrowLeft, UserPlus } from 'lucide-react';
 import { BackButton } from '@/components/common/BackButton';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import SEO from '@/components/common/SEO';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { friendlyError } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
+import { useAccountType } from '@/hooks/useAccountType';
+import { joinRequestUiState } from '@/components/discussions/joinRequestStatus';
 
 interface DiscussionRoom {
   id: string;
@@ -38,10 +32,12 @@ interface DiscussionRoom {
 
 const DiscussionRoomDetailPage = () => {
   const { roomId } = useParams();
-  const { push } = useAppNavigation();
+  const { push, replace } = useAppNavigation();
   const { user } = useAuth();
   const { toast } = useToast();
   const { isInternal, loading: roleLoading } = useAppRole();
+  const { isFan } = useAccountType();
+  const [loadFailed, setLoadFailed] = useState(false);
   
   const [room, setRoom] = useState<DiscussionRoom | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,6 +54,8 @@ const DiscussionRoomDetailPage = () => {
 
   const fetchRoomDetails = async () => {
     setLoading(true);
+    let redirecting = false;
+    setLoadFailed(false);
     try {
       // 1. Fetch room details
       const { data, error } = await supabase
@@ -87,10 +85,11 @@ const DiscussionRoomDetailPage = () => {
             .maybeSingle(),
           supabase
             .from('room_join_requests')
-            .select('status')
+            .select('status, created_at')
             .eq('room_id', roomId)
             .eq('user_id', user.id)
-            .maybeSingle()
+            .order('created_at', { ascending: false })
+            .limit(1)
         ]);
 
         const isOwner = user.id === data.creator_id;
@@ -100,35 +99,32 @@ const DiscussionRoomDetailPage = () => {
 
         // Auto-redirect if already a member/creator/staff, or if it is a public room
         if (memberData || isPublicRoom) {
-          push(`/discussion-rooms/${roomId}/chat`, { noScroll: true });
+          // replace, not push: with push the back button returned to this page, which redirected again (a trap)
+          redirecting = true;
+          replace(`/discussion-rooms/${roomId}/chat`, { noScroll: true });
           return;
         }
 
-        if (requestRes.data) {
-          setRequestStatus('pending');
-        } else {
-          setRequestStatus('none');
-        }
+        // only a request that is still pending blocks a new one; a rejected request can be sent again
+        setRequestStatus(joinRequestUiState(requestRes.data as any[]));
       } else {
         setIsMember(false);
         setRequestStatus('none');
       }
     } catch (error) {
       console.error('Error fetching room details:', error);
+      setLoadFailed(true);
       toast({ title: 'Error', description: 'Failed to load discussion room details', variant: 'destructive' });
     } finally {
-      setLoading(false);
+      // keep the skeleton up while we hand over to the chat, so this page never flashes
+      if (!redirecting) setLoading(false);
     }
   };
 
   const handleJoinOrCreateRequest = async () => {
     if (!user) {
-      toast({
-        title: 'Sign in required',
-        description: 'Redirecting to sign in page...',
-        variant: 'destructive'
-      });
-      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
+      // not an error: go straight to sign in (the button already says "Sign in to join")
+      push(`/auth?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`);
       return;
     }
 
@@ -168,7 +164,7 @@ const DiscussionRoomDetailPage = () => {
       console.error('Error sending join request:', err);
       toast({
         title: "Request Failed",
-        description: err.message || "Could not submit join request.",
+        description: friendlyError(err, "Could not submit join request."),
         variant: "destructive",
       });
     } finally {
@@ -176,11 +172,19 @@ const DiscussionRoomDetailPage = () => {
     }
   };
 
-  if (loading) return <div className="flex h-screen items-center justify-center bg-background"><LoadingSpinner size="lg" /></div>;
-
+  if (loading) return <ScreenSkeleton variant="detail" />;
+  if (loadFailed) {
+    return (
+      <div className="flex h-dvh items-center justify-center flex-col gap-4 bg-background" role="alert">
+        <h2 className="text-2xl font-bold">Could not load this room</h2>
+        <p className="text-sm text-muted-foreground">Check your connection and try again.</p>
+        <Button onClick={() => fetchRoomDetails()}>Try again</Button>
+      </div>
+    );
+  }
   if (!room) {
     return (
-      <div className="flex h-screen items-center justify-center flex-col gap-4 bg-background">
+      <div className="flex h-dvh items-center justify-center flex-col gap-4 bg-background">
         <h2 className="text-2xl font-bold">Discussion Room Not Found</h2>
         <Button onClick={() => push('/discussion-rooms', { noScroll: true })}>View All Rooms</Button>
       </div>
@@ -191,38 +195,38 @@ const DiscussionRoomDetailPage = () => {
   const isPrivate = room.room_type !== 'public';
 
   return (
-    <div className="min-h-screen bg-background pt-24 pb-40">
+    <div className="min-h-dvh bg-background pt-24 pb-[calc(env(safe-area-inset-bottom)+10rem)]">
       <SEO 
         title={`${room.title} - Discussion Room`}
         description={room.description || "Join this discussion room on CineCraft Connect."}
       />
-      <div className="max-w-4xl mx-auto px-4 md:px-8">
+      <div className="max-w-[1152px] mx-auto px-4 md:px-8">
         <BackButton className="mb-6" to="/discussion-rooms" />
 
         <div className="glass-card p-6 md:p-10 space-y-8">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary" className="capitalize px-4 py-1 text-sm font-medium">
                   {room.room_categories?.name || 'General'}
                 </Badge>
-                <Badge variant={isPrivate ? "destructive" : "default"} className="capitalize px-4 py-1 text-sm font-medium flex items-center gap-1">
+                <Badge variant={isPrivate ? "secondary" : "default"} className="capitalize px-4 py-1 text-sm font-medium flex items-center gap-1">
                   {isPrivate ? <Lock size={12} /> : <Globe size={12} />}
-                  {room.room_type} Room
+                  {room.room_type === 'public' ? 'Public room' : room.room_type === 'private' ? 'Private room' : room.room_type === 'secret' ? 'Secret room' : `${room.room_type} room`}
                 </Badge>
               </div>
-              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-gradient leading-tight">
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gradient leading-tight min-w-0 break-words line-clamp-3" title={room.title}>
                 {room.title}
               </h1>
             </div>
             
             <div className="flex flex-wrap gap-3">
-              <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
-                <Share2 className="h-4 w-4" />
+              <Button aria-label="Share" variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                <ShareIcon className="h-4 w-4" />
               </Button>
               {isMember ? (
                 <Button 
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 active:scale-[0.97] transition-[transform,background-color] duration-150"
                   onClick={() => push(`/discussion-rooms/${room.id}/chat`)}
                 >
                   <MessageSquare className="mr-2 h-4 w-4" />
@@ -232,14 +236,18 @@ const DiscussionRoomDetailPage = () => {
                 <Button disabled variant="outline" className="rounded-xl border-border/50">
                   Request Pending
                 </Button>
+              ) : isPrivate && isFan ? (
+                <Button disabled variant="outline" className="rounded-xl border-border/50" title="Fan accounts cannot join private rooms">
+                  Private room
+                </Button>
               ) : (
                 <Button 
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 active:scale-[0.97] transition-[transform,background-color] duration-150"
                   disabled={isSubmitting}
                   onClick={handleJoinOrCreateRequest}
                 >
                   <UserPlus className="mr-2 h-4 w-4" />
-                  {isPrivate ? 'Request to Join' : 'Enter Discussion'}
+                  {isPrivate ? 'Request to Join' : !user ? 'Sign in to join' : 'Enter Discussion'}
                 </Button>
               )}
             </div>
@@ -254,7 +262,7 @@ const DiscussionRoomDetailPage = () => {
                   <MessageSquare className="h-5 w-5 text-primary" />
                   About the Discussion Room
                 </h3>
-                <p className="text-muted-foreground leading-relaxed">
+                <p className="text-muted-foreground leading-relaxed whitespace-pre-line break-words">
                   {room.description || 'No description provided.'}
                 </p>
               </section>
@@ -268,7 +276,7 @@ const DiscussionRoomDetailPage = () => {
                   <div className="p-2 rounded-full bg-primary/10">
                     <Users className="h-4 w-4 text-primary" />
                   </div>
-                  <span>{room.member_count} Members participating</span>
+                  <span>{new Intl.NumberFormat().format(room.member_count)} {room.member_count === 1 ? 'Member' : 'Members'} participating</span>
                 </div>
 
                 <div className="flex items-center gap-3 text-muted-foreground">

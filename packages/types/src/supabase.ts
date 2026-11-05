@@ -2510,7 +2510,6 @@ export type Database = {
           account_type: string | null
           avatar_url: string | null
           bio: string | null
-          cover_image_url: string | null
           craft: string | null
           encrypted_private_key: string | null
           experience: string | null
@@ -2546,7 +2545,6 @@ export type Database = {
           account_type?: string | null
           avatar_url?: string | null
           bio?: string | null
-          cover_image_url?: string | null
           craft?: string | null
           encrypted_private_key?: string | null
           experience?: string | null
@@ -2582,7 +2580,6 @@ export type Database = {
           account_type?: string | null
           avatar_url?: string | null
           bio?: string | null
-          cover_image_url?: string | null
           craft?: string | null
           encrypted_private_key?: string | null
           experience?: string | null

@@ -205,7 +205,7 @@ export const NDAContractsModal = ({
                                 <div className="text-xs text-muted-foreground space-y-1">
                                     <p><strong>Signee:</strong> {signature}</p>
                                     <p><strong>Timestamp:</strong> {signedTime}</p>
-                                    <p className="font-mono text-[10px]"><strong>Receipt ID:</strong> {tamperHash}</p>
+                                    <p className="text-[12px]"><strong>Receipt ID:</strong> {tamperHash}</p>
                                 </div>
                                 <div className="flex gap-2 pt-2">
                                     <Button size="sm" variant="outline" className="text-xs gap-1.5" onClick={handleDownloadHTML}>

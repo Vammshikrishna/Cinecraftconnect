@@ -204,6 +204,25 @@ export const useProjectTasks = (projectId: string) => {
     },
   });
 
+  // ── Delete task ─────────────────────────────────────────────────────────
+  const deleteTask = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('tasks' as any).delete().eq('id', id);
+      if (error) throw error;
+      return id;
+    },
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ProjectTask[]>(queryKey);
+      queryClient.setQueryData<ProjectTask[]>(queryKey, (prev = []) => prev.filter((t) => t.id !== id));
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous !== undefined) queryClient.setQueryData(queryKey, context.previous);
+      toast({ title: 'Error', description: 'Could not delete task', variant: 'destructive' });
+    },
+  });
+
   return {
     tasks: query.data ?? [],
     isLoading: query.isLoading,
@@ -211,5 +230,6 @@ export const useProjectTasks = (projectId: string) => {
     error: query.error,
     addTask,
     toggleTask,
+    deleteTask,
   };
 };

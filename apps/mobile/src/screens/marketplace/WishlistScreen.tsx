@@ -14,15 +14,21 @@ import {
   Share,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
+import { TabletColumn } from '../../components/common/TabletContainer';
+import { useResponsive } from '../../hooks/useResponsive';
+import { isTabletDevice } from '../../utils/pageType';
 const FlashListAny = FlashList as any;
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { Card } from '../../components/Card';
 import { CardSkeleton } from '../../components/common/Skeleton';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
+import { useUserSettings } from '../../hooks/useUserSettings';
+import { useToast } from '../../contexts/ToastContext';
 
 const ORANGE = '#FF4B33';
-const INK = '#0D0D0D';
 
 interface WishlistItemCardProps {
   item: any;
@@ -30,7 +36,9 @@ interface WishlistItemCardProps {
   onRemove: (id: string) => void;
 }
 
-const WishlistItemCard = React.memo(({ item, navigation, onRemove }: WishlistItemCardProps) => (
+const WishlistItemCard = React.memo(({ item, navigation, onRemove }: WishlistItemCardProps) => {
+  const { themeColors: T } = useUserSettings();
+  return (
   <Card
     style={styles.card}
     glass={true}
@@ -47,22 +55,34 @@ const WishlistItemCard = React.memo(({ item, navigation, onRemove }: WishlistIte
     <CachedImage uri={item.image_url} style={styles.img} resizeMode="cover" />
 
     <View style={styles.meta}>
-      <Text style={styles.title}>{item.title}</Text>
+      <Text style={[styles.title, { color: T.textPrimary }]}>{item.title}</Text>
       <Text style={styles.price}>{item.price}</Text>
       <View style={styles.locationRow}>
-        <Icon name="map-pin" size={12} color="#6B7280" />
-        <Text style={styles.loc}>{item.location}</Text>
+        <Icon name="map-pin" size={12} color={T.iconMuted} />
+        <Text style={[styles.loc, { color: T.textSecondary }]}>{item.location}</Text>
       </View>
 
-      <TouchableOpacity style={styles.removeBtn} onPress={() => onRemove(item.id)}>
+      <TouchableOpacity
+        style={styles.removeBtn}
+        onPress={() => onRemove(item.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`Remove ${item.title} from wishlist`}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
         <Icon name="x" size={12} color="#DC2626" strokeWidth={2.5} />
         <Text style={styles.removeText}>Remove from Wishlist</Text>
       </TouchableOpacity>
     </View>
   </Card>
-));
+  );
+});
 
 export const WishlistScreen = ({ navigation }: { navigation: any }) => {
+  const { showToast } = useToast();
+  const { isTablet, isLandscape } = useResponsive();
+  const { themeColors: T } = useUserSettings();
+  const [loadError, setLoadError] = useState(false);
+  const numColumns = isTablet ? (isLandscape ? 3 : 2) : 1;
   const [wishlist, setWishlist] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,14 +112,17 @@ export const WishlistScreen = ({ navigation }: { navigation: any }) => {
           id: item.id,
           listingId: item.listing_id,
           title: item.marketplace_listings?.title || 'Unknown Item',
-          price: item.marketplace_listings?.price || 'Negotiable',
+          // the listings table stores price_per_day (a number) and images (a list)
+          price: item.marketplace_listings?.price_per_day != null ? `₹${item.marketplace_listings.price_per_day}/day` : 'Price on request',
           location: item.marketplace_listings?.location || 'Unknown Location',
-          image_url: item.marketplace_listings?.image_url || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=800&auto=format&fit=crop&q=80',
+          image_url: item.marketplace_listings?.images?.[0] || null,
         }));
         setWishlist(enriched);
       }
+      setLoadError(false);
     } catch (e: any) {
       console.warn('[Wishlist] Fetch error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -130,11 +153,12 @@ export const WishlistScreen = ({ navigation }: { navigation: any }) => {
         message: `Check out my CineCraft gear wishlist: https://cinecraftconnect.com/marketplace/wishlist/shared/${token}`,
       });
     } catch (e: any) {
-      Alert.alert('Could not share', e?.message || 'Please try again.');
+      Alert.alert('Could not share', friendlyError(e, 'Please try again.'));
     }
   }, []);
 
   const handleRemove = useCallback(async (id: string) => {
+    const removed = wishlist.find((w) => w.id === id);
     try {
       const supabase = getSupabaseClient();
       const { error } = await supabase
@@ -145,41 +169,68 @@ export const WishlistScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
 
       setWishlist((prev) => prev.filter((item) => item.id !== id));
-      Alert.alert('Success', 'Item removed from wishlist.');
+      showToast({
+        type: 'success',
+        message: 'Removed from wishlist',
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onPress: async () => {
+            try {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user || !removed) return;
+              const { error: undoError } = await (supabase.from('marketplace_wishlists' as any) as any)
+                .insert({ listing_id: removed.listingId, user_id: user.id });
+              if (undoError) throw undoError;
+              fetchWishlist();
+            } catch (undoErr: any) {
+              Alert.alert('Error', friendlyError(undoErr, 'Could not restore the item.'));
+            }
+          },
+        },
+      });
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not remove item.');
+      Alert.alert('Error', friendlyError(e, 'Could not remove item.'));
     }
-  }, []);
+  }, [showToast, wishlist, fetchWishlist]);
 
   const renderItem = useCallback(({ item }: { item: any }) => (
-    <WishlistItemCard
-      item={item}
-      navigation={navigation}
-      onRemove={handleRemove}
-    />
-  ), [navigation, handleRemove]);
+    <View style={isTablet ? { paddingHorizontal: 6 } : undefined}>
+      <WishlistItemCard
+        item={item}
+        navigation={navigation}
+        onRemove={handleRemove}
+      />
+    </View>
+  ), [navigation, handleRemove, isTablet]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: T.bgScreen }]}>
       <Header
         title="Saved Gear & Wishlist"
         showLogo={false}
         onBack={() => navigation.goBack()}
         rightAction={
-          <TouchableOpacity onPress={handleShareWishlist} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Icon name="share" size={18} color={INK} />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" onPress={handleShareWishlist} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Icon name="share" size={18} color={T.textPrimary} />
           </TouchableOpacity>
         }
       />
+      <TabletColumn maxWidth="content">
 
       {loading ? (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           <CardSkeleton />
           <CardSkeleton />
           <CardSkeleton />
         </ScrollView>
+      ) : loadError && wishlist.length === 0 ? (
+        <LoadErrorState onRetry={() => { setLoading(true); setLoadError(false); fetchWishlist(); }} />
       ) : (
         <FlashListAny
+          key={`wishlist-${numColumns}`}
+          numColumns={numColumns}
+          showsVerticalScrollIndicator={false}
           data={wishlist}
           renderItem={renderItem}
           keyExtractor={(item: any) => item.id}
@@ -195,13 +246,14 @@ export const WishlistScreen = ({ navigation }: { navigation: any }) => {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Icon name="bookmark" size={32} color="#9CA3AF" />
-              <Text style={styles.emptyTitle}>Your Wishlist is Empty</Text>
-              <Text style={styles.emptySub}>Bookmark gear packages and locations from the Marketplace.</Text>
+              <Icon name="bookmark" size={32} color={T.iconMuted} />
+              <Text style={[styles.emptyTitle, { color: T.textPrimary }]}>Your Wishlist is Empty</Text>
+              <Text style={[styles.emptySub, { color: T.textSecondary }]}>Bookmark gear packages and locations from the Marketplace.</Text>
             </View>
           }
         />
       )}
+      </TabletColumn>
     </View>
   );
 };
@@ -217,14 +269,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   list: {
-    padding: 14,
+    padding: isTabletDevice ? 20 : 14,
+    paddingBottom: 72,
   },
   card: {
     marginBottom: 12,
   },
   img: {
     width: '100%',
-    height: 160,
+    ...(isTabletDevice ? { aspectRatio: 16 / 10 } : { height: 160 }),
     backgroundColor: '#0D0D0D',
   },
   meta: {
@@ -232,14 +285,14 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#0D0D0D',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 17 : 16,
+    fontWeight: '700',
     marginBottom: 4,
   },
   price: {
     color: '#10B981',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 6,
   },
   locationRow: {
@@ -249,17 +302,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   loc: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 12,
   },
   removeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    minHeight: 36,
+    marginTop: 4,
   },
   removeText: {
     color: '#DC2626',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   empty: {
@@ -271,10 +326,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: '#0D0D0D',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptySub: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 12,
     textAlign: 'center',
     maxWidth: 240,

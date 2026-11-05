@@ -50,13 +50,13 @@ export const PipelineBoard = ({ applications, onOpen, onMove }: Props) => {
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/50">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.color }} />
-                <h4 className="text-[11px] font-black uppercase tracking-widest">{stage.label}</h4>
+                <h4 className="text-[12px] font-black uppercase tracking-widest">{stage.label}</h4>
               </div>
               <span className="text-xs font-bold rounded-full px-2 py-0.5" style={{ color: stage.color, backgroundColor: stage.tint }}>{items.length}</span>
             </div>
 
             <div className="p-2 space-y-2 overflow-y-auto">
-              {items.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-6">Drop candidates here</p>}
+              {items.length === 0 && <p className="text-[12px] text-muted-foreground text-center py-6">Drop candidates here</p>}
               {items.map((a) => {
                 const name = a.applicant?.full_name || a.applicant?.username || 'Applicant';
                 const nextInterview = a.interviews.find((i) => (i.status === 'proposed' || i.status === 'confirmed') && new Date(i.scheduled_at) > new Date());
@@ -73,9 +73,16 @@ export const PipelineBoard = ({ applications, onOpen, onMove }: Props) => {
                       setDragId(null);
                       setOverStage(null);
                     }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${name}`}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(a); }
+                    }}
                     onClick={() => onOpen(a)}
                     className={cn(
-                      'rounded-xl bg-card border border-border/60 p-3 cursor-pointer hover:border-primary/50 hover:shadow-md transition-all',
+                      'rounded-xl bg-card border border-border/60 p-3 cursor-pointer hover:border-primary/50 hover:shadow-md transition-[border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       dragId === a.id && 'opacity-40'
                     )}
                   >
@@ -86,11 +93,11 @@ export const PipelineBoard = ({ applications, onOpen, onMove }: Props) => {
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold truncate leading-tight">{name}</p>
-                        <p className="text-[11px] text-muted-foreground truncate">{a.applicant?.craft || a.applicant?.location || 'No details'}</p>
+                        <p className="text-[12px] text-muted-foreground truncate">{a.applicant?.craft || a.applicant?.location || 'No details'}</p>
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button onClick={(e) => e.stopPropagation()} className="p-1 rounded-md hover:bg-muted text-muted-foreground" aria-label="Move candidate">
+                          <button onClick={(e) => e.stopPropagation()} className="-m-2 grid h-11 w-11 shrink-0 place-items-center rounded-md hover:bg-muted text-muted-foreground" aria-label="Move candidate">
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
                         </DropdownMenuTrigger>
@@ -113,12 +120,12 @@ export const PipelineBoard = ({ applications, onOpen, onMove }: Props) => {
                     </div>
 
                     {nextInterview && (
-                      <p className="flex items-center gap-1 text-[10px] font-bold text-blue-500 mt-2">
+                      <p className="flex items-center gap-1 text-[12px] font-bold text-blue-500 mt-2">
                         <CalendarClock className="w-3 h-3" /> {new Date(nextInterview.scheduled_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
                         {nextInterview.status === 'proposed' ? ' · awaiting' : ' · confirmed'}
                       </p>
                     )}
-                    <p className="text-[10px] text-muted-foreground mt-1.5">{formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}</p>
+                    <p className="text-[12px] text-muted-foreground mt-1.5">{formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}</p>
                   </div>
                 );
               })}

@@ -7,9 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, Edit, Trash2, Loader2, Calendar, Briefcase, Sparkles } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { friendlyError } from '@cinecraft/core';
 
 interface Experience {
   id: number;
@@ -50,9 +52,14 @@ const ExperienceForm = ({ experience, onSave, onCancel }: { experience?: Experie
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
 
     const dataToSubmit = { ...formData, end_date: isCurrent ? null : formData.end_date };
+    // a job cannot end before it started (the browser date inputs allow it)
+    if (dataToSubmit.end_date && dataToSubmit.start_date && dataToSubmit.end_date < dataToSubmit.start_date) {
+      toast({ title: 'Check the dates', description: 'The end date cannot be before the start date.', variant: 'destructive' });
+      return;
+    }
+    setIsSubmitting(true);
 
     const { data, error } = await (supabase
       .from('user_experience' as any)
@@ -61,7 +68,7 @@ const ExperienceForm = ({ experience, onSave, onCancel }: { experience?: Experie
       .single() as any);
 
     if (error) {
-      toast({ title: 'Error saving experience', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error saving experience', description: friendlyError(error), variant: 'destructive' });
     } else if (data) {
       onSave(data);
       toast({ title: `Experience ${experience ? 'updated' : 'added'}`, description: 'Your profile is now up-to-date.' });
@@ -159,6 +166,7 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedExperience, setSelectedExperience] = useState<Experience | undefined>(undefined);
   const { toast } = useToast();
+  const [deleteCandidate, setDeleteCandidate] = useState<Experience | null>(null);
 
   const fetchExperience = useCallback(async () => {
     setLoading(true);
@@ -168,7 +176,7 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
       .eq('user_id', userId)
       .order('start_date', { ascending: false }) as any);
     
-    if (error) toast({ title: 'Error fetching experience', description: error.message, variant: 'destructive' });
+    if (error) toast({ title: 'Error fetching experience', description: friendlyError(error), variant: 'destructive' });
     else setExperiences(data || []);
     setLoading(false);
   }, [userId, toast]);
@@ -193,7 +201,7 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
 
     if (error) {
       setExperiences(originalExperiences);
-      toast({ title: 'Error deleting experience', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error deleting experience', description: friendlyError(error), variant: 'destructive' });
     } else {
       toast({ title: 'Experience Deleted', description: 'Your experience has been removed.' });
     }
@@ -202,10 +210,10 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
       <div className="space-y-8 relative before:absolute before:inset-0 before:left-3.5 before:bg-white/[0.03] before:w-[2px] before:rounded">
           {[...Array(2)].map((_, i) => (
               <div key={i} className="relative pl-10">
-                  <div className="absolute left-1.5 top-1.5 h-6 w-6 rounded-full border border-white/5 bg-card flex items-center justify-center shadow-sm z-10 animate-pulse">
+                  <div className="absolute left-1.5 top-1.5 h-6 w-6 rounded-full border border-white/5 bg-card flex items-center justify-center shadow-sm z-10">
                     <div className="h-2 w-2 rounded-full bg-gray-600"></div>
                   </div>
-                  <div className="bg-white/[0.01] border border-white/[0.03] rounded-xl p-5 space-y-3">
+                  <div className="bg-foreground/[0.01] border border-foreground/[0.03] rounded-xl p-5 space-y-3">
                       <div className="h-6 w-2/5 bg-gray-800 rounded animate-pulse"></div>
                       <div className="h-4 w-1/4 bg-gray-800 rounded animate-pulse"></div>
                       <div className="h-3 w-1/5 bg-gray-800 rounded animate-pulse"></div>
@@ -216,8 +224,8 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
   );
 
   return (
-    <Card className="glass-card overflow-hidden border border-white/10 shadow-xl bg-background/30 backdrop-blur-md">
-      <CardHeader className="border-b border-white/[0.05] bg-white/[0.01] px-6 py-4 flex flex-row items-center justify-between">
+    <Card className="glass-card overflow-hidden border border-white/10 shadow-xl bg-background/30">
+      <CardHeader className="border-b border-foreground/[0.05] bg-foreground/[0.01] px-6 py-4 flex flex-row items-center justify-between">
         <div className="flex items-center gap-2">
           <Briefcase className="h-5 w-5 text-primary" />
           <CardTitle className="text-xl font-bold tracking-tight text-foreground">Experience</CardTitle>
@@ -228,12 +236,12 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
               <Button 
                 variant="outline" 
                 onClick={() => setSelectedExperience(undefined)}
-                className="border-white/10 hover:bg-white/5 text-foreground font-semibold rounded-lg px-4 h-9 transition-all"
+                className="border-foreground/10 hover:bg-foreground/5 text-foreground font-semibold rounded-lg px-4 h-10 md:h-9 transition"
               >
                 <Plus size={16} className="mr-2 text-primary" /> Add
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg bg-card/95 border border-white/10 backdrop-blur-lg">
+            <DialogContent className="sm:max-w-lg bg-card/95 border border-white/10">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold text-foreground">
                   {selectedExperience ? 'Edit' : 'Add'} Experience
@@ -251,14 +259,14 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
           <div className="space-y-8 relative before:absolute before:inset-0 before:left-3.5 before:bg-white/[0.06] before:w-[2px] before:rounded">
             {experiences.length > 0 ? (
               experiences.map(exp => (
-                <div key={exp.id} className="relative pl-10 group transition-all duration-300">
+                <div key={exp.id} className="relative pl-10 group transition duration-300">
                   {/* Timeline point indicator */}
-                  <div className="absolute left-1.5 top-1.5 h-6 w-6 rounded-full border border-white/10 bg-card flex items-center justify-center group-hover:border-primary/50 transition-all duration-300 shadow-sm z-10">
+                  <div className="absolute left-1.5 top-1.5 h-6 w-6 rounded-full border border-white/10 bg-card flex items-center justify-center group-hover:border-primary/50 transition duration-300 shadow-sm z-10">
                     <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
                   </div>
                   
                   {/* Item card */}
-                  <div className="bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 hover:border-white/10 rounded-xl p-5 transition-all duration-300 shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.15)]">
+                  <div className="bg-foreground/[0.02] hover:bg-foreground/[0.04] border border-foreground/5 hover:border-foreground/10 rounded-xl p-5 transition duration-300 shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.15)]">
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                       <div className="space-y-1">
                         <h4 className="font-extrabold text-lg sm:text-xl text-foreground group-hover:text-primary transition-colors duration-300 leading-snug">
@@ -267,7 +275,7 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
                         <p className="text-primary font-bold text-sm tracking-wide uppercase">
                           {exp.company}
                         </p>
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/5 rounded-md text-xs text-muted-foreground border border-white/5 mt-2">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-foreground/5 rounded-md text-xs text-muted-foreground border border-foreground/5 mt-2">
                           <Calendar className="h-3.5 w-3.5 text-primary/70" />
                           <span>
                             {new Date(exp.start_date).toLocaleString('default', { month: 'short', year: 'numeric' })} - {exp.end_date ? new Date(exp.end_date).toLocaleString('default', { month: 'short', year: 'numeric' }) : 'Present'}
@@ -276,20 +284,20 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
                       </div>
                       
                       {isOwner && (
-                        <div className="flex gap-1.5 self-end sm:self-start bg-white/5 p-1 rounded-lg border border-white/5 shrink-0 opacity-80 hover:opacity-100 transition-opacity">
-                          <Button 
+                        <div className="flex gap-1.5 self-end sm:self-start bg-foreground/5 p-1 rounded-lg border border-foreground/5 shrink-0 opacity-80 hover:opacity-100 transition-opacity">
+                          <Button aria-label="Edit" 
                             variant="ghost" 
                             size="icon" 
-                            className="h-8 w-8 rounded hover:bg-white/10 hover:text-foreground text-muted-foreground/80 transition-all"
+                            className="h-8 w-8 rounded hover:bg-foreground/10 hover:text-foreground text-muted-foreground/80 transition"
                             onClick={() => { setSelectedExperience(exp); setIsModalOpen(true); }}
                           >
                             <Edit size={14} />
                           </Button>
-                          <Button 
+                          <Button aria-label="Delete" 
                             variant="ghost" 
                             size="icon" 
-                            className="h-8 w-8 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/80 transition-all"
-                            onClick={() => handleDelete(exp.id)}
+                            className="h-8 w-8 rounded hover:bg-destructive/20 hover:text-destructive text-muted-foreground/80 transition"
+                            onClick={() => setDeleteCandidate(exp)}
                           >
                             <Trash2 size={14} />
                           </Button>
@@ -297,7 +305,7 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
                       )}
                     </div>
                     {exp.description && (
-                      <p className="mt-4 text-sm leading-relaxed text-muted-foreground/90 whitespace-pre-line bg-white/[0.01] p-3 rounded-lg border border-white/[0.02]">
+                      <p className="mt-4 text-sm leading-relaxed text-muted-foreground/90 whitespace-pre-line bg-foreground/[0.01] p-3 rounded-lg border border-foreground/[0.02]">
                         {exp.description}
                       </p>
                     )}
@@ -305,9 +313,9 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
                 </div>
               ))
             ) : (
-              <div className="text-center py-12 px-4 bg-white/[0.01] border border-white/[0.05] rounded-2xl w-full">
+              <div className="text-center py-12 px-4 bg-foreground/[0.01] border border-foreground/[0.05] rounded-2xl w-full">
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 border border-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]">
-                  <Briefcase className="h-6 w-6 text-primary animate-pulse" />
+                  <Briefcase className="h-6 w-6 text-primary" />
                 </div>
                 <h3 className="text-lg font-bold text-foreground mb-1">No Experience Listed</h3>
                 <p className="text-muted-foreground text-sm max-w-xs mx-auto mb-6">
@@ -316,7 +324,7 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
                 {isOwner && (
                   <Button 
                     onClick={() => { setSelectedExperience(undefined); setIsModalOpen(true); }} 
-                    className="bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg px-6 h-9 transition-all shadow-[0_4px_12px_rgba(var(--primary),0.2)]"
+                    className="bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg px-6 h-10 md:h-9 transition shadow-[0_4px_12px_rgba(var(--primary),0.2)]"
                   >
                     <Plus className="mr-2 h-4 w-4" /> Add Experience
                   </Button>
@@ -326,6 +334,20 @@ const Experience = ({ userId, isOwner }: { userId: string, isOwner: boolean }) =
           </div>
         )}
       </CardContent>
+      <AlertDialog open={!!deleteCandidate} onOpenChange={(o) => { if (!o) setDeleteCandidate(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this experience?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteCandidate ? `"${deleteCandidate.title}" will be removed from your profile.` : ''} This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (deleteCandidate) void handleDelete(deleteCandidate.id); setDeleteCandidate(null); }}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };

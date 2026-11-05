@@ -1,3 +1,9 @@
+import { findActiveCall, SpeakingMode } from '../../services/liveCall';
+import { InlineCallPanel } from '../../components/calls/InlineCallPanel';
+import { beginCallSession } from '../../services/callSession';
+import { CallDetailsModal } from '../../components/calls/CallDetailsModal';
+import { ProjectInviteCard } from '../../components/projects/ProjectInviteCard';
+import { ProjectSchedulePhases } from '../../components/projects/ProjectSchedulePhases';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -28,6 +34,7 @@ import { pickAttachments } from '../../services/attachmentPicker';
 import DocumentPicker from 'react-native-document-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
 const FlashListAny = FlashList as any;
 import { Icon } from '../../components/common/Icon';
 import { Card } from '../../components/Card';
@@ -37,11 +44,13 @@ import { ENV } from '../../config/env';
 import { getCache, saveCache, getCacheSync, getCurrentUserIdSync, resolveCurrentUserId, setCachedCurrentUserId } from '../../services/offlineCache';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useGroupEncryption } from '../../hooks/useGroupEncryption';
-import { ShareCard, ShareCardData } from '../../components/chat/ShareCard';
+import { ShareCard, ShareCardData, normalizeShareCardData } from '../../components/chat/ShareCard';
 import LinearGradient from 'react-native-linear-gradient';
 import { useGlobalCall } from '../../contexts/CallContext';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useAccountType } from '../../hooks/useAccountType';
+import { LinkifiedText } from '../../components/chat/LinkifiedText';
+import { FAN_CALL_TOOLTIP, fanCallErrorMessage } from '../../utils/fanCallRule';
 import { useAppRole } from '../../hooks/useAppRole';
 import { CachedImage } from '../../components/common/CachedImage';
 import { MediaCollageGrid } from '../../components/chat/MediaCollageGrid';
@@ -49,10 +58,32 @@ import { getReplyThumbnail, getReplySnippet } from '../../components/chat/chatUt
 import { setActiveChatContext, clearActiveChatContext } from '../../services/activeScreenTracker';
 import { handleSmartBack } from '../../services/navigationUtils';
 import { uploadMediaPipeline } from '../../services/mediaPipeline';
+import { requestE2EEPrompt } from '../../services/e2eeState';
+import { E2EEBanner } from '../../components/security/E2EEBanner';
+import { StaffAccessGuard, useStaffObserver } from '../../components/governance/StaffAccessGuard';
+import { isTabletDevice } from '../../utils/pageType';
+import { isSpaceCreator } from '../../utils/spaceRoles';
+import { Toast } from '../../contexts/ToastContext';
+import { canEditMessage, checkEditedText, editMinutesLeft } from '../../utils/roomMessageEdit';
+
+/** supabase.channel(name) returns the SAME already-subscribed channel when the name exists (e.g. a deep link re-renders the
+ *  screen before cleanup), and adding postgres_changes callbacks to it throws. Drop any stale channel with that name first. */
+const freshTopic = (name: string): string => {
+  try {
+    const sb: any = getSupabaseClient();
+    (sb.getChannels?.() || []).filter((c: any) => c?.topic === `realtime:${name}`).forEach((c: any) => { try { sb.removeChannel(c); } catch { } });
+  } catch { }
+  return name;
+};
 
 const ORANGE = '#FF4B33';
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// On a tablet a chat bubble is capped so lines stay readable; on a phone it keeps its share of the screen.
+const BUBBLE_CAP_PX: number | null = (() => {
+  const w = Dimensions.get('screen'); // the device, not the window (an iPad window can be resized)
+  return Math.min(w.width, w.height) >= 600 ? 620 : null;
+})();
+
 
 const EMOJI_CATEGORIES = [
   {
@@ -259,7 +290,7 @@ const SwipeableMessage = React.memo<SwipeableMessageProps>(({
           onLongPress={onLongPress}
           delayLongPress={280}
           style={{
-            maxWidth: '82%',
+            maxWidth: BUBBLE_CAP_PX ?? '82%',
             alignSelf: isOwn ? 'flex-end' : 'flex-start',
           }}
         >
@@ -289,7 +320,7 @@ const parseShareData = (
     { prefix: 'COMPANY_SHARE::', type: 'company' },
     { prefix: 'DISCUSSION_SHARE::', type: 'room' },
     { prefix: 'ROOM_SHARE::', type: 'room' },
-    { prefix: 'CONTENT_SHARE::', type: 'post' },
+    { prefix: 'CONTENT_SHARE::', type: 'content' },
   ];
 
   for (const item of prefixes) {
@@ -338,7 +369,10 @@ const parseShareData = (
           logoUrl: rawData.logoUrl,
           category: rawData.category,
         };
-        return { isShare: true, data: mappedData, caption: caption || undefined };
+        if (item.type === 'content' && (rawData.type === 'movie' || rawData.type === 'tv')) (mappedData as any).mediaType = rawData.type;
+        let finalData: ShareCardData = mappedData;
+        try { finalData = normalizeShareCardData({ ...rawData, ...mappedData }); } catch { /* keep the mapped data */ }
+        return { isShare: true, data: finalData, caption: caption || undefined };
       } catch (err) {
         console.warn('Failed to parse share data:', err);
       }
@@ -375,6 +409,13 @@ const formatTime = (iso: string | Date) => {
   if (!iso) return '';
   const date = typeof iso === 'string' ? new Date(iso) : iso;
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
+/** True for a real calendar date written YYYY-MM-DD. */
+const isIsoDate = (v: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 };
 
 const isValidUUID = (str?: string | null): boolean => {
@@ -438,6 +479,8 @@ interface ProjectMessageRowProps {
   isDark: boolean;
   navigation: any;
   stTitle?: string;
+  /** Tapping a call event opens its details (who started it, who joined), like the web. */
+  onCallDetails?: (message: any) => void;
   projectTitle?: string;
   resolvedSpaceId?: string;
   projectId?: string;
@@ -473,6 +516,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
   isDark,
   navigation,
   stTitle,
+  onCallDetails,
   projectTitle,
   resolvedSpaceId,
   projectId,
@@ -536,7 +580,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
         <View style={{ flex: 1, marginRight: repThumb ? 8 : 0 }}>
           <Text
             style={{
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: '700',
               color: isMe ? '#FFFFFF' : ORANGE,
               marginBottom: 2,
@@ -547,7 +591,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
           </Text>
           <Text
             style={{
-              fontSize: 11.5,
+              fontSize: 12,
               color: isMe ? 'rgba(255, 255, 255, 0.9)' : themeColors.textSecondary,
             }}
             numberOfLines={2}
@@ -597,19 +641,9 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
         <View style={styles.callEventRow}>
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => {
-              const spaceId = resolvedSpaceId || projectId;
-              if (!spaceId) {
-                Alert.alert('Not Ready', 'Project space is still loading. Please try again.');
-                return;
-              }
-              navigation.navigate('Call', {
-                roomId: spaceId,
-                roomName: stTitle || projectTitle || 'Project Space',
-                roomType: 'project',
-                isVideo: true,
-              });
-            }}
+            onPress={() => onCallDetails?.(item)}
+            accessibilityRole="button"
+            accessibilityLabel="Call details"
             style={[styles.callEventPill, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
           >
             <View
@@ -633,28 +667,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
             <Text style={[styles.callEventText, { color: themeColors.textPrimary }]}>
               {(item.content || '').replace('CALL::', '').replace(/^📞\s*/, '')}
             </Text>
-            <Text style={[styles.callEventTime, { color: themeColors.textMuted }]}>{formatTime(messageDate)}</Text>
-            <View
-              style={[
-                styles.callActionBadge,
-                item.content?.includes('started') || item.content?.includes('Video call started')
-                  ? styles.callJoinBadge
-                  : [styles.callBackBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9' }],
-              ]}
-            >
-              <Text
-                style={[
-                  styles.callActionText,
-                  item.content?.includes('started') || item.content?.includes('Video call started')
-                    ? styles.callJoinText
-                    : [styles.callBackText, { color: themeColors.textSecondary }],
-                ]}
-              >
-                {item.content?.includes('started') || item.content?.includes('Video call started')
-                  ? 'Join'
-                  : 'Call'}
-              </Text>
-            </View>
+            <Text style={[styles.callEventTime, { color: themeColors.textMuted }]}>{formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}</Text>
           </TouchableOpacity>
         </View>
       ) : isOwn ? (
@@ -704,7 +717,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                             <View style={styles.floatingMetaContent}>
                               {isStarred && <Icon name="star" size={10} color="#FBBF24" fill="#FBBF24" />}
                               <Text style={styles.floatingMetaTimeText}>
-                                {formatTime(messageDate)}
+                                {formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}
                               </Text>
                             </View>
                           ) : undefined
@@ -723,7 +736,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                       <View style={[styles.msgMetaMe, { alignSelf: 'flex-end', marginTop: 4 }]}>
                         {isStarred && <Icon name="star" size={10} color="#FBBF24" fill="#FBBF24" />}
                         <Text style={[styles.msgTimeMe, { color: '#9CA3AF' }]}>
-                          {formatTime(messageDate)}
+                          {formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}
                         </Text>
                       </View>
                     </View>
@@ -735,10 +748,10 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                         { backgroundColor: ORANGE, marginTop: 4 },
                       ]}
                     >
-                      <Text style={styles.msgTextMe}>{rawContent}</Text>
+                      <Text style={styles.msgTextMe}><LinkifiedText text={String(rawContent ?? '')} /></Text>
                       <View style={[styles.msgMetaMe, { alignSelf: 'flex-end', marginTop: 4 }]}>
                         {isStarred && <Icon name="star" size={10} color="#FBBF24" fill="#FBBF24" />}
-                        <Text style={styles.msgTimeMe}>{formatTime(messageDate)}</Text>
+                        <Text style={styles.msgTimeMe}>{formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}</Text>
                       </View>
                     </View>
                   )}
@@ -752,11 +765,11 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                 >
                   {replyMsg && renderProjectReplyQuoteBlock(replyMsg, true)}
                   <View style={styles.msgContentRowMe}>
-                    <Text style={styles.msgTextMe}>{rawContent}</Text>
+                    <Text style={styles.msgTextMe}><LinkifiedText text={String(rawContent ?? '')} /></Text>
                     <View style={styles.msgMetaMe}>
                       {isStarred && <Icon name="star" size={10} color="#FBBF24" fill="#FBBF24" />}
                       <Text style={styles.msgTimeMe}>
-                        {formatTime(messageDate)}
+                        {formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}
                       </Text>
                     </View>
                   </View>
@@ -883,7 +896,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                       {senderName}
                     </Text>
                     {Boolean(senderCraft) && (
-                      <Text style={{ fontSize: 10, color: themeColors.textMuted, marginLeft: 6 }}>
+                      <Text style={{ fontSize: 12, color: themeColors.textMuted, marginLeft: 6 }}>
                         • {senderCraft}
                       </Text>
                     )}
@@ -902,7 +915,7 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                             <View style={styles.floatingMetaContent}>
                               {isStarred && <Icon name="star" size={10} color="#F59E0B" fill="#F59E0B" />}
                               <Text style={styles.floatingMetaTimeText}>
-                                {formatTime(messageDate)}
+                                {formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}
                               </Text>
                             </View>
                           ) : undefined
@@ -927,10 +940,10 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                         { backgroundColor: themeColors.bgCard, borderColor: themeColors.border, marginTop: 4 },
                       ]}
                     >
-                      <Text style={[styles.msgTextOther, { color: themeColors.textPrimary }]}>{rawContent}</Text>
+                      <Text style={[styles.msgTextOther, { color: themeColors.textPrimary }]}><LinkifiedText text={String(rawContent ?? '')} /></Text>
                       <View style={[styles.msgMetaOther, { alignSelf: 'flex-end', marginTop: 4 }]}>
                         {isStarred && <Icon name="star" size={10} color="#F59E0B" fill="#F59E0B" />}
-                        <Text style={[styles.msgTimeOther, { color: themeColors.textMuted }]}>{formatTime(messageDate)}</Text>
+                        <Text style={[styles.msgTimeOther, { color: themeColors.textMuted }]}>{formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}</Text>
                       </View>
                     </View>
                   )}
@@ -950,26 +963,26 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
                           {senderName}
                         </Text>
                         {Boolean(senderCraft) && (
-                          <Text style={{ fontSize: 9.5, color: themeColors.textMuted, marginTop: 1, lineHeight: 12 }}>
+                          <Text style={{ fontSize: 12, color: themeColors.textMuted, marginTop: 1, lineHeight: 12 }}>
                             {senderCraft}
                           </Text>
                         )}
                       </View>
-                      <TouchableOpacity
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand"
                         onPress={() => onLongPress(item)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         style={{ opacity: 0.65, paddingTop: 1 }}
                       >
-                        <Icon name="chevron-down" size={13} color={themeColors.textSecondary} />
+                        <Icon name="chevron-down" size={13} color={themeColors.iconSecondary} />
                       </TouchableOpacity>
                     </View>
                   </View>
 
                   <View style={styles.msgContentRowOther}>
-                    <Text style={[styles.msgTextOther, { color: themeColors.textPrimary }]}>{rawContent}</Text>
+                    <Text style={[styles.msgTextOther, { color: themeColors.textPrimary }]}><LinkifiedText text={String(rawContent ?? '')} /></Text>
                     <View style={styles.msgMetaOther}>
                       {isStarred && <Icon name="star" size={10} color="#F59E0B" fill="#F59E0B" />}
-                      <Text style={[styles.msgTimeOther, { color: themeColors.textMuted }]}>{formatTime(messageDate)}</Text>
+                      <Text style={[styles.msgTimeOther, { color: themeColors.textMuted }]}>{formatTime(messageDate)}{item.edited_at ? ' (edited)' : ''}</Text>
                     </View>
                   </View>
                 </View>
@@ -1083,10 +1096,14 @@ const ProjectMessageRow = React.memo<ProjectMessageRowProps>(({
 });
 
 // ── Main Project Space Screen ────────────────────────────────────────────────
-export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigation: any }) => {
-  const { themeColors, isDark } = useUserSettings();
+const ProjectSpaceScreenInner = ({ route, navigation }: { route: any; navigation: any }) => {
+  const { themeColors, isDark, settings } = useUserSettings();
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
+  // a staff member visiting through audited access: read only, no receipts, no calls
+  const isObserver = useStaffObserver();
+  // Staff visitors are read only (same as the web): no add, edit or delete control is shown to them on any tab.
+  const isReadOnly = isInternal || isObserver;
   const rawProjectId = route.params?.projectId || route.params?.project_id || route.params?.spaceId || route.params?.space_id || route.params?.project_space_id || route.params?.relatedId || route.params?.id;
   const rawSpaceId = route.params?.spaceId || route.params?.space_id || route.params?.project_space_id;
   const { projectTitle, projectDescription } = route.params || {};
@@ -1113,7 +1130,6 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
     | 'Team'
     | 'Call Sheet'
     | 'Shot List'
-    | 'Script Reader'
     | 'Legal Docs'
     | 'Budget'
     | 'Applicants'
@@ -1124,6 +1140,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   // Space Resolution & Auth
   const syncSpaceId = rawSpaceId || (projectId ? getCacheSync<string>(`ps_space_id_${projectId}`) : null);
   const [resolvedSpaceId, setResolvedSpaceId] = useState<string>(rawSpaceId || syncSpaceId || '');
+  const [selectedCallMessage, setSelectedCallMessage] = useState<any>(null);
   const initialUserId = getCurrentUserIdSync() || getCacheSync<any>('user_session')?.user?.id || null;
   const initialUserSession = getCacheSync<any>('user_session')?.user || (initialUserId ? { id: initialUserId } : null);
   const [currentUser, setCurrentUser] = useState<any>(() => initialUserSession);
@@ -1196,7 +1213,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   // Realtime subscription for project_space_bookmarks
   useEffect(() => {
     const channel = supabase
-      .channel(`ps_bookmark_${projectId || 'general'}`)
+      .channel(freshTopic(`ps_bookmark_${projectId || 'general'}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_space_bookmarks' }, async () => {
         const uid = currentUserId || currentUser?.id || (await resolveCurrentUserId()) || getCurrentUserIdSync();
         if (!uid) return;
@@ -1316,7 +1333,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   );
 
   // Global Call State for seamless Call/Chat switching
-  const { callState, minimizeCall, maximizeCall } = useGlobalCall();
+  const { callState, startCall, minimizeCall, maximizeCall } = useGlobalCall();
   const isInCall =
     callState.isActive &&
     (callState.roomId === resolvedSpaceId ||
@@ -1327,14 +1344,9 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   const handleSelectSubTab = useCallback(
     (tab: SubTabType) => {
       if (tab === 'Live Call') {
+        // the call opens inside the space, next to the chat (like a discussion room); it keeps running on any tab
         maximizeCall();
-        const spaceId = resolvedSpaceId || syncSpaceId || projectId;
-        navigation.navigate('Call', {
-          roomId: spaceId,
-          roomName: projectData?.title || projectTitle || 'Project Space',
-          roomType: 'project',
-          isVideo: callState.isVideo || false,
-        });
+        setActiveSubTab('Live Call');
       } else {
         if (isInCall) {
           minimizeCall();
@@ -1342,48 +1354,123 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         setActiveSubTab(tab);
       }
     },
-    [maximizeCall, minimizeCall, isInCall, resolvedSpaceId, syncSpaceId, projectId, projectData?.title, projectTitle, callState.isVideo, navigation]
+    [maximizeCall, minimizeCall, isInCall]
+  );
+
+  /** Starts (or joins) this space's call without leaving the space: it opens in the Live Call tab next to the chat. */
+  const startInlineCall = useCallback(
+    async (isVideo: boolean, mode: 'call' | 'space', speakingMode?: SpeakingMode) => {
+      const spaceId = resolvedSpaceId || syncSpaceId || projectId;
+      const roomName = projectData?.title || projectTitle || 'Project Space';
+      const asSpace = mode === 'space';
+      if (isFan && !(await findActiveCall(spaceId))) {
+        Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+        return;
+      }
+      startCall({ roomId: spaceId, roomType: 'project', roomName, isVideo: asSpace ? false : isVideo });
+      setActiveSubTab('Live Call');
+      try {
+        await beginCallSession({
+          roomType: 'project',
+          roomId: spaceId,
+          roomName,
+          isVideo: asSpace ? false : isVideo,
+          mode: asSpace ? 'audio_space' : undefined,
+          speakingMode: asSpace ? speakingMode : undefined,
+          startMuted: !!settings.call_mute_mic_on_join,
+          videoOffOnJoin: !!settings.call_video_off_on_join,
+        });
+      } catch (e: any) {
+        Alert.alert('Call could not start', fanCallErrorMessage(e) || friendlyError(e, 'Please try again.'));
+      }
+    },
+    [resolvedSpaceId, syncSpaceId, projectId, projectData?.title, projectTitle, startCall, isFan, settings.call_mute_mic_on_join, settings.call_video_off_on_join]
   );
 
   const handleCallPress = useCallback(() => {
+    if (isObserver) return;
     const spaceId = resolvedSpaceId || syncSpaceId || projectId;
     if (!spaceId) {
       Alert.alert('Not Ready', 'Project space is still loading.');
       return;
     }
-    Alert.alert(
-      `Call Crew — ${projectData?.title || projectTitle || 'Project Space'}`,
-      'Choose call mode to connect with the team:',
-      [
-        {
-          text: 'Voice Call 📞',
-          onPress: () => {
-            navigation.navigate('Call', {
-              roomId: spaceId,
-              roomName: projectData?.title || projectTitle || 'Project Space',
-              roomType: 'project',
-              isVideo: false,
-            });
+    if (callState.isActive) {
+      Alert.alert('Already in a call', 'Leave your current call before starting another one.');
+      return;
+    }
+    const roomName = projectData?.title || projectTitle || 'Project Space';
+    // One question only; every answer starts the call right here in the space.
+    void (async () => {
+      // something is already running in this space: just join it, there is nothing to choose
+      if (await findActiveCall(spaceId)) {
+        void startInlineCall(true, 'call');
+        return;
+      }
+      if (isFan) {
+        Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+        return;
+      }
+      Alert.alert(
+        `Call Crew — ${roomName}`,
+        'How do you want to talk?',
+        [
+          { text: 'Voice call', onPress: () => void startInlineCall(false, 'call') },
+          { text: 'Video call', onPress: () => void startInlineCall(true, 'call') },
+          {
+            text: 'Audio space',
+            onPress: () =>
+              Alert.alert(
+                'Who can speak?',
+                'You can change this at any time while the space is live.',
+                [
+                  { text: 'Raise hand — I approve speakers', onPress: () => void startInlineCall(false, 'space', 'request') },
+                  { text: 'Open mic — anyone can speak', onPress: () => void startInlineCall(false, 'space', 'open') },
+                  { text: 'Cancel', style: 'cancel' },
+                ]
+              ),
           },
-        },
-        {
-          text: 'Video Call 📹',
-          onPress: () => {
-            navigation.navigate('Call', {
-              roomId: spaceId,
-              roomName: projectData?.title || projectTitle || 'Project Space',
-              roomType: 'project',
-              isVideo: true,
-            });
-          },
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
-  }, [resolvedSpaceId, syncSpaceId, projectId, projectData?.title, projectTitle, navigation]);
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    })();
+  }, [resolvedSpaceId, syncSpaceId, projectId, projectData?.title, projectTitle, callState.isActive, startInlineCall, isObserver, isFan]);
+
+  // A call starting in this space lands on the Live Call tab; when it ends, go back to the chat.
+  const wasInCallRef = useRef(false);
+  useEffect(() => {
+    if (isInCall && !wasInCallRef.current) setActiveSubTab('Live Call');
+    if (!isInCall && wasInCallRef.current) setActiveSubTab((t) => (t === 'Live Call' ? 'Chat' : t));
+    wasInCallRef.current = !!isInCall;
+  }, [isInCall]);
+
+  // Leaving the space while the call runs shows the floating bubble; coming back restores it inline.
+  // true while we hand the running call to the full-screen call screen (it must not be minimised into the bubble)
+  const expandingToCallRef = useRef(false);
+  // the call bubble / the phone's PiP window asks for this space's Live Call tab
+  const openCallTabRef = useRef<any>(route.params?.openCallTab);
+  openCallTabRef.current = route.params?.openCallTab;
+  useEffect(() => {
+    if (route.params?.openCallTab) setActiveSubTab('Live Call');
+  }, [route.params?.openCallTab]);
+  const isInCallRef = useRef(!!isInCall);
+  isInCallRef.current = !!isInCall;
+  const callMinimizedRef = useRef(callState.isMinimized);
+  callMinimizedRef.current = callState.isMinimized;
+  useFocusEffect(
+    useCallback(() => {
+      const cameBackFromCallScreen = expandingToCallRef.current;
+      expandingToCallRef.current = false;
+      if (isInCallRef.current) {
+        // back from the full-screen call via its "Chat" button: the user wants the chat, not the call tab
+        // (but coming from the call bubble / the phone's PiP window, the user wants the Live Call tab)
+        if (!openCallTabRef.current && (callMinimizedRef.current || cameBackFromCallScreen)) setActiveSubTab('Chat');
+        maximizeCall();
+      }
+      return () => {
+        if (isInCallRef.current && !expandingToCallRef.current) minimizeCall();
+      };
+    }, [maximizeCall, minimizeCall])
+  );
 
   // Group Encryption Hook
   const targetSpaceId = resolvedSpaceId || syncSpaceId || (isValidUUID(projectId) ? projectId : null);
@@ -1392,6 +1479,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
     decryptGroupMessage,
     isReady,
   } = useGroupEncryption('project_space', targetSpaceId);
+  useEffect(() => { requestE2EEPrompt(); }, []);
 
   // ── Chat State ─────────────────────────────────────────────────────────────
   const initialCachedMsgs = (resolvedSpaceId || syncSpaceId || projectId)
@@ -1399,7 +1487,9 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       (projectId ? getCacheSync<any[]>(`ps_messages_${projectId}`) : null))
     : null;
   const [messages, setMessages] = useState<any[]>(() => initialCachedMsgs || []);
+  const lastMessagesChangeAtRef = useRef<number>(Date.now());
   const messagesRef = useRef(messages);
+  if (messagesRef.current !== messages) lastMessagesChangeAtRef.current = Date.now();
   messagesRef.current = messages;
   const messageMapRef = useRef<Map<string, any>>(new Map());
   useEffect(() => {
@@ -1417,6 +1507,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   const [sending, setSending] = useState(false);
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  const [editingMsg, setEditingMsg] = useState<any | null>(null);
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set());
   const [showComposerEmojiPicker, setShowComposerEmojiPicker] = useState(false);
   const [activeEmojiCategory, setActiveEmojiCategory] = useState<string>('smileys');
@@ -1471,6 +1562,27 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   const lastFetchMsgsTimeRef = useRef<number>(0);
   const lastFetchedSpaceIdRef = useRef<string>('');
   const shouldScrollToEndRef = useRef<boolean>(true);
+  // Opening the chat: it appears already at the bottom, or at the first new message with a "New messages" line (like WhatsApp)
+  const [chatVisible, setChatVisible] = useState(false);
+  const [chatSettled, setChatSettled] = useState(false); // the list has stopped measuring: only then does it start to keep your place for older messages
+  const chatStickyTimerRef = useRef<any>(null);
+  const chatPlaceTimerRef = useRef<any>(null);
+  const distFromBottomRef = useRef<number>(9999);
+  const lastContentHRef = useRef<number>(0);
+  const lastContentChangeAtRef = useRef<number>(0);
+  const unreadAnchorIdRef = useRef<string | null>(null);
+  // "Welcome to ProjectSpace Chat" is only shown once the chat has been empty for a moment (it used to flash while messages were still loading)
+  const [showEmptyWelcome, setShowEmptyWelcome] = useState(false);
+  const chatPositionedRef = useRef(false);
+  const chatShowTimerRef = useRef<any>(null);
+  const chatShowMaxTimerRef = useRef<any>(null);
+  const chatMountedOnceRef = useRef(false);
+  const userScrolledChatRef = useRef(false);
+  const openLastReadAtRef = useRef<number | null | undefined>(undefined); // when this person last read the chat, before opening it
+  const [openLastReadReady, setOpenLastReadReady] = useState(false);
+  const [unreadAnchorId, setUnreadAnchorId] = useState<string | null>(null);
+  const [unreadCountAtOpen, setUnreadCountAtOpen] = useState(0);
+  unreadAnchorIdRef.current = unreadAnchorId;
 
   // ── Tasks State ────────────────────────────────────────────────────────────
   const [tasks, setTasks] = useState<any[]>([]);
@@ -1494,6 +1606,39 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       (projectId ? getCacheSync<any[]>(`ps_team_${projectId}`) : null))
     : null;
   const [teamMembers, setTeamMembers] = useState<any[]>(() => initialCachedTeam || []);
+
+  // Who may manage this space: ONLY the creator of the space or of its project (cj_can_manage_space). Team admins, leaders,
+  // members and staff observers never get the management controls (staff observers still see the tabs, read-only).
+  const [isSpaceOwner, setIsSpaceOwner] = useState(false);
+  const [ownerIds, setOwnerIds] = useState<string[]>([]);
+  const [rolePickerFor, setRolePickerFor] = useState<any | null>(null);
+  const [otherRoleOpen, setOtherRoleOpen] = useState(false);
+  const [otherRoleText, setOtherRoleText] = useState('');
+  useEffect(() => {
+    const uid = currentUserId || currentUser?.id;
+    if (!uid) return;
+    if (isSpaceCreator(uid, null, projectData)) { setIsSpaceOwner(true); return; }
+    const key = resolvedSpaceId || projectId;
+    if (!key || !isValidUUID(key)) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await (supabase.from('project_spaces' as any) as any)
+          .select('creator_id, projects(creator_id)')
+          .or(`id.eq.${key},project_id.eq.${key}`)
+          .limit(1)
+          .maybeSingle();
+        const proj = Array.isArray(data?.projects) ? data.projects[0] : data?.projects;
+        if (alive && data) {
+          setIsSpaceOwner(isSpaceCreator(uid, data, proj));
+          setOwnerIds([data.creator_id, proj?.creator_id].filter(Boolean));
+        }
+      } catch { /* stays false: the management tabs just stay hidden */ }
+    })();
+    return () => { alive = false; };
+  }, [currentUserId, currentUser?.id, projectData?.creator_id, resolvedSpaceId, projectId, supabase]);
+  const canManage = isSpaceOwner;
+  const showManagementTabs = canManage || isInternal;
   const teamMemberMap = useMemo(() => {
     const map = new Map<string, any>();
     (teamMembers || []).forEach((m: any) => {
@@ -1523,10 +1668,6 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   const [newShot, setNewShot] = useState('1');
   const [newShotDesc, setNewShotDesc] = useState('');
   const [addingShot, setAddingShot] = useState(false);
-
-  // ── Script Reader State ────────────────────────────────────────────────────
-  const [currentSceneIdx, setCurrentSceneIdx] = useState(14);
-  const totalScriptScenes = 42;
 
   // ── Legal Docs State ───────────────────────────────────────────────────────
   const [legalDocs, setLegalDocs] = useState<any[]>([]);
@@ -1969,7 +2110,18 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               .eq('user_id', userObj.id)
               .maybeSingle();
 
+            // Only the owner is added automatically; everyone else joins by invitation or an approved request
+            // (adding anyone who opens the space put removed members straight back in).
+            let isSpaceOwner = false;
             if (!member) {
+              const { data: ownerRow } = await supabase
+                .from('project_spaces' as any)
+                .select('creator_id, projects(creator_id)')
+                .eq('id', finalSpaceId)
+                .maybeSingle();
+              isSpaceOwner = !!ownerRow && ((ownerRow as any).creator_id === userObj.id || (ownerRow as any).projects?.creator_id === userObj.id);
+            }
+            if (!member && isSpaceOwner) {
               await supabase.from('project_space_members' as any).upsert(
                 {
                   project_space_id: finalSpaceId,
@@ -2116,7 +2268,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         .from('project_space_messages')
         .select(`
           id, content, user_id, created_at, is_deleted, reply_to_id,
-          attachment_url, attachment_type,
+          attachment_url, attachment_type, edited_at,
           profiles!user_id (username, full_name, avatar_url, craft)
         `);
 
@@ -2312,7 +2464,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         .from('project_space_messages')
         .select(`
           id, content, user_id, created_at, is_deleted, reply_to_id,
-          attachment_url, attachment_type,
+          attachment_url, attachment_type, edited_at,
           profiles!user_id (username, full_name, avatar_url, craft)
         `);
 
@@ -2447,6 +2599,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   fetchReadStatusesRef.current = fetchReadStatuses;
 
   const markAsRead = useCallback(async (explicitSpaceId?: string) => {
+    if (isObserver) return; // an observer is never shown as having read the space
     let spaceId = explicitSpaceId || resolvedSpaceId || (projectId ? getCacheSync<string>(`ps_space_id_${projectId}`) : null);
     if (!spaceId && projectId && isValidUUID(projectId)) {
       spaceId = (await getCache<string>(`ps_space_id_${projectId}`)) || spaceId;
@@ -2459,6 +2612,16 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
     lastMarkAsReadTimeRef.current = now;
 
     try {
+      // remember when this person last read the chat (read now, before it is marked read): messages from others after it are "new"
+      if (openLastReadAtRef.current === undefined) {
+        openLastReadAtRef.current = null;
+        try {
+          const { data: mine } = await (supabase as any).from('project_message_read_status').select('last_read_at').eq('project_space_id', spaceId).eq('user_id', uid).maybeSingle();
+          openLastReadAtRef.current = mine?.last_read_at ? new Date(mine.last_read_at).getTime() : null;
+        } catch { }
+        setOpenLastReadReady(true);
+      }
+
       const nowIso = new Date().toISOString();
 
       // Optimistically update local readStatuses
@@ -2572,7 +2735,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       // Realtime subscription for messages and read updates
       const msgChannel = supabase
-        .channel(`ps_messages:${spaceId}`)
+        .channel(freshTopic(`ps_messages:${spaceId}`))
         .on(
           'postgres_changes',
           {
@@ -2614,12 +2777,16 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       // Listen on web channel broadcast for real-time sync with web app
       const webChannel = supabase
-        .channel(`project_messages-v2:${spaceId}`)
+        .channel(freshTopic(`project_messages-v2:${spaceId}`))
         .on('broadcast', { event: 'read_update' }, (payload: any) => {
           const senderId = payload?.payload?.userId || payload?.payload?.user_id;
           const myId = currentUserId || currentUser?.id || currentUserIdRef.current;
           if (senderId && myId && senderId === myId) return;
           fetchReadStatusesRef.current();
+        })
+        .on('broadcast', { event: 'message_edited' }, () => {
+          // the text is read again from the database and decrypted, never taken from the broadcast
+          fetchMessagesRef.current(true);
         })
         .subscribe();
 
@@ -2627,7 +2794,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       // Realtime subscription for reactions
       const rxChannel = supabase
-        .channel(`ps_reactions:${spaceId}`)
+        .channel(freshTopic(`ps_reactions:${spaceId}`))
         .on(
           'postgres_changes',
           {
@@ -2870,7 +3037,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Tasks':
         fetchTasks();
         activeChannel = supabase
-          .channel(`rt_tasks_${spaceId}`)
+          .channel(freshTopic(`rt_tasks_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => fetchTasks())
           .subscribe();
         break;
@@ -2878,7 +3045,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Files':
         fetchFiles();
         activeChannel = supabase
-          .channel(`rt_files_${spaceId}`)
+          .channel(freshTopic(`rt_files_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'files' }, () => fetchFiles())
           .subscribe();
         break;
@@ -2886,7 +3053,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Team':
         fetchTeam();
         activeChannel = supabase
-          .channel(`rt_members_${spaceId}`)
+          .channel(freshTopic(`rt_members_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'project_space_members' }, () => fetchTeam())
           .subscribe();
         break;
@@ -2894,7 +3061,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Call Sheet':
         fetchCallSheets();
         activeChannel = supabase
-          .channel(`rt_callsheets_${spaceId}`)
+          .channel(freshTopic(`rt_callsheets_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'call_sheets' }, () => fetchCallSheets())
           .subscribe();
         break;
@@ -2902,7 +3069,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Shot List':
         fetchShots();
         activeChannel = supabase
-          .channel(`rt_shots_${spaceId}`)
+          .channel(freshTopic(`rt_shots_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'shot_list' }, () => fetchShots())
           .subscribe();
         break;
@@ -2910,7 +3077,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Legal Docs':
         fetchLegalDocs();
         activeChannel = supabase
-          .channel(`rt_legaldocs_${spaceId}`)
+          .channel(freshTopic(`rt_legaldocs_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'legal_docs' }, () => fetchLegalDocs())
           .subscribe();
         break;
@@ -2918,7 +3085,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Budget':
         fetchBudget();
         activeChannel = supabase
-          .channel(`rt_budget_${spaceId}`)
+          .channel(freshTopic(`rt_budget_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'budget_items' }, () => fetchBudget())
           .subscribe();
         break;
@@ -2926,7 +3093,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       case 'Applicants':
         fetchApplicants();
         activeChannel = supabase
-          .channel(`rt_applicants_${spaceId}`)
+          .channel(freshTopic(`rt_applicants_${spaceId}`))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'project_space_join_requests' }, () => fetchApplicants())
           .subscribe();
         break;
@@ -2982,7 +3149,51 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
     }
   };
 
+  const handleSaveEdit = async () => {
+    const target = editingMsg;
+    const myUid = currentUserId || currentUser?.id || currentUserIdRef.current || getCurrentUserIdSync();
+    const spaceId = resolvedSpaceId || (projectId ? getCacheSync<string>(`ps_space_id_${projectId}`) : null) || projectId;
+    if (!target || !myUid || !spaceId || sending) return;
+    if (!canEditMessage(target, myUid)) {
+      Alert.alert('Too late to edit', 'Messages can be edited for 15 minutes after they are sent.');
+      setEditingMsg(null);
+      setInputText('');
+      return;
+    }
+    const check = checkEditedText(target.content || '', inputText);
+    if (!check.ok) {
+      if (check.reason === 'unchanged') { setEditingMsg(null); setInputText(''); return; }
+      Alert.alert('Cannot save', check.message);
+      return;
+    }
+    setSending(true);
+    try {
+      let encrypted: string;
+      try {
+        encrypted = await encryptGroupMessage(check.text);
+      } catch {
+        // Never downgrade an encrypted space to plaintext on failure.
+        throw new Error('Could not encrypt this message. It was not saved. Please try again.');
+      }
+      const { error } = await (supabase as any).from('project_space_messages').update({ content: encrypted }).eq('id', target.id).eq('user_id', myUid);
+      if (error) throw error;
+      setMessages((prev) => prev.map((m: any) => (m.id === target.id ? { ...m, content: check.text, edited_at: new Date().toISOString() } : m)));
+      try {
+        webChannelRef.current?.send({ type: 'broadcast', event: 'message_edited', payload: { id: target.id } })?.catch?.(() => { });
+      } catch { }
+      setEditingMsg(null);
+      setInputText('');
+    } catch (err: any) {
+      const late = /edit window|15 minutes|too late/i.test(err?.message || '');
+      Alert.alert(late ? 'Too late to edit' : 'Could not save', late ? 'Messages can be edited for 15 minutes after they are sent.' : friendlyError(err, 'Failed to save the edit.'));
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleSendMessage = async () => {
+    if (editingMsg) { handleSaveEdit(); return; }
+    if (isObserver) return;
     const text = inputText.trim();
     const currFiles = [...attachedFiles];
     const spaceId = resolvedSpaceId || (projectId ? getCacheSync<string>(`ps_space_id_${projectId}`) : null) || projectId;
@@ -3131,7 +3342,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         } catch { }
       }, 100);
     } catch (err: any) {
-      Alert.alert('Send Error', err.message || 'Failed to send message.');
+      Alert.alert('Send Error', friendlyError(err, 'Failed to send message.'));
     } finally {
       setSending(false);
     }
@@ -3220,7 +3431,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       setSelectedMsgIds(new Set());
       Alert.alert('Forwarded! 🚀', `Message(s) forwarded to ${dest.title}.`);
     } catch (err: any) {
-      Alert.alert('Forward Failed', err.message || 'Could not forward message.');
+      Alert.alert('Forward Failed', friendlyError(err, 'Could not forward message.'));
     } finally {
       setForwarding(false);
     }
@@ -3296,6 +3507,9 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       }
 
       let targetUrl = fileUrl;
+      // Use the bucket the link actually points at (older legal documents live in another private bucket).
+      const urlBucket = fileUrl.match(/\/storage\/v1\/object\/(?:public|authenticated)\/([^/?]+)\//)?.[1];
+      if (urlBucket && ['project-files', 'legal-documents', 'call-sheets'].includes(urlBucket)) bucket = urlBucket;
       const bucketMarker = `${bucket}/`;
       if (fileUrl.includes(bucketMarker)) {
         const pathPart = fileUrl.split(bucketMarker)[1]?.split('?')[0];
@@ -3312,7 +3526,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       await Linking.openURL(targetUrl);
     } catch (err: any) {
-      Alert.alert('Preview Error', err.message || 'Could not open file preview.');
+      Alert.alert('Preview Error', friendlyError(err, 'Could not open file preview.'));
     }
   }, [supabase]);
 
@@ -3329,6 +3543,67 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         name: rs.profiles?.full_name?.split(' ')[0] || 'Member',
       }));
   }, [readStatuses, currentUser?.id, currentUserId]);
+
+  useEffect(() => {
+    if (!openLastReadReady || userScrolledChatRef.current) return;
+    const lastRead = openLastReadAtRef.current;
+    if (lastRead == null || messages.length === 0) return;
+    const myUid = currentUserIdRef.current || currentUserId || currentUser?.id;
+    const isMine = (m: any) => m?.is_own === true || (!!myUid && (m?.user_id || m?.sender_id) === myUid);
+    const idx = messages.findIndex((m) => !isMine(m) && new Date(m.created_at).getTime() > lastRead);
+    if (idx >= 0) {
+      setUnreadAnchorId(String(messages[idx].id));
+      setUnreadCountAtOpen(messages.slice(idx).filter((m) => !isMine(m)).length);
+    }
+  }, [messages, openLastReadReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the chat list is rebuilt each time the Chat tab is shown: hide it until it is placed, and forget the "new messages" line after the first visit
+  useEffect(() => {
+    if (activeSubTab !== 'Chat') return;
+    if (chatMountedOnceRef.current) { setUnreadAnchorId(null); setUnreadCountAtOpen(0); }
+    chatMountedOnceRef.current = true;
+    chatPositionedRef.current = false;
+    userScrolledChatRef.current = false;
+    shouldScrollToEndRef.current = true;
+    if (chatShowTimerRef.current) clearTimeout(chatShowTimerRef.current);
+    if (chatShowMaxTimerRef.current) clearTimeout(chatShowMaxTimerRef.current);
+    chatShowTimerRef.current = null;
+    chatShowMaxTimerRef.current = null;
+    if (chatStickyTimerRef.current) clearInterval(chatStickyTimerRef.current);
+    chatStickyTimerRef.current = null;
+    if (chatPlaceTimerRef.current) clearInterval(chatPlaceTimerRef.current);
+    chatPlaceTimerRef.current = null;
+    distFromBottomRef.current = 9999;
+    setChatSettled(false);
+    setChatVisible(false);
+  }, [activeSubTab]);
+
+  useEffect(() => {
+    if (messages.length > 0 || loadingMessages) { setShowEmptyWelcome(false); return; }
+    const timer = setTimeout(() => setShowEmptyWelcome(true), 1200);
+    return () => clearTimeout(timer);
+  }, [messages.length, loadingMessages]);
+
+  // safety net: if the list never reports a size change, show it anyway after a moment so the chat can never stay hidden
+  useEffect(() => {
+    if (activeSubTab !== 'Chat' || chatVisible || messages.length === 0) return;
+    const safety = setTimeout(() => {
+      if (chatPlaceTimerRef.current) { clearInterval(chatPlaceTimerRef.current); chatPlaceTimerRef.current = null; }
+      chatPositionedRef.current = true;
+      setChatVisible(true);
+      setChatSettled(true);
+    }, 3200);
+    return () => clearTimeout(safety);
+  }, [activeSubTab, chatVisible, messages.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // a new-message anchor that is found after the list was already placed: go to it, unless the person has started scrolling
+  useEffect(() => {
+    if (!unreadAnchorId || !chatPositionedRef.current || userScrolledChatRef.current) return;
+    const idx = messagesRef.current.findIndex((m) => String(m.id) === unreadAnchorId);
+    if (idx < 0) return;
+    shouldScrollToEndRef.current = false;
+    try { flatListRef.current?.scrollToIndex({ index: idx, viewPosition: 0.15, animated: false }); } catch { }
+  }, [unreadAnchorId]);
 
   const keyExtractor = useCallback((item: any, index: number) => (item?.id ? String(item.id) : String(index)), []);
 
@@ -3379,6 +3654,16 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       const replyMsg = item.reply_to_message || (item.reply_to_id ? messageMapRef.current.get(item.reply_to_id) : null);
 
       return (
+        <>
+        {!!unreadAnchorId && String(item.id) === unreadAnchorId && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10 }} accessibilityRole="text">
+            <View style={{ flex: 1, height: 1, backgroundColor: ORANGE, opacity: 0.4 }} />
+            <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>
+              {unreadCountAtOpen === 1 ? '1 new message' : `${unreadCountAtOpen} new messages`}
+            </Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: ORANGE, opacity: 0.4 }} />
+          </View>
+        )}
         <ProjectMessageRow
           item={item}
           index={index}
@@ -3402,6 +3687,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           isDark={isDark}
           navigation={navigation}
           stTitle={projectData?.title || projectTitle}
+          onCallDetails={setSelectedCallMessage}
           projectTitle={projectTitle}
           resolvedSpaceId={resolvedSpaceId}
           projectId={projectId}
@@ -3413,9 +3699,12 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           onOpenImageModal={openImageLightbox}
           onOpenFile={handleOpenFile}
         />
+        </>
       );
     },
     [
+      unreadAnchorId,
+      unreadCountAtOpen,
       currentUserId,
       currentUser?.id,
       selectedMsgIds,
@@ -3443,9 +3732,11 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       starredMessageIds,
       readStatusMap,
       teamMembers,
+      unreadAnchorId,
       currentUserId: currentUserId || currentUser?.id || currentUserIdRef.current || getCurrentUserIdSync(),
     }),
     [
+      unreadAnchorId,
       selectedMsgIds,
       starredMessageIds,
       readStatusMap,
@@ -3457,9 +3748,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
   // ── Actions: Tasks ─────────────────────────────────────────────────────────
   const handleAddTask = async () => {
+    if (isReadOnly) return; // staff visitors are read only
     const title = newTaskTitle.trim();
     const spaceId = resolvedSpaceId || projectId;
     if (!title || !spaceId) return;
+    if (newTaskDueDate.trim() && !isIsoDate(newTaskDueDate.trim())) {
+      Alert.alert('Validation', 'Enter the due date as YYYY-MM-DD, for example 2026-11-05.');
+      return;
+    }
 
     setAddingTask(true);
     try {
@@ -3482,48 +3778,69 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       setNewTaskDesc('');
       setNewTaskDueDate('');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to add task.');
+      Alert.alert('Error', friendlyError(err, 'Failed to add task.'));
     } finally {
       setAddingTask(false);
     }
   };
 
   const handleToggleTask = async (taskId: string, currentStatus: boolean) => {
+    if (isReadOnly) return;
     try {
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, is_completed: !currentStatus } : t))
       );
-      await supabase
+      const { error: toggleError } = await supabase
         .from('tasks' as any)
         .update({
           is_completed: !currentStatus,
         })
         .eq('id', taskId);
+      // Supabase returns { error } instead of throwing: roll back by reloading the real state.
+      if (toggleError) throw toggleError;
     } catch (err) {
       fetchTasks();
     }
   };
 
-  const handleDeleteTask = async (taskId: string) => {
-    try {
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      await supabase.from('tasks' as any).delete().eq('id', taskId);
-    } catch (err) {
-      fetchTasks();
-    }
+  /**
+   * Asks first, deletes, and only removes the row from the screen when the database really deleted it.
+   * A delete the database refuses (no permission) comes back with no error and no rows: that is reported as a failure.
+   */
+  const confirmDeleteRow = (what: string, table: string, id: string, removeLocal: () => void, reload: () => void) => {
+    if (isReadOnly) return;
+    Alert.alert(`Delete ${what}?`, 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const { data, error } = await (supabase.from(table as any) as any).delete().eq('id', id).select('id');
+            if (error) throw error;
+            if (!data || data.length === 0) {
+              Alert.alert('Could not delete', `The ${what} was not deleted. You may not have permission, or it no longer exists.`);
+              reload();
+              return;
+            }
+            removeLocal();
+          } catch (err: any) {
+            Alert.alert('Could not delete', friendlyError(err, `The ${what} was not deleted.`));
+            reload();
+          }
+        },
+      },
+    ]);
   };
 
-  const handleDeleteFile = async (fileId: string) => {
-    try {
-      setFiles((prev) => prev.filter((f) => f.id !== fileId));
-      await supabase.from('files' as any).delete().eq('id', fileId);
-    } catch (err) {
-      fetchFiles();
-    }
-  };
+  const handleDeleteTask = (taskId: string) =>
+    confirmDeleteRow('task', 'tasks', taskId, () => setTasks((prev) => prev.filter((x: any) => x.id !== taskId)), fetchTasks);
+
+  const handleDeleteFile = (fileId: string) =>
+    confirmDeleteRow('file', 'files', fileId, () => setFiles((prev) => prev.filter((x: any) => x.id !== fileId)), fetchFiles);
 
   const formatFileSize = (bytes?: number) => {
-    if (!bytes || isNaN(bytes)) return '1.2 MB';
+    if (!bytes || isNaN(bytes)) return 'Size unknown';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -3552,10 +3869,8 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
 
-    // Use public 'post-media' bucket as primary standard for chat attachments with portfolios fallback
-    const targetBuckets = bucket === 'project-files'
-      ? ['post-media', 'portfolios', 'project-files']
-      : [bucket, 'post-media', 'portfolios'];
+    // Never redirect an upload into a different (public) bucket than the one it was aimed at.
+    const targetBuckets = [bucket];
 
     for (const b of targetBuckets) {
       try {
@@ -3599,6 +3914,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
   // ── Actions: Files ─────────────────────────────────────────────────────────
   const handleCreateDocument = async () => {
+    if (isReadOnly) return; // staff visitors are read only
     try {
       const res = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.pdf, DocumentPicker.types.images, DocumentPicker.types.plainText, DocumentPicker.types.allFiles],
@@ -3616,7 +3932,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           size: res.size || 0,
         },
         {
-          bucket: 'post-media',
+          bucket: 'project-files',
           folder: `files/${projectId}`,
           maxDocSizeMB: 25,
         }
@@ -3640,7 +3956,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       Alert.alert('Success', 'Document successfully uploaded to project space.');
     } catch (err: any) {
       if (!DocumentPicker.isCancel(err)) {
-        Alert.alert('Upload Error', err.message || 'Failed to upload document.');
+        Alert.alert('Upload Error', friendlyError(err, 'Failed to upload document.'));
       }
     } finally {
       setUploadingDoc(false);
@@ -3649,9 +3965,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
   // ── Actions: Call Sheet ────────────────────────────────────────────────────
   const handleCreateCallSheet = async () => {
+    if (isReadOnly) return; // staff visitors are read only
     const spaceId = resolvedSpaceId || projectId;
     if (!spaceId || !csDate) {
       Alert.alert('Validation', 'Call sheet date is required.');
+      return;
+    }
+    if (!isIsoDate(csDate.trim())) {
+      Alert.alert('Validation', 'Enter the shoot date as YYYY-MM-DD, for example 2026-11-05.');
       return;
     }
     setCreatingCallSheet(true);
@@ -3675,26 +3996,27 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       setNewCallSheetModalVisible(false);
       Alert.alert('Published', 'Call Sheet deployed to production crew.');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create call sheet.');
+      Alert.alert('Error', friendlyError(err, 'Failed to create call sheet.'));
     } finally {
       setCreatingCallSheet(false);
     }
   };
 
-  const handleDeleteCallSheet = async (id: string) => {
-    try {
-      setCallSheets((prev) => prev.filter((c) => c.id !== id));
-      await supabase.from('call_sheets' as any).delete().eq('id', id);
-    } catch (err) {
-      fetchCallSheets();
-    }
-  };
+  const handleDeleteCallSheet = (id: string) =>
+    confirmDeleteRow('call sheet', 'call_sheets', id, () => setCallSheets((prev) => prev.filter((x: any) => x.id !== id)), fetchCallSheets);
 
   // ── Actions: Shot List ─────────────────────────────────────────────────────
   const handleAddShot = async () => {
+    if (isReadOnly) return; // staff visitors are read only
     const spaceId = resolvedSpaceId || projectId;
     if (!newShotDesc.trim() || !spaceId) {
       Alert.alert('Validation', 'Shot description is required.');
+      return;
+    }
+    const sceneNo = Number(newScene);
+    const shotNo = Number(newShot);
+    if (!Number.isInteger(sceneNo) || sceneNo < 1 || !Number.isInteger(shotNo) || shotNo < 1) {
+      Alert.alert('Validation', 'Scene and shot numbers must be whole numbers of 1 or more.');
       return;
     }
     setAddingShot(true);
@@ -3703,8 +4025,8 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         .from('shot_list' as any)
         .insert({
           project_id: projectId,
-          scene: parseInt(newScene, 10) || 1,
-          shot: parseInt(newShot, 10) || 1,
+          scene: sceneNo,
+          shot: shotNo,
           description: newShotDesc.trim(),
           status: 'pending',
         })
@@ -3717,13 +4039,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       const nextShotNum = parseInt(newShot, 10);
       if (!isNaN(nextShotNum)) setNewShot((nextShotNum + 1).toString());
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to add shot sequence.');
+      Alert.alert('Error', friendlyError(err, 'Failed to add shot sequence.'));
     } finally {
       setAddingShot(false);
     }
   };
 
   const handleToggleShotStatus = async (shotId: string, currentStatus: string) => {
+    if (isReadOnly) return;
     const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
     try {
       setShots((prev) =>
@@ -3735,17 +4058,12 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
     }
   };
 
-  const handleDeleteShot = async (shotId: string) => {
-    try {
-      setShots((prev) => prev.filter((s) => s.id !== shotId));
-      await supabase.from('shot_list' as any).delete().eq('id', shotId);
-    } catch (err) {
-      fetchShots();
-    }
-  };
+  const handleDeleteShot = (shotId: string) =>
+    confirmDeleteRow('shot', 'shot_list', shotId, () => setShots((prev) => prev.filter((x: any) => x.id !== shotId)), fetchShots);
 
   // ── Actions: Legal Docs ────────────────────────────────────────────────────
   const handleCreateLegalDoc = async () => {
+    if (isReadOnly) return; // staff visitors are read only
     try {
       const res = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.pdf, DocumentPicker.types.allFiles],
@@ -3766,8 +4084,8 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           size: res.size || 0,
         },
         {
-          bucket: 'post-media',
-          folder: `legal_docs/${projectId}`,
+          bucket: 'project-files',
+          folder: `legal/${projectId}`,
           maxDocSizeMB: 25,
         }
       );
@@ -3793,28 +4111,36 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       Alert.alert('Success', 'Legal document registered.');
     } catch (err: any) {
       if (!DocumentPicker.isCancel(err)) {
-        Alert.alert('Error', err.message || 'Failed to create legal document.');
+        Alert.alert('Error', friendlyError(err, 'Failed to create legal document.'));
       }
     } finally {
       setCreatingLegalDoc(false);
     }
   };
 
-  const handleDeleteLegalDoc = async (id: string) => {
-    try {
-      setLegalDocs((prev) => prev.filter((d) => d.id !== id));
-      await supabase.from('legal_docs' as any).delete().eq('id', id);
-    } catch (err) {
-      fetchLegalDocs();
-    }
-  };
+  const handleDeleteLegalDoc = (id: string) =>
+    confirmDeleteRow('legal document', 'legal_docs', id, () => setLegalDocs((prev) => prev.filter((x: any) => x.id !== id)), fetchLegalDocs);
 
   // ── Actions: Budget ────────────────────────────────────────────────────────
   const handleAddBudgetItem = async () => {
+    if (isReadOnly) return; // staff visitors are read only
     const spaceId = resolvedSpaceId || projectId;
     const cost = parseFloat(newBudgetCost);
     if (!newBudgetItemName.trim() || isNaN(cost) || !spaceId) {
       Alert.alert('Validation', 'Item name and valid cost amount required.');
+      return;
+    }
+    if (cost < 0) {
+      Alert.alert('Validation', 'The cost cannot be negative.');
+      return;
+    }
+    const budgetCategory = newBudgetCategory.trim().replace(/\s+/g, ' ');
+    if (!budgetCategory) {
+      Alert.alert('Category needed', 'Give the expense a category, for example Camera, Cast or Locations.');
+      return;
+    }
+    if (budgetCategory.length > 40) {
+      Alert.alert('Category too long', 'Keep the category to 40 characters or fewer.');
       return;
     }
     setAddingBudgetItem(true);
@@ -3825,7 +4151,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           project_id: projectId,
           item_name: newBudgetItemName.trim(),
           estimated_cost: cost,
-          category: newBudgetCategory,
+          category: budgetCategory,
         })
         .select()
         .single();
@@ -3835,44 +4161,105 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       setNewBudgetItemName('');
       setNewBudgetCost('');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to allocate budget item.');
+      Alert.alert('Error', friendlyError(err, 'Failed to allocate budget item.'));
     } finally {
       setAddingBudgetItem(false);
     }
   };
 
-  const handleDeleteBudgetItem = async (id: string) => {
-    try {
-      setBudgetItems((prev) => prev.filter((b) => b.id !== id));
-      await supabase.from('budget_items' as any).delete().eq('id', id);
-    } catch (err) {
-      fetchBudget();
-    }
-  };
+  const handleDeleteBudgetItem = (id: string) =>
+    confirmDeleteRow('budget item', 'budget_items', id, () => setBudgetItems((prev) => prev.filter((x: any) => x.id !== id)), fetchBudget);
 
-  const handleUpdateCrewRole = async (memberId: string) => {
-    if (!tempCrewRole.trim()) {
-      setEditingCrewId(null);
-      return;
-    }
+  // Who may change roles: the owner, and members whose role is Admin. An admin cannot touch another admin and nobody can
+  // change the owner. The database enforces the same rules (SQL part FT); this only decides what to show.
+  const myTeamId = currentUserId || currentUser?.id || currentUserIdRef.current;
+  const meIsTeamAdmin = (teamMembers || []).some((m: any) => m.id === myTeamId && String(m.role || '').toLowerCase() === 'admin');
+  const canEditRoles = (isSpaceOwner || meIsTeamAdmin) && !isReadOnly;
+  const crewRoles = Array.from(new Set((teamMembers || []).map((m: any) => String(m.role || '').trim()).filter((r: string) => r && !['admin', 'member', 'crew'].includes(r.toLowerCase()))));
+
+  const applyRole = async (userId: string, role: string) => {
+    const spaceId = resolvedSpaceId || projectId;
     try {
       const { error } = await supabase
         .from('project_space_members' as any)
-        .update({ role: tempCrewRole.trim() })
-        .eq('project_space_id', resolvedSpaceId)
-        .eq('user_id', memberId);
-
+        .update({ role })
+        .eq('project_space_id', spaceId)
+        .eq('user_id', userId);
       if (error) throw error;
-
-      setTeamMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, role: tempCrewRole.trim() } : m));
-      setEditingCrewId(null);
+      Alert.alert('Role updated', 'They have been told, and the change applies to them right away.');
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Could not change the role', friendlyError(err, 'Please try again.'));
+    } finally {
+      fetchTeamRef.current(spaceId);
     }
+  };
+
+  const handleRoleChoice = (member: any, next: string) => {
+    setRolePickerFor(null);
+    const current = String(member.role || 'member').trim();
+    if (next.toLowerCase() === current.toLowerCase()) return;
+    if (current.toLowerCase() === 'admin' && next !== 'admin') {
+      Alert.alert('Remove admin rights?', 'They keep their place in the team but can no longer add people, remove members or change roles.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove admin rights', style: 'destructive', onPress: () => { void applyRole(member.id, next); } },
+      ]);
+      return;
+    }
+    if (next === 'admin') {
+      Alert.alert('Make this person an admin?', 'Admins can add people, remove members and change crew roles.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Make admin', onPress: () => { void applyRole(member.id, next); } },
+      ]);
+      return;
+    }
+    void applyRole(member.id, next);
+  };
+
+  const submitOtherRole = () => {
+    const member = rolePickerFor;
+    const text = otherRoleText.trim();
+    if (!member) return;
+    if (text.length < 1 || text.length > 40 || text.toLowerCase() === 'owner') {
+      Alert.alert('Role name', 'Enter a role of 1 to 40 characters (not "owner").');
+      return;
+    }
+    setOtherRoleOpen(false);
+    setOtherRoleText('');
+    handleRoleChoice(member, text);
+  };
+
+  const handleRemoveTeamMember = (member: any) => {
+    setRolePickerFor(null);
+    Alert.alert('Remove this member from the project?', member.full_name || member.username || '', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          const spaceId = resolvedSpaceId || projectId;
+          try {
+            const { data: removed, error } = await (supabase.from('project_space_members' as any) as any)
+              .delete()
+              .eq('project_space_id', spaceId)
+              .eq('user_id', member.id)
+              .select('user_id');
+            if (error) throw error;
+            if (!removed || removed.length === 0) {
+              Alert.alert('Not removed', 'You are not allowed to remove this member.');
+            }
+          } catch (err: any) {
+            Alert.alert('Could not remove', friendlyError(err, 'Please try again.'));
+          } finally {
+            fetchTeamRef.current(spaceId);
+          }
+        },
+      },
+    ]);
   };
 
   // ── Actions: Applicants ────────────────────────────────────────────────────
   const handleApplicantDecision = async (requestId: string, userId: string, decision: 'approved' | 'rejected') => {
+    if (isReadOnly || !canManage) return;
     setProcessingApplicantId(requestId);
     const spaceId = resolvedSpaceId || projectId;
     try {
@@ -3884,13 +4271,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       if (error) throw error;
 
       if (decision === 'approved' && spaceId) {
-        await supabase
+        const { error: memberError } = await supabase
           .from('project_space_members' as any)
           .insert({
             project_space_id: spaceId,
             user_id: userId,
             role: 'Crew',
           });
+        if (memberError && (memberError as any).code !== '23505') throw memberError;
       }
 
       setApplicants((prev) => prev.filter((a) => a.id !== requestId));
@@ -3901,13 +4289,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           : 'Candidate request declined.'
       );
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update application.');
+      Alert.alert('Error', friendlyError(err, 'Failed to update application.'));
     } finally {
       setProcessingApplicantId(null);
     }
   };
 
   const handleUpdateAvatar = async () => {
+    if (isInternal || !canManage) return; // staff observers are read-only (F-06); only the creator edits
     try {
       const res = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.images],
@@ -3932,13 +4321,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       Alert.alert('Success', 'Avatar staged. Press "Sync Settings" below to save.');
     } catch (err: any) {
       if (!DocumentPicker.isCancel(err)) {
-        Alert.alert('Error', err.message || 'Failed to upload avatar image.');
+        Alert.alert('Error', friendlyError(err, 'Failed to upload avatar image.'));
       }
     }
   };
 
   // ── Actions: Settings ──────────────────────────────────────────────────────
   const handleSaveSettings = async () => {
+    if (isInternal || !canManage) return; // staff observers are read-only (F-06); only the creator edits
     if (stStatus === 'completed' && stOriginalStatus !== 'completed') {
       const spaceId = resolvedSpaceId || projectId;
       if (spaceId) {
@@ -3988,7 +4378,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       setStOriginalStatus(stStatus);
       Alert.alert('Success', 'Project settings synchronized successfully!');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update project settings.');
+      Alert.alert('Error', friendlyError(err, 'Failed to update project settings.'));
     } finally {
       setSavingSettings(false);
     }
@@ -4035,13 +4425,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       setShowWrapDialog(false);
       Alert.alert('Project Wrapped!', 'Production completed and verified crew credits published.');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to wrap project.');
+      Alert.alert('Error', friendlyError(err, 'Failed to wrap project.'));
     } finally {
       setSavingSettings(false);
     }
   };
 
   const handleClearChatHistory = () => {
+    if (isReadOnly || !isSpaceOwner) return;
     const spaceId = resolvedSpaceId || projectId;
     Alert.alert(
       'Purge Chat History',
@@ -4060,6 +4451,9 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 _project_id: projectId || spaceId || undefined,
               });
 
+              if (rpcErr && /only the|owner|sign in first|permission|not allowed|denied/i.test(String(rpcErr.message || ''))) {
+                throw rpcErr;
+              }
               if (rpcErr) {
                 console.warn('clear_project_space_messages RPC failed or not deployed, using client fallback:', rpcErr);
 
@@ -4112,7 +4506,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               setMessages([]);
               Alert.alert('Purged', 'Chat logs cleared.');
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to clear chat.');
+              Alert.alert('Error', friendlyError(err, 'Failed to clear chat.'));
             }
           },
         },
@@ -4121,6 +4515,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
   };
 
   const handleDeleteProject = () => {
+    if (isReadOnly || !isSpaceOwner) return; // staff observers are read only; only the owner may delete the project
     Alert.alert(
       'Terminate Entire Space',
       `You are about to delete "${stTitle}". This action is irreversible. All team access will be revoked immediately.`,
@@ -4131,11 +4526,17 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           style: 'destructive',
           onPress: async () => {
             try {
-              await supabase.from('projects').delete().eq('id', projectId);
+              const { data: gone, error: delError } = await (supabase.from('projects') as any).delete().eq('id', projectId).select('id');
+              if (delError) throw delError;
+              // A refused delete returns no error and no rows: that is a failure, not a success.
+              if (!gone || gone.length === 0) {
+                Alert.alert('Could not delete', 'The project was not deleted. Only the project owner can delete it.');
+                return;
+              }
               Alert.alert('Deleted', 'Project has been permanently deleted.');
               navigation.goBack();
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete project.');
+              Alert.alert('Error', friendlyError(err, 'Failed to delete project.'));
             }
           },
         },
@@ -4155,9 +4556,10 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
     ((m?.craft || m?.role || '') + '').toLowerCase().includes((teamSearch || '').toLowerCase())
   );
 
-  const totalBudgetEst = parseFloat(stBudgetMax) || 50000;
+  const totalBudgetEst = Math.max(0, parseFloat(stBudgetMax) || 0);
   const totalAllocated = budgetItems.reduce((acc, curr) => acc + (parseFloat(curr.estimated_cost) || 0), 0);
-  const remainingBudget = Math.max(0, totalBudgetEst - totalAllocated);
+  // Not clamped at 0: overspending must be visible (shown in red).
+  const remainingBudget = totalBudgetEst - totalAllocated;
 
   return (
     <KeyboardAvoidingView
@@ -4169,7 +4571,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       {selectedMsgIds.size > 0 && activeSubTab === 'Chat' ? (
         <View style={[styles.selectionHeader, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
           <View style={styles.selectionHeaderLeft}>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
               style={styles.selectionCloseBtn}
               onPress={() => setSelectedMsgIds(new Set())}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -4182,7 +4584,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           <View style={styles.selectionHeaderActions}>
             {/* Reply - when 1 message selected */}
             {selectedMsgIds.size === 1 && (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reply"
                 style={styles.selectionActionBtn}
                 onPress={() => {
                   const singleMsg = messages.find((m) => selectedMsgIds.has(m.id));
@@ -4197,9 +4599,31 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               </TouchableOpacity>
             )}
 
+            {/* Edit - own plain text message inside the 15 minute window */}
+            {selectedMsgIds.size === 1 && (() => {
+              const m = messages.find((x) => selectedMsgIds.has(x.id));
+              const myId = currentUserId || currentUser?.id || currentUserIdRef.current;
+              if (!m || !canEditMessage(m, myId)) return null;
+              return (
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit message"
+                  style={styles.selectionActionBtn}
+                  onPress={() => {
+                    setReplyingTo(null);
+                    setEditingMsg(m);
+                    setInputText(m.content || '');
+                    setSelectedMsgIds(new Set());
+                    setTimeout(() => inputRef.current?.focus(), 80);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                >
+                  <Icon name="edit-2" size={19} color={themeColors.textPrimary} strokeWidth={2} />
+                </TouchableOpacity>
+              );
+            })()}
+
             {/* Info - when 1 message selected */}
             {selectedMsgIds.size === 1 && (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="More information"
                 style={styles.selectionActionBtn}
                 onPress={() => {
                   const singleMsg = messages.find((m) => selectedMsgIds.has(m.id));
@@ -4216,7 +4640,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
             )}
 
             {/* Star / Unstar in bulk */}
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Rate"
               style={styles.selectionActionBtn}
               onPress={() => {
                 const selectedArray = Array.from(selectedMsgIds);
@@ -4224,10 +4648,10 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 const next = new Set(starredMessageIds);
                 if (allStarred) {
                   selectedArray.forEach((id) => next.delete(id));
-                  Alert.alert('Unstarred', `Unstarred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}.`);
+                  Toast.success(`Unstarred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}`, undefined, { action: { label: 'Undo', onPress: () => saveStarredMessages(new Set(starredMessageIds)) } });
                 } else {
                   selectedArray.forEach((id) => next.add(id));
-                  Alert.alert('Starred', `Starred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}.`);
+                  Toast.success(`Starred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}`, undefined, { action: { label: 'Undo', onPress: () => saveStarredMessages(new Set(starredMessageIds)) } });
                 }
                 saveStarredMessages(next);
                 setSelectedMsgIds(new Set());
@@ -4242,7 +4666,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
             </TouchableOpacity>
 
             {/* Copy in bulk */}
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Copy"
               style={styles.selectionActionBtn}
               onPress={() => {
                 const selectedList = messages.filter((m) => selectedMsgIds.has(m.id));
@@ -4267,7 +4691,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
             </TouchableOpacity>
 
             {/* Forward */}
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share"
               style={styles.selectionActionBtn}
               onPress={async () => {
                 try {
@@ -4299,14 +4723,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
             {/* Delete */}
             {Array.from(selectedMsgIds).some((id) => {
               const msg = messages.find((m) => m.id === id);
-              return msg && (msg.user_id === currentUser?.id || isInternal);
+              return msg && !isReadOnly && msg.user_id === currentUser?.id;
             }) && (
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete"
                   style={styles.selectionActionBtn}
                   onPress={() => {
                     const deletableIds = Array.from(selectedMsgIds).filter((id) => {
                       const msg = messages.find((m) => m.id === id);
-                      return msg && (msg.user_id === currentUser?.id || isInternal);
+                      return msg && !isReadOnly && msg.user_id === currentUser?.id;
                     });
                     Alert.alert(
                       'Delete Messages',
@@ -4319,10 +4743,16 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                           onPress: async () => {
                             try {
                               const spaceId = resolvedSpaceId || projectId;
-                              await supabase
-                                .from('project_space_messages' as any)
+                              const { data: removed, error: delErr } = await (supabase
+                                .from('project_space_messages' as any) as any)
                                 .delete()
-                                .in('id', deletableIds);
+                                .in('id', deletableIds)
+                                .select('id');
+                              if (delErr) throw delErr;
+                              if (!removed || removed.length === 0) {
+                                Alert.alert('Could not delete', 'The message was not deleted. You can only delete your own messages.');
+                                return;
+                              }
                               setMessages((prev) => {
                                 const updated = prev.filter((m) => !deletableIds.includes(m.id));
                                 if (spaceId) saveCache(`ps_messages_${spaceId}`, updated).catch(() => { });
@@ -4330,7 +4760,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                               });
                               setSelectedMsgIds(new Set());
                             } catch (e: any) {
-                              Alert.alert('Error', e.message || 'Delete failed.');
+                              Alert.alert('Error', friendlyError(e, 'Delete failed.'));
                             }
                           },
                         },
@@ -4346,13 +4776,21 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         </View>
       ) : (
         <View style={[styles.header, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back"
             style={styles.backBtn}
             onPress={() => handleSmartBack(navigation, 'Projects')}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Icon name="arrow-left" size={20} color={themeColors.textPrimary} />
           </TouchableOpacity>
+
+          <View style={styles.headerAvatar} accessible accessibilityLabel={`${stTitle || projectTitle || 'Project'} project picture`}>
+            {stImageUrl ? (
+              <Image source={{ uri: stImageUrl, cache: 'force-cache' }} style={styles.headerAvatarImg} />
+            ) : (
+              <Text style={styles.headerAvatarLetter}>{(stTitle || projectTitle || 'P').trim().charAt(0).toUpperCase()}</Text>
+            )}
+          </View>
 
           <View style={styles.headerTitleCol}>
             <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>
@@ -4371,49 +4809,32 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 style={styles.headerLiveBtn}
                 onPress={() => {
                   maximizeCall();
-                  const spaceId = resolvedSpaceId || syncSpaceId || projectId;
-                  navigation.navigate('Call', {
-                    roomId: spaceId,
-                    roomName: stTitle || projectTitle || 'Project Space',
-                    roomType: 'project',
-                    isVideo: callState.isVideo || false,
-                  });
+                  setActiveSubTab('Live Call');
                 }}
                 activeOpacity={0.8}
               >
                 <View style={styles.livePulseDot} />
                 <Text style={styles.headerLiveText}>LIVE</Text>
               </TouchableOpacity>
-            ) : (
+            ) : !isObserver ? (
               <TouchableOpacity
-                style={styles.headerCallBtn}
+                style={[styles.headerCallBtn, isFan && { opacity: 0.4 }]}
                 onPress={handleCallPress}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityLabel="Call Crew"
               >
                 <Icon name="phone" size={17} color={ORANGE} />
               </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={styles.headerActionBtn}
-              onPress={handleToggleBookmark}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              accessibilityLabel="Bookmark Project Space"
-            >
-              <Icon
-                name="bookmark"
-                size={18}
-                color={isBookmarked ? ORANGE : themeColors.textPrimary}
-                fill={isBookmarked ? ORANGE : 'none'}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
+            ) : null}
+            {showManagementTabs && (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Settings"
               style={styles.headerActionBtn}
               onPress={() => handleSelectSubTab('Settings')}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Icon name="settings" size={20} color={themeColors.textPrimary} />
             </TouchableOpacity>
+            )}
           </View>
         </View>
       )}
@@ -4435,7 +4856,6 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 'Team',
                 'Call Sheet',
                 'Shot List',
-                'Script Reader',
                 'Legal Docs',
                 'Budget',
                 'Applicants',
@@ -4448,13 +4868,12 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 'Team',
                 'Call Sheet',
                 'Shot List',
-                'Script Reader',
                 'Legal Docs',
                 'Budget',
                 'Applicants',
                 'Settings',
               ]) as SubTabType[]
-          ).map((tab) => {
+          ).filter((tab) => showManagementTabs || (tab !== 'Applicants' && tab !== 'Settings')).map((tab) => {
             const isActive = activeSubTab === tab;
             const isLiveTab = tab === 'Live Call';
             const iconMap: Record<string, string> = {
@@ -4465,7 +4884,6 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               Team: 'users',
               'Call Sheet': 'calendar',
               'Shot List': 'film',
-              'Script Reader': 'book-open',
               'Legal Docs': 'shield',
               Budget: 'dollar-sign',
               Applicants: 'user-plus',
@@ -4475,6 +4893,9 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
             return (
               <TouchableOpacity
                 key={tab}
+                accessibilityRole="tab"
+                accessibilityLabel={tab}
+                accessibilityState={{ selected: isActive }}
                 onPress={() => handleSelectSubTab(tab)}
                 style={[
                   styles.subTabPill,
@@ -4509,11 +4930,30 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
       </View>
 
       {/* ── Sub-Tab Body Router ──────────────────────────────────────────────── */}
+      {/* Live Call tab: the call fills the space (the other tabs stay mounted underneath; the call never stops when you switch) */}
+      {activeSubTab === 'Live Call' && isInCall && (
+        <InlineCallPanel
+          roomId={resolvedSpaceId || syncSpaceId || projectId}
+          roomName={projectData?.title || projectTitle}
+          onExpand={() => {
+            expandingToCallRef.current = true;
+            maximizeCall();
+            navigation.navigate('Call', {
+              roomId: resolvedSpaceId || syncSpaceId || projectId,
+              roomName: projectData?.title || projectTitle || 'Project Space',
+              roomType: 'project',
+              isVideo: callState.isVideo || false,
+            });
+          }}
+        />
+      )}
+
       {activeSubTab === 'Chat' && (
         <View style={styles.tabContentFlex}>
+          <E2EEBanner group="space" />
           {/* Chat Messages List */}
           {loadingMessages && messages.length === 0 ? (
-            <ScrollView contentContainerStyle={styles.messagesList} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={styles.messagesList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <ChatMessagesSkeleton showAvatars={true} showAuthorNames={true} />
             </ScrollView>
           ) : (
@@ -4529,11 +4969,80 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               windowSize={7}
               removeClippedSubviews={Platform.OS === 'android'}
               keyboardShouldPersistTaps="handled"
+              // older messages added above do not move what you are reading
+              // (only after the list has been placed: while it is still measuring the last messages this setting would pull it back up)
+              maintainVisibleContentPosition={chatSettled ? { minIndexForVisible: 0 } : undefined}
+              // hidden until it has been placed, so you never see it scroll down from the top
+              style={{ opacity: chatVisible || messages.length === 0 ? 1 : 0 }}
               onScrollBeginDrag={() => {
                 shouldScrollToEndRef.current = false;
+                userScrolledChatRef.current = true;
               }}
-              onContentSizeChange={() => {
-                if (shouldScrollToEndRef.current && messages && messages.length > 0) {
+              scrollEventThrottle={16}
+              onScroll={(e: any) => {
+                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                distFromBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              }}
+              onScrollToIndexFailed={(info) => {
+                try { flatListRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false }); } catch { }
+                setTimeout(() => { try { flatListRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.15, animated: false }); } catch { } }, 120);
+              }}
+              onContentSizeChange={(_w: number, h: number) => {
+                if (h !== lastContentHRef.current) { lastContentHRef.current = h; lastContentChangeAtRef.current = Date.now(); }
+                if (!messages || messages.length === 0) return;
+                if (!chatPositionedRef.current) {
+                  // First layout after opening: keep nudging to the first new message (or the bottom) while the list is still hidden,
+                  // and reveal it only once it is really there, so the person never sees it scroll.
+                  if (chatPlaceTimerRef.current) return;
+                  const startedAt = Date.now();
+                  let okTicks = 0;
+                  const reveal = () => {
+                    if (chatPlaceTimerRef.current) { clearInterval(chatPlaceTimerRef.current); chatPlaceTimerRef.current = null; }
+                    chatPositionedRef.current = true;
+                    setChatVisible(true);
+                    // the last messages can still grow for a moment (images, read marks): keep pinning to the bottom for ~2 seconds
+                    // unless the person scrolls, then let the list settle
+                    if (shouldScrollToEndRef.current && !userScrolledChatRef.current) {
+                      if (chatStickyTimerRef.current) clearInterval(chatStickyTimerRef.current);
+                      let ticks = 0;
+                      chatStickyTimerRef.current = setInterval(() => {
+                        ticks += 1;
+                        if (userScrolledChatRef.current || !shouldScrollToEndRef.current || ticks > 14) {
+                          clearInterval(chatStickyTimerRef.current);
+                          chatStickyTimerRef.current = null;
+                          setChatSettled(true);
+                          return;
+                        }
+                        try { flatListRef.current?.scrollToEnd({ animated: false }); } catch { }
+                      }, 150);
+                    } else {
+                      setChatSettled(true);
+                    }
+                  };
+                  const tick = () => {
+                    const list = messagesRef.current;
+                    const anchorId = unreadAnchorIdRef.current;
+                    const anchorIdx = anchorId ? list.findIndex((m) => String(m.id) === anchorId) : -1;
+                    if (userScrolledChatRef.current) { reveal(); return; }
+                    try {
+                      if (anchorIdx >= 0) {
+                        shouldScrollToEndRef.current = false;
+                        flatListRef.current?.scrollToIndex({ index: anchorIdx, viewPosition: 0.15, animated: false });
+                      } else {
+                        flatListRef.current?.scrollToEnd({ animated: false });
+                      }
+                    } catch { }
+                    // at the place AND the content has stopped growing (a picture that loads late would otherwise move the list after it is shown)
+                    // (messages can arrive in two stages, a few first and the rest a moment later: wait for both to settle)
+                    const quiet = Date.now() - Math.max(lastContentChangeAtRef.current, lastMessagesChangeAtRef.current) > 300;
+                    okTicks = (anchorIdx >= 0 || distFromBottomRef.current < 6) && quiet ? okTicks + 1 : 0;
+                    if (okTicks >= 1 || Date.now() - startedAt > 1800) reveal();
+                  };
+                  tick();
+                  if (!chatPositionedRef.current) chatPlaceTimerRef.current = setInterval(tick, 100);
+                  return;
+                }
+                if (shouldScrollToEndRef.current) {
                   try {
                     flatListRef.current?.scrollToEnd({ animated: false });
                   } catch { }
@@ -4551,7 +5060,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                       <ActivityIndicator size="small" color={ORANGE} />
                     ) : (
                       <>
-                        <Icon name="chevron-up" size={14} color="#6B7280" />
+                        <Icon name="chevron-up" size={14} color="#64748B" />
                         <Text style={styles.loadOlderText}>Load earlier messages</Text>
                       </>
                     )}
@@ -4559,7 +5068,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 ) : null
               }
               ListEmptyComponent={
-                !loadingMessages ? (
+                !loadingMessages && showEmptyWelcome ? (
                   <View style={styles.emptyMessagesContainer}>
                     <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(255, 107, 0, 0.12)' : '#FFF7ED' }]}>
                       <Icon name="message-square" size={28} color={ORANGE} />
@@ -4577,6 +5086,17 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           )}
 
           {/* Reply Banner */}
+          {editingMsg && (
+            <View style={[styles.replyBanner, { backgroundColor: themeColors.chipBg, borderTopColor: themeColors.border }]}>
+              <Icon name="edit-2" size={14} color={ORANGE} />
+              <Text style={{ flex: 1, fontSize: 12, color: themeColors.textSecondary }} numberOfLines={1}>
+                Editing message · {editMinutesLeft(editingMsg.created_at)} min left
+              </Text>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel editing" onPress={() => { setEditingMsg(null); setInputText(''); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Icon name="x" size={14} color={themeColors.iconMuted} />
+              </TouchableOpacity>
+            </View>
+          )}
           {replyingTo && (() => {
             const repThumb = getReplyThumbnail(replyingTo);
             const repAuthor = replyingTo.profiles?.full_name || replyingTo.profiles?.username || 'Crew Member';
@@ -4607,12 +5127,12 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     />
                   ) : null}
                 </View>
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                   onPress={() => setReplyingTo(null)}
                   style={styles.replyBannerCloseBtn}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Icon name="x" size={14} color={themeColors.textSecondary} />
+                  <Icon name="x" size={14} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
             );
@@ -4638,8 +5158,8 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.attachedFileName, { color: themeColors.textPrimary, maxWidth: 140 }]} numberOfLines={1}>
                       {file.name}
                     </Text>
-                    <TouchableOpacity onPress={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))} style={styles.attachedFileCloseBtn}>
-                      <Icon name="x" size={14} color={themeColors.textSecondary} />
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))} style={styles.attachedFileCloseBtn}>
+                      <Icon name="x" size={14} color={themeColors.iconSecondary} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -4648,8 +5168,15 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           )}
 
           {/* Chat Composer */}
+          {isObserver ? (
+            <View style={{ paddingHorizontal: 16, paddingVertical: 16, alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: themeColors.border, backgroundColor: themeColors.bgCard }}>
+              <Text style={{ color: themeColors.textSecondary, fontSize: 13, textAlign: 'center' }}>You are visiting this space as staff with audited access, so you can read but not post.</Text>
+            </View>
+          ) : (
           <View style={[styles.composerContainer, { backgroundColor: themeColors.bgCard, borderTopColor: themeColors.border }]}>
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel={showComposerEmojiPicker ? 'Show keyboard' : 'Emoji picker'}
               style={[
                 styles.composerIconBtn,
                 showComposerEmojiPicker && {
@@ -4674,11 +5201,11 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               />
             </TouchableOpacity>
 
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach file" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.composerIconBtn}
               onPress={handlePickMedia}
             >
-              <Icon name="paperclip" size={20} color={themeColors.textSecondary} />
+              <Icon name="paperclip" size={20} color={themeColors.iconSecondary} />
             </TouchableOpacity>
 
             <TextInput
@@ -4693,7 +5220,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               }}
               multiline
             />
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Send message" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[styles.sendBtn, ((!inputText.trim() && attachedFiles.length === 0) || sending) && styles.sendBtnDisabled]}
               onPress={handleSendMessage}
               disabled={(!inputText.trim() && attachedFiles.length === 0) || sending}
@@ -4705,6 +5232,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               )}
             </TouchableOpacity>
           </View>
+          )}
 
           {/* Google / Gboard / WhatsApp Style Emoji Keyboard in place of keyboard */}
           {showComposerEmojiPicker && (() => {
@@ -4747,7 +5275,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                   </ScrollView>
 
                   {/* Quick Backspace button on tab header */}
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={[styles.googleEmojiBackspaceBtn, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
                     onPress={() => {
                       setInputText((prev) => Array.from(prev).slice(0, -1).join(''));
@@ -4820,7 +5348,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       {/* ── Sub-Tab: Tasks ───────────────────────────────────────────────────── */}
       {activeSubTab === 'Tasks' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionCategoryTag}>WORKSPACE</Text>
             <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Production Tasks</Text>
@@ -4828,7 +5356,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
           {/* Search Filter */}
           <View style={[styles.searchBarContainer, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-            <Icon name="search" size={16} color={themeColors.textMuted} />
+            <Icon name="search" size={16} color={themeColors.iconMuted} />
             <TextInput
               style={[styles.searchBarInput, { color: themeColors.textPrimary }]}
               placeholder="Find a task or asset..."
@@ -4839,6 +5367,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           </View>
 
           {/* New Task Composer Card */}
+          {!isReadOnly && (
           <Card style={[styles.composerCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
             <Text style={styles.composerCardLabel}>NEW PRODUCTION STEP</Text>
             <TextInput
@@ -4874,13 +5403,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               )}
             </TouchableOpacity>
           </Card>
+          )}
 
           {/* Task List */}
           <View style={styles.cardsList}>
             {filteredTasks.length > 0 ? (
               filteredTasks.map((t) => (
                 <View key={t.id} style={[styles.taskCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: !!t.is_completed }} accessibilityLabel={t.name || 'Task'} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={[styles.checkboxSquare, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, t.is_completed && styles.checkboxSquareChecked]}
                     onPress={() => handleToggleTask(t.id, t.is_completed)}
                   >
@@ -4896,17 +5426,19 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     {t.description ? <Text style={[styles.taskCardDesc, { color: themeColors.textSecondary }]}>{t.description}</Text> : null}
                     {t.due_date ? <Text style={styles.taskCardDueDate}>Due: {t.due_date}</Text> : null}
                   </View>
-                  <TouchableOpacity
+                  {!isReadOnly && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete task"
                     onPress={() => handleDeleteTask(t.id)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Icon name="trash-2" size={15} color={themeColors.textMuted} />
+                    <Icon name="trash-2" size={15} color={themeColors.iconMuted} />
                   </TouchableOpacity>
+                  )}
                 </View>
               ))
             ) : (
               <View style={styles.emptyStateContainer}>
-                <Icon name="layers" size={32} color={themeColors.textMuted} />
+                <Icon name="layers" size={32} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Active Tasks</Text>
                 <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Keep the production moving by deploying steps above.</Text>
               </View>
@@ -4917,12 +5449,13 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       {/* ── Sub-Tab: Files ───────────────────────────────────────────────────── */}
       {activeSubTab === 'Files' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionCategoryTag}>STORAGE ASSETS</Text>
               <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Production Documents</Text>
             </View>
+            {!isReadOnly && (
             <TouchableOpacity
               style={styles.headerSmallBtn}
               onPress={handleCreateDocument}
@@ -4937,11 +5470,12 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 </>
               )}
             </TouchableOpacity>
+            )}
           </View>
 
           {/* Search Filter */}
           <View style={[styles.searchBarContainer, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-            <Icon name="search" size={16} color={themeColors.textMuted} />
+            <Icon name="search" size={16} color={themeColors.iconMuted} />
             <TextInput
               style={[styles.searchBarInput, { color: themeColors.textPrimary }]}
               placeholder="Filter lookbooks and scripts..."
@@ -4970,13 +5504,13 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
                       {/* Overlay Action Buttons */}
                       <View style={styles.webFileOverlayRow}>
-                        <TouchableOpacity
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Show" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           style={styles.webFileActionCircle}
                           onPress={() => handleOpenFile(f.url, 'project-files')}
                         >
                           <Icon name="eye" size={13} color="#1F2937" />
                         </TouchableOpacity>
-                        <TouchableOpacity
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Download" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           style={styles.webFileActionCircle}
                           onPress={() => handleOpenFile(f.url, 'project-files')}
                         >
@@ -4992,12 +5526,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                       </Text>
                       <View style={styles.webFileMetaRow}>
                         <Text style={[styles.webFileSize, { color: themeColors.textSecondary }]}>{formatFileSize(f.size)}</Text>
-                        <TouchableOpacity
+                        {!isReadOnly && (
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete file"
                           onPress={() => handleDeleteFile(f.id)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Icon name="trash-2" size={13} color={themeColors.textMuted} />
+                          <Icon name="trash-2" size={13} color={themeColors.iconMuted} />
                         </TouchableOpacity>
+                        )}
                       </View>
                     </View>
                   </View>
@@ -5005,9 +5541,9 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               })
             ) : (
               <View style={[styles.emptyStateContainer, { width: '100%' }]}>
-                <Icon name="folder" size={32} color={themeColors.textMuted} />
+                <Icon name="folder" size={32} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Documents Found</Text>
-                <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Tap 'Upload Asset' to register scripts, lookbooks, or cues.</Text>
+                <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>{isReadOnly ? 'Nothing has been uploaded to this space yet.' : "Tap 'Upload Asset' to register scripts, lookbooks, or cues."}</Text>
               </View>
             )}
           </View>
@@ -5016,7 +5552,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       {/* ── Sub-Tab: Team ────────────────────────────────────────────────────── */}
       {activeSubTab === 'Team' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionCategoryTag}>CREW MANAGEMENT</Text>
             <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Production Team</Text>
@@ -5024,15 +5560,84 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
           {/* Search Filter */}
           <View style={[styles.searchBarContainer, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-            <Icon name="search" size={16} color={themeColors.textMuted} />
-            <TextInput
+            <Icon name="search" size={16} color={themeColors.iconMuted} />
+            <TextInput returnKeyType="search" accessibilityLabel="Search team members by name or craft"
               style={[styles.searchBarInput, { color: themeColors.textPrimary }]}
               placeholder="Search team members by name or craft..."
               placeholderTextColor={themeColors.textMuted}
               value={teamSearch}
               onChangeText={setTeamSearch}
             />
+            {teamSearch ? (
+              <TouchableOpacity
+                onPress={() => setTeamSearch('')}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Icon name="x" size={16} color={themeColors.iconMuted} />
+              </TouchableOpacity>
+            ) : null}
           </View>
+
+          {!isInternal && (canManage || (teamMembers || []).some((m: any) => (m.user_id || m.id) === (currentUserId || currentUser?.id) && String(m.role || '').toLowerCase() === 'admin')) && resolvedSpaceId ? (
+            <ProjectInviteCard spaceId={resolvedSpaceId} userId={currentUserId || currentUser?.id} />
+          ) : null}
+
+          <Modal visible={!!rolePickerFor} transparent animationType="fade" onRequestClose={() => { setRolePickerFor(null); setOtherRoleOpen(false); }}>
+            <TouchableOpacity activeOpacity={1} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }} onPress={() => { setRolePickerFor(null); setOtherRoleOpen(false); }}>
+              <TouchableOpacity activeOpacity={1} style={{ backgroundColor: themeColors.bgCard, borderRadius: 16, borderWidth: 1, borderColor: themeColors.border, padding: 16 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: themeColors.textPrimary }}>Role for {rolePickerFor?.full_name || 'member'}</Text>
+                {otherRoleOpen ? (
+                  <View style={{ marginTop: 12 }}>
+                    <TextInput
+                      value={otherRoleText}
+                      onChangeText={(t) => setOtherRoleText(t.slice(0, 40))}
+                      placeholder="Role name (1 to 40 characters)"
+                      placeholderTextColor={themeColors.textMuted}
+                      accessibilityLabel="Other role name"
+                      autoFocus
+                      onSubmitEditing={submitOtherRole}
+                      style={{ borderWidth: 1, borderColor: themeColors.border, borderRadius: 10, padding: 10, color: themeColors.textPrimary, backgroundColor: themeColors.inputBg }}
+                    />
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" style={{ flex: 1, height: 42, borderRadius: 10, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => setOtherRoleOpen(false)}>
+                        <Text style={{ color: themeColors.textPrimary, fontWeight: '700' }}>Back</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save role" style={{ flex: 1, height: 42, borderRadius: 10, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center' }} onPress={submitOtherRole}>
+                        <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <ScrollView style={{ maxHeight: 360, marginTop: 8 }}>
+                    {(() => {
+                      const cur = String(rolePickerFor?.role || 'member').trim();
+                      const known = ['admin', 'member', ...crewRoles];
+                      const options = known.some((r) => r.toLowerCase() === cur.toLowerCase()) ? known : [...known, cur];
+                      return options.map((r) => {
+                        const selected = r.toLowerCase() === cur.toLowerCase();
+                        return (
+                          <TouchableOpacity key={r} accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={r === 'admin' ? 'Admin' : r === 'member' ? 'Member' : r}
+                            style={{ paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                            onPress={() => handleRoleChoice(rolePickerFor, r)}>
+                            <Text style={{ fontSize: 15, color: selected ? ORANGE : themeColors.textPrimary, fontWeight: selected ? '800' : '600' }}>{r === 'admin' ? 'Admin' : r === 'member' ? 'Member' : r}</Text>
+                            {selected ? <Icon name="check" size={16} color={ORANGE} /> : null}
+                          </TouchableOpacity>
+                        );
+                      });
+                    })()}
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Other role" style={{ paddingVertical: 12 }} onPress={() => { setOtherRoleText(''); setOtherRoleOpen(true); }}>
+                      <Text style={{ fontSize: 15, color: themeColors.textPrimary, fontWeight: '600' }}>Other role…</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove from project" style={{ paddingVertical: 12 }} onPress={() => handleRemoveTeamMember(rolePickerFor)}>
+                      <Text style={{ fontSize: 15, color: '#DC2626', fontWeight: '700' }}>Remove from project</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                )}
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </Modal>
 
           {/* Crew List */}
           <View style={styles.cardsList}>
@@ -5050,36 +5655,32 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.crewName, { color: themeColors.textPrimary }]} numberOfLines={1}>
                       {m.full_name || m.username || 'Crew Member'}
                     </Text>
-                    <Text style={styles.crewCraft}>CRAFT // {(m.craft || m.role || 'Filmmaker').toUpperCase()}</Text>
+                    <Text style={styles.crewCraft}>{(m.craft || m.role || 'Filmmaker')}</Text>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.crewRoleBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F3F4F6' }]}
-                    onPress={() => {
-                      if (editingCrewId !== m.id) {
-                        setEditingCrewId(m.id);
-                        setTempCrewRole(m.role || '');
-                      }
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    {editingCrewId === m.id ? (
-                      <TextInput
-                        style={[styles.crewRoleBadgeText, { color: themeColors.textPrimary, padding: 0, minWidth: 60 }]}
-                        value={tempCrewRole}
-                        onChangeText={setTempCrewRole}
-                        autoFocus
-                        onBlur={() => handleUpdateCrewRole(m.id)}
-                        onSubmitEditing={() => handleUpdateCrewRole(m.id)}
-                      />
-                    ) : (
-                      <Text style={[styles.crewRoleBadgeText, { color: themeColors.textSecondary }]}>{(m.role || 'Crew').toUpperCase()}</Text>
-                    )}
-                  </TouchableOpacity>
+                  {(() => {
+                    const isOwnerRow = ownerIds.includes(m.id) || projectData?.creator_id === m.id;
+                    const targetIsAdmin = String(m.role || '').toLowerCase() === 'admin';
+                    const editable = canEditRoles && !isOwnerRow && !(!isSpaceOwner && targetIsAdmin);
+                    const label = isOwnerRow ? 'OWNER' : (m.role || 'Crew').toUpperCase();
+                    return (
+                      <TouchableOpacity
+                        style={[styles.crewRoleBadge, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F3F4F6', flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+                        disabled={!editable}
+                        accessibilityRole={editable ? 'button' : undefined}
+                        accessibilityLabel={editable ? `Change role for ${m.full_name || 'member'}, currently ${m.role || 'Crew'}` : undefined}
+                        onPress={() => setRolePickerFor(m)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.crewRoleBadgeText, { color: themeColors.textSecondary }]}>{label}</Text>
+                        {editable ? <Icon name="chevron-down" size={12} color={themeColors.textSecondary} /> : null}
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </View>
               ))
             ) : (
               <View style={styles.emptyStateContainer}>
-                <Icon name="users" size={32} color={themeColors.textMuted} />
+                <Icon name="users" size={32} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Crew Members</Text>
                 <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Review applicants or onboard collaborators from discovery.</Text>
               </View>
@@ -5090,12 +5691,13 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       {/* ── Sub-Tab: Call Sheet ──────────────────────────────────────────────── */}
       {activeSubTab === 'Call Sheet' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionCategoryTag}>DAILY CALL SHEETS</Text>
               <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Daily Call Sheet</Text>
             </View>
+            {!isReadOnly && (
             <TouchableOpacity
               style={styles.headerSmallBtn}
               onPress={() => setNewCallSheetModalVisible(true)}
@@ -5103,6 +5705,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               <Icon name="plus" size={14} color="#FFFFFF" />
               <Text style={styles.headerSmallBtnText}>New Sheet</Text>
             </TouchableOpacity>
+            )}
           </View>
 
           {/* Slate Cards List */}
@@ -5122,19 +5725,19 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 <View style={[styles.slateDetailsGrid, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F9FAFB' }]}>
                   <View style={styles.slateDetailItem}>
                     <Text style={[styles.slateDetailLabel, { color: themeColors.textMuted }]}>GENERAL CALL</Text>
-                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.call_time || '06:00 AM'}</Text>
+                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.call_time || 'Not set'}</Text>
                   </View>
                   <View style={styles.slateDetailItem}>
                     <Text style={[styles.slateDetailLabel, { color: themeColors.textMuted }]}>LOCATION</Text>
-                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.location || 'Central Studio'}</Text>
+                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.location || 'Not set'}</Text>
                   </View>
                   <View style={styles.slateDetailItem}>
                     <Text style={[styles.slateDetailLabel, { color: themeColors.textMuted }]}>DIRECTOR</Text>
-                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.director || 'Director'}</Text>
+                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.director || 'Not set'}</Text>
                   </View>
                   <View style={styles.slateDetailItem}>
                     <Text style={[styles.slateDetailLabel, { color: themeColors.textMuted }]}>PRODUCER</Text>
-                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.producer || 'Producer'}</Text>
+                    <Text style={[styles.slateDetailValue, { color: themeColors.textPrimary }]}>{cs.producer || 'Not set'}</Text>
                   </View>
                 </View>
 
@@ -5145,28 +5748,23 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 )}
 
                 <View style={styles.slateActionsRow}>
-                  <TouchableOpacity
-                    style={styles.slateDownloadBtn}
-                    onPress={() => Alert.alert('Download PDF', 'Generating high-res production PDF...')}
-                  >
-                    <Icon name="download" size={14} color="#FFFFFF" />
-                    <Text style={styles.slateDownloadBtnText}>Download PDF</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
+                  {/* "Download PDF" was removed: the app has no call sheet PDF generation, so the button did nothing. */}
+                  {!isReadOnly && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete call sheet" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.slateDeleteBtn}
                     onPress={() => handleDeleteCallSheet(cs.id)}
                   >
                     <Icon name="trash-2" size={14} color="#DC2626" />
                   </TouchableOpacity>
+                  )}
                 </View>
               </Card>
             ))
           ) : (
             <View style={styles.emptyStateContainer}>
-              <Icon name="calendar" size={32} color={themeColors.textMuted} />
+              <Icon name="calendar" size={32} color={themeColors.iconMuted} />
               <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Published Call Sheets</Text>
-              <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Tap 'New Sheet' to schedule cast calls, locations, and shoot dates.</Text>
+              <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>{isReadOnly ? 'No call sheet has been published in this space yet.' : "Tap 'New Sheet' to schedule cast calls, locations, and shoot dates."}</Text>
             </View>
           )}
         </ScrollView>
@@ -5174,13 +5772,14 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       {/* ── Sub-Tab: Shot List ───────────────────────────────────────────────── */}
       {activeSubTab === 'Shot List' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionCategoryTag}>VISUAL CONTINUITY</Text>
             <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Scene & Shot Sequence</Text>
           </View>
 
           {/* Shot Composer Card */}
+          {!isReadOnly && (
           <Card style={[styles.composerCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
             <Text style={styles.composerCardLabel}>ALLOCATE SHOT SEQUENCE</Text>
             <View style={styles.twoColRow}>
@@ -5225,6 +5824,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               )}
             </TouchableOpacity>
           </Card>
+          )}
 
           {/* Shot Sequence List */}
           <View style={styles.cardsList}>
@@ -5242,6 +5842,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                         styles.statusPillBadge,
                         sh.status === 'completed' ? styles.statusPillCompleted : styles.statusPillPending,
                       ]}
+                      disabled={isReadOnly}
                       onPress={() => handleToggleShotStatus(sh.id, sh.status)}
                     >
                       <Text
@@ -5258,18 +5859,20 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                   <Text style={[styles.shotDescription, { color: themeColors.textPrimary }]}>{sh.description}</Text>
 
                   <View style={styles.shotFooterRow}>
-                    <TouchableOpacity
+                    {!isReadOnly && (
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete shot"
                       onPress={() => handleDeleteShot(sh.id)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Icon name="trash-2" size={14} color={themeColors.textMuted} />
+                      <Icon name="trash-2" size={14} color={themeColors.iconMuted} />
                     </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               ))
             ) : (
               <View style={styles.emptyStateContainer}>
-                <Icon name="film" size={32} color={themeColors.textMuted} />
+                <Icon name="film" size={32} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Shots Allocated</Text>
                 <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Add scene sequence items above to maintain visual continuity.</Text>
               </View>
@@ -5278,78 +5881,15 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         </ScrollView>
       )}
 
-      {/* ── Sub-Tab: Script Reader ───────────────────────────────────────────── */}
-      {activeSubTab === 'Script Reader' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionCategoryTag}>PRODUCTION SCREENPLAY</Text>
-              <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Interactive Script Reader</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.headerSmallBtn}
-              onPress={handleCreateDocument}
-              disabled={uploadingDoc}
-            >
-              {uploadingDoc ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Icon name="plus" size={14} color="#FFFFFF" />
-                  <Text style={styles.headerSmallBtnText}>Upload Script</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.cardsList}>
-            {filteredFiles.filter(f => (f.name || '').toLowerCase().endsWith('.pdf')).length > 0 ? (
-              filteredFiles.filter(f => (f.name || '').toLowerCase().endsWith('.pdf')).map((f) => (
-                <View key={f.id} style={[styles.docCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                  <View style={styles.docIconBox}>
-                    <Icon name="book-open" size={18} color={ORANGE} />
-                  </View>
-                  <View style={styles.docMetaCol}>
-                    <Text style={[styles.docTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>
-                      {f.name}
-                    </Text>
-                    <Text style={[styles.docSub, { color: themeColors.textSecondary }]}>
-                      Script File • {new Date(f.created_at || Date.now()).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.docDownloadBtn}
-                    onPress={() => handleOpenFile(f.url, 'project-files')}
-                  >
-                    <Icon name="maximize" size={16} color={themeColors.textSecondary} />
-                  </TouchableOpacity>
-                </View>
-              ))
-            ) : (
-              <View style={styles.emptyStateContainer}>
-                <Icon name="book-open" size={32} color={themeColors.textMuted} />
-                <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Screenplays Found</Text>
-                <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Upload PDF scripts here or in the Files tab to read them.</Text>
-                <TouchableOpacity
-                  style={[styles.primaryActionBtn, { marginTop: 16, paddingHorizontal: 20 }]}
-                  onPress={handleCreateDocument}
-                >
-                  <Text style={styles.primaryActionBtnText}>Upload PDF Screenplay</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-      )}
-
       {/* ── Sub-Tab: Legal Docs ──────────────────────────────────────────────── */}
       {activeSubTab === 'Legal Docs' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionCategoryTag}>COMPLIANCE & LEGAL</Text>
               <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Agreements & Clearances</Text>
             </View>
+            {!isReadOnly && (
             <TouchableOpacity
               style={styles.headerSmallBtn}
               onPress={() => setNewLegalDocModalVisible(true)}
@@ -5357,6 +5897,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               <Icon name="plus" size={14} color="#FFFFFF" />
               <Text style={styles.headerSmallBtnText}>Add Document</Text>
             </TouchableOpacity>
+            )}
           </View>
 
           {/* Legal Docs List */}
@@ -5372,31 +5913,31 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                       {d.title}
                     </Text>
                     <Text style={[styles.legalDocType, { color: themeColors.textSecondary }]}>
-                      TYPE // {(d.document_type || 'CONTRACT').toUpperCase()}
+                      {(d.document_type || 'Contract')}
                     </Text>
                   </View>
-                  <View style={styles.legalDocBadgeSigned}>
-                    <Text style={styles.legalDocBadgeSignedText}>SIGNED</Text>
-                  </View>
-                  <TouchableOpacity
+                  {/* The old "SIGNED" badge was removed: nothing records whether a document is signed. */}
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Download" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.docDownloadBtn}
                     onPress={() => handleOpenFile(d.url, 'legal-documents')}
                   >
-                    <Icon name="download" size={16} color={themeColors.textSecondary} />
+                    <Icon name="download" size={16} color={themeColors.iconSecondary} />
                   </TouchableOpacity>
-                  <TouchableOpacity
+                  {!isReadOnly && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete legal document"
                     onPress={() => handleDeleteLegalDoc(d.id)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Icon name="trash-2" size={14} color={themeColors.textMuted} />
+                    <Icon name="trash-2" size={14} color={themeColors.iconMuted} />
                   </TouchableOpacity>
+                  )}
                 </View>
               ))
             ) : (
               <View style={styles.emptyStateContainer}>
-                <Icon name="shield" size={32} color={themeColors.textMuted} />
+                <Icon name="shield" size={32} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Agreements Found</Text>
-                <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Tap 'Add Document' to register NDAs, performer releases, and clearances.</Text>
+                <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>{isReadOnly ? 'No legal documents have been added to this space yet.' : "Tap 'Add Document' to register NDAs, performer releases, and clearances."}</Text>
               </View>
             )}
           </View>
@@ -5405,7 +5946,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
       {/* ── Sub-Tab: Budget ──────────────────────────────────────────────────── */}
       {activeSubTab === 'Budget' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionCategoryTag}>FINANCIAL LEDGER</Text>
             <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Production Budget Allocation</Text>
@@ -5415,7 +5956,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           <View style={styles.statCardsRow}>
             <View style={[styles.statCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
               <Text style={[styles.statCardLabel, { color: themeColors.textSecondary }]}>TOTAL BUDGET</Text>
-              <Text style={[styles.statCardValue, { color: themeColors.textPrimary }]}>₹{totalBudgetEst.toLocaleString()}</Text>
+              <Text style={[styles.statCardValue, { color: themeColors.textPrimary }]}>{totalBudgetEst > 0 ? `₹${totalBudgetEst.toLocaleString()}` : 'Not set'}</Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
               <Text style={[styles.statCardLabel, { color: themeColors.textSecondary }]}>ALLOCATED</Text>
@@ -5424,14 +5965,15 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               </Text>
             </View>
             <View style={[styles.statCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-              <Text style={[styles.statCardLabel, { color: themeColors.textSecondary }]}>REMAINING</Text>
-              <Text style={[styles.statCardValue, { color: '#10B981' }]}>
-                ₹{remainingBudget.toLocaleString()}
+              <Text style={[styles.statCardLabel, { color: themeColors.textSecondary }]}>{remainingBudget < 0 ? 'OVER BUDGET' : 'REMAINING'}</Text>
+              <Text style={[styles.statCardValue, { color: remainingBudget < 0 ? '#EF4444' : '#10B981' }]}>
+                {remainingBudget < 0 ? '-' : ''}₹{Math.abs(remainingBudget).toLocaleString()}
               </Text>
             </View>
           </View>
 
           {/* Budget Item Composer Card */}
+          {!isReadOnly && (
           <Card style={[styles.composerCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
             <Text style={styles.composerCardLabel}>ALLOCATE EXPENSE</Text>
             <TextInput
@@ -5477,6 +6019,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               )}
             </TouchableOpacity>
           </Card>
+          )}
 
           {/* Budget Ledger List */}
           <View style={styles.cardsList}>
@@ -5492,28 +6035,32 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                   <Text style={[styles.budgetAmountText, { color: themeColors.textPrimary }]}>
                     ₹{(parseFloat(b.estimated_cost) || 0).toLocaleString()}
                   </Text>
-                  <TouchableOpacity
+                  {!isReadOnly && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete budget item"
                     onPress={() => handleDeleteBudgetItem(b.id)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Icon name="trash-2" size={14} color={themeColors.textMuted} />
+                    <Icon name="trash-2" size={14} color={themeColors.iconMuted} />
                   </TouchableOpacity>
+                  )}
                 </View>
               ))
             ) : (
               <View style={styles.emptyStateContainer}>
-                <Icon name="dollar-sign" size={32} color={themeColors.textMuted} />
+                <Icon name="dollar-sign" size={32} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Expenses Logged</Text>
                 <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>Allocate equipment, talent, or staging costs above.</Text>
               </View>
             )}
           </View>
+
+          <ProjectSchedulePhases projectId={projectId} spaceId={resolvedSpaceId || undefined} readOnly={isReadOnly || !canManage} />
         </ScrollView>
       )}
 
       {/* ── Sub-Tab: Applicants ──────────────────────────────────────────────── */}
       {activeSubTab === 'Applicants' && (
-        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+        <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionCategoryTag}>ROLE APPLICATIONS</Text>
             <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Crew Candidates</Text>
@@ -5534,7 +6081,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                         {a.profiles?.full_name || 'Applicant'}
                       </Text>
                       <Text style={styles.applicantRole}>
-                        APPLYING FOR // {(a.profiles?.craft || 'Crew').toUpperCase()}
+                        Applying for {(a.profiles?.craft || 'Crew')}
                       </Text>
                     </View>
                   </View>
@@ -5545,9 +6092,12 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     </View>
                   )}
 
+                  {/* Only the space creator decides; staff observers are read only and the database refuses everyone else (cj_can_manage_space). */}
+                  {canManage && !isReadOnly && (
                   <View style={styles.applicantActionsRow}>
                     <TouchableOpacity
                       style={styles.applicantAcceptBtn}
+                      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
                       onPress={() => handleApplicantDecision(a.id, a.user_id, 'approved')}
                       disabled={processingApplicantId === a.id}
                     >
@@ -5560,17 +6110,22 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
 
                     <TouchableOpacity
                       style={styles.applicantRejectBtn}
-                      onPress={() => handleApplicantDecision(a.id, a.user_id, 'rejected')}
+                      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                      onPress={() => Alert.alert('Reject this applicant?', 'They will be told their request was declined.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Reject', style: 'destructive', onPress: () => handleApplicantDecision(a.id, a.user_id, 'rejected') },
+                      ])}
                       disabled={processingApplicantId === a.id}
                     >
                       <Text style={styles.applicantRejectBtnText}>Reject</Text>
                     </TouchableOpacity>
                   </View>
+                  )}
                 </Card>
               ))
             ) : (
               <View style={styles.emptyStateContainer}>
-                <Icon name="user-plus" size={32} color={themeColors.textMuted} />
+                <Icon name="user-plus" size={32} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Pending Applicants</Text>
                 <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>All candidate requests have been reviewed.</Text>
               </View>
@@ -5584,10 +6139,10 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         <View style={styles.tabContentFlex}>
           {isSettingsMenu ? (
             /* Master Menu View */
-            <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+            <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
               {/* Project Header Banner */}
               <View style={[styles.settingsHeaderBanner, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                <TouchableOpacity style={styles.settingsThumbCircle} onPress={handleUpdateAvatar}>
+                <TouchableOpacity style={styles.settingsThumbCircle} onPress={handleUpdateAvatar} disabled={!canManage}>
                   {stImageUrl ? (
                     <Image source={{ uri: stImageUrl, cache: 'force-cache' }} style={styles.settingsThumbImage} />
                   ) : (
@@ -5621,7 +6176,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.settingsMenuTitle, { color: themeColors.textPrimary }]}>General Basics</Text>
                     <Text style={[styles.settingsMenuDesc, { color: themeColors.textSecondary }]}>Title, Story Synopsis, Location & Genres</Text>
                   </View>
-                  <Icon name="chevron-right" size={18} color={themeColors.textMuted} />
+                  <Icon name="chevron-right" size={18} color={themeColors.iconMuted} />
                 </TouchableOpacity>
 
                 <View style={[styles.settingsMenuDivider, { backgroundColor: themeColors.divider }]} />
@@ -5641,7 +6196,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.settingsMenuTitle, { color: themeColors.textPrimary }]}>Budget & Timeline</Text>
                     <Text style={[styles.settingsMenuDesc, { color: themeColors.textSecondary }]}>Financial estimates & production dates</Text>
                   </View>
-                  <Icon name="chevron-right" size={18} color={themeColors.textMuted} />
+                  <Icon name="chevron-right" size={18} color={themeColors.iconMuted} />
                 </TouchableOpacity>
 
                 <View style={[styles.settingsMenuDivider, { backgroundColor: themeColors.divider }]} />
@@ -5661,7 +6216,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.settingsMenuTitle, { color: themeColors.textPrimary }]}>Privacy & Scope</Text>
                     <Text style={[styles.settingsMenuDesc, { color: themeColors.textSecondary }]}>Marketplace visibility & phase status</Text>
                   </View>
-                  <Icon name="chevron-right" size={18} color={themeColors.textMuted} />
+                  <Icon name="chevron-right" size={18} color={themeColors.iconMuted} />
                 </TouchableOpacity>
               </Card>
 
@@ -5678,6 +6233,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.settingsMenuDesc, { color: themeColors.textSecondary }]}>Silence all push notifications from this project space</Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Mute Space"
                     value={spaceNotifMute}
                     onValueChange={(val) => {
                       setSpaceNotifMute(val);
@@ -5698,6 +6254,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.settingsMenuDesc, { color: themeColors.textSecondary }]}>Only notify when someone @mentions you</Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Mentions Only"
                     value={spaceNotifMentionsOnly}
                     onValueChange={(val) => {
                       setSpaceNotifMentionsOnly(val);
@@ -5719,6 +6276,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.settingsMenuDesc, { color: themeColors.textSecondary }]}>Play sound on incoming messages</Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Sound Alerts"
                     value={spaceNotifSoundAlerts}
                     onValueChange={(val) => {
                       setSpaceNotifSoundAlerts(val);
@@ -5730,7 +6288,8 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 </View>
               </Card>
 
-              {/* Category: Danger Zone */}
+              {/* Category: Danger Zone (owner only; staff visitors never see it, like the web) */}
+              {isSpaceOwner && !isReadOnly && (<>
               <Text style={[styles.settingsSectionHeading, { color: '#DC2626', marginTop: 24 }]}>
                 DANGER ZONE
               </Text>
@@ -5750,18 +6309,19 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                     <Text style={[styles.settingsMenuTitle, { color: '#DC2626' }]}>Security Actions</Text>
                     <Text style={[styles.settingsMenuDesc, { color: themeColors.textSecondary }]}>Terminate space or clear chat logs</Text>
                   </View>
-                  <Icon name="chevron-right" size={18} color={themeColors.textMuted} />
+                  <Icon name="chevron-right" size={18} color={themeColors.iconMuted} />
                 </TouchableOpacity>
               </Card>
+              </>)}
             </ScrollView>
           ) : (
             /* Step Detail View */
-            <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent}>
+            <ScrollView style={[styles.tabBody, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.tabBodyContent} keyboardShouldPersistTaps="handled">
               <TouchableOpacity
                 style={styles.settingsBackBtn}
                 onPress={() => setIsSettingsMenu(true)}
               >
-                <Icon name="arrow-left" size={14} color={themeColors.textSecondary} />
+                <Icon name="arrow-left" size={14} color={themeColors.iconSecondary} />
                 <Text style={[styles.settingsBackBtnText, { color: themeColors.textSecondary }]}>BACK TO MENU</Text>
               </TouchableOpacity>
 
@@ -5836,7 +6396,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                       );
                     })}
                   </View>
-                  <Text style={{ fontSize: 10, color: themeColors.textSecondary, marginBottom: 16 }}>
+                  <Text style={{ fontSize: 12, color: themeColors.textSecondary, marginBottom: 16 }}>
                     Toggle roles to open or close them. Deselecting a role will remove it from the open roles list.
                   </Text>
                 </Card>
@@ -5916,6 +6476,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                       </Text>
                     </View>
                     <Switch
+                      accessibilityLabel="Public space"
                       value={stIsPublic}
                       onValueChange={setStIsPublic}
                       trackColor={{ false: isDark ? '#374151' : '#D1D5DB', true: ORANGE }}
@@ -5979,7 +6540,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 <TouchableOpacity
                   style={[styles.syncSaveBtn, savingSettings && styles.btnDisabled]}
                   onPress={handleSaveSettings}
-                  disabled={savingSettings}
+                  disabled={savingSettings || !canManage}
                 >
                   {savingSettings ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
@@ -6002,10 +6563,10 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
               Officially wrap "{stTitle}". Tag crew members to publish verified credits to their portfolios.
             </Text>
 
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={styles.modalScrollView} keyboardShouldPersistTaps="handled">
               {wrapCrewList.map((crew, idx) => (
                 <View key={crew.user_id + idx} style={[styles.wrapCrewItem, { borderBottomColor: themeColors.divider }]}>
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="checkbox" accessibilityState={{ checked: !!crew.selected }} accessibilityLabel={`Tag ${crew.full_name}`} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={[styles.checkboxSquare, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, crew.selected && styles.checkboxSquareChecked]}
                     onPress={() =>
                       setWrapCrewList((prev) =>
@@ -6181,10 +6742,10 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' }}>
           {/* Header Bar */}
           <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 10 : 0, zIndex: 10 }}>
-            <TouchableOpacity onPress={() => setLightboxState((prev) => ({ ...prev, visible: false }))} style={{ padding: 8 }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setLightboxState((prev) => ({ ...prev, visible: false }))} style={{ padding: 8 }}>
               <Icon name="x" size={24} color="#FFFFFF" />
             </TouchableOpacity>
-            <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
               {lightboxState.images.length > 0 ? `${lightboxState.currentIndex + 1} of ${lightboxState.images.length}` : ''}
             </Text>
             <View style={{ width: 40 }} />
@@ -6197,15 +6758,15 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
             pagingEnabled
             showsHorizontalScrollIndicator={false}
             initialScrollIndex={lightboxState.currentIndex >= 0 && lightboxState.currentIndex < lightboxState.images.length ? lightboxState.currentIndex : 0}
-            getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+            getItemLayout={(_, index) => ({ length: Dimensions.get('window').width, offset: Dimensions.get('window').width * index, index })}
             onMomentumScrollEnd={(e) => {
-              const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+              const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
               setLightboxState((prev) => ({ ...prev, currentIndex: idx }));
             }}
             keyExtractor={(item, index) => item + index}
             renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH, height: '88%', justifyContent: 'center', alignItems: 'center' }}>
-                <CachedImage uri={item} style={{ width: SCREEN_WIDTH, height: '100%' }} resizeMode="contain" />
+              <View style={{ width: Dimensions.get('window').width, height: '88%', justifyContent: 'center', alignItems: 'center' }}>
+                <CachedImage uri={item} style={{ width: Dimensions.get('window').width, height: '100%' }} resizeMode="contain" />
               </View>
             )}
           />
@@ -6223,12 +6784,12 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           <View style={[styles.messageInfoCard, { backgroundColor: themeColors.bgCard }]}>
             <View style={[styles.messageInfoHeader, { borderBottomColor: themeColors.border }]}>
               <Text style={[styles.messageInfoTitle, { color: themeColors.textPrimary }]}>Message Info</Text>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                 onPress={() => setInfoModalMessage(null)}
                 style={styles.messageInfoCloseBtn}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <Icon name="x" size={20} color={themeColors.iconSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -6415,7 +6976,7 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
                 <View style={styles.messageInfoSection}>
                   <View style={styles.messageInfoSectionHeader}>
                     <View style={styles.messageInfoSectionTitleRow}>
-                      <Text style={{ fontSize: 15 }}>✨</Text>
+                      <Text style={{ fontSize: 16 }}>✨</Text>
                       <Text style={[styles.messageInfoSectionTitle, { color: themeColors.textPrimary }]}>
                         Reactions ({infoModalMessage.reactions.length})
                       </Text>
@@ -6437,6 +6998,13 @@ export const ProjectSpaceScreen = ({ route, navigation }: { route: any; navigati
           </View>
         </View>
       </Modal>
+      <CallDetailsModal
+        visible={!!selectedCallMessage}
+        onClose={() => setSelectedCallMessage(null)}
+        message={selectedCallMessage}
+        roomType="project"
+        roomId={resolvedSpaceId || projectId || ''}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -6454,7 +7022,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#64748B',
     fontWeight: '600',
   },
 
@@ -6469,12 +7037,31 @@ const styles = StyleSheet.create({
   backBtn: {
     marginRight: 12,
   },
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 10,
+    overflow: 'hidden',
+    backgroundColor: ORANGE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarImg: {
+    width: 36,
+    height: 36,
+  },
+  headerAvatarLetter: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
   headerTitleCol: {
     flex: 1,
   },
   headerTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   e2eeRow: {
@@ -6484,8 +7071,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   e2eeText: {
-    fontSize: 8.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#059669',
     letterSpacing: 0.8,
   },
@@ -6499,7 +7086,7 @@ const styles = StyleSheet.create({
   },
   headerCallBtn: {
     width: 34,
-    height: 34,
+    height: 44,
     borderRadius: 17,
     backgroundColor: 'rgba(255,75,51,0.08)',
     alignItems: 'center',
@@ -6523,7 +7110,7 @@ const styles = StyleSheet.create({
   loadOlderText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#64748B',
   },
 
   // ── Sub-Navigation Pill Bar ────────────────────────────────────────────────
@@ -6542,6 +7129,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 7,
+    minHeight: 40,
     borderRadius: 999,
   },
   subTabPillActive: {
@@ -6581,15 +7169,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   sectionCategoryTag: {
-    fontSize: 9.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   sectionTitle: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#111827',
     letterSpacing: -0.5,
     marginTop: 2,
@@ -6605,9 +7192,8 @@ const styles = StyleSheet.create({
   },
   headerSmallBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // ── Search Bars ────────────────────────────────────────────────────────────
@@ -6642,11 +7228,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   composerCardLabel: {
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   composerCardInput: {
     backgroundColor: '#F9FAFB',
@@ -6655,7 +7240,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     height: 44,
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '600',
     color: '#111827',
   },
@@ -6670,8 +7255,7 @@ const styles = StyleSheet.create({
   primaryActionBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   btnDisabled: {
@@ -6685,9 +7269,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fieldLabelSmall: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -6738,11 +7322,11 @@ const styles = StyleSheet.create({
   },
   taskCardDesc: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#64748B',
     marginTop: 2,
   },
   taskCardDueDate: {
-    fontSize: 10,
+    fontSize: 12,
     color: ORANGE,
     fontWeight: '700',
     marginTop: 4,
@@ -6827,7 +7411,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   webFileSize: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: '#9CA3AF',
   },
@@ -6853,13 +7437,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   docTitle: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     color: '#111827',
   },
   docSub: {
-    fontSize: 11,
-    color: '#6B7280',
+    fontSize: 12,
+    color: '#64748B',
     marginTop: 2,
   },
   docDownloadBtn: {
@@ -6894,7 +7478,7 @@ const styles = StyleSheet.create({
   },
   crewAvatarInitial: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: ORANGE,
   },
   crewMetaCol: {
@@ -6902,14 +7486,14 @@ const styles = StyleSheet.create({
   },
   crewName: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#111827',
   },
   crewCraft: {
-    fontSize: 8.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
-    letterSpacing: 0.8,
+    letterSpacing: 0.2,
     marginTop: 2,
   },
   crewRoleBadge: {
@@ -6919,8 +7503,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   crewRoleBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#374151',
     letterSpacing: 0.5,
   },
@@ -6946,7 +7530,7 @@ const styles = StyleSheet.create({
   },
   slateMainDay: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#111827',
     letterSpacing: 0.5,
   },
@@ -6960,8 +7544,8 @@ const styles = StyleSheet.create({
   },
   publishedBadgeText: {
     color: '#059669',
-    fontSize: 8,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   slateDetailsGrid: {
@@ -6976,9 +7560,9 @@ const styles = StyleSheet.create({
     width: '45%',
   },
   slateDetailLabel: {
-    fontSize: 7.5,
-    fontWeight: '900',
-    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
     letterSpacing: 0.8,
   },
   slateDetailValue: {
@@ -6993,7 +7577,7 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
   },
   slateNotesText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#4B5563',
     fontStyle: 'italic',
   },
@@ -7011,17 +7595,16 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: '#0D0D0D',
     borderRadius: 10,
-    height: 38,
+    height: 44,
   },
   slateDownloadBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
   },
   slateDeleteBtn: {
     width: 38,
-    height: 38,
+    height: 44,
     borderRadius: 10,
     backgroundColor: '#FEE2E2',
     alignItems: 'center',
@@ -7050,8 +7633,8 @@ const styles = StyleSheet.create({
   },
   shotPillBadgeText: {
     color: ORANGE,
-    fontSize: 8.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   statusPillBadge: {
@@ -7066,8 +7649,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF3C7',
   },
   statusPillText: {
-    fontSize: 8,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   statusPillTextCompleted: {
     color: '#059669',
@@ -7086,80 +7669,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
 
-  // ── Screenplay Paper ───────────────────────────────────────────────────────
-  screenplayPaper: {
-    backgroundColor: '#FFFDF9',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 20,
-    gap: 14,
-  },
-  screenplayHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    paddingBottom: 8,
-  },
-  screenplayPageNumber: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#9CA3AF',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  screenplayDraftTag: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: ORANGE,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  screenplaySlugline: {
-    fontSize: 12.5,
-    fontWeight: '900',
-    color: '#111827',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    textTransform: 'uppercase',
-  },
-  screenplayAction: {
-    fontSize: 12,
-    color: '#374151',
-    lineHeight: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  screenplayDialogueBlock: {
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    gap: 2,
-  },
-  screenplayCharacter: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#111827',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  screenplayParenthetical: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontStyle: 'italic',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-  },
-  screenplayDialogue: {
-    fontSize: 12,
-    color: '#111827',
-    textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    lineHeight: 17,
-  },
-  screenplayNavigatorRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingTop: 12,
-    marginTop: 8,
-  },
   sceneNavBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -7167,14 +7676,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   sceneNavBtnText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#111827',
   },
   sceneNavCounter: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#6B7280',
+    color: '#64748B',
   },
 
   // ── Legal Docs ─────────────────────────────────────────────────────────────
@@ -7200,15 +7709,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   legalDocTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#111827',
   },
   legalDocType: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#6B7280',
-    letterSpacing: 0.8,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.2,
     marginTop: 2,
   },
   legalDocBadgeSigned: {
@@ -7218,8 +7727,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   legalDocBadgeSignedText: {
-    fontSize: 8,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#059669',
   },
 
@@ -7238,14 +7747,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statCardLabel: {
-    fontSize: 7.5,
-    fontWeight: '900',
-    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
     letterSpacing: 0.8,
   },
   statCardValue: {
-    fontSize: 13.5,
-    fontWeight: '900',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#111827',
     marginTop: 4,
   },
@@ -7263,20 +7772,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   budgetLedgerTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#111827',
   },
   budgetCategoryTag: {
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
     letterSpacing: 0.8,
     marginTop: 2,
   },
   budgetAmountText: {
-    fontSize: 13.5,
-    fontWeight: '900',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#111827',
   },
 
@@ -7304,22 +7813,22 @@ const styles = StyleSheet.create({
   },
   applicantAvatarInitial: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     color: ORANGE,
   },
   applicantInfoCol: {
     flex: 1,
   },
   applicantName: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
   },
   applicantRole: {
-    fontSize: 8.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
-    letterSpacing: 0.8,
+    letterSpacing: 0.2,
     marginTop: 2,
   },
   applicantMessageBox: {
@@ -7330,7 +7839,7 @@ const styles = StyleSheet.create({
     borderLeftColor: ORANGE,
   },
   applicantMessageText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#4B5563',
     fontStyle: 'italic',
   },
@@ -7342,29 +7851,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#10B981',
     borderRadius: 10,
-    height: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   applicantAcceptBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontWeight: '700',
   },
   applicantRejectBtn: {
     flex: 1,
     backgroundColor: '#FEE2E2',
     borderRadius: 10,
-    height: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   applicantRejectBtnText: {
     color: '#DC2626',
     fontSize: 12,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontWeight: '700',
   },
 
   // ── Settings (Web Master Menu & Steps) ─────────────────────────────────────
@@ -7396,24 +7903,22 @@ const styles = StyleSheet.create({
   },
   settingsHeaderTitle: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#111827',
     letterSpacing: -0.3,
   },
   settingsHeaderSub: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+    letterSpacing: 0.3,
     marginTop: 2,
   },
   settingsSectionHeading: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#6B7280',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.3,
   },
   settingsMenuCard: {
     backgroundColor: '#FFFFFF',
@@ -7440,12 +7945,12 @@ const styles = StyleSheet.create({
   },
   settingsMenuTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#111827',
   },
   settingsMenuDesc: {
-    fontSize: 11,
-    color: '#6B7280',
+    fontSize: 12,
+    color: '#64748B',
     marginTop: 2,
   },
   settingsMenuDivider: {
@@ -7460,9 +7965,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   settingsBackBtnText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
     letterSpacing: 0.8,
   },
   phaseSelectorRow: {
@@ -7480,8 +7985,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0D0D0D',
   },
   phasePillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#4B5563',
   },
   phasePillTextActive: {
@@ -7497,12 +8002,12 @@ const styles = StyleSheet.create({
   },
   publicSwitchTitle: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#111827',
   },
   publicSwitchDesc: {
-    fontSize: 11,
-    color: '#6B7280',
+    fontSize: 12,
+    color: '#64748B',
     marginTop: 2,
   },
   dangerActionCard: {
@@ -7514,28 +8019,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dangerActionCardTitle: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#DC2626',
   },
   dangerActionCardDesc: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#991B1B',
     lineHeight: 16,
   },
   dangerActionCardBtn: {
     backgroundColor: '#DC2626',
     borderRadius: 10,
-    height: 42,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 6,
   },
   dangerActionCardBtnText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '900',
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   syncSettingsBar: {
@@ -7567,9 +8071,8 @@ const styles = StyleSheet.create({
   syncSaveBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 
   // ── Chat Messages ──────────────────────────────────────────────────────────
@@ -7591,8 +8094,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   dateBadgeText: {
-    fontSize: 8.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#4B5563',
     letterSpacing: 0.8,
   },
@@ -7633,12 +8136,12 @@ const styles = StyleSheet.create({
   },
   callEventText: {
     color: '#111827',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   callEventTime: {
     color: '#94A3B8',
-    fontSize: 10,
+    fontSize: 12,
   },
   callActionBadge: {
     paddingHorizontal: 10,
@@ -7653,8 +8156,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   callActionText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   callJoinText: {
     color: '#059669',
@@ -7778,19 +8281,19 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   floatingMetaTimeText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '600',
   },
   msgTextMe: {
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '500',
     lineHeight: 19,
   },
   msgTextOther: {
     color: '#111827',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '500',
     lineHeight: 19,
   },
@@ -7798,8 +8301,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   senderNameText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   msgContentRowMe: {
@@ -7833,11 +8336,11 @@ const styles = StyleSheet.create({
     paddingBottom: 1,
   },
   msgTimeMe: {
-    fontSize: 9,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.7)',
   },
   msgTimeOther: {
-    fontSize: 9,
+    fontSize: 12,
     color: '#9CA3AF',
   },
   avatarImg: {
@@ -7859,7 +8362,7 @@ const styles = StyleSheet.create({
   },
   avatarInitial: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: ORANGE,
   },
   smileReactBtn: {
@@ -7896,11 +8399,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   unifiedReactionEmoji: {
-    fontSize: 13.5,
+    fontSize: 14,
     lineHeight: 16,
   },
   unifiedReactionCountText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     marginLeft: 1,
   },
@@ -7908,7 +8411,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   readReceiptMeText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '700',
     color: ORANGE,
   },
@@ -7934,13 +8437,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   replyBannerAuthor: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   replyBannerSnippet: {
-    fontSize: 11,
-    color: '#6B7280',
+    fontSize: 12,
+    color: '#64748B',
     marginTop: 1,
   },
   replyBannerCloseBtn: {
@@ -7964,13 +8467,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    fontSize: 13.5,
+    fontSize: 14,
     maxHeight: 100,
     color: '#111827',
   },
   sendBtn: {
     width: 38,
-    height: 38,
+    height: 44,
     borderRadius: 19,
     backgroundColor: ORANGE,
     alignItems: 'center',
@@ -8012,8 +8515,8 @@ const styles = StyleSheet.create({
     borderColor: '#A7F3D0',
   },
   chatCallStripBadgeText: {
-    fontSize: 7.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#059669',
     letterSpacing: 0.5,
   },
@@ -8024,7 +8527,7 @@ const styles = StyleSheet.create({
   },
   chatCallBtn: {
     width: 34,
-    height: 34,
+    height: 44,
     borderRadius: 17,
     backgroundColor: 'rgba(255,75,51,0.08)',
     alignItems: 'center',
@@ -8046,16 +8549,19 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
     maxHeight: '85%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   modalTitle: {
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
     color: '#111827',
     letterSpacing: -0.3,
   },
   modalSubtitle: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#64748B',
     lineHeight: 17,
   },
   modalScrollView: {
@@ -8081,7 +8587,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     borderRadius: 6,
     paddingHorizontal: 8,
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#111827',
   },
   modalActionsRow: {
@@ -8113,8 +8619,7 @@ const styles = StyleSheet.create({
   modalConfirmBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontWeight: '700',
   },
 
   // ── Menu Sheet Modal ───────────────────────────────────────────────────────
@@ -8124,6 +8629,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   menuSheet: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -8150,14 +8658,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   emptyStateTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#111827',
     marginTop: 6,
   },
   emptyStateDesc: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#64748B',
     textAlign: 'center',
     paddingHorizontal: 20,
     lineHeight: 17,
@@ -8176,8 +8684,8 @@ const styles = StyleSheet.create({
   },
   headerLiveText: {
     color: '#EF4444',
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   livePulseDot: {
@@ -8192,7 +8700,7 @@ const styles = StyleSheet.create({
   },
   subTabPillLiveText: {
     color: '#10B981',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   chatCallActivePill: {
     flexDirection: 'row',
@@ -8259,7 +8767,7 @@ const styles = StyleSheet.create({
   },
   emptyMessagesTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     textAlign: 'center',
   },
   emptyMessagesSub: {
@@ -8287,7 +8795,7 @@ const styles = StyleSheet.create({
   },
   selectionCountText: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   selectionHeaderActions: {
     flexDirection: 'row',
@@ -8399,7 +8907,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   googleEmojiCategoryHint: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.3,
   },
@@ -8416,7 +8924,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   googleEmojiDelText: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
   },
   forwardOverlay: {
@@ -8425,6 +8933,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   forwardCard: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '65%',
@@ -8442,7 +8953,7 @@ const styles = StyleSheet.create({
   },
   forwardTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   forwardList: {
     maxHeight: 340,
@@ -8469,7 +8980,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   forwardRoomType: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
     textTransform: 'capitalize',
   },
@@ -8524,8 +9035,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   mediaImage: {
-    width: 220,
-    height: 160,
+    width: isTabletDevice ? 320 : 220,
+    height: isTabletDevice ? 232 : 160,
     borderRadius: 14,
   },
   mediaVideoAttachmentBox: {
@@ -8533,8 +9044,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#0F172A',
-    width: 220,
-    height: 140,
+    width: isTabletDevice ? 320 : 220,
+    height: isTabletDevice ? 200 : 140,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -8582,7 +9093,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   mediaDocSub: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   lightboxOverlay: {
@@ -8609,6 +9120,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   messageInfoCard: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '75%',
@@ -8625,8 +9139,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   messageInfoTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   messageInfoCloseBtn: {
     padding: 4,
@@ -8649,10 +9163,10 @@ const styles = StyleSheet.create({
   },
   messageInfoSenderName: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   messageInfoTimeText: {
-    fontSize: 11,
+    fontSize: 12,
   },
   messageInfoMediaPreview: {
     flexDirection: 'row',
@@ -8665,7 +9179,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 75, 51, 0.08)',
   },
   messageInfoMediaText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   messageInfoContentText: {
@@ -8681,7 +9195,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   messageInfoSecurityText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
     color: '#10B981',
   },
@@ -8697,9 +9211,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   messageInfoSectionTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontSize: 14,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   messageInfoMemberRow: {
@@ -8726,29 +9239,29 @@ const styles = StyleSheet.create({
   },
   messageInfoAvatarInitial: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: ORANGE,
   },
   messageInfoMemberInfo: {
     flex: 1,
   },
   messageInfoMemberName: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   messageInfoReadTime: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   messageInfoEmptyRow: {
     paddingVertical: 12,
   },
   messageInfoEmptyText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontStyle: 'italic',
   },
   messageInfoDeliveredText: {
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 18,
   },
   messageInfoReactionsWrap: {
@@ -8770,6 +9283,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+/** Normal members open the screen as before; staff first pass the audited-access gate and then only observe. */
+export const ProjectSpaceScreen = (props: { route: any; navigation: any }) => {
+  const p = props.route?.params || {};
+  const rawId = p.projectId || p.project_id || p.spaceId || p.space_id || p.project_space_id || p.relatedId || p.id;
+  return (
+    <StaffAccessGuard targetType="project_space" rawId={rawId} title={p.projectTitle} onBack={() => props.navigation.goBack()}>
+      <ProjectSpaceScreenInner {...props} />
+    </StaffAccessGuard>
+  );
+};
 
 export default ProjectSpaceScreen;
 

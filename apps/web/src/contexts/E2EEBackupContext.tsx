@@ -8,12 +8,35 @@ import {
   exportPublicKey,
   exportPrivateKey,
   importPrivateKey,
-  encryptPrivateKeyWithPin,
+  extractPublicKeyFromPrivateKey,
   decryptPrivateKeyWithPin
 } from '@/lib/e2ee';
-import { toast } from 'sonner';
+import {
+  encryptPrivateKeyWithPinVault,
+  decryptPrivateKeyWithPinVault,
+  isVaultBackup,
+  createPinVault,
+  describePinVaultError,
+} from '@cinecraft/e2ee';
+import { toast } from '@/hooks/use-toast';
+import { fetchE2EEProfileInfo } from '@/lib/e2eeProfiles';
 
 interface E2EEBackupContextType {
+  /** null until the first check finishes. false = the person has not turned encrypted messages on. */
+  e2eeEnabled: boolean | null;
+  /** this device holds a valid private key (i.e. encrypted messages are unlocked here) */
+  hasLocalKey: boolean;
+  /** true once a chat screen asked for the PIN dialog: it never appears on pages that are not about messages */
+  promptRequested: boolean;
+  /** soft request from a chat screen: shows the dialog unless the person already dismissed it this session */
+  requestPrompt: () => void;
+  cancelPrompt: () => void;
+  /** explicit request (a button the person pressed): always shows the dialog */
+  openPrompt: () => void;
+  /** turn encrypted messages on: creates or restores the key, publishes it, then asks for the PIN */
+  enableE2EE: () => Promise<void>;
+  /** turn encrypted messages off. Keys and the PIN backup are kept so history stays readable and it can be turned on again */
+  disableE2EE: () => Promise<void>;
   isChecking: boolean;
   isSetupRequired: boolean;
   isRecoveryRequired: boolean;
@@ -37,12 +60,19 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isSetupRequired, setIsSetupRequired] = useState(false);
   const [isRecoveryRequired, setIsRecoveryRequired] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
+  const [e2eeEnabled, setE2eeEnabled] = useState<boolean | null>(null);
+  const [hasLocalKey, setHasLocalKey] = useState(false);
+  const [promptRequested, setPromptRequested] = useState(false);
   const [backupSalt, setBackupSalt] = useState<string | null>(null);
   const [encryptedPrivateKey, setEncryptedPrivateKey] = useState<string | null>(null);
   const checkingRef = useRef(false);
   const lastCheckedTokenRef = useRef<string | null>(null);
 
   const dismissModal = () => setIsDismissed(true);
+  const requestPrompt = () => setPromptRequested(true);
+  // called when the person leaves the message screens: the PIN screen must not follow them to other pages
+  const cancelPrompt = () => { setPromptRequested(false); setIsDismissed(false); };
+  const openPrompt = () => { setIsDismissed(false); setPromptRequested(true); };
 
   const generateNewKeyPairAndSave = async (userId: string) => {
     console.log("Generating fresh E2EE key pair...");
@@ -105,11 +135,9 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           .select('encrypted_private_key, salt')
           .eq('user_id', user.id)
           .maybeSingle(),
-        supabase
-          .from('profiles')
-          .select('public_key')
-          .eq('id', user.id)
-          .maybeSingle()
+        fetchE2EEProfileInfo([user.id])
+          .then((m) => ({ data: m.get(user.id) ?? null, error: null as any }))
+          .catch((error) => ({ data: null, error }))
       ]);
 
       let hasValidLocalKey = false;
@@ -137,6 +165,18 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const profileData = profileResult.data as any;
       const hasRemoteBackup = !!backupData?.encrypted_private_key;
       const profilePublicKey = profileData?.public_key;
+      const enabled = !!profileData?.e2ee_enabled;
+      setE2eeEnabled(enabled);
+      setHasLocalKey(hasValidLocalKey);
+
+      // Opt-in: until the person turns encrypted messages on we do not create keys and we never show the PIN dialog.
+      if (!enabled) {
+        setIsSetupRequired(false);
+        setIsRecoveryRequired(false);
+        setIsChecking(false);
+        checkingRef.current = false;
+        return;
+      }
 
       console.log(`🔐 [E2EE Context] DB results: hasRemoteBackup=${hasRemoteBackup}, profilePublicKeyExists=${!!profilePublicKey}`);
 
@@ -184,7 +224,9 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         throw new Error("No local private key found to back up");
       }
 
-      const { encryptedKey, salt } = await encryptPrivateKeyWithPin(localPrivateKeyStr, pin);
+      // The backup key needs the PIN and a secret held by the server (key-vault), so a copy of the database alone cannot be
+      // used to guess PINs.
+      const { encryptedKey, salt } = await encryptPrivateKeyWithPinVault(localPrivateKeyStr, pin, createPinVault(supabase as any));
 
       const { error } = await (supabase as any)
         .from('key_backups')
@@ -205,7 +247,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       toast.success("E2EE key backup created successfully!");
     } catch (err) {
       console.error("Failed to setup E2EE key backup:", err);
-      toast.error("Failed to create backup. Please try again.");
+      toast.error(describePinVaultError(err) ?? "Failed to create backup. Please try again.");
       throw err;
     }
   };
@@ -217,19 +259,41 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     try {
-      const decryptedKeyStr = await decryptPrivateKeyWithPin(encryptedPrivateKey, pin, backupSalt);
+      let decryptedKeyStr: string;
+      if (isVaultBackup(backupSalt)) {
+        decryptedKeyStr = await decryptPrivateKeyWithPinVault(encryptedPrivateKey, pin, backupSalt, createPinVault(supabase as any));
+      } else {
+        // An older backup (PIN only). It opened, so upgrade it to the key-vault version right away.
+        decryptedKeyStr = await decryptPrivateKeyWithPin(encryptedPrivateKey, pin, backupSalt);
+        try {
+          const upgraded = await encryptPrivateKeyWithPinVault(decryptedKeyStr, pin, createPinVault(supabase as any));
+          const { error: upErr } = await (supabase as any).from('key_backups').upsert({
+            user_id: user.id,
+            encrypted_private_key: upgraded.encryptedKey,
+            salt: upgraded.salt,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id' });
+          if (!upErr) {
+            setBackupSalt(upgraded.salt);
+            setEncryptedPrivateKey(upgraded.encryptedKey);
+          }
+        } catch (upgradeErr) {
+          console.warn('Could not upgrade the PIN backup yet:', upgradeErr);
+        }
+      }
 
       await importPrivateKey(decryptedKeyStr);
       await setLocalPrivateKey(user.id, decryptedKeyStr);
       await syncPrivateKeyToNative(user.id, decryptedKeyStr);
 
       sessionStorage.setItem(`e2ee_pin_verified_${user.id}`, 'true');
+      setHasLocalKey(true);
       setIsRecoveryRequired(false);
       toast.success("E2EE secure chats restored successfully!");
       return true;
     } catch (err) {
       console.error("Failed to recover E2EE backup:", err);
-      toast.error("Incorrect PIN. Please try again.");
+      toast.error(describePinVaultError(err) ?? "Incorrect PIN. Please try again.");
       return false;
     }
   };
@@ -253,6 +317,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       // 3. Generate a new key pair and save locally + profile public key
       await generateNewKeyPairAndSave(user.id);
+      setHasLocalKey(true);
 
       // 4. Force PIN setup for the new key pair
       setIsRecoveryRequired(false);
@@ -269,10 +334,56 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
+  const enableE2EE = async () => {
+    if (!user) throw new Error('User not authenticated');
+    const [localKeyStr, backup, prof] = await Promise.all([
+      getLocalPrivateKey(user.id),
+      (supabase as any).from('key_backups').select('user_id').eq('user_id', user.id).maybeSingle(),
+      supabase.from('profiles').select('public_key').eq('id', user.id).maybeSingle(),
+    ]);
+    const hasRemoteBackup = !!backup?.data;
+    const publicKey = (prof?.data as any)?.public_key as string | null | undefined;
+
+    if (!localKeyStr && !hasRemoteBackup) {
+      // brand new: create the key pair and publish the public half
+      await generateNewKeyPairAndSave(user.id);
+    } else if (localKeyStr && !publicKey) {
+      // we hold a key but never published it
+      const pub = await extractPublicKeyFromPrivateKey(localKeyStr);
+      const { error } = await supabase.from('profiles').update({ public_key: pub }).eq('id', user.id);
+      if (error) throw error;
+    }
+    // (a backup without a local key means: restore it with the PIN, never overwrite it with a new key)
+
+    const { error } = await (supabase as any).rpc('set_e2ee_enabled', { p_enabled: true });
+    if (error) throw error;
+
+    setE2eeEnabled(true);
+    lastCheckedTokenRef.current = null; // force a fresh check so the right dialog (create PIN / enter PIN) opens
+    checkingRef.current = false;
+    await checkBackupStatus();
+    openPrompt();
+  };
+
+  const disableE2EE = async () => {
+    if (!user) throw new Error('User not authenticated');
+    const { error } = await (supabase as any).rpc('set_e2ee_enabled', { p_enabled: false });
+    if (error) throw error;
+    setE2eeEnabled(false);
+    setIsSetupRequired(false);
+    setIsRecoveryRequired(false);
+  };
+
   // Fire when the session access_token changes, not just user.id.
   // This is critical: if we fire on user.id alone, the Supabase client may not yet
   // have the JWT applied, causing key_backups/profiles queries to 401 silently,
   // which swallows the result and means the PIN modal never shows.
+  // a different account (or none) never inherits the previous account's request to ask for the PIN
+  useEffect(() => {
+    setPromptRequested(false);
+    setIsDismissed(false);
+  }, [user?.id]);
+
   useEffect(() => {
     if (user && session?.access_token && profile?.onboarding_completed) {
       // Ensure the realtime auth is up to date before querying
@@ -284,6 +395,10 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       lastCheckedTokenRef.current = null;
       setIsSetupRequired(false);
       setIsRecoveryRequired(false);
+      setE2eeEnabled(null);
+      setHasLocalKey(false);
+      setPromptRequested(false);
+      setIsDismissed(false);
     } else if (user && profile && !profile.onboarding_completed) {
       setIsChecking(false);
       setIsSetupRequired(false);
@@ -293,6 +408,14 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   return (
     <E2EEBackupContext.Provider value={{
+      e2eeEnabled,
+      hasLocalKey,
+      promptRequested,
+      requestPrompt,
+      cancelPrompt,
+      openPrompt,
+      enableE2EE,
+      disableE2EE,
       isChecking,
       isSetupRequired,
       isRecoveryRequired,

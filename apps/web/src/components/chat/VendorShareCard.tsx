@@ -90,7 +90,7 @@ export const VendorShareCard = ({
     return (
         <Link
             to={`/vendors/${vendorId}`}
-            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-black/10 dark:border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition duration-500 hover:-translate-y-1 active:scale-[0.98] no-underline group shadow-xl border border-black/10 dark:border-white/10"
         >
             <CornerBrackets />
             {/* Premium Header: Banner + Floating Logo */}
@@ -112,7 +112,7 @@ export const VendorShareCard = ({
                 {/* Floating Logo/Avatar */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
                     <div className="relative group/logo">
-                        <div className="w-16 h-16 rounded-full border-4 border-black/20 dark:border-white/20 backdrop-blur-xl shadow-2xl overflow-hidden bg-white dark:bg-black/60 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-500">
+                        <div className="w-16 h-16 rounded-full border-4 border-black/20 dark:border-white/20 shadow-2xl overflow-hidden bg-white dark:bg-black/60 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-500">
                             {logoUrl ? (
                                 <img loading="lazy" decoding="async" src={logoUrl} alt={name} className="w-full h-full object-cover" />
                             ) : (
@@ -124,27 +124,27 @@ export const VendorShareCard = ({
 
                 {/* Rating Badge */}
                 {reviewCount ? reviewCount > 0 && (
-                    <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-black/10 dark:border-white/10 flex items-center gap-1 shadow-lg animate-in fade-in zoom-in duration-500">
+                    <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-black/10 dark:border-white/10 flex items-center gap-1 shadow-lg animate-in fade-in zoom-in-95 duration-500">
                         <Star size={10} className="text-yellow-500 fill-yellow-500" />
-                        <span className="text-[9px] font-black text-white">{rating?.toFixed(1)}</span>
+                        <span className="text-[12px] font-black text-white">{rating?.toFixed(1)}</span>
                     </div>
                 ) : null}
 
                 {/* Categories */}
                 <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5 px-3">
                     {categories.slice(0, 2).map((cat, i) => (
-                        <div key={i} className="font-mono px-2 py-0.5 rounded bg-black/40 backdrop-blur-md border border-white/20 text-[8px] font-bold uppercase tracking-widest text-white/90">
-                            CAT // {cat}
+                        <div key={i} className="px-2 py-0.5 rounded bg-black/40 border border-white/20 text-[12px] font-medium text-white/90">
+                            {cat}
                         </div>
                     ))}
                 </div>
             </div>
 
             {/* Content Section */}
-            <div className="p-4 space-y-4 bg-white dark:bg-black/60 backdrop-blur-xl">
+            <div className="p-4 space-y-4 bg-white dark:bg-black/60">
                 <div className="text-center space-y-1">
                     <div className="flex items-center justify-center gap-1.5 px-2">
-                        <h4 className="font-serif text-[13px] font-bold text-foreground leading-tight group-hover:text-primary transition-colors tracking-tight uppercase truncate">
+                        <h4 className="font-serif text-sm font-bold text-foreground leading-tight group-hover:text-primary transition-colors tracking-tight uppercase truncate">
                             {name}
                         </h4>
                         {isVerified && (
@@ -153,13 +153,13 @@ export const VendorShareCard = ({
                             </div>
                         )}
                     </div>
-                    <div className="font-mono flex items-center justify-center mx-auto text-[7.5px] text-muted-foreground font-bold uppercase tracking-widest bg-muted/10 border border-border/40 px-2 py-0.5 rounded w-max">
-                        LOC // {location || 'Global'}
+                    <div className="flex items-center justify-center mx-auto text-xs text-muted-foreground font-medium bg-muted/10 border border-border/40 px-2 py-0.5 rounded w-max">
+                        {location || 'Global'}
                     </div>
                 </div>
 
                 {description && (
-                    <p className="text-[10px] text-foreground/60 font-medium leading-relaxed line-clamp-2 text-center italic border-y border-white/5 py-2 animate-in fade-in duration-700">
+                    <p className="text-[12px] text-foreground/60 font-medium leading-relaxed line-clamp-2 text-center italic border-y border-foreground/5 py-2 animate-in fade-in duration-700">
                         "{description}"
                     </p>
                 )}
@@ -167,7 +167,7 @@ export const VendorShareCard = ({
                 {services && services.length > 0 && (
                     <div className="flex flex-wrap gap-1 items-center justify-center animate-in fade-in duration-1000">
                         {services.slice(0, 3).map((svc, i) => (
-                            <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded bg-primary/5 text-[7px] font-black uppercase tracking-widest text-primary/70">
+                            <div key={i} className="flex items-center gap-1 px-2 py-0.5 rounded bg-primary/5 text-xs font-black uppercase tracking-widest text-primary/70">
                                 <Briefcase size={8} /> {svc}
                             </div>
                         ))}
@@ -178,13 +178,13 @@ export const VendorShareCard = ({
                 {(phone || email) && (
                     <div className="flex items-center justify-center gap-3 animate-in fade-in slide-in-from-bottom-1 duration-500">
                         {phone && (
-                            <div className="flex items-center gap-1.5 text-[8px] font-black text-primary uppercase tracking-widest">
+                            <div className="flex items-center gap-1.5 text-[12px] font-black text-primary uppercase tracking-widest">
                                 <Phone size={10} />
                                 Available
                             </div>
                         )}
                         {email && (
-                            <div className="flex items-center gap-1.5 text-[8px] font-black text-green-500 uppercase tracking-widest">
+                            <div className="flex items-center gap-1.5 text-[12px] font-black text-green-500 uppercase tracking-widest">
                                 <Mail size={10} />
                                 Verified
                             </div>
@@ -192,7 +192,7 @@ export const VendorShareCard = ({
                     </div>
                 )}
 
-                <div className="w-full py-2.5 bg-primary text-black text-center rounded-xl hover:bg-primary/90 transition-all text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
+                <div className="w-full py-2.5 bg-primary text-black text-center rounded-xl hover:bg-primary/90 transition text-[12px] font-black uppercase tracking-[0.15em] shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
                     <Store size={14} className="fill-black" />
                     Visit Company
                 </div>

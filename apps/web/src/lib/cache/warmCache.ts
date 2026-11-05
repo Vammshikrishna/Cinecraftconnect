@@ -17,7 +17,7 @@ class WarmCacheEngine {
           queryFn: async () => {
             const { data, error } = await supabase
               .from('posts')
-              .select('*, profiles(id, username, full_name, avatar_url, is_verified, is_internal, craft)')
+              .select('*, profiles:author_id(id, username, full_name, avatar_url, is_verified, is_internal, craft)')
               .order('created_at', { ascending: false })
               .limit(10);
             

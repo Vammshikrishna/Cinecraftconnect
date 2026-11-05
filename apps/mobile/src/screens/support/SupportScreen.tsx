@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -32,12 +33,23 @@ import { Icon } from '../../components/common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { pickAttachments } from '../../services/attachmentPicker';
 import { uploadSupportAttachment, signedSupportUrl } from '../../services/resumeFiles';
+import { friendlyError } from '@cinecraft/core';
+import { TabletColumn } from '../../components/common/TabletContainer';
+import { filterReports, reportReasonLabel, reportStatus, reportTargetLabel, isMissingFunction, type MyReport, type ReportFilter, type ReportTone } from '../../utils/myReports';
+
+const REPORT_TONE: Record<ReportTone, { bg: string; fg: string }> = {
+  open: { bg: '#F9731618', fg: '#C2410C' },
+  review: { bg: '#3B82F618', fg: '#2563EB' },
+  done: { bg: '#10B98118', fg: '#059669' },
+  closed: { bg: '#64748B18', fg: '#64748B' },
+};
 
 type View_ =
   | { name: 'home' }
   | { name: 'category'; id: string }
   | { name: 'article'; id: string }
   | { name: 'requests' }
+  | { name: 'reports' }
   | { name: 'ticket'; id: string }
   | { name: 'new'; topic?: string };
 
@@ -45,7 +57,7 @@ const CATEGORY_ICON: Record<string, string> = {
   rocket: 'zap', user: 'user', shield: 'shield', users: 'users', film: 'film',
   briefcase: 'briefcase', store: 'store', star: 'star', phone: 'phone', wrench: 'settings',
 };
-const STATUS_COLOR: Record<string, string> = { open: '#2563EB', in_progress: '#D97706', resolved: '#059669', closed: '#6B7280' };
+const STATUS_COLOR: Record<string, string> = { open: '#2563EB', in_progress: '#D97706', resolved: '#059669', closed: '#64748B' };
 const MAX_FILES = 3;
 
 const timeAgo = (iso: string) => {
@@ -67,7 +79,15 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
   const { themeColors } = useUserSettings();
   const c = themeColors;
   const [view, setView] = useState<View_>(route?.params?.ticketId ? { name: 'ticket', id: route.params.ticketId } : { name: 'home' });
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(typeof route?.params?.query === 'string' ? route.params.query.slice(0, 100) : '');
+
+  // reopened with a new query (e.g. from Settings search)
+  useEffect(() => {
+    if (typeof route?.params?.query === 'string') {
+      setQuery(route.params.query.slice(0, 100));
+      if (!route?.params?.ticketId) setView({ name: 'home' });
+    }
+  }, [route?.params?.query]);
 
   const go = (v: View_) => setView(v);
   const back = useCallback(() => {
@@ -80,10 +100,13 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
     return true;
   }, [view]);
 
-  useEffect(() => {
-    const sub = BackHandler.addEventListener('hardwareBackPress', back);
-    return () => sub.remove();
-  }, [back]);
+  // focus-scoped so a Support screen under another pushed screen cannot swallow its hardware Back
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', back);
+      return () => sub.remove();
+    }, [back]),
+  );
 
   // a notification can reopen the screen with a different ticket
   useEffect(() => {
@@ -92,10 +115,11 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
 
   const card = { backgroundColor: c.bgCard, borderColor: c.border };
 
+  // called as a plain function (not <ArticleRow/>) so rows are not remounted on every render of the screen
   const ArticleRow = ({ a }: { a: HelpArticle }) => (
-    <TouchableOpacity style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'article', id: a.id })}>
+    <TouchableOpacity key={a.id} accessibilityRole="button" style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'article', id: a.id })}>
       <Text style={[styles.rowTitle, { color: c.textPrimary }]} numberOfLines={2}>{a.title}</Text>
-      <Icon name="chevron-right" size={16} color={c.textSecondary} />
+      <Icon name="chevron-right" size={16} color={c.iconSecondary} />
     </TouchableOpacity>
   );
 
@@ -106,14 +130,24 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={[styles.h1, { color: c.textPrimary }]}>How can we help?</Text>
         <View style={[styles.search, card]}>
-          <Icon name="search" size={16} color={c.textSecondary} />
-          <TextInput
+          <Icon name="search" size={16} color={c.iconSecondary} />
+          <TextInput returnKeyType="search" accessibilityLabel="Search for answers"
             style={[styles.searchInput, { color: c.textPrimary }]}
             placeholder="Search for answers"
             placeholderTextColor={c.textSecondary}
             value={query}
             onChangeText={setQuery}
           />
+          {query ? (
+            <TouchableOpacity
+              onPress={() => setQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Icon name="x" size={16} color={themeColors.iconMuted} />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {query.trim().length >= 2 ? (
@@ -123,12 +157,22 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
                 <Text style={{ color: c.textPrimary, fontWeight: '600' }}>No results for "{query}"</Text>
                 <TouchableOpacity onPress={() => go({ name: 'new' })}><Text style={styles.link}>Contact support</Text></TouchableOpacity>
               </View>
-            ) : results.map((a) => <ArticleRow key={a.id} a={a} />)}
+            ) : results.map((a) => ArticleRow({ a: a }))}
           </View>
         ) : (
           <>
+            <View style={[styles.group, card]}>
+              <TouchableOpacity accessibilityRole="button" style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'requests' })}>
+                <Text style={[styles.rowTitle, { color: c.textPrimary }]}>Your requests</Text>
+                <Icon name="chevron-right" size={16} color={c.iconSecondary} />
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'reports' })}>
+                <Text style={[styles.rowTitle, { color: c.textPrimary }]}>Your reports</Text>
+                <Icon name="chevron-right" size={16} color={c.iconSecondary} />
+              </TouchableOpacity>
+            </View>
             <Text style={[styles.label, { color: c.textSecondary }]}>POPULAR</Text>
-            <View style={[styles.group, card]}>{popularHelpArticles().slice(0, 5).map((a) => <ArticleRow key={a.id} a={a} />)}</View>
+            <View style={[styles.group, card]}>{popularHelpArticles().slice(0, 5).map((a) => ArticleRow({ a: a }))}</View>
 
             <Text style={[styles.label, { color: c.textSecondary }]}>BROWSE BY TOPIC</Text>
             <View style={[styles.group, card]}>
@@ -139,7 +183,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
                     <Text style={[styles.rowTitle, { color: c.textPrimary }]}>{cat.title}</Text>
                     <Text style={[styles.rowSub, { color: c.textSecondary }]} numberOfLines={1}>{cat.description}</Text>
                   </View>
-                  <Icon name="chevron-right" size={16} color={c.textSecondary} />
+                  <Icon name="chevron-right" size={16} color={c.iconSecondary} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -148,15 +192,19 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
             <View style={[styles.group, card]}>
               <TouchableOpacity style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'new' })}>
                 <Text style={[styles.rowTitle, { color: c.textPrimary }]}>Contact support</Text>
-                <Icon name="chevron-right" size={16} color={c.textSecondary} />
+                <Icon name="chevron-right" size={16} color={c.iconSecondary} />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'requests' })}>
                 <Text style={[styles.rowTitle, { color: c.textPrimary }]}>Your requests</Text>
-                <Icon name="chevron-right" size={16} color={c.textSecondary} />
+                <Icon name="chevron-right" size={16} color={c.iconSecondary} />
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'reports' })}>
+                <Text style={[styles.rowTitle, { color: c.textPrimary }]}>Your reports</Text>
+                <Icon name="chevron-right" size={16} color={c.iconSecondary} />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.row, { borderBottomColor: c.border }]} onPress={() => go({ name: 'new', topic: 'appeal' })}>
                 <Text style={[styles.rowTitle, { color: c.textPrimary }]}>Appeal a decision</Text>
-                <Icon name="chevron-right" size={16} color={c.textSecondary} />
+                <Icon name="chevron-right" size={16} color={c.iconSecondary} />
               </TouchableOpacity>
             </View>
           </>
@@ -172,13 +220,13 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.h1, { color: c.textPrimary }]}>{cat?.title}</Text>
         <Text style={[styles.sub, { color: c.textSecondary }]}>{cat?.description}</Text>
-        <View style={[styles.group, card]}>{articlesInCategory(id).map((a) => <ArticleRow key={a.id} a={a} />)}</View>
+        <View style={[styles.group, card]}>{articlesInCategory(id).map((a) => ArticleRow({ a: a }))}</View>
       </ScrollView>
     );
   };
 
   // ── article ──
-  const ArticleView = ({ id }: { id: string }) => {
+  const ArticleView = useMemo(() => ({ id }: { id: string }) => {
     const a = getHelpArticle(id);
     const [vote, setVote] = useState<null | boolean>(null);
     const [comment, setComment] = useState('');
@@ -236,15 +284,15 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
         {related.length > 0 && (
           <>
             <Text style={[styles.label, { color: c.textSecondary }]}>RELATED ARTICLES</Text>
-            <View style={[styles.group, card]}>{related.map((r) => <ArticleRow key={r.id} a={r} />)}</View>
+            <View style={[styles.group, card]}>{related.map((r) => ArticleRow({ a: r }))}</View>
           </>
         )}
       </ScrollView>
     );
-  };
+  }, [c]);
 
   // ── requests list ──
-  const RequestsView = () => {
+  const RequestsView = useMemo(() => () => {
     const [rows, setRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'open' | 'done'>('all');
@@ -285,17 +333,94 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
                     {TICKET_CATEGORY_LABEL[r.category] || r.category} · {r.staff_replied ? 'Support replied · ' : ''}{timeAgo(r.last_message_at)}
                   </Text>
                 </View>
-                <Text style={[styles.badge, { color: STATUS_COLOR[r.status] || '#6B7280' }]}>{TICKET_STATUS_LABEL[r.status] || r.status}</Text>
+                <Text style={[styles.badge, { color: STATUS_COLOR[r.status] || '#64748B' }]}>{TICKET_STATUS_LABEL[r.status] || r.status}</Text>
               </TouchableOpacity>
             ))}
           </View>
         )}
       </ScrollView>
     );
-  };
+  }, [c]);
+
+  // ── my reports ──
+  const ReportsView = useMemo(() => () => {
+    const [rows, setRows] = useState<MyReport[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [failed, setFailed] = useState(false);
+    const [notReady, setNotReady] = useState(false);
+    const [filter, setFilter] = useState<ReportFilter>('all');
+    const load = useCallback(() => {
+      setFailed(false);
+      setNotReady(false);
+      setLoading(true);
+      Promise.resolve((getSupabaseClient() as any).rpc('list_my_reports')).then(({ data, error }: any) => {
+        if (error) {
+          if (isMissingFunction(error)) setNotReady(true);
+          else setFailed(true);
+        } else setRows((data || []) as MyReport[]);
+        setLoading(false);
+      }).catch(() => { setFailed(true); setLoading(false); });
+    }, []);
+    useEffect(() => { load(); }, [load]);
+    const shown = filterReports(rows, filter);
+    return (
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={[styles.h1, { color: c.textPrimary }]}>Your reports</Text>
+        <Text style={[styles.sub, { color: c.textSecondary }]}>Content and people you reported, and what happened. Only you can see this list.</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          {([['all', 'All'], ['open', 'In progress'], ['done', 'Finished']] as const).map(([k, l]) => (
+            <TouchableOpacity key={k} accessibilityRole="button" accessibilityState={{ selected: filter === k }} style={[styles.pill, filter === k && styles.pillOn, { borderColor: c.border }]} onPress={() => setFilter(k)}>
+              <Text style={{ color: filter === k ? '#fff' : c.textPrimary }}>{l}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {loading ? <ActivityIndicator color="#FF4B33" /> : notReady ? (
+          <View style={[styles.box, card, { alignItems: 'center' }]}>
+            <Text style={{ color: c.textPrimary, fontWeight: '700' }}>This list is not available yet</Text>
+            <Text style={{ color: c.textSecondary, marginTop: 4, textAlign: 'center' }}>Your reports are safe with our team. The list will appear here soon.</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={load} style={{ marginTop: 10 }}><Text style={styles.link}>Try again</Text></TouchableOpacity>
+          </View>
+        ) : failed ? (
+          <View style={[styles.box, card, { alignItems: 'center' }]}>
+            <Text style={{ color: c.textPrimary, fontWeight: '700' }}>Could not load your reports</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={load} style={{ marginTop: 10 }}><Text style={styles.link}>Try again</Text></TouchableOpacity>
+          </View>
+        ) : shown.length === 0 ? (
+          <View style={[styles.box, card, { alignItems: 'center' }]}>
+            <Text style={{ color: c.textPrimary, fontWeight: '700' }}>{rows.length === 0 ? 'No reports yet' : 'Nothing here'}</Text>
+            <Text style={{ color: c.textSecondary, marginTop: 4, textAlign: 'center' }}>
+              {rows.length === 0 ? 'When you report a post, profile, job or message, it shows up here with its status.' : 'Try a different filter.'}
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.group, card]}>
+            {shown.map((r) => {
+              const st = reportStatus(r.status);
+              const tone = REPORT_TONE[st.tone];
+              return (
+                <View key={r.id} style={[styles.row, { borderBottomColor: c.border, alignItems: 'flex-start' }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rowTitle, { color: c.textPrimary, flex: 0 }]}>{reportTargetLabel(r.target_type)} · {reportReasonLabel(r.reason)}</Text>
+                    <Text style={[styles.rowSub, { color: c.textSecondary }]}>
+                      Reported {timeAgo(r.created_at)}{r.reviewed_at && st.tone !== 'open' ? ` · Reviewed ${timeAgo(r.reviewed_at)}` : ''}
+                    </Text>
+                    {r.details ? <Text style={{ color: c.textSecondary, fontSize: 14, marginTop: 4 }} numberOfLines={3}>{'“'}{r.details}{'”'}</Text> : null}
+                    <Text style={{ color: c.textPrimary, fontSize: 14, marginTop: 6 }}>{st.outcome}</Text>
+                  </View>
+                  <View style={{ backgroundColor: tone.bg, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3 }}>
+                    <Text style={{ color: tone.fg, fontSize: 12, fontWeight: '700' }}>{st.label}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </ScrollView>
+    );
+  }, [c]);
 
   // ── one ticket ──
-  const TicketView = ({ id }: { id: string }) => {
+  const TicketView = useMemo(() => ({ id }: { id: string }) => {
     const [ticket, setTicket] = useState<any>(null);
     const [messages, setMessages] = useState<any[]>([]);
     const [uid, setUid] = useState<string | null>(null);
@@ -331,7 +456,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
 
     const run = async (fn: string, args: any, ok?: string) => {
       const { error } = await (getSupabaseClient() as any).rpc(fn, args);
-      if (error) Alert.alert('Could not complete', error.message);
+      if (error) Alert.alert('Could not complete', friendlyError(error));
       else if (ok) Alert.alert(ok);
       load();
     };
@@ -341,7 +466,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
       setSending(true);
       const { error } = await (getSupabaseClient() as any).from('support_ticket_messages').insert({ ticket_id: id, sender_id: uid, content: reply.trim() });
       setSending(false);
-      if (error) return Alert.alert('Could not send', error.message);
+      if (error) return Alert.alert('Could not send', friendlyError(error));
       setReply('');
       load();
     };
@@ -361,7 +486,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
         >
-          <Text style={[styles.badge, { color: STATUS_COLOR[ticket.status] || '#6B7280', marginBottom: 4 }]}>
+          <Text style={[styles.badge, { color: STATUS_COLOR[ticket.status] || '#64748B', marginBottom: 4 }]}>
             {TICKET_STATUS_LABEL[ticket.status] || ticket.status} · {TICKET_CATEGORY_LABEL[ticket.category] || ticket.category}
           </Text>
           <Text style={[styles.h1, { color: c.textPrimary, fontSize: 20 }]}>{ticket.subject}</Text>
@@ -385,8 +510,8 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
             return (
               <View key={m.id} style={[styles.bubble, mine ? styles.mine : { alignSelf: 'flex-start', backgroundColor: c.bgCard, borderColor: c.border, borderWidth: StyleSheet.hairlineWidth }]}>
                 {!mine && <Text style={styles.staffName}>CineCraft Support</Text>}
-                <Text style={mine ? styles.mineText : { color: c.textPrimary, fontSize: 15 }}>{m.content}</Text>
-                <Text style={{ fontSize: 11, marginTop: 4, color: mine ? '#ffffffb0' : c.textSecondary }}>{timeAgo(m.created_at)}</Text>
+                <Text style={mine ? styles.mineText : { color: c.textPrimary, fontSize: 16 }}>{m.content}</Text>
+                <Text style={{ fontSize: 12, marginTop: 4, color: mine ? '#ffffffb0' : c.textSecondary }}>{timeAgo(m.created_at)}</Text>
               </View>
             );
           })}
@@ -400,7 +525,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
                   <Text style={[styles.rowTitle, { color: c.textPrimary, marginBottom: 8 }]}>How did we do?</Text>
                   <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
                     {[1, 2, 3, 4, 5].map((n) => (
-                      <TouchableOpacity key={n} onPress={() => setRating(n)}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${n} star${n > 1 ? 's' : ''}`} accessibilityState={{ selected: rating === n }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} key={n} onPress={() => setRating(n)}>
                         <Icon name="star" size={28} color={n <= rating ? '#F59E0B' : c.textSecondary} />
                       </TouchableOpacity>
                     ))}
@@ -445,10 +570,10 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
         </ScrollView>
       </KeyboardAvoidingView>
     );
-  };
+  }, [c]);
 
   // ── new request ──
-  const NewView = ({ initialTopic }: { initialTopic?: string }) => {
+  const NewView = useMemo(() => ({ initialTopic }: { initialTopic?: string }) => {
     const [topicId, setTopicId] = useState<string | null>(initialTopic && TICKET_TOPICS.some((t) => t.id === initialTopic) ? initialTopic : null);
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
@@ -468,7 +593,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
         const ref = await uploadSupportAttachment(picked[0]);
         setFiles((prev) => [...prev, { ref, uri: picked[0].uri }]);
       } catch (e: any) {
-        Alert.alert('Upload failed', e?.message || 'Please try again.');
+        Alert.alert('Upload failed', friendlyError(e, 'Please try again.'));
       } finally {
         setUploading(false);
       }
@@ -492,7 +617,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
         Alert.alert('Request sent', 'We usually reply within 24 hours. You will be notified here.');
         go({ name: 'ticket', id: data.id });
       } catch (e: any) {
-        Alert.alert('Could not send your request', e?.message || 'Please try again.');
+        Alert.alert('Could not send your request', friendlyError(e, 'Please try again.'));
       } finally {
         setSending(false);
       }
@@ -510,7 +635,7 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
                   <Text style={[styles.rowTitle, { color: c.textPrimary }]}>{t.label}</Text>
                   <Text style={[styles.rowSub, { color: c.textSecondary }]}>{t.description}</Text>
                 </View>
-                <Icon name="chevron-right" size={16} color={c.textSecondary} />
+                <Icon name="chevron-right" size={16} color={c.iconSecondary} />
               </TouchableOpacity>
             ))}
           </View>
@@ -548,12 +673,12 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
           {files.map((f, i) => (
             <TouchableOpacity key={f.ref} onPress={() => setFiles(files.filter((_, j) => j !== i))}>
               <Image source={{ uri: f.uri }} style={styles.thumb} />
-              <View style={styles.removeBadge}><Text style={{ color: '#fff', fontSize: 11 }}>✕</Text></View>
+              <View style={styles.removeBadge}><Text style={{ color: '#fff', fontSize: 12 }}>✕</Text></View>
             </TouchableOpacity>
           ))}
           {files.length < MAX_FILES && (
-            <TouchableOpacity style={[styles.thumb, styles.addThumb, { borderColor: c.border }]} onPress={addFile}>
-              {uploading ? <ActivityIndicator color="#FF4B33" /> : <Icon name="plus" size={20} color={c.textSecondary} />}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={[styles.thumb, styles.addThumb, { borderColor: c.border }]} onPress={addFile}>
+              {uploading ? <ActivityIndicator color="#FF4B33" /> : <Icon name="plus" size={20} color={c.iconSecondary} />}
             </TouchableOpacity>
           )}
         </View>
@@ -572,11 +697,12 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
         <Text style={{ color: c.textSecondary, fontSize: 12, textAlign: 'center', marginTop: 10 }}>We usually reply within 24 hours. Safety reports and appeals are reviewed first.</Text>
       </ScrollView>
     );
-  };
+  }, [c]);
 
   const title =
     view.name === 'home' ? 'Help Center'
     : view.name === 'requests' ? 'Your requests'
+    : view.name === 'reports' ? 'Your reports'
     : view.name === 'ticket' ? 'Request'
     : view.name === 'new' ? 'Contact support'
     : view.name === 'category' ? 'Help' : 'Article';
@@ -584,12 +710,15 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
   return (
     <View style={[styles.container, { backgroundColor: c.bgScreen }]}>
       <Header title={title} showLogo={false} onBack={() => { if (!back()) navigation.goBack(); }} />
+      <TabletColumn maxWidth={880}>
       {view.name === 'home' && renderHome()}
       {view.name === 'category' && renderCategory(view.id)}
       {view.name === 'article' && <ArticleView key={view.id} id={view.id} />}
       {view.name === 'requests' && <RequestsView />}
+      {view.name === 'reports' && <ReportsView />}
       {view.name === 'ticket' && <TicketView key={view.id} id={view.id} />}
       {view.name === 'new' && <NewView key={view.topic || 'new'} initialTopic={view.topic} />}
+      </TabletColumn>
     </View>
   );
 };
@@ -597,34 +726,34 @@ export const SupportScreen = ({ navigation, route }: { navigation: any; route?: 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
-  h1: { fontSize: 24, fontWeight: '800', marginBottom: 6 },
+  h1: { fontSize: 24, fontWeight: '700', marginBottom: 6 },
   sub: { fontSize: 14, marginBottom: 16, lineHeight: 20 },
   label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.6, marginTop: 22, marginBottom: 8 },
   fieldLabel: { fontSize: 14, fontWeight: '600', marginTop: 16, marginBottom: 6 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, height: 46, marginTop: 8, marginBottom: 4 },
-  searchInput: { flex: 1, fontSize: 15, padding: 0 },
+  searchInput: { flex: 1, fontSize: 16, padding: 0 },
   group: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  rowTitle: { fontSize: 15, fontWeight: '600', flex: 1 },
+  rowTitle: { fontSize: 16, fontWeight: '600', flex: 1 },
   rowSub: { fontSize: 12, marginTop: 2 },
   iconBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FF4B3318', alignItems: 'center', justifyContent: 'center' },
   link: { color: '#FF4B33', fontWeight: '600', fontSize: 14 },
   step: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   stepNum: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#FF4B3318', alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   stepNumText: { color: '#FF4B33', fontWeight: '700', fontSize: 12 },
-  body: { fontSize: 15, lineHeight: 22 },
+  body: { fontSize: 16, lineHeight: 22 },
   box: { borderWidth: 1, borderRadius: 16, padding: 16, marginTop: 8 },
   pill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
   pillOn: { backgroundColor: '#FF4B33', borderColor: '#FF4B33' },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
   newBtn: { backgroundColor: '#FF4B33', paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
   newBtnText: { color: '#fff', fontWeight: '700' },
   badge: { fontSize: 12, fontWeight: '700' },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF4B33' },
   bubble: { maxWidth: '85%', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10 },
   mine: { alignSelf: 'flex-end', backgroundColor: '#FF4B33' },
-  mineText: { color: '#fff', fontSize: 15 },
-  staffName: { fontSize: 11, fontWeight: '700', color: '#FF4B33', marginBottom: 2 },
+  mineText: { color: '#fff', fontSize: 16 },
+  staffName: { fontSize: 12, fontWeight: '700', color: '#FF4B33', marginBottom: 2 },
   thumb: { width: 80, height: 80, borderRadius: 12 },
   addThumb: { borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
   removeBadge: { position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 10, backgroundColor: '#000a', alignItems: 'center', justifyContent: 'center' },

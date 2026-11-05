@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -14,11 +14,9 @@ import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { StartAudioSpaceButton } from '@/components/calls/StartAudioSpaceButton';
 import { useActiveRoomCall } from '@/hooks/useActiveRoomCall';
-import {
-  ArrowLeft, Settings, Loader2, ChevronDown,
-  MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan, Smile, Flag, Info, CheckCheck, Copy, Share2, Check, Star, Phone,
-  ShieldCheck, Globe, Video, Mic
-} from 'lucide-react';
+import { ArrowLeft, Settings, Loader2, ChevronDown, MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan, Smile, Flag, Info, CheckCheck, Copy, Check, Star, Phone, ShieldCheck, Globe, Video, Mic, Pencil } from 'lucide-react';
+import { useAccountType } from '@/hooks/useAccountType';
+import { FAN_CALL_TOOLTIP } from '@/lib/calls/fanCallRule';
 import { CallDetailsDialog } from '@/components/calls/CallDetailsDialog';
 import {
   Dialog,
@@ -29,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { useKeyboard } from '@/contexts/KeyboardContext';
 import { ForwardMessageDialog } from '@/components/chat/ForwardMessageDialog';
+import { canEditMessage, checkEditedText, editMinutesLeft } from '@/lib/messageEdit';
 import { StarredMessagesDialog } from '@/components/chat/StarredMessagesDialog';
 
 import { RoomSettings } from './RoomSettings';
@@ -39,6 +38,7 @@ import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
 import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
+import { LinkifiedText } from '@/components/chat/LinkifiedText';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { ProfileShareCard } from '@/components/chat/ProfileShareCard';
 import { PitchShareCard } from '@/components/chat/PitchShareCard';
@@ -53,22 +53,26 @@ import { useChatReadStatus } from '@/hooks/useChatReadStatus';
 import VerificationBadge from '../common/VerificationBadge';
 import { useRoomMessageMutation } from '@/hooks/mutations/useRoomMessageMutation';
 import { useGroupEncryption } from '@/hooks/useGroupEncryption';
+import { useRoomPrefs } from '@/hooks/useRoomPrefs';
 import { playNotificationChime } from '@/utils/notificationSound';
+import { useE2EEPrompt } from '@/hooks/useE2EEPrompt';
+import { useAppRole } from '@/hooks/useAppRole';
+import { StaffObserverBanner } from '@/components/governance/StaffObserverBanner';
+import { E2EEGroupBanner } from '@/components/chat/E2EEGroupBanner';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 // URL detection for allowLinks enforcement
 const URL_PATTERN = /https?:\/\/[^\s]+|www\.[^\s]+/i;
 const containsURL = (text: string): boolean => URL_PATTERN.test(text);
 
 // Profanity filter
-const PROFANITY_LIST: string[] = []; // Extend with actual words as needed
-const applyProfanityFilter = (text: string): string => {
-  let filtered = text;
-  PROFANITY_LIST.forEach(word => {
-    const re = new RegExp(word, 'gi');
-    filtered = filtered.replace(re, '***');
-  });
-  return filtered;
-};
+// The room's "Profanity filter" switch used to do nothing because this list was empty. Whole words only (with common endings),
+// so "class" or "Dickens" are never touched. Extend the list as needed.
+const PROFANITY_LIST: string[] = [
+  'fuck', 'fucker', 'motherfucker', 'shit', 'bullshit', 'bitch', 'bastard', 'asshole', 'cunt', 'slut', 'whore', 'dickhead', 'prick', 'wanker', 'bollocks',
+];
+const PROFANITY_RE = new RegExp('\\b(' + PROFANITY_LIST.join('|') + ')(s|es|ed|ing|in|y)?\\b', 'gi');
+const applyProfanityFilter = (text: string): string => text.replace(PROFANITY_RE, (m) => '*'.repeat(Math.max(3, m.length)));
 
 const isEncryptedPayload = (text: string) => {
   return typeof text === 'string' && (
@@ -93,6 +97,8 @@ interface DiscussionChatInterfaceProps {
   onRoomUpdated: (roomId: string, newTitle: string, newDescription: string, newSettings?: any) => void;
   showBackButton?: boolean;
   initialGrantedAccess?: boolean;
+  /** a staff member who is only visiting this room: called when their audited access ends or runs out */
+  onObserverEnded?: () => void;
 }
 
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
@@ -142,9 +148,9 @@ const scrollToMessage = (messageId: string) => {
   const element = document.querySelector(`[data-message-id="${messageId}"]`);
   if (element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const bubble = element.querySelector('.relative.transition-all.duration-300') || element.querySelector('.rounded-xl') || element.querySelector('[class*="bg-primary"]');
+    const bubble = element.querySelector('.relative.transition.duration-300') || element.querySelector('.rounded-xl') || element.querySelector('[class*="bg-primary"]');
     if (bubble) {
-      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition-all');
+      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition');
       setTimeout(() => {
         bubble.classList.remove('ring-4', 'ring-primary/40', 'scale-105');
       }, 1200);
@@ -163,16 +169,24 @@ export const DiscussionChatInterface = ({
   onClose,
   onRoomUpdated,
   showBackButton,
-  roomSettings
+  roomSettings,
+  onObserverEnded
 }: DiscussionChatInterfaceProps) => {
 
   const { user, profile } = useAuth();
+  const { prefs: roomPrefs } = useRoomPrefs(roomId, user?.id);
+  const roomPrefsRef = useRef(roomPrefs);
+  roomPrefsRef.current = roomPrefs;
+  // Staff reach a room only through audited access. They observe: they read, but never post, react, call or leave read receipts.
+  const { isInternal } = useAppRole();
+  const isObserver = isInternal;
   const { toast } = useToast();
   const [currentRoomType, setCurrentRoomType] = useState<'public' | 'private' | 'secret'>(roomType || 'public');
   useEffect(() => {
     if (roomType) setCurrentRoomType(roomType);
   }, [roomType]);
   const isPrivateRoom = currentRoomType === 'private' || currentRoomType === 'secret';
+  useE2EEPrompt(isPrivateRoom);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesRef = useRef(messages);
@@ -197,7 +211,7 @@ export const DiscussionChatInterface = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
-  const { encryptGroupMessage, decryptGroupMessage, isReady: isGroupE2EEReady } = useGroupEncryption('room', roomId);
+  const { encryptGroupMessage, decryptGroupMessage, isReady: isGroupE2EEReady } = useGroupEncryption('room', roomId, isPrivateRoom);
 
   const [isSettingsOpen, setSettingsOpen] = useState(false);
 
@@ -206,6 +220,7 @@ export const DiscussionChatInterface = ({
 
   // Global Call state
   const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall, toggleMinimize, findActiveCall } = useGlobalCall();
+  const { isFan: isFanAccount } = useAccountType();
   const { isEmojiPickerOpen } = useKeyboard();
   const isInCall = callState.isActive && callState.roomId === roomId;
   // A call or audio space somebody has already started here: the header offers Join, not another start option.
@@ -242,7 +257,9 @@ export const DiscussionChatInterface = ({
     }
   });
   const [showForwardDialog, setShowForwardDialog] = useState(false);
-  const [showStarredDialog, setShowStarredDialog] = useState(false);
+  // inline editing of your own recent text message
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);  const [showStarredDialog, setShowStarredDialog] = useState(false);
   const [selectedCallMessage, setSelectedCallMessage] = useState<any>(null);
   const [reportingMessage, setReportingMessage] = useState<{ id: string, content: string } | null>(null);
 
@@ -374,6 +391,9 @@ export const DiscussionChatInterface = ({
   const [currentSettings, setCurrentSettings] = useState<any>(roomSettings || null);
   const [currentTitle, setCurrentTitle] = useState(roomTitle);
   const [currentDescription, setCurrentDescription] = useState(roomDescription);
+  // the room can arrive after this component mounted (opening the chat by its address): follow the props instead of keeping the first, empty value
+  useEffect(() => { if (roomTitle) setCurrentTitle(roomTitle); }, [roomTitle]);
+  useEffect(() => { if (roomDescription !== undefined) setCurrentDescription(roomDescription); }, [roomDescription]);
   const [roomCreatorId, setRoomCreatorId] = useState<string | null>(null);
   const [actualRole, setActualRole] = useState<string | null>(null);
 
@@ -426,6 +446,7 @@ export const DiscussionChatInterface = ({
 
 
   const handleBroadcastRead = useCallback(() => {
+    if (isObserver) return; // an observer is never shown as having read the room
     if (channelRef.current && user?.id) {
       const nowIso = new Date().toISOString();
       channelRef.current.send({
@@ -442,7 +463,7 @@ export const DiscussionChatInterface = ({
         }
       }).catch(console.error);
     }
-  }, [user?.id, profile, user]);
+  }, [user?.id, profile, user, isObserver]);
 
   const { observeMessage } = useMessageSeen('room_messages', handleBroadcastRead);
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
@@ -451,7 +472,51 @@ export const DiscussionChatInterface = ({
   const [unreadCount, setUnreadCount] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
+  // WhatsApp-style open: the list is placed before first paint (bottom, or the first unread message).
+  const openLastReadRef = useRef<string | null>(null);
+  const [openReadReady, setOpenReadReady] = useState(false);
+  // undefined = not worked out yet, null = no unread messages, object = first unread message + count
+  const [unreadAnchor, setUnreadAnchor] = useState<{ id: string; count: number } | null | undefined>(undefined);
+  const [chatVisible, setChatVisible] = useState(false);
+  const [placed, setPlaced] = useState(false);
+  const chatPositionedRef = useRef(false);
+  const userScrolledRef = useRef(false);
+
+  useEffect(() => {
+    chatPositionedRef.current = false;
+    userScrolledRef.current = false;
+    openLastReadRef.current = null;
+    setOpenReadReady(false);
+    setUnreadAnchor(undefined);
+    setChatVisible(false);
+    setPlaced(false);
+    // Safety net: the list can never stay hidden.
+    const safety = window.setTimeout(() => setChatVisible(true), 1800);
+    let cancelled = false;
+    (async () => {
+      try {
+        if (user?.id && roomId) {
+          const { data } = await supabase
+            .from('room_message_read_status' as any)
+            .select('last_read_at')
+            .eq('room_id', roomId)
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (!cancelled) openLastReadRef.current = (data as any)?.last_read_at || null;
+        }
+      } catch {
+        /* unknown last-read time: open at the bottom */
+      } finally {
+        if (!cancelled) setOpenReadReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(safety);
+    };
+  }, [roomId, user?.id]);
+
+  const scrollToBottom =(behavior: 'smooth' | 'auto' = 'smooth') => {
     if (scrollContainerRef.current) {
       const targetScroll = scrollContainerRef.current.scrollHeight;
       if (behavior === 'smooth') {
@@ -467,7 +532,7 @@ export const DiscussionChatInterface = ({
   useEffect(() => {
     if (messages.length > 0) {
       if (isInitialLoad.current) {
-        scrollToBottom('auto');
+        // initial placement is handled before paint by the layout effect (no visible scrolling)
         isInitialLoad.current = false;
       } else {
         if (scrollContainerRef.current && lastScrollHeight.current > 0) {
@@ -528,7 +593,8 @@ export const DiscussionChatInterface = ({
 
           if (joinError) throw joinError;
           console.log(`Successfully enrolled user ${user.id} in room ${roomId}`);
-        }
+          // the first load ran before the person was a member, so the room's messages were hidden from them: load again now
+          fetchMessagesRef.current?.();        }
       } catch (err) {
         console.error('Error in auto-enrollment:', err);
       }
@@ -714,6 +780,7 @@ export const DiscussionChatInterface = ({
           id,
           content,
           created_at,
+          edited_at,
           user_id,
           is_deleted,
           reply_to_id,
@@ -802,6 +869,7 @@ export const DiscussionChatInterface = ({
           id,
           content,
           created_at,
+          edited_at,
           user_id,
           is_deleted,
           reply_to_id,
@@ -940,11 +1008,12 @@ export const DiscussionChatInterface = ({
   }, [isPrivateRoom, isGroupE2EEReady, decryptGroupMessage]);
 
   useEffect(() => {
-    if (user && roomId && messages.length > 0) {
+    // wait until the previous last-read time has been captured for the unread divider
+    if (user && roomId && messages.length > 0 && !isObserver && openReadReady) {
       markAsRead('discussion', roomId);
       handleBroadcastRead();
     }
-  }, [roomId, messages.length, markAsRead, user, handleBroadcastRead]);
+  }, [roomId, messages.length, markAsRead, user, handleBroadcastRead, openReadReady]);
 
   const isAtBottomRef = useRef(isAtBottom);
   useEffect(() => {
@@ -1060,9 +1129,7 @@ export const DiscussionChatInterface = ({
         // Sound alert for incoming messages (respecting per-user room notification preferences)
         if (newMsg.user_id !== userRef.current?.id) {
           try {
-            const userKey = userRef.current?.id || 'anonymous';
-            const rawPrefs = localStorage.getItem(`room_notif_${roomId}_${userKey}`);
-            const prefs = rawPrefs ? JSON.parse(rawPrefs) : { muteRoom: false, mentionsOnly: false, soundAlerts: true };
+            const prefs = roomPrefsRef.current;
             const isMuted = prefs.muteRoom === true;
             const isMentionsOnly = prefs.mentionsOnly === true;
             const soundEnabled = prefs.soundAlerts !== false;
@@ -1105,9 +1172,14 @@ export const DiscussionChatInterface = ({
         }
       } else if (payload.eventType === 'UPDATE') {
         const updatedMsg = payload.new;
+        if (isPrivateRoom && typeof updatedMsg.content === 'string' && isGroupE2EEReady) {
+          // an edited message in an encrypted room arrives as ciphertext
+          try { updatedMsg.content = await decryptGroupMessage(updatedMsg.content); } catch { /* keep what is shown */ }
+        }
         setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
           ...m,
           content: updatedMsg.content,
+          edited_at: updatedMsg.edited_at ?? m.edited_at,
           is_deleted: updatedMsg.is_deleted,
           media_url: updatedMsg.media_url,
           media_type: updatedMsg.media_type,
@@ -1598,6 +1670,43 @@ export const DiscussionChatInterface = ({
     }
   };
 
+  const startEdit = (message: Message) => {
+    setEditing({ id: message.id, text: message.content || '' });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing || !user || savingEdit) return;
+    const original = messages.find(m => m.id === editing.id);
+    if (!original) { setEditing(null); return; }
+    const check = checkEditedText(original.content || '', editing.text);
+    if (!check.ok) {
+      if (check.reason === 'unchanged') { setEditing(null); return; }
+      toast({ title: 'Cannot save', description: check.message, variant: 'destructive' });
+      return;
+    }
+    if (!canEditMessage(original, user.id)) {
+      toast({ title: 'Too late to edit', description: 'Messages can be edited for 15 minutes after they are sent.', variant: 'destructive' });
+      setEditing(null);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      let textToSave = check.text;
+      if (isPrivateRoom) textToSave = await encryptGroupMessage(check.text);
+      // the database sets edited_at and refuses edits after the window (part FQ); only the text is sent from here
+      const { error } = await (supabase as any).from('room_messages').update({ content: textToSave }).eq('id', editing.id).eq('user_id', user.id);
+      if (error) throw error;
+      setMessages(prev => prev.map(m => m.id === editing.id ? { ...m, content: check.text, edited_at: new Date().toISOString() } : m));
+      setEditing(null);
+    } catch (e: any) {
+      console.error('Error editing message:', e);
+      const late = /edit window|15 minutes|too late/i.test(e?.message || '');
+      toast({ title: late ? 'Too late to edit' : 'Could not save your edit', description: late ? 'Messages can be edited for 15 minutes after they are sent.' : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
 
@@ -1685,6 +1794,87 @@ export const DiscussionChatInterface = ({
   const visibleMessages = useMemo(() => {
     return messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
   }, [messages, user?.id]);
+
+  // 1) once messages and the previous last-read time are known, work out the first unread message
+  useLayoutEffect(() => {
+    if (unreadAnchor !== undefined || !openReadReady || chatPositionedRef.current) return;
+    if (visibleMessages.length === 0) return;
+    const lastRead = openLastReadRef.current ? new Date(openLastReadRef.current).getTime() : NaN;
+    if (!Number.isFinite(lastRead)) {
+      setUnreadAnchor(null);
+      return;
+    }
+    const unread = visibleMessages.filter(
+      m => m.user_id !== user?.id && !m.is_deleted && new Date(m.created_at).getTime() > lastRead
+    );
+    setUnreadAnchor(unread.length > 0 ? { id: unread[0].id, count: unread.length } : null);
+  }, [visibleMessages, openReadReady, unreadAnchor, user?.id]);
+
+
+  // Reveal only once the height has stopped changing and the pictures have loaded, so the list never visibly shifts after it appears.
+  useEffect(() => {
+    if (!placed || chatVisible) return;
+    let last = -1;
+    let stable = 0;
+    const t0 = performance.now();
+    const id = window.setInterval(() => {
+      const c = scrollContainerRef.current;
+      if (!c) return;
+      const pictures = Array.from(c.querySelectorAll('img')).some((img) => !img.complete);
+      stable = c.scrollHeight === last && !pictures ? stable + 1 : 0;
+      last = c.scrollHeight;
+      if (stable >= 2 || userScrolledRef.current || performance.now() - t0 > 1100) setChatVisible(true);
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [placed, chatVisible]);
+
+  // 2) place the list before first paint, then reveal it
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || unreadAnchor === undefined || chatPositionedRef.current || visibleMessages.length === 0) return;
+    const place = () => {
+      const c = scrollContainerRef.current;
+      if (!c || userScrolledRef.current) return;
+      const divider = unreadAnchor ? c.querySelector('[data-unread-divider]') as HTMLElement | null : null;
+      if (divider) {
+        const offset = divider.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop;
+        c.scrollTop = Math.max(0, offset - c.clientHeight * 0.15);
+      } else {
+        c.scrollTop = c.scrollHeight;
+      }
+    };
+    place();
+    chatPositionedRef.current = true;
+    setIsAtBottom(!unreadAnchor);
+    setPlaced(true);
+
+    // keep it in place while images / late content change the height, until the person scrolls
+    const stop = () => { userScrolledRef.current = true; };
+    el.addEventListener('wheel', stop, { passive: true });
+    el.addEventListener('touchstart', stop, { passive: true });
+    el.addEventListener('keydown', stop);
+    el.addEventListener('mousedown', stop);
+    el.addEventListener('load', place, true);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && el.firstElementChild) {
+      ro = new ResizeObserver(place);
+      ro.observe(el.firstElementChild);
+      Array.from(el.children).forEach(ch => ro!.observe(ch));
+    }
+    const done = window.setTimeout(() => {
+      el.removeEventListener('load', place, true);
+      ro?.disconnect();
+    }, 3000);
+    return () => {
+      window.clearTimeout(done);
+      ro?.disconnect();
+      el.removeEventListener('wheel', stop);
+      el.removeEventListener('touchstart', stop);
+      el.removeEventListener('keydown', stop);
+      el.removeEventListener('mousedown', stop);
+      el.removeEventListener('load', place, true);
+    };
+  }, [unreadAnchor, visibleMessages.length]);
 
   const messageSeenUsersMap = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -1829,8 +2019,34 @@ export const DiscussionChatInterface = ({
               );
             } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
           })()
+        ) : (editing && editing.id === message.id) ? (
+          <div className="min-w-[200px] space-y-1.5" onClick={(e) => e.stopPropagation()}>
+            <textarea
+              autoFocus
+              aria-label="Edit message"
+              value={editing.text}
+              onChange={(e) => setEditing({ id: editing.id, text: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); setEditing(null); }
+                else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSaveEdit(); }
+              }}
+              rows={Math.min(6, Math.max(2, editing.text.split(String.fromCharCode(10)).length))}
+              maxLength={2100}
+              className="w-full resize-none rounded-lg border bg-background text-foreground text-sm p-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="opacity-80">{editMinutesLeft(message.created_at)} min left to edit</span>
+              <span className="flex gap-1.5">
+                <button type="button" onClick={() => setEditing(null)} className="h-8 px-3 rounded-full border bg-background text-foreground font-medium">Cancel</button>
+                <button type="button" disabled={savingEdit} onClick={() => void handleSaveEdit()} className="h-8 px-3 rounded-full bg-primary text-primary-foreground font-semibold disabled:opacity-60">{savingEdit ? 'Saving…' : 'Save'}</button>
+              </span>
+            </div>
+          </div>
         ) : (content && !isDefaultMediaContent(content)) ? (
-          <span className="text-[13px] sm:text-sm font-medium leading-relaxed break-words whitespace-pre-wrap">{content}</span>
+          <>
+            <span className="text-sm sm:text-sm font-medium leading-relaxed break-words whitespace-pre-wrap"><LinkifiedText text={content} /></span>
+            {message.edited_at ? <span className="ml-1.5 text-[11px] italic opacity-70" title={`Edited ${new Date(message.edited_at).toLocaleString()}`}>(edited)</span> : null}
+          </>
         ) : null}
       </>
     );
@@ -1856,7 +2072,7 @@ export const DiscussionChatInterface = ({
       <header className="flex items-center justify-between px-3 py-2.5 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           {(showBackButton || !isDesktop) && (
-            <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors shrink-0">
+            <button aria-label="Go back" onClick={onClose} className="p-3 -m-1 rounded-full hover:bg-muted transition-colors shrink-0">
               <ArrowLeft className="h-5 w-5 text-foreground" />
             </button>
           )}
@@ -1867,19 +2083,19 @@ export const DiscussionChatInterface = ({
                 {currentTitle}
               </h2>
               {isPrivateRoom ? (
-                <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0" title="End-to-End Encrypted Room">
+                <span className="flex items-center gap-1 text-[12px] font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0" title="End-to-End Encrypted Room">
                   <ShieldCheck className="w-3 h-3" />
                   E2EE
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-[10px] font-medium text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full shrink-0" title="Public Discussion Room">
+                <span className="flex items-center gap-1 text-[12px] font-medium text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full shrink-0" title="Public Discussion Room">
                   <Globe className="w-3 h-3" />
                   Public
                 </span>
               )}
               {isInCall && (
-                <span className="flex items-center gap-1 text-[10px] font-semibold text-red-500 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0">
-                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                <span className="flex items-center gap-1 text-[12px] font-semibold text-red-500 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0">
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
                   LIVE
                 </span>
               )}
@@ -1887,19 +2103,19 @@ export const DiscussionChatInterface = ({
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          {!isInCall && (
+          {!isObserver && !isInCall && (
             <Button
               variant="ghost"
               size="icon"
               onClick={handleStartSpace}
-              disabled={callLoading}
+              disabled={callLoading || (isFanAccount && !activeRoomCall)}
               // Same small round icon button as the audio-space one next to it; green when a call/space is already live.
               className={
                 activeRoomCall
-                  ? 'h-8 w-8 rounded-full shrink-0 text-green-500 bg-green-500/10 hover:bg-green-500/20 hover:text-green-500'
-                  : 'h-8 w-8 rounded-full shrink-0 text-muted-foreground hover:text-primary hover:bg-primary/10'
+                  ? 'h-10 w-10 md:h-8 md:w-8 rounded-full shrink-0 text-green-500 bg-green-500/10 hover:bg-green-500/20 hover:text-green-500'
+                  : 'h-10 w-10 md:h-8 md:w-8 rounded-full shrink-0 text-muted-foreground hover:text-primary hover:bg-primary/10'
               }
-              title={activeRoomCall ? (activeRoomCall.mode === 'audio_space' ? 'Join the live audio space' : 'Join the live call') : 'Start a video call'}
+              title={activeRoomCall ? (activeRoomCall.mode === 'audio_space' ? 'Join the live audio space' : 'Join the live call') : (isFanAccount ? FAN_CALL_TOOLTIP : 'Start a video call')}
             >
               {callLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1910,14 +2126,14 @@ export const DiscussionChatInterface = ({
               )}
             </Button>
           )}
-          {!isInCall && !activeRoomCall && <StartAudioSpaceButton onStart={handleStartAudioSpace} disabled={callLoading} />}
+          {!isObserver && !isInCall && !activeRoomCall && <StartAudioSpaceButton onStart={handleStartAudioSpace} disabled={callLoading} />}
 
 
 
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+            className="h-10 w-10 md:h-8 md:w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
             onClick={() => setSettingsOpen(true)}
             title="Discussion Settings"
           >
@@ -1937,6 +2153,7 @@ export const DiscussionChatInterface = ({
           </Dialog>
         </div>
       </header>
+      {isObserver && <StaffObserverBanner targetType="room" targetId={roomId} onEnded={() => onObserverEnded?.()} />}
 
       {/* PINNED MESSAGE BANNER */}
       {currentSettings?.pinnedMessage && (
@@ -1945,7 +2162,7 @@ export const DiscussionChatInterface = ({
             <MessageSquare className="h-3.5 w-3.5 fill-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-black text-primary uppercase tracking-wider mb-0.5">Pinned Message</p>
+            <p className="text-[12px] font-black text-primary uppercase tracking-wider mb-0.5">Pinned Message</p>
             <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed line-clamp-2">{currentSettings.pinnedMessage}</p>
           </div>
         </div>
@@ -1960,7 +2177,7 @@ export const DiscussionChatInterface = ({
                 <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-lg shadow-purple-600/30">
                   <Radio className="w-5 h-5 text-white" />
                 </div>
-                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-background" />
+                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-background" />
               </div>
               <div>
                 <p className="font-semibold text-sm">Discussion is Active!</p>
@@ -1971,15 +2188,15 @@ export const DiscussionChatInterface = ({
               <Button
                 size="sm"
                 onClick={handleJoinSpace}
-                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-full text-xs px-4 h-8"
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-full text-xs px-4 h-10 md:h-8"
               >
                 Join
               </Button>
-              <Button
+              <Button aria-label="Close"
                 size="sm"
                 variant="ghost"
                 onClick={() => setShowJoinBanner(false)}
-                className="h-8 w-8 rounded-full"
+                className="h-10 w-10 md:h-8 md:w-8 rounded-full"
               >
                 <X className="w-3.5 h-3.5" />
               </Button>
@@ -1996,13 +2213,13 @@ export const DiscussionChatInterface = ({
               setMobileTab('discussion');
               toggleMinimize(false);
             }}
-            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 relative ${mobileTab === 'discussion' ? 'text-primary' : 'text-muted-foreground'}`}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 relative ${mobileTab === 'discussion' ? 'text-primary' : 'text-muted-foreground'}`}
           >
             <Radio className="w-4 h-4" />
             Discussion
             {mobileTab === 'discussion' && (
               <div
-                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-all duration-300"
+                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-opacity duration-300"
               />
             )}
           </button>
@@ -2011,17 +2228,17 @@ export const DiscussionChatInterface = ({
               setMobileTab('chat');
               toggleMinimize(true);
             }}
-            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 relative ${mobileTab === 'chat' ? 'text-primary' : 'text-muted-foreground'}`}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 relative ${mobileTab === 'chat' ? 'text-primary' : 'text-muted-foreground'}`}
           >
             <MessageSquare className="w-4 h-4" />
             Chat
             {mobileTab === 'chat' && (
               <div
-                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-all duration-300"
+                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-opacity duration-300"
               />
             )}
             {unreadCount > 0 && (
-              <span className="absolute top-2 right-1/4 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              <span className="absolute top-2 right-1/4 w-2 h-2 bg-red-500 rounded-full" />
             )}
           </button>
         </div>
@@ -2040,24 +2257,26 @@ export const DiscussionChatInterface = ({
           {selectedMessageIds.length > 0 && (
             <div className="absolute top-0 left-0 right-0 z-50 bg-primary text-primary-foreground p-2 sm:p-3 flex items-center justify-between shadow-lg animate-in slide-in-from-top-full duration-200">
               <div className="flex items-center gap-2 sm:gap-3">
-                <Button variant="ghost" size="icon" onClick={() => setSelectedMessageIds([])} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full">
+                <Button aria-label="Close" variant="ghost" size="icon" onClick={() => setSelectedMessageIds([])} className="h-10 w-10 md:h-8 md:w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full">
                   <X className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
                 <span className="font-semibold text-sm sm:text-base">{selectedMessageIds.length}</span>
               </div>
               <div className="flex items-center gap-1 sm:gap-2">
-                <Button variant="ghost" size="icon" onClick={() => handleToggleStarMessages()} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full" title="Star Messages">
+                <Button variant="ghost" size="icon" onClick={() => handleToggleStarMessages()} className="h-10 w-10 md:h-8 md:w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full" title="Star Messages">
                   <Star className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => setShowForwardDialog(true)} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full" title="Forward">
-                  <Share2 className="h-4 w-4 sm:h-5 sm:w-5" />
+                <Button variant="ghost" size="icon" onClick={() => setShowForwardDialog(true)} className="h-10 w-10 md:h-8 md:w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full" title="Forward">
+                  <ShareIcon className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
               </div>
             </div>
           )}
+          {isPrivateRoom && <E2EEGroupBanner label="room" />}
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
+            style={chatVisible ? undefined : { visibility: 'hidden' }}
             className="flex-1 flex flex-col overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide"
           >
             {loadingMore && hasMore && (
@@ -2098,6 +2317,16 @@ export const DiscussionChatInterface = ({
                   const isSameSenderAsNext = !!(nextMessage && !isNextDateSeparator && nextMessage.user_id === message.user_id);
                   const isSameSenderAsPrev = !!(prevMessage && !showDateSeparator && prevMessage.user_id === message.user_id);
 
+                  const unreadDivider = unreadAnchor && unreadAnchor.id === message.id ? (
+                    <div data-unread-divider className="flex items-center gap-3 my-4">
+                      <div className="flex-1 h-px bg-primary/60" />
+                      <span className="text-[12px] font-bold text-primary whitespace-nowrap">
+                        {unreadAnchor.count} new {unreadAnchor.count === 1 ? 'message' : 'messages'}
+                      </span>
+                      <div className="flex-1 h-px bg-primary/60" />
+                    </div>
+                  ) : null;
+
                   const showAvatar = !isSameSenderAsNext;
                   const showSenderName = !isSender && !isSameSenderAsPrev && !message.is_deleted;
 
@@ -2113,18 +2342,19 @@ export const DiscussionChatInterface = ({
                         {showDateSeparator && (
                           <div className="flex justify-center my-6">
                             <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/20">
-                              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                                 {getDateLabel(messageDate)}
                               </span>
                             </div>
                           </div>
                         )}
-                        <div 
+                        {unreadDivider}
+                        <div
                           onClick={() => setSelectedCallMessage(message)}
-                          className="flex justify-center my-3 cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition-all"
+                          className="flex justify-center my-3 cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition"
                           title="Click to view call details"
                         >
-                          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 hover:bg-secondary/80 border border-border/40 backdrop-blur-md shadow-sm transition-all">
+                          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 hover:bg-secondary/80 border border-border/40 shadow-sm transition">
                             <div className={cn(
                               "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
                               isStarted ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-400"
@@ -2134,7 +2364,7 @@ export const DiscussionChatInterface = ({
                             <span className="text-xs font-medium text-foreground">
                               {cleanContent}
                             </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
+                            <span className="text-[12px] text-muted-foreground ml-1">
                               {format(messageDate, 'h:mm a')}
                             </span>
                           </div>
@@ -2148,12 +2378,13 @@ export const DiscussionChatInterface = ({
                       {showDateSeparator && (
                         <div className="flex justify-center my-6">
                           <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/20">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                               {getDateLabel(messageDate)}
                             </span>
                           </div>
                         </div>
                       )}
+                      {unreadDivider}
                       <div
                         ref={observeMessage}
                         data-message-id={message.id}
@@ -2180,7 +2411,7 @@ export const DiscussionChatInterface = ({
                           {/* Swipe to reply indicator icon behind message */}
                           {swipeMessageId === message.id && swipeOffset > 0 && (
                             <div 
-                              className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition-all flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in duration-100"
+                              className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in-95 duration-100"
                               style={{
                                 opacity: Math.min(swipeOffset / 55, 1),
                                 transform: `translateY(-50%) scale(${Math.min(0.5 + (swipeOffset / 110), 1)})`
@@ -2190,7 +2421,7 @@ export const DiscussionChatInterface = ({
                             </div>
                           )}
                           <div 
-                            className="relative select-none transition-transform duration-200"
+                            className={cn("relative select-none touch-pan-y", swipeMessageId !== message.id && "transition-transform duration-200")}
                             style={{
                               transform: swipeMessageId === message.id ? `translateX(${swipeOffset}px)` : undefined
                             }}
@@ -2208,9 +2439,10 @@ export const DiscussionChatInterface = ({
                             onTouchStart={handleTouchStart(message.id, !!message.is_deleted)}
                             onTouchMove={handleTouchMove(message.id)}
                             onTouchEnd={handleTouchEnd(message)}
+                            onTouchCancel={handleTouchEnd(message)}
                           >
                             <div className={cn(
-                              "relative transition-all duration-300",
+                              "relative transition-[box-shadow,transform] duration-200",
                               selectedMessageIds.includes(message.id) && "ring-2 ring-primary ring-offset-2 ring-offset-background scale-[0.98]",
                               message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
                               isShare ? "bg-transparent rounded-2xl border border-border/10" :
@@ -2222,7 +2454,7 @@ export const DiscussionChatInterface = ({
                                 showSenderName ? (
                                   <div className="flex items-center justify-between gap-4 mb-1">
                                     <div className="flex items-center gap-1.5">
-                                      <p className={`text-[11px] font-bold ${getUserColor(message.user_id)}`}>
+                                      <p className={`text-[12px] font-bold ${getUserColor(message.user_id)}`}>
                                         {message.profiles?.username || message.profiles?.full_name || 'User'}
                                       </p>
                                       {message.profiles?.is_verified && (
@@ -2264,11 +2496,16 @@ export const DiscussionChatInterface = ({
                                         toggleMessageSelection(message.id);
                                         setShowForwardDialog(true);
                                       }}>
-                                        <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                        <ShareIcon className="h-3.5 w-3.5 mr-2" /> Forward
                                       </DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
                                         <Check className="h-3.5 w-3.5 mr-2" /> Select
                                       </DropdownMenuItem>
+                                      {isSender && canEditMessage(message, user?.id) && (
+                                        <DropdownMenuItem onClick={() => startEdit(message)}>
+                                          <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                        </DropdownMenuItem>
+                                      )}
                                       {(isSender || isAdmin) && (
                                         <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
                                           <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
@@ -2287,10 +2524,10 @@ export const DiscussionChatInterface = ({
                                 return (
                                   <div 
                                      onClick={() => scrollToMessage(message.reply_to_id!)}
-                                     className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all flex items-center justify-between gap-2.5 ${isSender ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
+                                     className={`mb-2 p-2 rounded-xl text-[12px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition flex items-center justify-between gap-2.5 ${isSender ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
                                    >
                                     <div className="flex-1 min-w-0">
-                                      <div className={`font-black text-[9px] uppercase tracking-tighter mb-0.5 truncate ${isSender ? 'text-white font-bold' : getUserColor(repliedMsg.user_id)}`}>
+                                      <div className={`font-black text-[12px] uppercase tracking-tighter mb-0.5 truncate ${isSender ? 'text-white font-bold' : getUserColor(repliedMsg.user_id)}`}>
                                         @{repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
                                       </div>
                                       <div className={`opacity-80 line-clamp-1 truncate ${isSender ? 'text-white/80' : 'text-muted-foreground'}`}>
@@ -2317,7 +2554,7 @@ export const DiscussionChatInterface = ({
 
                                    {/* WhatsApp style inline timestamp for normal text messages */}
                                    {!message.is_deleted && !isShare && (
-                                     <span className="inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80">
+                                     <span className="inline-flex items-center gap-1 float-right text-[12px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80">
                                        {starredMessageIds.has(message.id) && (
                                          <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
                                        )}
@@ -2371,12 +2608,17 @@ export const DiscussionChatInterface = ({
                                                toggleMessageSelection(message.id);
                                                setShowForwardDialog(true);
                                              }}>
-                                               <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                               <ShareIcon className="h-3.5 w-3.5 mr-2" /> Forward
                                              </DropdownMenuItem>
                                              <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
                                                <Check className="h-3.5 w-3.5 mr-2" /> Select
                                              </DropdownMenuItem>
-                                             {(isSender || isAdmin) && (
+                                             {isSender && canEditMessage(message, user?.id) && (
+                                        <DropdownMenuItem onClick={() => startEdit(message)}>
+                                          <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                        </DropdownMenuItem>
+                                      )}
+                                      {(isSender || isAdmin) && (
                                                <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
                                                  <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
                                                </DropdownMenuItem>
@@ -2405,7 +2647,7 @@ export const DiscussionChatInterface = ({
                                     )}
                                  >
                                    <span className="text-sm leading-none">{emoji}</span>
-                                   {count > 1 && <span className="text-[10px] font-extrabold pr-0.5">{count}</span>}
+                                   {count > 1 && <span className="text-[12px] font-extrabold pr-0.5">{count}</span>}
                                  </button>
                                );
                             })}
@@ -2420,11 +2662,12 @@ export const DiscussionChatInterface = ({
                             setActiveMobileReactionMessageId(prev => prev === message.id ? null : message.id);
                           }}
                           className={cn(
-                            "absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all opacity-0 group-hover:opacity-100 shrink-0 z-20",
+                            "absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition opacity-0 group-hover:opacity-100 shrink-0 z-20",
                             isSender ? "-left-8" : "-right-8",
                             activeMobileReactionMessageId === message.id && "opacity-100"
                           )}
                           title="React"
+                          aria-label="React to message"
                         >
                           <Smile className="h-4 w-4" />
                         </button>
@@ -2453,7 +2696,7 @@ export const DiscussionChatInterface = ({
                                     {emoji}
                                   </button>
                                 ))}
-                                <button 
+                                <button aria-label="Close" 
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setActiveMobileReactionMessageId(null);
@@ -2467,7 +2710,7 @@ export const DiscussionChatInterface = ({
                           </div>
                           {/* Dedicated timestamp row for share cards below card */}
                           {isShare && !message.is_deleted && (
-                            <div className="w-full flex items-center justify-end gap-1 mt-1 px-1 text-[10px] text-chat-text-muted/80 dark:text-muted-foreground/80 select-none">
+                            <div className="w-full flex items-center justify-end gap-1 mt-1 px-1 text-[12px] text-chat-text-muted/80 dark:text-muted-foreground/80 select-none">
                               {starredMessageIds.has(message.id) && (
                                 <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
                               )}
@@ -2521,12 +2764,17 @@ export const DiscussionChatInterface = ({
                                       toggleMessageSelection(message.id);
                                       setShowForwardDialog(true);
                                     }}>
-                                      <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                      <ShareIcon className="h-3.5 w-3.5 mr-2" /> Forward
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
                                       <Check className="h-3.5 w-3.5 mr-2" /> Select
                                     </DropdownMenuItem>
-                                    {(isSender || isAdmin) && (
+                                    {isSender && canEditMessage(message, user?.id) && (
+                                        <DropdownMenuItem onClick={() => startEdit(message)}>
+                                          <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                        </DropdownMenuItem>
+                                      )}
+                                      {(isSender || isAdmin) && (
                                       <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
                                         <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
                                       </DropdownMenuItem>
@@ -2541,7 +2789,7 @@ export const DiscussionChatInterface = ({
                             <div className="w-full text-right mt-0.5 mb-1 px-1 select-none">
                               {uniqueSeenBy.length > 0 ? (
                                 <span 
-                                  className="text-[9px] font-bold text-primary/70 tracking-tight cursor-pointer hover:underline inline-block text-right"
+                                  className="text-[12px] font-bold text-primary/70 tracking-tight cursor-pointer hover:underline inline-block text-right"
                                   onClick={() => {
                                     setInfoMessage(message);
                                     setShowInfoDialog(true);
@@ -2550,7 +2798,7 @@ export const DiscussionChatInterface = ({
                                   Seen by {uniqueSeenBy.join(', ')}
                                 </span>
                               ) : (
-                                <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight inline-block text-right">
+                                <span className="text-[12px] font-medium text-muted-foreground/60 tracking-tight inline-block text-right">
                                   {message.status === 'pending' ? 'Sending...' : 'Sent'}
                                 </span>
                               )}
@@ -2570,7 +2818,7 @@ export const DiscussionChatInterface = ({
 
           {!isAtBottom && unreadCount > 0 && (
             <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
-              <Button onClick={() => scrollToBottom()} className="rounded-full shadow-lg h-8 px-4 text-xs" size="sm">
+              <Button onClick={() => scrollToBottom()} className="rounded-full shadow-lg h-10 md:h-8 px-4 text-xs" size="sm">
                 <ChevronDown className="h-3.5 w-3.5 mr-1" /> {unreadCount} new
               </Button>
             </div>
@@ -2587,7 +2835,7 @@ export const DiscussionChatInterface = ({
               return (
                 <div className="mx-2 mb-2 p-2 bg-muted/50 rounded-lg flex items-center justify-between border-l-4 border-primary animate-in slide-in-from-bottom-2 gap-2">
                   <div className="flex-1 min-w-0 pr-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-primary truncate">
+                    <p className="text-[12px] font-bold uppercase tracking-wider text-primary truncate">
                       Replying to {replyingTo.profiles?.username || replyingTo.profiles?.full_name || 'User'}
                     </p>
                     <p className="text-xs text-muted-foreground truncate opacity-80">
@@ -2601,14 +2849,20 @@ export const DiscussionChatInterface = ({
                       className="w-8 h-8 rounded-md object-cover shrink-0 border border-border"
                     />
                   )}
-                  <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-muted rounded text-muted-foreground shrink-0">
+                  <button aria-label="Close" onClick={() => setReplyingTo(null)} className="p-1 hover:bg-muted rounded text-muted-foreground shrink-0">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               );
             })()}
             <TypingIndicator typingUsers={typingUsers} />
+            {isObserver ? (
+              <div className="px-4 py-4 text-center text-sm text-muted-foreground bg-muted/30 border-t border-border/50">
+                You are viewing this room as staff with audited access, so you can read but not post.
+              </div>
+            ) : (
             <MessageComposer onSend={handleSendMessage} onTyping={startTyping} onStopTyping={stopTyping} disabled={!canSendMessages} isUploading={isUploading} slowModeCooldown={slowModeCooldown} disableMedia={!canShareMedia} />
+            )}
           </div>
         </div>
       </div>
@@ -2679,12 +2933,12 @@ export const DiscussionChatInterface = ({
                         <p className="text-sm font-semibold leading-none mb-1">
                           {name}
                         </p>
-                        <p className="text-[10px] text-muted-foreground leading-none">
+                        <p className="text-[12px] text-muted-foreground leading-none">
                           Read
                         </p>
                       </div>
                     </div>
-                    <span className="text-[10px] text-muted-foreground font-medium">
+                    <span className="text-[12px] text-muted-foreground font-medium">
                       {rs.last_read_at ? format(new Date(rs.last_read_at), 'p') : ''}
                     </span>
                   </div>

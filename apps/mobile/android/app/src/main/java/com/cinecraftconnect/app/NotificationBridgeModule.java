@@ -168,41 +168,10 @@ public class NotificationBridgeModule extends ReactContextBaseJavaModule {
                 if (cached != null) return cached;
             }
 
-            String currentUrl = avatarUrl.trim();
-            HttpURLConnection conn = null;
-            int redirects = 0;
-            while (redirects < 3) {
-                URL url = new URL(currentUrl);
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(6000);
-                conn.setReadTimeout(6000);
-                conn.setInstanceFollowRedirects(true);
-                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/109.0");
-                conn.setDoInput(true);
-                conn.connect();
-
-                int code = conn.getResponseCode();
-                if (code == HttpURLConnection.HTTP_MOVED_PERM ||
-                    code == HttpURLConnection.HTTP_MOVED_TEMP ||
-                    code == HttpURLConnection.HTTP_SEE_OTHER ||
-                    code == 307 || code == 308) {
-                    String newUrl = conn.getHeaderField("Location");
-                    if (newUrl != null && !newUrl.isEmpty()) {
-                        conn.disconnect();
-                        currentUrl = newUrl;
-                        redirects++;
-                        continue;
-                    }
-                }
-                break;
-            }
-
-            if (conn != null) {
-                InputStream input = conn.getInputStream();
-                Bitmap raw = BitmapFactory.decodeStream(input);
-                input.close();
-                conn.disconnect();
-
+            // The address comes from another user's profile: SafeAvatar only fetches https links to known picture
+            // hosts, never follows redirects, caps the size and decodes at a reduced size.
+            Bitmap raw = SafeAvatar.fetch(avatarUrl.trim());
+            {
                 if (raw != null) {
                     int targetSize = 192;
                     Bitmap scaled = Bitmap.createScaledBitmap(raw, targetSize, targetSize, true);
@@ -713,6 +682,16 @@ public class NotificationBridgeModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void showIncomingCall(String callerId, String callerName, String callerAvatar, String roomId, String roomName, String roomType, boolean isVideo) {
+        IncomingCallNotifier.show(getReactApplicationContext(), callerId, callerName != null ? callerName : "Incoming call", callerAvatar, roomId, roomName, roomType, isVideo);
+    }
+
+    @ReactMethod
+    public void cancelIncomingCall() {
+        IncomingCallNotifier.cancel(getReactApplicationContext());
+    }
+
+    @ReactMethod
     public void dismissNotification(String conversationKey) {
         try {
             if (conversationKey == null || conversationKey.isEmpty()) return;
@@ -790,6 +769,23 @@ public class NotificationBridgeModule extends ReactContextBaseJavaModule {
                 if (intent.hasExtra("partnerId")) map.putString("partnerId", intent.getStringExtra("partnerId"));
                 if (intent.hasExtra("partnerName")) map.putString("partnerName", intent.getStringExtra("partnerName"));
                 if (intent.getData() != null) map.putString("url", intent.getData().toString());
+                if (intent.getBooleanExtra("incomingCall", false) && !CallIntentGuard.isTrusted(getReactApplicationContext(), intent)) {
+                    // an intent from another app asking for a call: ignore the call instructions
+                    CallIntentGuard.stripCallExtras(intent);
+                }
+                if (intent.getBooleanExtra("incomingCall", false)) {
+                    map.putBoolean("incomingCall", true);
+                    map.putString("callerId", intent.getStringExtra("callerId"));
+                    map.putString("callerName", intent.getStringExtra("callerName"));
+                    map.putString("callerAvatar", intent.getStringExtra("callerAvatar"));
+                    map.putString("roomId", intent.getStringExtra("roomId"));
+                    map.putString("roomName", intent.getStringExtra("roomName"));
+                    map.putString("roomType", intent.getStringExtra("roomType"));
+                    map.putBoolean("isVideo", intent.getBooleanExtra("isVideo", false));
+                    map.putString("callAction", intent.getStringExtra("callAction"));
+                    // hand it over once, so reopening the app later does not ring again
+                    intent.removeExtra("incomingCall");
+                }
                 promise.resolve(map);
                 return;
             }

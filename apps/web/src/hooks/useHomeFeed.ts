@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchLatestRatings } from '@/services/tmdb';
 import { useEffect, useMemo, useState } from 'react';
+import { dedupeById, releaseDuePosts, fetchTrendingIds, orderByIds, type TrendingKind } from '@cinecraft/core';
 
 export interface HomeFeedData {
     posts: any[];
@@ -18,48 +19,65 @@ export interface HomeFeedData {
     isFetchingNextPage?: boolean;
     fetchNextPage?: () => void;
     newPostsAvailable?: boolean;
+    newPostsCount?: number;
     resetNewPosts?: () => void;
 }
 
-export const useHomeFeed = () => {
+export const useHomeFeed = (opts: { tab?: 'for_you' | 'following'; craft?: string | null } = {}) => {
+    const tab = opts.tab ?? 'for_you';
+    const craft = opts.craft ?? null;
     const { user, profile } = useAuth();
     const queryClient = useQueryClient();
-    const [newPostsAvailable, setNewPostsAvailable] = useState(false);
+    const [newPostsCount, setNewPostsCount] = useState(0);
+    const newPostsAvailable = newPostsCount > 0;
 
-    // 2. Algorithmic Posts Query (10 posts per load)
+    // 2. Ranked posts, 10 per page. Every page is ranked "as of" the moment the first page was, so pages never skip or repeat posts.
+    const PAGE = 10;
     const infinitePostsQuery = useInfiniteQuery({
-        queryKey: ['home-feed-posts', user?.id],
-        queryFn: async ({ pageParam }: { pageParam: string | null }) => {
+        queryKey: ['home-feed-posts', user?.id, tab, craft],
+        queryFn: async ({ pageParam }: { pageParam: { offset: number; asOf: string | null } }) => {
+            await releaseDuePosts(supabase); // posts whose time has come go live (and notify) now
             const { data, error } = await (supabase as any)
                 .rpc('get_algorithmic_feed', {
                     current_user_id: user?.id || null,
-                    limit_val: 10,
-                    created_at_cursor: pageParam
+                    limit_val: PAGE,
+                    p_offset: pageParam.offset,
+                    p_as_of: pageParam.asOf,
+                    p_tab: tab,
+                    p_craft: craft,
                 });
 
+            let rows: any[];
             if (error) {
                 console.warn("Algorithmic RPC failed, falling back to chronological query:", error);
-                let query = supabase
+                const { data: fallbackData, error: fallbackError } = await supabase
                     .from('posts')
                     .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
                     .order('created_at', { ascending: false })
-                    .limit(10);
-
-                if (pageParam) {
-                    query = query.lt('created_at', pageParam);
-                }
-
-                const { data: fallbackData, error: fallbackError } = await query;
+                    .range(pageParam.offset, pageParam.offset + PAGE - 1);
                 if (fallbackError) throw fallbackError;
-                return fallbackData || [];
+                rows = fallbackData || [];
+            } else {
+                rows = data || [];
             }
 
-            return data || [];
+            // which of these posts I liked: asked for just this page (the old query loaded every like and stopped at 1000)
+            if (user?.id && rows.length > 0) {
+                const flags = await (supabase as any).rpc('get_my_post_flags', { p_post_ids: rows.map((p: any) => p.id) });
+                if (!flags.error && Array.isArray(flags.data)) {
+                    queryClient.setQueryData(['user-likes', user.id], (old: any) => {
+                        const set = new Set<string>(Array.isArray(old) ? old : []);
+                        flags.data.forEach((f: any) => (f.liked ? set.add(f.post_id) : set.delete(f.post_id)));
+                        return [...set];
+                    });
+                }
+            }
+            return rows;
         },
-        initialPageParam: null as string | null,
-        getNextPageParam: (lastPage: any[]) => {
-            if (lastPage.length < 10) return undefined;
-            return lastPage[lastPage.length - 1].created_at;
+        initialPageParam: { offset: 0, asOf: null as string | null },
+        getNextPageParam: (lastPage: any[], allPages: any[][]) => {
+            if (lastPage.length < PAGE) return undefined;
+            return { offset: allPages.length * PAGE, asOf: allPages[0]?.[0]?.as_of ?? null };
         },
         staleTime: 1000 * 60 * 2,
         placeholderData: (previousData) => previousData,
@@ -69,16 +87,7 @@ export const useHomeFeed = () => {
     const staticDataQuery = useQuery({
         queryKey: ['home-feed-static', user?.id, profile?.account_type],
         queryFn: async () => {
-            // Attempt 1-roundtrip RPC execution first
-            let rpcData: any = null;
-            try {
-                const { data } = await (supabase as any).rpc('get_unified_feed', { p_limit: 10 });
-                if (data && (data.announcements || data.projects || data.discussions)) {
-                    rpcData = data;
-                }
-            } catch {
-                // RPC optional fallback
-            }
+            const rpcData: any = null; // the get_unified_feed shortcut is not used: it selects columns that do not exist
 
             const announcementsPromise = rpcData?.announcements
                 ? Promise.resolve({ data: rpcData.announcements, error: null })
@@ -88,7 +97,7 @@ export const useHomeFeed = () => {
                     .order('posted_at', { ascending: false })
                     .limit(10);
 
-            const projectsPromise = rpcData?.projects
+            const projectsLatest = rpcData?.projects
                 ? Promise.resolve({ data: rpcData.projects, error: null })
                 : supabase
                     .from('projects')
@@ -96,7 +105,7 @@ export const useHomeFeed = () => {
                     .order('created_at', { ascending: false })
                     .limit(10);
 
-            const discussionsPromise = rpcData?.discussions
+            const discussionsLatest = rpcData?.discussions
                 ? Promise.resolve({ data: rpcData.discussions, error: null })
                 : supabase
                     .from('discussion_rooms')
@@ -104,34 +113,36 @@ export const useHomeFeed = () => {
                     .order('created_at', { ascending: false })
                     .limit(10);
 
-            const marketplacePromise = supabase
+            const marketplaceLatest = supabase
                 .from('marketplace_listings')
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(10);
 
-            const vendorsPromise = supabase
+            const vendorsLatest = supabase
                 .from('vendors')
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(10);
 
-            const isViewerPro = !profile || profile.account_type !== 'fan';
-            const connectionsPromise = user?.id
-                ? (() => {
-                    let query = supabase
-                        .from('profiles')
-                        .select('id, full_name, username, avatar_url, craft, bio, is_verified, is_internal, account_type')
-                        .neq('id', user.id)
-                        .eq('is_internal', false);
+            // ranked by recent activity (applications and project chat, room messages, reviews, wishlists); the newest when there is none
+            const ranked = async (kind: TrendingKind, table: string, select: string, latest: PromiseLike<any>) => {
+                const ids = await fetchTrendingIds(supabase, kind, 10);
+                if (ids.length === 0) return latest;
+                const res = await (supabase as any).from(table).select(select).in('id', ids);
+                if (res.error || !res.data?.length) return latest;
+                return { data: orderByIds(res.data as { id: string }[], ids), error: null };
+            };
+            const projectsPromise = ranked('projects', 'projects', '*, creator:creator_id(full_name, avatar_url)', projectsLatest as any);
+            const discussionsPromise = ranked('rooms', 'discussion_rooms', '*', discussionsLatest as any);
+            const marketplacePromise = ranked('marketplace', 'marketplace_listings', '*', marketplaceLatest as any);
+            const vendorsPromise = ranked('vendors', 'vendors', '*', vendorsLatest as any);
 
-                    if (isViewerPro) {
-                        query = query.or('account_type.neq.fan,account_type.is.null');
-                    }
-                    return query
-                        .order('updated_at', { ascending: false, nullsFirst: false })
-                        .limit(10);
-                  })()
+            const connectionsPromise = user?.id
+                ? (supabase as any).rpc('suggest_people', { p_limit: 12 }).then(({ data, error }: any) => ({
+                    data: error ? [] : (data || []).filter((row: any) => row.connection_status === 'none'),
+                    error: null,
+                  }))
                 : Promise.resolve({ data: [], error: null });
 
             const [
@@ -155,19 +166,25 @@ export const useHomeFeed = () => {
         enabled: !!user?.id,
     });
 
-    // 3. User Likes Query
+    // 3. Which loaded posts I liked (kept in step with the pages above; a like made on another device refreshes it)
     const likesQuery = useQuery({
         queryKey: ['user-likes', user?.id],
         queryFn: async () => {
             if (!user?.id) return [];
-            const { data, error } = await supabase
-                .from('post_likes')
-                .select('post_id')
-                .eq('user_id', user.id);
-            if (error) throw error;
-            return (data || []).map((l: any) => l.post_id);
+            const loaded = queryClient.getQueriesData({ queryKey: ['home-feed-posts', user.id] }) as [unknown, any][];
+            const ids: string[] = loaded.flatMap(([, d]) => (d?.pages?.flat() || []) as any[]).map((p) => p.id).slice(-200);
+            const old: any = queryClient.getQueryData(['user-likes', user.id]);
+            const set = new Set<string>(Array.isArray(old) ? old : []);
+            if (ids.length > 0) {
+                const { data, error } = await (supabase as any).rpc('get_my_post_flags', { p_post_ids: ids });
+                if (error) throw error;
+                (data || []).forEach((f: any) => (f.liked ? set.add(f.post_id) : set.delete(f.post_id)));
+            }
+            return [...set];
         },
-        enabled: !!user?.id,
+        enabled: !!user?.id && infinitePostsQuery.isSuccess,
+        staleTime: Infinity,
+        refetchOnWindowFocus: false,
     });
 
     // 4. TMDB Ratings
@@ -186,11 +203,13 @@ export const useHomeFeed = () => {
             .channel('posts_updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload: any) => {
                 if (payload.eventType === 'INSERT') {
-                    // Set flag for new posts available instead of automatic refetching (less DB stress)
-                    setNewPostsAvailable(true);
+                    // Offer the new-posts banner only for posts that would really show up: someone else's, public, already live
+                    const row = payload.new || {};
+                    const live = !row.scheduled_at || new Date(row.scheduled_at) <= new Date();
+                    if (row.author_id !== user.id && (row.audience ?? 'public') === 'public' && live) setNewPostsCount((n) => n + 1);
                 } else if (payload.eventType === 'DELETE') {
                     // Update cache directly to remove the deleted post
-                    queryClient.setQueryData(['home-feed-posts', user.id], (old: any) => {
+                    queryClient.setQueriesData({ queryKey: ['home-feed-posts', user.id] }, (old: any) => {
                         if (!old) return old;
                         return {
                             ...old,
@@ -200,7 +219,7 @@ export const useHomeFeed = () => {
                         };
                     });
                 } else if (payload.eventType === 'UPDATE') {
-                    queryClient.setQueryData(['home-feed-posts', user.id], (old: any) => {
+                    queryClient.setQueriesData({ queryKey: ['home-feed-posts', user.id] }, (old: any) => {
                         if (!old) return old;
                         return {
                             ...old,
@@ -239,13 +258,7 @@ export const useHomeFeed = () => {
     }, [user?.id, queryClient]);
 
     const posts = useMemo(() => {
-        const allPosts = infinitePostsQuery.data?.pages.flat() || [];
-        const seen = new Set();
-        return allPosts.filter((post: any) => {
-            if (seen.has(post.id)) return false;
-            seen.add(post.id);
-            return true;
-        });
+        return dedupeById<any>(infinitePostsQuery.data?.pages.flat() || []);
     }, [infinitePostsQuery.data]);
 
     const combinedData: HomeFeedData = useMemo(() => {
@@ -263,9 +276,10 @@ export const useHomeFeed = () => {
             isFetchingNextPage: infinitePostsQuery.isFetchingNextPage,
             fetchNextPage: infinitePostsQuery.fetchNextPage,
             newPostsAvailable,
-            resetNewPosts: () => setNewPostsAvailable(false)
+            newPostsCount,
+            resetNewPosts: () => setNewPostsCount(0)
         };
-    }, [staticDataQuery.data, posts, ratingsQuery.data, likesQuery.data, infinitePostsQuery, newPostsAvailable]);
+    }, [staticDataQuery.data, posts, ratingsQuery.data, likesQuery.data, infinitePostsQuery, newPostsCount]);
 
     const hasCachedPosts = posts.length > 0;
     const isLoadingInitial = infinitePostsQuery.isLoading && !hasCachedPosts;
@@ -278,6 +292,8 @@ export const useHomeFeed = () => {
         isRefreshing: isFetching && !isLoadingInitial && hasCachedPosts,
         isStaticLoading: staticDataQuery.isLoading && !staticDataQuery.data,
         isFetching,
+        /** true while the previous tab's posts are shown and the new tab's posts are still loading */
+        isPlaceholderData: infinitePostsQuery.isPlaceholderData,
         isError: staticDataQuery.isError || infinitePostsQuery.isError,
         refetch: () => {
             staticDataQuery.refetch();

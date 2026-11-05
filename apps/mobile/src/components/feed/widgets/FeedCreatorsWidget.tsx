@@ -1,3 +1,4 @@
+import { WT } from './widgetScale';
 import { CachedImage } from '../../common/CachedImage';
 import React from 'react';
 import {
@@ -13,7 +14,7 @@ import { VerificationBadge } from '../../common/VerificationBadge';
 import { useUserSettings } from '../../../hooks/useUserSettings';
 
 const ORANGE = '#FF4B33';
-const MUTED = '#6B7280';
+const MUTED = '#64748B';
 const BORDER = '#E5E7EB';
 
 interface CreatorItem {
@@ -98,11 +99,6 @@ export const FeedCreatorsWidget: React.FC<FeedCreatorsWidgetProps> = ({
                     </Text>
                   </View>
                 )}
-                {!!c.is_verified && (
-                  <View style={styles.badgePos}>
-                    <VerificationBadge size="xs" />
-                  </View>
-                )}
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -113,6 +109,7 @@ export const FeedCreatorsWidget: React.FC<FeedCreatorsWidgetProps> = ({
                 <Text style={[styles.creatorName, { color: themeColors.textPrimary }]} numberOfLines={1}>
                   {c.full_name || c.username || 'Creator'}
                 </Text>
+                {!!c.is_verified && <VerificationBadge size="xs" />}
               </TouchableOpacity>
 
               <View
@@ -124,8 +121,8 @@ export const FeedCreatorsWidget: React.FC<FeedCreatorsWidgetProps> = ({
                   },
                 ]}
               >
-                <Text style={[styles.craftPillText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                  CRAFT // {craftStr}
+                <Text style={[styles.craftPillText, { color: themeColors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">
+                  {craftStr}
                 </Text>
               </View>
 
@@ -161,7 +158,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   titleGroup: {
     flexDirection: 'row',
@@ -170,14 +167,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0D0D0D',
-    fontSize: 16,
+    fontSize: WT.sectionTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   seeAllText: {
     color: '#4B5563',
-    fontSize: 12,
+    fontSize: WT.seeAll,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -189,7 +186,7 @@ const styles = StyleSheet.create({
     width: 155,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 16,
+    padding: WT.cardPad,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     alignItems: 'center',
@@ -223,7 +220,7 @@ const styles = StyleSheet.create({
   avatarFallbackText: {
     color: '#FFFFFF',
     fontSize: 24,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   badgePos: {
     position: 'absolute',
@@ -232,33 +229,37 @@ const styles = StyleSheet.create({
   },
   nameRow: {
     marginBottom: 6,
-    width: '100%',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
   creatorName: {
     color: '#0D0D0D',
-    fontSize: 14,
+    fontSize: WT.cardTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     textAlign: 'center',
+    flexShrink: 1,
   },
   craftPill: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
     marginBottom: 12,
     maxWidth: '100%',
   },
   craftPillText: {
     color: '#475569',
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   connectBtn: {
+    minHeight: WT.touch,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
@@ -275,7 +276,7 @@ const styles = StyleSheet.create({
   },
   connectBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: WT.button,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },

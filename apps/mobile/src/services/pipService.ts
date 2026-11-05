@@ -37,6 +37,22 @@ export const setAutoPipEnabled = (enabled: boolean): void => {
   }
 };
 
+/** Mute / speaker state shown on the PiP window's own buttons (Android does not send touches into the small window). */
+export const setPipCallState = (muted: boolean, speakerOn: boolean): void => {
+  if (Platform.OS !== 'android' || !PipBridge?.setPipCallState) return;
+  try {
+    PipBridge.setPipCallState(muted, speakerOn);
+  } catch (err) {
+    console.warn('[PipService] setPipCallState failed:', err);
+  }
+};
+
+/** A button on the PiP window was pressed: 'mute', 'speaker' or 'end'. */
+export const addPipActionListener = (callback: (action: string) => void): EmitterSubscription | null => {
+  if (Platform.OS !== 'android') return null;
+  return DeviceEventEmitter.addListener('onPipAction', callback);
+};
+
 export const addPipListener = (callback: (isInPip: boolean) => void): EmitterSubscription | null => {
   if (Platform.OS !== 'android') return null;
   return DeviceEventEmitter.addListener('onPictureInPictureModeChanged', callback);

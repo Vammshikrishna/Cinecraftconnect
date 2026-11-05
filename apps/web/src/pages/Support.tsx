@@ -31,6 +31,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useSignedStorageUrl } from '@/lib/signedStorageUrl';
+import { friendlyError } from '@cinecraft/core';
 
 interface SupportTicket {
   id: string;
@@ -125,7 +126,7 @@ const SupportPage = () => {
       setNewTicket({ ...newTicket, attachment_url: `support:${filePath}` });
       toast({ title: "Attachment Uploaded", description: "Screenshot attached successfully." });
     } catch (error: any) {
-      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Upload Failed", description: friendlyError(error), variant: "destructive" });
     } finally {
       setIsUploading(false);
     }
@@ -185,8 +186,8 @@ const SupportPage = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background pt-20 pb-20">
-      <div className="max-w-5xl mx-auto px-4">
+    <div className="min-h-dvh bg-background pt-20 pb-20">
+      <div className="max-w-[1280px] mx-auto px-4">
         <PageHeader
           title="Support Hub"
           subtitle="How can the CineCraft Team help you today?"
@@ -297,7 +298,7 @@ const SupportPage = () => {
                             <div className="relative w-full h-32 rounded-2xl overflow-hidden border border-border/50 group">
                               <img loading="lazy" decoding="async" src={previewUrl} alt="Attachment" className="w-full h-full object-cover" />
                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <Button 
+                                <Button aria-label="Close" 
                                   variant="destructive" 
                                   size="sm" 
                                   className="rounded-full h-8 w-8 p-0"
@@ -319,20 +320,20 @@ const SupportPage = () => {
                               />
                               <label
                                 htmlFor="attachment"
-                                className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border/50 rounded-2xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
+                                className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border/50 rounded-2xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
                               >
                                 {isUploading ? (
                                   <div className="flex flex-col items-center gap-2">
                                     <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Uploading...</span>
+                                    <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">Uploading...</span>
                                   </div>
                                 ) : (
                                   <>
                                     <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-2">
                                       <ImageIcon className="w-5 h-5 text-primary" />
                                     </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Click to upload screenshot</span>
-                                    <span className="text-[9px] text-muted-foreground/60 mt-1 uppercase">PNG, JPG up to 5MB</span>
+                                    <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">Click to upload screenshot</span>
+                                    <span className="text-[12px] text-muted-foreground/60 mt-1 uppercase">PNG, JPG up to 5MB</span>
                                   </>
                                 )}
                               </label>
@@ -352,7 +353,7 @@ const SupportPage = () => {
 
                 <div className="space-y-3">
                   {loading ? (
-                    [1, 2, 3].map(i => <div key={i} className="h-24 w-full bg-card/50 animate-pulse rounded-2xl border border-border/50" />)
+                    [1, 2, 3].map(i => <div key={i} className="h-24 w-full bg-card/50 rounded-2xl border border-border/50" />)
                   ) : tickets.length === 0 ? (
                     <Card className="border-dashed border-2 bg-transparent">
                       <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -388,7 +389,7 @@ const SupportPage = () => {
                             </div>
                           </div>
                         </div>
-                        <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                        <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition" />
                       </motion.div>
                     ))
                   )}
@@ -397,7 +398,7 @@ const SupportPage = () => {
 
               <TabsContent value="faq" className="mt-6 space-y-4">
                 {faqs.map((faq, i) => (
-                  <Card key={i} className="rounded-2xl border-none bg-card/50 shadow-sm hover:shadow-md transition-all">
+                  <Card key={i} className="rounded-2xl border-none bg-card/50 shadow-sm hover:shadow-md transition">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex items-center gap-2">
                         <HelpCircle className="w-4 h-4 text-primary" />
@@ -449,15 +450,15 @@ const SupportPage = () => {
               <ul className="space-y-3">
                 <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => push('/documentation')}>
                   <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">Documentation</span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition-all" />
+                  <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition" />
                 </li>
                 <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => push('/community-guidelines')}>
                   <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">Community Guidelines</span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition-all" />
+                  <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition" />
                 </li>
                 <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => push('/safety-center')}>
                   <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">Safety Center</span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition-all" />
+                  <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition" />
                 </li>
               </ul>
             </div>

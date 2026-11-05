@@ -14,6 +14,7 @@ import { MarketplaceListing } from '@/types/marketplace';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { Folder, Loader2 } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
 
 interface BulkAddToProjectModalProps {
     isOpen: boolean;
@@ -70,7 +71,7 @@ export const BulkAddToProjectModal = ({ isOpen, onOpenChange, selectedListings, 
             onOpenChange(false);
         } catch (error: any) {
             console.error('Error adding to project:', error);
-            toast({ title: 'Error', description: error.message, variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
         } finally {
             setIsSubmitting(false);
         }
@@ -101,7 +102,7 @@ export const BulkAddToProjectModal = ({ isOpen, onOpenChange, selectedListings, 
                                 <button
                                     key={project.id}
                                     onClick={() => setSelectedProjectId(project.id)}
-                                    className={`w-full flex items-center gap-3 p-4 rounded-xl border text-left transition-all ${
+                                    className={`w-full flex items-center gap-3 p-4 rounded-xl border text-left transition ${
                                         selectedProjectId === project.id 
                                             ? 'border-primary bg-primary/5 ring-1 ring-primary' 
                                             : 'border-border/50 hover:bg-secondary/20 hover:border-border'

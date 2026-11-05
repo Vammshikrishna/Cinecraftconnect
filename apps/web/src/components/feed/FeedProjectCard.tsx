@@ -88,19 +88,19 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
     const rolesCount = Array.isArray((project as any).required_roles) ? (project as any).required_roles.length : 0;
     const genreRaw = project.genre as unknown;
     const genreText = Array.isArray(genreRaw) && genreRaw.length > 0
-        ? genreRaw.map((g) => String(g).toUpperCase()).join(', ')
+        ? genreRaw.map((g) => String(g)).join(', ')
         : (typeof genreRaw === 'string' && genreRaw
-            ? genreRaw.toUpperCase()
+            ? genreRaw
             : 'ACTION');
     const locationText = project.location || 'HYDERABAD, TELANGANA, IND';
-    const statusText = (project.status || 'ACTIVE').toUpperCase();
+    const statusText = (project.status || 'active').replace(/^./, (c: string) => c.toUpperCase());
 
     return (
-        <div className="group bg-card text-card-foreground border border-border/70 rounded-[22px] p-5 shadow-sm transition-all duration-300 hover:shadow-lg hover:border-primary/40 flex flex-col justify-between relative">
+        <div className="group bg-card text-card-foreground border border-border/70 rounded-[22px] p-5 shadow-sm transition duration-300 hover:shadow-lg hover:border-primary/40 flex flex-col justify-between relative">
             {/* Unread Message Indicator Overlay */}
             {hasUnread && (
                 <div className={cn(
-                    "absolute top-4 right-14 z-20 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-black uppercase tracking-tighter shadow-lg shadow-red-500/30 animate-in zoom-in slide-in-from-right-4 duration-500",
+                    "absolute top-4 right-14 z-20 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500 text-white text-[12px] font-black uppercase tracking-tighter shadow-lg shadow-red-500/30 animate-in zoom-in-95 slide-in-from-right-4 duration-500",
                     onDismiss && "right-20"
                 )}>
                     <MessageSquare className="h-3 w-3 fill-current" />
@@ -116,7 +116,7 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                         e.stopPropagation();
                         onDismiss(project.id);
                     }}
-                    className="absolute top-4 right-4 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+                    className="absolute top-4 right-4 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
                     title="Dismiss suggestion"
                 >
                     <X size={14} strokeWidth={3} />
@@ -145,19 +145,19 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                     <div className="flex-1 min-w-0 flex flex-col justify-between gap-0.5">
                         {/* Status Chip & 3-Dots Row */}
                         <div className="flex items-center justify-between gap-2">
-                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40 font-mono text-[9px] sm:text-[9.5px] font-black uppercase tracking-wider whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40 text-[12px] sm:text-xs font-medium whitespace-nowrap">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                <span>[SCENE: {statusText}]</span>
+                                <span>{statusText}</span>
                             </div>
 
                             {/* 3-Dots Dropdown Menu */}
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <button className="h-6 w-6 rounded-md flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
+                                    <button aria-label="More options" className="h-6 w-6 rounded-md flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
                                         <MoreVertical className="h-4 w-4" />
                                     </button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-48 rounded-xl border-border/50 bg-background/95 backdrop-blur-xl shadow-lg">
+                                <DropdownMenuContent align="end" className="w-48 rounded-xl border-border/50 bg-background/95 shadow-lg">
                                     <DropdownMenuItem asChild>
                                         <Link to={`/projects/${project.id}/space`} className="flex items-center gap-2 cursor-pointer">
                                             <ExternalLink className="h-4 w-4" />
@@ -190,30 +190,30 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                 </div>
 
                 {/* Middle: Location Chip */}
-                <div className="mt-2.5 inline-flex items-center gap-1.5 bg-slate-100/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-mono text-[9px] sm:text-[9.5px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-md border border-slate-200/60 dark:border-slate-700/60 w-fit max-w-full truncate">
+                <div className="mt-2.5 inline-flex items-center gap-1.5 bg-slate-100/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 text-[12px] sm:text-xs font-medium px-2.5 py-1 rounded-md border border-slate-200/60 dark:border-slate-700/60 w-fit max-w-full truncate">
                     <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
-                    <span className="truncate">LOC // {locationText}</span>
+                    <span className="truncate">{locationText}</span>
                 </div>
 
                 {/* Roles & Genre Badges Row */}
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                     {/* Roles Badge */}
-                    <div className="inline-flex items-center gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 font-mono text-[9px] sm:text-[9.5px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-md whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-900/40 text-red-600 dark:text-red-400 text-[12px] sm:text-xs font-medium px-2.5 py-1 rounded-md whitespace-nowrap">
                         <span className="text-xs">👥</span>
-                        <span>ROLES // {rolesCount} OPEN</span>
+                        <span>{rolesCount} open roles</span>
                     </div>
 
                     {/* Genre Badge */}
-                    <div className="inline-flex items-center gap-1.5 bg-slate-100/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 font-mono text-[9px] sm:text-[9.5px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-md border border-slate-200/60 dark:border-slate-700/60 whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1.5 bg-slate-100/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 text-[12px] sm:text-xs font-medium px-2.5 py-1 rounded-md border border-slate-200/60 dark:border-slate-700/60 whitespace-nowrap">
                         <Film className="w-3 h-3 text-slate-500 shrink-0" />
-                        <span>GENRE // {genreText}</span>
+                        <span>{genreText}</span>
                     </div>
                 </div>
             </div>
 
             {/* Footer */}
             <div className="pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-[11px] sm:text-xs text-slate-400 dark:text-slate-500 font-normal">
+                <span className="text-[12px] sm:text-xs text-slate-400 dark:text-slate-500 font-normal">
                     {(() => {
                         try {
                             const d = project.created_at ? new Date(project.created_at) : new Date();
@@ -227,15 +227,15 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                 <div className="flex items-center gap-1.5">
                     <Link
                         to={`/projects/${project.id}/space`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/40 dark:hover:bg-red-900/50 dark:text-red-400 border border-red-200/60 dark:border-red-900/40 transition-all hover:scale-105 shadow-xs"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/40 dark:hover:bg-red-900/50 dark:text-red-400 border border-red-200/60 dark:border-red-900/40 transition hover:scale-105 shadow-xs"
                     >
-                        <span className="text-[10px]">👥</span>
+                        <span className="text-[12px]">👥</span>
                         <span>Roles ({rolesCount})</span>
                     </Link>
 
                     <Link
                         to={`/projects/${project.id}/space`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-primary hover:bg-primary/90 text-primary-foreground transition-all hover:scale-105 shadow-xs"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold bg-primary hover:bg-primary/90 text-primary-foreground transition hover:scale-105 shadow-xs"
                     >
                         <span>View Space</span>
                         <ExternalLink className="w-3 h-3" />
@@ -244,7 +244,7 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
             </div>
 
             <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-                <AlertDialogContent className="rounded-[24px] border-none bg-background/95 backdrop-blur-2xl">
+                <AlertDialogContent className="rounded-[24px] border-none bg-background/95">
                     <AlertDialogHeader>
                         <AlertDialogTitle className="text-2xl font-black tracking-tight">Are you absolutely sure?</AlertDialogTitle>
                         <AlertDialogDescription className="text-base font-medium text-muted-foreground">

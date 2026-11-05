@@ -16,7 +16,7 @@ const AboutSettings = () => (
     </div>
 
     <SettingsSection>
-      <SettingsLinkRow title="About CineCraft Connect" href="/about" />
+      <SettingsLinkRow title="About CineCraft Connect" to="/about" />
       <SettingsLinkRow title="Privacy Policy" to="/settings/legal/privacy" />
       <SettingsLinkRow title="Terms of Service" to="/settings/legal/terms" />
       <SettingsLinkRow title="Cookie Policy" to="/settings/legal/cookies" />

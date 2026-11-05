@@ -1,406 +1,482 @@
-import { orTerm } from '@/lib/postgrest';
-
-import { useState, useCallback, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
-import { Search, Compass } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useAppNavigation } from '@/contexts/NavigationContext';
-import { ExploreGrid } from '@/components/search/ExploreGrid';
-import { ExploreItem, ExploreItemType } from '@/components/search/ExploreCard';
-import { PageHeader } from '@/components/common/PageHeader';
-import { motion } from 'framer-motion';
+import { Compass, Search, X, Clock, SearchX, AlertTriangle, BadgeCheck, Bookmark, BookmarkPlus, User, Briefcase, Building2, Film, MessageSquare } from 'lucide-react';
+import {
+  SEARCH_TYPE_LABEL,
+  SEARCH_CRAFTS,
+  suggest,
+  listSavedSearches,
+  saveSearch,
+  deleteSavedSearch,
+  type SavedSearch,
+  type SearchSuggestion,
+  interleaveSections,
+  isSearchable,
+  pushRecentSearch,
+  runSearch,
+  visibleSearchCategories,
+  type SearchCategoryId,
+  type SearchSection,
+  type SearchSort,
+} from '@cinecraft/core';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
+import { useAppNavigation } from '@/contexts/NavigationContext';
+import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/common/PageHeader';
+import { ExploreGrid } from '@/components/search/ExploreGrid';
+import type { ExploreItem } from '@/components/search/ExploreCard';
+import { cn } from '@/lib/utils';
+import { friendlyError } from '@cinecraft/core';
 
-// Basic type definitions for search results
-interface ProjectResult {
-    id: string;
-    title: string;
-    description: string;
-    type: 'project';
-}
+const PAGE_SIZE = 24;
+const DEBOUNCE_MS = 350;
 
-interface UserResult {
-    id: string;
-    username: string;
-    full_name: string;
-    avatar_url: string | undefined;
-    is_verified?: boolean;
-    type: 'user';
-}
-
-interface DiscussionResult {
-    id: string;
-    title: string;
-    description: string;
-    type: 'discussion';
-}
-
-interface PostResult {
-    id: string;
-    content: string;
-    image_url?: string;
-    video_url?: string;
-    like_count?: number;
-    comment_count?: number;
-    author: {
-        username: string;
-        full_name: string;
-        is_verified?: boolean;
-    } | null;
-    type: 'post';
-}
-
-interface AnnouncementResult {
-    id: string;
-    title: string;
-    content: string;
-    type: 'announcement';
-}
-
-interface VendorResult {
-    id: string;
-    business_name: string;
-    description: string;
-    logo_url: string | undefined;
-    city: string | undefined;
-    category: string | undefined;
-    phone: string | undefined;
-    email: string | undefined;
-    type: 'vendor';
-}
-
-interface MarketplaceResult {
-    id: string;
-    title: string;
-    description: string;
-    image_url?: string;
-    price_per_day: number;
-    listing_type: 'equipment' | 'location';
-    average_rating: number;
-    review_count: number;
-    type: 'marketplace';
-}
-
-interface CompanyResult {
-    id: string;
-    name: string;
-    description: string;
-    logo_url: string | undefined;
-    industry: string | undefined;
-    location: string | undefined;
-    type: 'company';
-}
-
-type SearchResult = ProjectResult | UserResult | DiscussionResult | PostResult | AnnouncementResult | VendorResult | MarketplaceResult | CompanyResult;
-
-const CATEGORIES: { id: string; label: string; type?: ExploreItemType }[] = [
-    { id: 'all', label: 'All' },
-    { id: 'projects', label: 'Projects', type: 'project' },
-    { id: 'people', label: 'People', type: 'user' },
-    { id: 'discussions', label: 'Discussions', type: 'discussion' },
-    { id: 'posts', label: 'Posts', type: 'post' },
-    { id: 'vendors', label: 'Vendors', type: 'vendor' },
-    { id: 'marketplace', label: 'Marketplace', type: 'marketplace' },
-    { id: 'companies', label: 'Companies', type: 'company' },
-];
+const recentKey = (userId?: string) => `recent_searches_${userId || 'guest'}`;
+const readRecents = (userId?: string): string[] => {
+  try { return JSON.parse(localStorage.getItem(recentKey(userId)) || '[]'); } catch { return []; }
+};
+const writeRecents = (userId: string | undefined, list: string[]) => {
+  try { localStorage.setItem(recentKey(userId), JSON.stringify(list)); } catch { /* storage unavailable */ }
+};
 
 const SearchPage = () => {
-    const [searchParams, setSearchParams] = useSearchParams();
-    const initialQuery = searchParams.get('q') || '';
-    const initialCategory = searchParams.get('category') || 'all';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { user, profile } = useAuth();
+  const { isFan } = useAccountType();
+  const { push } = useAppNavigation();
 
-    const [query, setQuery] = useState(initialQuery);
-    const [results, setResults] = useState<SearchResult[]>([]);
-    const [exploreItems, setExploreItems] = useState<ExploreItem[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [activeCategory, setActiveCategory] = useState(initialCategory);
-    const { push } = useAppNavigation();
-    const { isFan } = useAccountType();
+  const categories = useMemo(() => visibleSearchCategories(isFan), [isFan]);
+  const urlCategory = (searchParams.get('category') || 'all') as SearchCategoryId;
 
-    const availableCategories = CATEGORIES.filter(c => {
-        if (!isFan) return true;
-        return ['all', 'people', 'discussions', 'posts'].includes(c.id);
+  const [input, setInput] = useState(searchParams.get('q') || '');
+  const [term, setTerm] = useState(searchParams.get('q') || ''); // the debounced input: what we actually search
+  const [category, setCategory] = useState<SearchCategoryId>(urlCategory);
+  const [sort, setSort] = useState<SearchSort>('relevance');
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [craft, setCraft] = useState('');
+  const [listingType, setListingType] = useState<'' | 'equipment' | 'location'>('');
+  const { toast } = useToast();
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [saved, setSaved] = useState<SavedSearch[]>([]);
+  const [savedUnavailable, setSavedUnavailable] = useState(false);
+
+  const [sections, setSections] = useState<SearchSection[]>([]);
+  const [items, setItems] = useState<any[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [failed, setFailed] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [retry, setRetry] = useState(0);
+
+  const [recents, setRecents] = useState<string[]>(() => readRecents(user?.id));
+  const [focused, setFocused] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  useEffect(() => { setActiveSuggestion(-1); }, [suggestions]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const requestId = useRef(0);
+  const lastWrittenQ = useRef<string | null>(searchParams.get('q'));
+
+  const searching = isSearchable(term);
+  const effectiveTerm = searching ? term : ''; // below two characters we show Explore, and typing one letter must not reload it
+  const tooShort = input.trim().length > 0 && !isSearchable(input);
+
+  // debounce what is typed into what is searched
+  useEffect(() => {
+    const t = window.setTimeout(() => setTerm(input), DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [input]);
+
+  // the address bar follows the search without piling up history entries; a link to /search?q=… (a hashtag) fills the box
+  useEffect(() => {
+    const urlQ = searchParams.get('q') || '';
+    if (urlQ !== (lastWrittenQ.current ?? '')) {
+      lastWrittenQ.current = urlQ;
+      setInput(urlQ);
+      setTerm(urlQ);
+    }
+    const urlCat = (searchParams.get('category') || 'all') as SearchCategoryId;
+    if (urlCat !== category) setCategory(urlCat);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (term) params.q = term;
+    if (category !== 'all') params.category = category;
+    lastWrittenQ.current = term;
+    setSearchParams(params, { replace: true });
+  }, [term, category]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // filters that belong to one tab must not stay active (invisibly) when the tab changes
+  useEffect(() => {
+    if (category !== 'people' && craft) setCraft('');
+    if (category !== 'marketplace' && listingType) setListingType('');
+  }, [category]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // a category that a fan cannot see must not stay selected
+  useEffect(() => {
+    if (!categories.some((c) => c.id === category)) setCategory('all');
+  }, [categories, category]);
+
+  const load = useCallback(async (offset: number) => {
+    const id = ++requestId.current;
+    if (offset === 0) setLoading(true); else setLoadingMore(true);
+    try {
+      const out = await runSearch({
+        client: supabase,
+        query: effectiveTerm,
+        category,
+        isFan,
+        meId: user?.id,
+        sort,
+        verifiedOnly,
+        craft: craft || undefined,
+        listingType: listingType || undefined,
+        limit: PAGE_SIZE,
+        offset,
+        perTypeLimit: searching ? 6 : 8,
+      });
+      if (id !== requestId.current) return; // a newer search started: ignore this late answer
+      if (offset === 0) {
+        setSections(out.sections);
+        setItems(category === 'all' && !searching ? interleaveSections(out.sections) : out.items);
+      } else {
+        setItems((prev) => {
+          const seen = new Set(prev.map((p) => `${p.type}-${p.id}`));
+          return [...prev, ...out.items.filter((i) => !seen.has(`${i.type}-${i.id}`))];
+        });
+      }
+      setHasMore(out.hasMore);
+      setFailed(out.failed);
+    } catch (e) {
+      if (id !== requestId.current) return;
+      console.error('Search failed:', e);
+      setFailed(['post']);
+    } finally {
+      if (id === requestId.current) { setLoading(false); setLoadingMore(false); }
+    }
+  }, [effectiveTerm, searching, category, isFan, user?.id, sort, verifiedOnly, craft, listingType]);
+
+  // wait for the profile so a fan is not briefly treated as a creator (that caused a second load)
+  useEffect(() => {
+    if (!profile) return;
+    load(0);
+  }, [load, profile, retry]);
+
+  // remember searches that were actually used
+  useEffect(() => {
+    if (!searching || loading) return;
+    setRecents((prev) => {
+      const next = pushRecentSearch(prev, term);
+      if (next !== prev) writeRecents(user?.id, next);
+      return next;
     });
+  }, [searching, loading, term]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const fetchExploreItems = useCallback(async () => {
-        setLoading(true);
-        try {
-            const promises = [
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').limit(12),
-                supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified, craft, bio').limit(12),
-                supabase.from('discussion_rooms').select('id, title, description').limit(12),
-                supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)').order('created_at', { ascending: false }).limit(32),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(12),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url, cover_image_url').limit(12)
-            ];
+  // a few suggestions while typing (names that start with what was typed)
+  useEffect(() => {
+    if (!focused || !isSearchable(input)) { setSuggestions([]); return; }
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      const list = await suggest(supabase, input, isFan);
+      if (!cancelled) setSuggestions(list);
+    }, 220);
+    return () => { cancelled = true; window.clearTimeout(t); };
+  }, [input, focused, isFan]);
 
-            const results = await Promise.allSettled(promises as any[]);
+  const refreshSaved = useCallback(async () => {
+    const out = await listSavedSearches(supabase, user?.id);
+    setSaved(out.items);
+    setSavedUnavailable(out.unavailable);
+  }, [user?.id]);
+  useEffect(() => { refreshSaved(); }, [refreshSaved]);
 
-            const items: ExploreItem[] = [];
+  const saveCurrent = async () => {
+    if (!user || !searching) return;
+    try {
+      await saveSearch(supabase, user.id, { name: term, query: term, category, filters: { sort, verifiedOnly, craft: craft || undefined, listingType: listingType || undefined } });
+      toast({ title: 'Search saved', description: 'Find it under Saved when you click the search box.' });
+      refreshSaved();
+    } catch (e: any) {
+      toast({ title: 'Could not save this search', description: friendlyError(e), variant: 'destructive' });
+    }
+  };
+  const runSaved = (s: SavedSearch) => {
+    setCategory(s.category);
+    setSort(s.filters.sort || 'relevance');
+    setVerifiedOnly(!!s.filters.verifiedOnly);
+    setCraft(s.filters.craft || '');
+    setListingType(s.filters.listingType || '');
+    setInput(s.query); setTerm(s.query); setFocused(false);
+  };
+  const removeSaved = async (id: string) => {
+    try { await deleteSavedSearch(supabase, id); setSaved((prev) => prev.filter((x) => x.id !== id)); }
+    catch (e: any) { toast({ title: 'Could not remove', description: friendlyError(e), variant: 'destructive' }); }
+  };
+  const pickSuggestion = (sg: SearchSuggestion) => { setInput(sg.label); setTerm(sg.label); setFocused(false); };
+  const alreadySaved = saved.some((x) => x.query.toLowerCase() === term.toLowerCase() && x.category === category);
 
-            const getData = (result: any): any[] | null => {
-                if (result.status === 'fulfilled' && result.value?.data) return result.value.data as any[];
-                return null;
-            };
-
-            const projects = getData(results[0]);
-            const users = getData(results[1]);
-            const discussions = getData(results[2]);
-            const posts = getData(results[3]);
-            const vendors = getData(results[4]);
-            const marketplace = getData(results[5]);
-            const companies = getData(results[6]);
-
-            if (projects) items.push(...projects.map((p: any) => ({ ...p, title: p.title, name: p.title, description: p.description || undefined, location: p.location, genre: p.genre, status: p.status, image_url: p.image_url, type: 'project' as const })));
-            if (users) items.push(...users.map((u: any) => ({ ...u, id: u.id, username: u.username || '', full_name: u.full_name || '', avatar_url: u.avatar_url || undefined, is_verified: u.is_verified, craft: u.craft, description: u.bio || undefined, type: 'user' as const })));
-            if (discussions) items.push(...discussions.map((d: any) => ({ ...d, description: d.description || undefined, type: 'discussion' as const })));
-            if (posts) items.push(...posts.map((p: any) => ({
-                id: p.id,
-                content: p.content,
-                image_url: p.media_type === 'image' ? p.media_url : undefined,
-                video_url: p.media_type === 'video' ? p.media_url : undefined,
-                like_count: p.like_count || 0,
-                comment_count: p.comment_count || 0,
-                author: p.author ? (Array.isArray(p.author) ? p.author[0] : p.author) : null,
-                type: 'post' as const
-            })));
-            if (vendors) items.push(...vendors.map((v: any) => ({
-                ...v,
-                description: v.description || undefined,
-                logo_url: v.logo_url || undefined,
-                category: v.category || v.specialization,
-                city: v.city || v.location,
-                phone: v.phone,
-                email: v.email,
-                type: 'vendor' as const
-            })));
-            if (marketplace) items.push(...marketplace.map((m: any) => ({
-                ...m,
-                description: m.description || undefined,
-                image_url: m.image_url || (m.images?.[0]) || (m.listing_images?.[0]),
-                listing_type: m.listing_type as 'equipment' | 'location',
-                type: 'marketplace' as const
-            })));
-            if (companies) items.push(...companies.map((c: any) => ({
-                ...c,
-                description: c.description || c.tagline || undefined,
-                location: c.headquarters,
-                industry: Array.isArray(c.industry) ? c.industry[0] : c.industry,
-                image_url: c.cover_image_url || c.image_url,
-                type: 'company' as const
-            })));
-
-            setExploreItems(items.sort(() => Math.random() - 0.5));
-        } catch (error) {
-            console.error('Error fetching explore items:', error);
-        } finally {
-            setLoading(false);
-        }
-    }, [isFan]);
-
-    const performSearch = useCallback(async (searchQuery: string) => {
-        if (searchQuery.length < 2) {
-            setResults([]);
-            return;
-        }
-        setLoading(true);
-        try {
-            const safeQuery = searchQuery.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
-            const { data: skillMatches } = await (supabase
-              .from('user_skills' as any)
-              .select('user_id')
-              .ilike('skill_name', `%${safeQuery}%`) as any);
-            
-            const matchingIds = skillMatches ? skillMatches.map((m: any) => m.user_id) : [];
-            let profilesFilter = `username.ilike.%${orTerm(safeQuery)}%,full_name.ilike.%${orTerm(safeQuery)}%`;
-            if (matchingIds.length > 0) {
-              profilesFilter += `,id.in.(${matchingIds.join(',')})`;
-            }
-
-            const promises = [
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${orTerm(safeQuery)}%,description.ilike.%${orTerm(safeQuery)}%,location.ilike.%${orTerm(safeQuery)}%`).limit(10),
-                supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified, craft, bio').or(profilesFilter).limit(10),
-                supabase.from('discussion_rooms').select('id, title, description').or(`title.ilike.%${orTerm(safeQuery)}%,description.ilike.%${orTerm(safeQuery)}%`).limit(10),
-                (() => {
-                    let q = supabase
-                        .from('posts')
-                        .select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)');
-                    
-                    if (searchQuery.startsWith('#')) {
-                        const cleanTag = searchQuery.substring(1).toLowerCase().replace(/,/g, '');
-                        return q.or(`tags.cs.{${cleanTag}},content.ilike.%${orTerm(safeQuery)}%`).limit(24);
-                    }
-                    return q.ilike('content', `%${searchQuery}%`).limit(24);
-                })(),
-                supabase.from('announcements').select('id, title, content').or(`title.ilike.%${orTerm(safeQuery)}%,content.ilike.%${orTerm(safeQuery)}%`).limit(10),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url, cover_image_url').or(`name.ilike.%${orTerm(safeQuery)}%,description.ilike.%${orTerm(safeQuery)}%,tagline.ilike.%${orTerm(safeQuery)}%`).limit(10)
-            ];
-
-            const results = await Promise.allSettled(promises as any[]);
-
-            const getData = (result: any): any[] | null => {
-                if (result.status === 'fulfilled' && result.value?.data) return result.value.data as any[];
-                return null;
-            };
-
-            const projectsData = getData(results[0]);
-            const usersData = getData(results[1]);
-            const discussionsData = getData(results[2]);
-            const postsData = getData(results[3]);
-            const announcementsData = getData(results[4]);
-            const vendorsData = getData(results[5]);
-            const marketplaceData = getData(results[6]);
-            const companiesData = getData(results[7]);
-
-            const projects = (projectsData || []).map((p: any) => ({ ...p, id: p.id, title: p.title, description: p.description || '', location: p.location, genre: p.genre, status: p.status, image_url: p.image_url, type: 'project' as const }));
-            const users = (usersData || []).map((u: any) => ({ ...u, id: u.id, username: u.username || '', full_name: u.full_name || '', avatar_url: u.avatar_url || undefined, is_verified: u.is_verified, craft: u.craft, description: u.bio || undefined, type: 'user' as const }));
-            const discussions = (discussionsData || []).map((d: any) => ({ ...d, id: d.id, title: d.title, name: d.title, description: d.description || '', type: 'discussion' as const }));
-            const posts = (postsData || []).map((p: any) => ({ id: p.id, content: p.content, image_url: p.media_type === 'image' ? p.media_url : undefined, video_url: p.media_type === 'video' ? p.media_url : undefined, like_count: p.like_count || 0, comment_count: p.comment_count || 0, author: p.author ? (Array.isArray(p.author) ? p.author[0] : p.author) : null, type: 'post' as const }));
-            const announcements = (announcementsData || []).map((a: any) => ({ id: a.id, title: a.title, content: a.content, type: 'announcement' as const }));
-            const vendors = (vendorsData || []).map((v: any) => ({ ...v, id: v.id, business_name: v.business_name, logo_url: v.logo_url || undefined, category: v.category || v.specialization, city: v.city || v.location, type: 'vendor' as const }));
-            const marketplace = (marketplaceData || []).map((m: any) => ({ ...m, id: m.id, title: m.title, description: m.description, image_url: m.image_url || (m.images?.[0]) || (m.listing_images?.[0]), price_per_day: m.price_per_day, listing_type: m.listing_type as 'equipment' | 'location', type: 'marketplace' as const }));
-            const companies = (companiesData || []).map((c: any) => ({ ...c, id: c.id, name: c.name, description: c.description || c.tagline || '', industry: Array.isArray(c.industry) ? c.industry[0] : c.industry, location: c.headquarters, logo_url: c.logo_url || undefined, image_url: c.cover_image_url || c.image_url, type: 'company' as const }));
-
-            setResults([...projects, ...users, ...discussions, ...posts, ...announcements, ...vendors, ...marketplace, ...companies]);
-        } catch (error) {
-            console.error('Error during search:', error);
-        } finally {
-            setLoading(false);
-        }
-    }, [isFan]);
-
-    useEffect(() => {
-        if (initialQuery) performSearch(initialQuery);
-        else fetchExploreItems();
-
-        if (initialCategory !== activeCategory) {
-            setActiveCategory(initialCategory);
-        }
-    }, [initialQuery, initialCategory, performSearch, fetchExploreItems]);
-
-    const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newQuery = e.target.value;
-        setQuery(newQuery);
-        const params: Record<string, string> = {};
-        if (newQuery) params.q = newQuery;
-        if (activeCategory !== 'all') params.category = activeCategory;
-        setSearchParams(params);
-
-        if (newQuery) performSearch(newQuery);
-        else fetchExploreItems();
+  // "/" focuses the box, like most sites
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+      if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); inputRef.current?.focus(); }
     };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-    const handleCategoryChange = (catId: string) => {
-        const newCategory = activeCategory === catId ? 'all' : catId;
-        setActiveCategory(newCategory);
-        const params: Record<string, string> = {};
-        if (query) params.q = query;
-        if (newCategory !== 'all') params.category = newCategory;
-        setSearchParams(params);
-    };
+  const chooseCategory = (id: SearchCategoryId) => setCategory(category === id ? 'all' : id);
+  const clearInput = () => { setInput(''); setTerm(''); inputRef.current?.focus(); };
+  const useRecent = (q: string) => { setInput(q); setTerm(q); setFocused(false); };
+  const removeRecent = (q: string) => { const next = recents.filter((r) => r !== q); setRecents(next); writeRecents(user?.id, next); };
 
-    const filteredExploreItems = activeCategory === 'all' ? exploreItems : exploreItems.filter(item => item.type === CATEGORIES.find(c => c.id === activeCategory)?.type);
-    const filteredSearchResults = activeCategory === 'all' ? results : results.filter(result => result.type === CATEGORIES.find(c => c.id === activeCategory)?.type);
+  const showFilters = searching || category === 'people' || category === 'vendors' || category === 'marketplace';
+  const showSections = searching && category === 'all';
+  const resultCount = items.length;
 
-    return (
-        <div className="min-h-screen bg-background selection:bg-primary/30 overflow-x-hidden w-full max-w-full">
-            {/* Background Orbs */}
-            <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-[-5%] left-[-5%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
-                <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] rounded-full bg-secondary/5 blur-[120px]" />
-            </div>
-
-            <main className="max-w-7xl mx-auto pt-20 pb-40 relative z-10 w-full max-w-full overflow-x-hidden">
-                <div className="px-4 md:px-8">
-                    <PageHeader
-                        title="Discovery"
-                        subtitle="Global content grid synchronization engine. Find production partners, projects, and gear."
-                        Icon={Compass}
-                        onBack={() => push('/feed', { noScroll: true })}
-                        actions={
-                            <Compass className="text-primary/20 animate-spin-slow hidden md:block" size={48} />
-                        }
-                    />
-                </div>
-
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="relative max-w-2xl mx-auto mt-6 mb-8 group px-4 md:px-8"
-                >
-                    <div className="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-secondary/10 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
-                    <div className="relative">
-                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-primary/60 group-focus-within:text-primary transition-colors duration-300" size={20} />
-                        <Input
-                            type="search"
-                            placeholder={isFan ? "Search people, posts, discussions..." : "Search projects, people, posts..."}
-                            className="pl-14 pr-6 py-6 text-base w-full bg-card/60 backdrop-blur-xl border border-border/50 focus:border-primary/50 rounded-2xl transition-all shadow-xl font-medium tracking-tight placeholder:text-muted-foreground/40 focus:ring-4 focus:ring-primary/5"
-                            value={query}
-                            onChange={handleSearch}
-                        />
-                    </div>
-                </motion.div>
-
-                <div className="flex gap-3 overflow-x-auto py-4 mb-8 max-w-full mx-auto no-scrollbar justify-start md:justify-center px-4 md:px-8">
-                    {availableCategories.map(category => (
-                        <button
-                            key={category.id}
-                            onClick={() => handleCategoryChange(category.id)}
-                            className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-300 ${activeCategory === category.id
-                                    ? 'bg-primary text-primary-foreground shadow-[0_0_20px_rgba(var(--primary),0.3)] scale-105'
-                                    : 'bg-card/40 backdrop-blur-md border border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                                }`}
-                        >
-                            {category.label}
-                        </button>
-                    ))}
-                </div>
-
-                <div className="space-y-4">
-                    {loading && (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-w-7xl mx-auto px-4 md:px-8">
-                            {[...Array(18)].map((_, i) => (
-                                <div key={i} className={`aspect-[4/5] bg-card/40 border border-border/50 animate-pulse rounded-2xl ${i % 10 === 0 ? 'col-span-2 row-span-2' : ''}`} />
-                            ))}
-                        </div>
-                    )}
-
-                    {!loading && !query && (
-                        <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-                            <div className="flex items-center gap-2 md:gap-3 mb-6 md:mb-10 border-b border-border/20 pb-4 md:pb-6 px-4 md:px-8">
-                                <Compass className="text-primary w-5 h-5 md:w-7 md:h-7 shrink-0" />
-                                <h2 className="text-sm sm:text-lg md:text-2xl font-black uppercase tracking-tight">Synchronized Discovery Feed</h2>
-                            </div>
-                            <div className="px-0.5 md:px-8">
-                                <ExploreGrid items={filteredExploreItems} />
-                            </div>
-                        </div>
-                    )}
-
-                    {!loading && query.length > 0 && (
-                        <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-                            <div className="flex items-center justify-between mb-6 md:mb-10 border-b border-border/20 pb-4 md:pb-6 px-4 md:px-8">
-                                <div className="flex items-center gap-2 md:gap-3">
-                                    <Search className="text-primary w-5 h-5 md:w-7 md:h-7 shrink-0" />
-                                    <h2 className="text-sm sm:text-lg md:text-2xl font-black uppercase tracking-tight">Matches for "{query}"</h2>
-                                </div>
-                                <span className="text-[9px] md:text-[10px] font-black text-muted-foreground uppercase tracking-widest bg-muted/50 px-3 md:px-5 py-1.5 md:py-2.5 rounded-full border border-border/50 backdrop-blur-md">
-                                    {filteredSearchResults.length} Results
-                                </span>
-                            </div>
-                            <div className="px-0.5 md:px-8">
-                                <ExploreGrid items={filteredSearchResults} />
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </main>
+  return (
+    <div className="min-h-dvh bg-background selection:bg-primary/30 overflow-x-hidden w-full max-w-full">
+      <main className="max-w-[1560px] mx-auto pt-20 pb-40 w-full">
+        <div className="px-4 md:px-8">
+          <PageHeader
+            title="Search"
+            subtitle="Find people, projects, posts, gear and companies."
+            Icon={Compass}
+            onBack={() => push('/feed', { noScroll: true })}
+          />
         </div>
-    );
+
+        {/* search box */}
+        <div className="relative max-w-2xl mx-auto mt-2 mb-6 px-4 md:px-8">
+          <Search className="absolute left-8 md:left-12 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" size={20} aria-hidden="true" />
+          <Input
+            ref={inputRef}
+            type="search"
+            inputMode="search"
+            enterKeyHint="search"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-label="Search"
+            placeholder={isFan ? 'Search people, posts, discussions…' : 'Search projects, people, posts, gear…'}
+            className="pl-12 pr-12 h-12 text-base rounded-2xl bg-card border-border/60 shadow-sm [&::-webkit-search-cancel-button]:hidden"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => window.setTimeout(() => setFocused(false), 150)}
+            aria-controls="search-suggestions"
+            aria-activedescendant={focused && input && activeSuggestion >= 0 && suggestions[activeSuggestion] ? `search-suggestion-${activeSuggestion}` : undefined}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') { clearInput(); (e.target as HTMLElement).blur(); return; }
+              if (focused && input && suggestions.length > 0) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); setActiveSuggestion((i) => (i + 1) % suggestions.length); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveSuggestion((i) => (i <= 0 ? suggestions.length - 1 : i - 1)); }
+                else if (e.key === 'Enter' && activeSuggestion >= 0 && suggestions[activeSuggestion]) { e.preventDefault(); pickSuggestion(suggestions[activeSuggestion]); }
+              }
+            }}
+          />
+          {input && (
+            <button type="button" onClick={clearInput} aria-label="Clear search" className="absolute right-5 md:right-9 top-1/2 -translate-y-1/2 h-11 w-11 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* suggestions while typing */}
+          {focused && input && suggestions.length > 0 && (
+            <div className="absolute left-4 right-4 md:left-8 md:right-8 top-full mt-2 z-20 rounded-2xl border bg-popover shadow-xl p-2" role="listbox" id="search-suggestions" aria-label="Suggestions">
+              {suggestions.map((sg, idx) => {
+                const Icon = sg.type === 'user' ? User : sg.type === 'job' ? Briefcase : sg.type === 'company' ? Building2 : sg.type === 'project' ? Film : MessageSquare;
+                return (
+                  <button key={`${sg.type}-${sg.id}`} id={`search-suggestion-${idx}`} type="button" role="option" aria-selected={idx === activeSuggestion} onMouseDown={(e) => e.preventDefault()} onClick={() => pickSuggestion(sg)} className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-muted min-h-[44px]", idx === activeSuggestion && "bg-muted")}>
+                    <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium truncate">{sg.label}</span>
+                      {sg.sublabel && <span className="block text-xs text-muted-foreground truncate">{sg.sublabel}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* saved and recent searches */}
+          {focused && !input && (saved.length > 0 || recents.length > 0) && (
+            <div className="absolute left-4 right-4 md:left-8 md:right-8 top-full mt-2 z-20 rounded-2xl border bg-popover shadow-xl p-2" role="listbox" aria-label="Saved and recent searches">
+              {saved.length > 0 && (
+                <>
+                  <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">Saved</div>
+                  {saved.map((sv) => (
+                    <div key={sv.id} className="flex items-center rounded-xl hover:bg-muted">
+                      <button type="button" role="option" aria-selected="false" onMouseDown={(e) => e.preventDefault()} onClick={() => runSaved(sv)} className="flex-1 flex items-center gap-3 px-3 py-2.5 text-left text-sm min-w-0">
+                        <Bookmark className="h-4 w-4 text-primary shrink-0" />
+                        <span className="truncate">{sv.name}</span>
+                        {sv.category !== 'all' && <span className="text-xs text-muted-foreground shrink-0">{sv.category}</span>}
+                      </button>
+                      <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => removeSaved(sv.id)} aria-label={`Remove saved search ${sv.name}`} className="h-11 w-11 flex items-center justify-center text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+              {recents.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between px-3 py-1.5">
+                    <span className="text-xs font-semibold text-muted-foreground">Recent</span>
+                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setRecents([]); writeRecents(user?.id, []); }} className="text-xs text-primary">Clear all</button>
+                  </div>
+                  {recents.map((rc) => (
+                    <div key={rc} className="flex items-center rounded-xl hover:bg-muted">
+                      <button type="button" role="option" aria-selected="false" onMouseDown={(e) => e.preventDefault()} onClick={() => useRecent(rc)} className="flex-1 flex items-center gap-3 px-3 py-2.5 text-left text-sm min-w-0">
+                        <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="truncate">{rc}</span>
+                      </button>
+                      <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => removeRecent(rc)} aria-label={`Remove ${rc}`} className="h-11 w-11 flex items-center justify-center text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+          {tooShort && <p className="text-sm text-muted-foreground mt-2 px-1" role="status">Type at least 2 characters to search.</p>}
+        </div>
+
+        {/* categories */}
+        <div className="flex gap-2 overflow-x-auto py-2 mb-2 no-scrollbar justify-start md:justify-center px-4 md:px-8" role="group" aria-label="Search categories">
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => chooseCategory(c.id)}
+              aria-pressed={category === c.id}
+              className={cn(
+                'px-5 min-h-[44px] rounded-full text-sm font-semibold whitespace-nowrap border transition-[transform,color,background-color,border-color] duration-150 active:scale-[0.97]',
+                category === c.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border/60 hover:text-foreground hover:border-primary/40',
+              )}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        {/* filters */}
+        {showFilters && (
+          <div className="flex flex-wrap items-center gap-2 px-4 md:px-8 mb-6 max-w-[1560px] mx-auto md:justify-center">
+            {searching && (
+              <div className="inline-flex rounded-full border border-border/60 bg-card p-0.5" role="group" aria-label="Sort results">
+                {([['relevance', 'Most relevant'], ['recent', 'Newest']] as [SearchSort, string][]).map(([k, label]) => (
+                  <button key={k} type="button" aria-pressed={sort === k} onClick={() => setSort(k)} className={cn('px-4 min-h-11 md:min-h-9 rounded-full text-xs font-semibold', sort === k ? 'bg-foreground text-background' : 'text-muted-foreground')}>{label}</button>
+                ))}
+              </div>
+            )}
+            {category === 'marketplace' && (
+              <div className="inline-flex rounded-full border border-border/60 bg-card p-0.5" role="group" aria-label="Listing type">
+                {([['', 'All'], ['equipment', 'Gear'], ['location', 'Locations']] as ['' | 'equipment' | 'location', string][]).map(([k, label]) => (
+                  <button key={k || 'all'} type="button" aria-pressed={listingType === k} onClick={() => setListingType(k)} className={cn('px-4 min-h-11 md:min-h-9 rounded-full text-xs font-semibold', listingType === k ? 'bg-foreground text-background' : 'text-muted-foreground')}>{label}</button>
+                ))}
+              </div>
+            )}
+            {searching && !savedUnavailable && (
+              <button type="button" onClick={saveCurrent} disabled={alreadySaved} className="inline-flex items-center gap-1.5 px-4 min-h-11 md:min-h-9 rounded-full text-xs font-semibold border bg-card text-muted-foreground border-border/60 disabled:opacity-60">
+                <BookmarkPlus className="h-3.5 w-3.5" /> {alreadySaved ? 'Saved' : 'Save search'}
+              </button>
+            )}
+            <button
+              type="button"
+              aria-pressed={verifiedOnly}
+              onClick={() => setVerifiedOnly(!verifiedOnly)}
+              className={cn('inline-flex items-center gap-1.5 px-4 min-h-11 md:min-h-9 rounded-full text-xs font-semibold border', verifiedOnly ? 'bg-foreground text-background border-foreground' : 'bg-card text-muted-foreground border-border/60')}
+            >
+              <BadgeCheck className="h-3.5 w-3.5" /> Verified only
+            </button>
+          </div>
+        )}
+
+        {category === 'people' && (
+          <div className="flex gap-2 overflow-x-auto pb-4 px-4 md:px-8 no-scrollbar md:justify-center" role="group" aria-label="Filter by craft">
+            {SEARCH_CRAFTS.map((c) => (
+              <button key={c} type="button" aria-pressed={craft === c} onClick={() => setCraft(craft === c ? '' : c)} className={cn('px-4 min-h-11 md:min-h-9 rounded-full text-xs font-semibold whitespace-nowrap border', craft === c ? 'bg-foreground text-background border-foreground' : 'bg-card text-muted-foreground border-border/60')}>{c}</button>
+            ))}
+          </div>
+        )}
+
+        {/* some types failed */}
+        {!loading && failed.length > 0 && (
+          <div className="mx-4 md:mx-8 mb-6 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3" role="alert">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <p className="flex-1 text-sm">
+              Some results could not be loaded ({failed.map((t) => SEARCH_TYPE_LABEL[t as keyof typeof SEARCH_TYPE_LABEL] || t).join(', ')}). What you see may be incomplete.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setRetry((n) => n + 1)}>Try again</Button>
+          </div>
+        )}
+
+        <div aria-live="polite" className="sr-only" role="status">
+          {!loading && (searching ? `${resultCount} results for ${term}` : '')}
+        </div>
+
+        {loading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 px-4 md:px-8" aria-busy="true" aria-label="Loading results">
+            {[...Array(15)].map((_, i) => <div key={i} className="aspect-[3/4] rounded-xl bg-muted animate-pulse motion-reduce:animate-none" />)}
+          </div>
+        ) : resultCount === 0 ? (
+          <div className="text-center py-20 px-6">
+            <SearchX className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+            <p className="font-semibold">{searching ? `No results for “${term}”` : 'Nothing to show yet'}</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+              {searching
+                ? 'Check the spelling, try fewer words, or search by a #tag. You can also switch category or turn off “Verified only”.'
+                : 'Try searching for a name, a project, a skill or a #tag.'}
+            </p>
+            {(category !== 'all' || verifiedOnly || craft || listingType) && (
+              <Button variant="outline" className="mt-4" onClick={() => { setCategory('all'); setVerifiedOnly(false); setCraft(''); setListingType(''); }}>Reset filters</Button>
+            )}
+          </div>
+        ) : showSections ? (
+          <div className="space-y-10">
+            {sections.map((s) => (
+              <section key={s.type} aria-label={SEARCH_TYPE_LABEL[s.type]}>
+                <div className="flex items-center justify-between px-4 md:px-8 mb-3">
+                  <h2 className="text-lg font-bold">{SEARCH_TYPE_LABEL[s.type]}</h2>
+                  {s.hasMore && categoriesFor(s.type) !== 'all' && (
+                    <Button variant="ghost" size="sm" className="text-primary" onClick={() => setCategory(categoriesFor(s.type))}>
+                      See all
+                    </Button>
+                  )}
+                </div>
+                <div className="px-0.5 md:px-8"><ExploreGrid items={s.items as ExploreItem[]} compact /></div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div className="px-0.5 md:px-8">
+            {searching && <p className="px-4 md:px-0 mb-3 text-sm text-muted-foreground">{resultCount}{hasMore ? '+' : ''} results for “{term}”</p>}
+            <ExploreGrid items={items as ExploreItem[]} compact />
+            {hasMore && (
+              <div className="flex justify-center py-8">
+                <Button variant="outline" disabled={loadingMore} onClick={() => load(items.length)}>{loadingMore ? 'Loading…' : 'Load more'}</Button>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};
+
+/** the chip id for an item type (used by the "See all" button) */
+const categoriesFor = (type: string): SearchCategoryId => {
+  const map: Record<string, SearchCategoryId> = {
+    project: 'projects', user: 'people', discussion: 'discussions', post: 'posts', job: 'jobs', pitch: 'pitches', vendor: 'vendors', marketplace: 'marketplace', company: 'companies',
+  };
+  return map[type] || 'all';
 };
 
 export default SearchPage;

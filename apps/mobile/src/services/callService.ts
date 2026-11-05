@@ -125,6 +125,7 @@ export const sendCallNotifications = async (
     if (recipients.length === 0) return;
 
     const uniqueRecipients = Array.from(new Set(recipients));
+    if (kind !== 'space') ringingRecipients.set(roomId, uniqueRecipients);
 
     // An audio space is an invitation to listen, not a phone call: a normal notification, no ringing screen.
     if (kind === 'space') {
@@ -159,6 +160,8 @@ export const sendCallNotifications = async (
             callerName,
             avatarUrl: callerAvatar,
             roomId,
+            roomType,
+            roomName,
           },
         })
         .catch(() => {});
@@ -193,16 +196,67 @@ export const sendCallNotifications = async (
   }
 };
 
+/** Who was rung for each room, so that the person who started the call can tell them it is over (their phone stops ringing). */
+const ringingRecipients = new Map<string, string[]>();
+
+export const sendCallCancelled = (roomId: string) => {
+  const recipients = ringingRecipients.get(roomId);
+  if (!recipients || recipients.length === 0) return;
+  ringingRecipients.delete(roomId);
+  try {
+    const supabase = getSupabaseClient();
+    supabase.functions.invoke('push-delivery', { body: { recipientIds: recipients, type: 'call_cancelled', roomId } }).catch(() => {});
+    const channel = supabase.channel('global-call-invites-broadcast');
+    channel.subscribe((status: string) => {
+      if (status === 'SUBSCRIBED') {
+        channel.send({ type: 'broadcast', event: 'incoming_call_cancelled', payload: { roomId, targetUserIds: recipients } }).catch(() => {});
+        setTimeout(() => supabase.removeChannel(channel), 1500);
+      }
+    });
+  } catch {}
+};
+
+/**
+ * Per-call bookkeeping (like web's callerRef/answeredRef): lets the single "ended" post be turned into a
+ * "Missed call" row when this user rang a direct chat and nobody ever joined, and stops duplicate end rows.
+ */
+const callTrack: { roomId?: string; caller: boolean; answered: boolean; posted: boolean } = {
+  caller: false,
+  answered: false,
+  posted: false,
+};
+export const resetCallTrack = (roomId?: string) => {
+  callTrack.roomId = roomId;
+  callTrack.caller = false;
+  callTrack.answered = false;
+  callTrack.posted = false;
+};
+export const updateCallTrack = (roomId: string | undefined, p: { caller?: boolean; answered?: boolean }) => {
+  if (!roomId || callTrack.roomId !== roomId) return;
+  if (p.caller) callTrack.caller = true;
+  if (p.answered) callTrack.answered = true;
+};
+
 export const postCallSystemMessage = async (
   roomType: 'discussion' | 'project' | 'direct',
   roomId: string,
-  event: 'started' | 'ended',
+  eventIn: 'started' | 'ended' | 'missed',
   duration?: string,
   userId?: string,
   partnerId?: string,
   kind: 'call' | 'space' = 'call'
 ) => {
   if (!roomType || !roomId) return;
+  let event = eventIn;
+  if (event !== 'started' && callTrack.roomId === roomId) {
+    if (callTrack.posted) return; // already announced (e.g. 45 s timeout and the hang-up button)
+    callTrack.posted = true;
+    if (event === 'ended' && roomType === 'direct' && kind === 'call' && callTrack.caller && !callTrack.answered) {
+      event = 'missed';
+      duration = undefined;
+    }
+  }
+  if (event === 'ended' || event === 'missed') sendCallCancelled(roomId);
 
   try {
     const supabase = getSupabaseClient();
@@ -224,6 +278,8 @@ export const postCallSystemMessage = async (
     // The leading phone emoji keeps both apps rendering these as call events (web keys off it too).
     const contentText = event === 'started'
       ? (kind === 'space' ? '📞 Audio space started' : '📞 Video call started')
+      : event === 'missed'
+      ? '📞 Missed call'
       : (kind === 'space' ? `📞 Audio space ended${durationLabel}` : `📞 Call ended${durationLabel}`);
 
     console.log('[callService] postCallSystemMessage posting:', { roomType, roomId, event, contentText, currentUserId });
@@ -329,14 +385,7 @@ export const postCallSystemMessage = async (
         console.warn('[callService] Space resolve error:', sErr);
       }
 
-      // Ensure membership in project_space_members so RLS policy passes
-      try {
-        await (supabase.from('project_space_members' as any).upsert({
-          project_space_id: targetSpaceId,
-          user_id: currentUserId,
-          role: 'Member',
-        }, { onConflict: 'project_space_id,user_id' }) as any);
-      } catch {}
+      // (Membership is no longer created here: only real members can post call events.)
 
       const { data, error } = await (supabase.from('project_space_messages' as any).insert({
         project_space_id: targetSpaceId,

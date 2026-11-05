@@ -42,7 +42,7 @@ export const PortfolioItem = ({
 
   return (
     <Card className="overflow-hidden flex flex-col group relative">
-      <div className="cursor-pointer" onClick={() => onView(id)}>
+      <div className="cursor-pointer" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => onView(id)}>
         <MediaPreview />
       </div>
       <CardHeader className="flex-grow">
@@ -51,8 +51,8 @@ export const PortfolioItem = ({
       <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         {isOwner && (
           <>
-            <Button size="icon" variant="secondary" onClick={() => onEdit(id)}><Edit className="h-4 w-4" /></Button>
-            <Button size="icon" variant="destructive" onClick={() => onDelete(id)}><Trash2 className="h-4 w-4" /></Button>
+            <Button aria-label="Edit" size="icon" variant="secondary" onClick={() => onEdit(id)}><Edit className="h-4 w-4" /></Button>
+            <Button aria-label="Delete" size="icon" variant="destructive" onClick={() => onDelete(id)}><Trash2 className="h-4 w-4" /></Button>
           </>
         )}
         <Button size="icon" variant="secondary" onClick={() => onView(id)}><Eye className="h-4 w-4" /></Button>

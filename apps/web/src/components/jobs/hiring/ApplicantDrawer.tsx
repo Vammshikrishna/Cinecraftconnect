@@ -27,6 +27,7 @@ import {
 import { toEmbedUrl, safeExternalUrl } from '@/lib/jobs/showreel';
 import { StarRating, MatchBadge, StageBadge } from './shared';
 import { RejectDialog } from './RejectDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface Props {
   job: HiringJob | null;
@@ -85,7 +86,7 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
       if (ok) toast({ title: ok });
       onChanged();
     } catch (e: any) {
-      toast({ title: 'Something went wrong', description: e?.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: 'Something went wrong', description: friendlyError(e, 'Please try again.'), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -164,7 +165,7 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     <StageBadge status={a.status} />
                     <MatchBadge match={a.match} />
-                    {a.is_shortlisted && <span className="text-[10px] font-black uppercase tracking-widest bg-amber-500 text-black rounded-full px-3 py-1">Shortlisted</span>}
+                    {a.is_shortlisted && <span className="text-[12px] font-black uppercase tracking-widest bg-amber-500 text-black rounded-full px-3 py-1">Shortlisted</span>}
                   </div>
                 </div>
               </div>
@@ -174,14 +175,14 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
           <div className="p-6 space-y-8">
             {/* Stage */}
             <section className="space-y-3">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Hiring stage</Label>
+              <Label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Hiring stage</Label>
               <div className="grid grid-cols-3 gap-2">
                 {PIPELINE_STAGES.map((s) => (
                   <button
                     key={s.key}
                     disabled={busy}
                     onClick={() => moveTo(s.key)}
-                    className={cn('rounded-xl border px-2 py-2.5 text-[11px] font-black uppercase tracking-wider transition-all', a.status === s.key ? 'shadow-md' : 'hover:bg-muted/50')}
+                    className={cn('rounded-xl border px-2 py-2.5 text-[12px] font-black uppercase tracking-wider transition', a.status === s.key ? 'shadow-md' : 'hover:bg-muted/50')}
                     style={a.status === s.key ? { color: s.color, borderColor: s.color, backgroundColor: s.tint } : undefined}
                   >
                     {s.label}
@@ -191,13 +192,13 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
               {a.status === 'rejected' && a.rejection_reason && (
                 <p className="text-xs text-muted-foreground">Reason shared with the candidate: <i>{a.rejection_reason}</i></p>
               )}
-              <p className="text-[11px] text-muted-foreground">The candidate gets a notification whenever you move them.</p>
+              <p className="text-[12px] text-muted-foreground">The candidate gets a notification whenever you move them.</p>
             </section>
 
             {/* Rating + shortlist */}
             <section className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Your rating</Label>
+                <Label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Your rating</Label>
                 <StarRating value={a.rating} onChange={(v) => run(() => setRating(a.id, v))} size={22} />
               </div>
               <Button
@@ -214,7 +215,7 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
 
             {/* Match */}
             <section className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Why this score</Label>
+              <Label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Why this score</Label>
               <div className="rounded-2xl border border-border/60 p-4 space-y-2" style={{ borderColor: `${matchColor(a.match.score)}44` }}>
                 <div className="flex items-center justify-between">
                   <span className="font-black text-2xl" style={{ color: matchColor(a.match.score) }}>{a.match.score}%</span>
@@ -227,7 +228,7 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
                 ) : <p className="text-sm text-muted-foreground">Not enough profile information to compare yet.</p>}
                 {(p?.skills?.length || 0) > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-2">
-                    {p!.skills.slice(0, 12).map((s) => <span key={s} className="text-[11px] font-semibold bg-muted rounded-full px-2.5 py-0.5">{s}</span>)}
+                    {p!.skills.slice(0, 12).map((s) => <span key={s} className="text-[12px] font-semibold bg-muted rounded-full px-2.5 py-0.5">{s}</span>)}
                   </div>
                 )}
               </div>
@@ -235,7 +236,7 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
 
             {/* Application */}
             <section className="space-y-3">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Application</Label>
+              <Label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Application</Label>
               {a.cover_letter && <p className="text-sm leading-relaxed whitespace-pre-wrap bg-muted/30 rounded-2xl p-4 italic">“{a.cover_letter}”</p>}
 
               {questions.length > 0 && (
@@ -275,8 +276,8 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
             {/* Interviews */}
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Interviews</Label>
-                <Button variant="outline" size="sm" className="rounded-full h-8" onClick={() => setShowScheduler((v) => !v)}>
+                <Label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Interviews</Label>
+                <Button variant="outline" size="sm" className="rounded-full h-10 md:h-8" onClick={() => setShowScheduler((v) => !v)}>
                   <CalendarPlus className="w-4 h-4 mr-1.5" /> Schedule
                 </Button>
               </div>
@@ -325,7 +326,7 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold">{format(new Date(i.scheduled_at), 'EEE d MMM, h:mm a')} · {i.duration_minutes} min</p>
                     <p className="text-xs text-muted-foreground">{INTERVIEW_MODE_LABELS[i.mode]}{i.location ? ` · ${i.location}` : ''}</p>
-                    <p className={cn('text-[11px] font-black uppercase tracking-wider mt-1', i.status === 'confirmed' ? 'text-emerald-500' : i.status === 'declined' || i.status === 'cancelled' ? 'text-red-500' : 'text-amber-500')}>
+                    <p className={cn('text-[12px] font-black uppercase tracking-wider mt-1', i.status === 'confirmed' ? 'text-emerald-500' : i.status === 'declined' || i.status === 'cancelled' ? 'text-red-500' : 'text-amber-500')}>
                       {INTERVIEW_STATUS_LABELS[i.status]}
                     </p>
                   </div>
@@ -345,13 +346,13 @@ export const ApplicantDrawer = ({ job, application, onClose, onChanged }: Props)
 
             {/* Notes */}
             <section className="space-y-3">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Team notes (private)</Label>
+              <Label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Team notes (private)</Label>
               {notes.map((n) => (
                 <div key={n.id} className="rounded-2xl bg-muted/30 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-bold">{n.author?.full_name || n.author?.username || 'Team member'} <span className="text-muted-foreground font-normal">· {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</span></p>
                     {n.author_id === user?.id && (
-                      <button className="text-muted-foreground hover:text-red-500" onClick={() => run(async () => { await deleteNote(n.id); setNotes(await fetchNotes(a.id)); })}>
+                      <button aria-label="Delete" className="text-muted-foreground hover:text-red-500" onClick={() => run(async () => { await deleteNote(n.id); setNotes(await fetchNotes(a.id)); })}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}

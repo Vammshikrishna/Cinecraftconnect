@@ -7,6 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Megaphone, Trash2, Send, Link as LinkIcon, Upload, Loader2 } from 'lucide-react';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
+import ConfirmDialog from '../shared/ConfirmDialog';
+import { validateActionUrl, validateImageUrl, BROADCAST_TITLE_MAX, BROADCAST_BODY_MAX } from '../shared/staffHelpers';
 
 const IMAGE_PRESETS = [
   {
@@ -40,6 +44,7 @@ export default function GlobalBroadcastPanel() {
   const [sendPush, setSendPush] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -130,7 +135,7 @@ export default function GlobalBroadcastPanel() {
     } catch (error: any) {
       toast({ 
         title: "Upload Failed", 
-        description: error.message, 
+        description: friendlyError(error), 
         variant: "destructive" 
       });
     } finally {
@@ -138,17 +143,28 @@ export default function GlobalBroadcastPanel() {
     }
   };
 
-  const handleBroadcast = async (e: React.FormEvent) => {
+  const actionCheck = validateActionUrl(actionUrl);
+  const imageCheck = validateImageUrl(imageUrl);
+  const formValid = !!title.trim() && !!body.trim() && title.length <= BROADCAST_TITLE_MAX && body.length <= BROADCAST_BODY_MAX && actionCheck.ok && imageCheck.ok;
+
+  // step 1: validate, then ask for confirmation showing exactly what goes to everyone
+  const handleBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !title || !body) return;
-    
+    if (!user || !formValid) return;
+    setConfirmOpen(true);
+  };
+
+  // step 2: send. NOTE: a single super admin can still send this (no second approver). See the policy question in 05g (F-15).
+  const sendBroadcast = async () => {
+    if (!user || !formValid || !actionCheck.ok || !imageCheck.ok) return;
+    setConfirmOpen(false);
     setIsLoading(true);
     try {
       const { error } = await supabase.from('system_announcements' as any).insert({
-        title,
-        body,
-        action_url: actionUrl || null,
-        image_url: imageUrl || null,
+        title: title.trim(),
+        body: body.trim(),
+        action_url: actionCheck.value,
+        image_url: imageCheck.value,
         send_push: sendPush,
         created_by: user.id
       });
@@ -167,7 +183,7 @@ export default function GlobalBroadcastPanel() {
     } catch (error: any) {
       toast({
         title: "Broadcast Failed",
-        description: error.message,
+        description: friendlyError(error),
         variant: "destructive"
       });
     } finally {
@@ -176,7 +192,7 @@ export default function GlobalBroadcastPanel() {
   };
 
   const deleteBroadcast = async (id: string) => {
-    if (!confirm('Are you sure you want to permanently delete this announcement?')) return;
+    if (!await confirmDialog('Are you sure you want to permanently delete this announcement?')) return;
 
     const { error } = await supabase
       .from('system_announcements' as any)
@@ -189,7 +205,7 @@ export default function GlobalBroadcastPanel() {
     } else {
       toast({
         title: "Delete Failed",
-        description: error.message,
+        description: friendlyError(error),
         variant: "destructive"
       });
     }
@@ -206,7 +222,7 @@ export default function GlobalBroadcastPanel() {
         </p>
       </div>
 
-      <form onSubmit={handleBroadcast} className="space-y-4 bg-background/50 p-5 rounded-xl border border-white/5">
+      <form onSubmit={handleBroadcast} className="space-y-4 bg-background/50 p-5 rounded-xl border border-foreground/5">
         <div>
           <label className="text-xs font-black text-muted-foreground uppercase tracking-wider mb-1 block">Headline / Title</label>
           <Input 
@@ -214,8 +230,10 @@ export default function GlobalBroadcastPanel() {
             value={title} 
             onChange={e => setTitle(e.target.value)} 
             required 
+            maxLength={BROADCAST_TITLE_MAX}
             className="rounded-xl"
           />
+          <p className="text-[12px] text-muted-foreground mt-1">{title.length}/{BROADCAST_TITLE_MAX}</p>
         </div>
 
         <div>
@@ -226,8 +244,10 @@ export default function GlobalBroadcastPanel() {
             onChange={e => setBody(e.target.value)} 
             required 
             rows={3}
+            maxLength={BROADCAST_BODY_MAX}
             className="rounded-xl resize-none"
           />
+          <p className="text-[12px] text-muted-foreground mt-1">{body.length}/{BROADCAST_BODY_MAX}</p>
         </div>
 
         <div>
@@ -239,7 +259,9 @@ export default function GlobalBroadcastPanel() {
             value={actionUrl} 
             onChange={e => setActionUrl(e.target.value)} 
             className="rounded-xl font-mono"
+            aria-invalid={!actionCheck.ok}
           />
+          {!actionCheck.ok && <p role="alert" className="text-[12px] text-destructive mt-1">{actionCheck.error}</p>}
         </div>
 
         <div>
@@ -250,13 +272,15 @@ export default function GlobalBroadcastPanel() {
                 placeholder="Paste custom image URL or select a preset below..." 
                 value={imageUrl} 
                 onChange={e => setImageUrl(e.target.value)} 
-                className="rounded-xl font-mono text-xs pr-16 h-10 bg-background/50 border-white/10"
+                className="rounded-xl font-mono text-xs pr-16 h-10 bg-background/50 border-foreground/10"
+                aria-label="Image link"
+                aria-invalid={!imageCheck.ok}
               />
               {imageUrl && (
                 <button 
                   type="button" 
                   onClick={() => setImageUrl('')} 
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase text-red-500 hover:text-red-400"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-black uppercase text-red-500 hover:text-red-400"
                 >
                   Clear
                 </button>
@@ -296,6 +320,7 @@ export default function GlobalBroadcastPanel() {
             </div>
           </div>
           
+          {!imageCheck.ok && <p role="alert" className="text-[12px] text-destructive mt-1">{imageCheck.error}</p>}
           {/* Preset gallery */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
             {IMAGE_PRESETS.map((p) => (
@@ -303,20 +328,20 @@ export default function GlobalBroadcastPanel() {
                 key={p.name}
                 type="button"
                 onClick={() => setImageUrl(p.url)}
-                className={`flex flex-col text-left p-2 rounded-xl border transition-all ${imageUrl === p.url ? 'border-primary bg-primary/5 shadow-md shadow-primary/10' : 'border-border/30 hover:border-border/60 bg-muted/20'}`}
+                className={`flex flex-col text-left p-2 rounded-xl border transition ${imageUrl === p.url ? 'border-primary bg-primary/5 shadow-md shadow-primary/10' : 'border-border/30 hover:border-border/60 bg-muted/20'}`}
               >
-                <span className="text-[10px] font-black uppercase tracking-tight">{p.name}</span>
-                <span className="text-[8px] text-muted-foreground line-clamp-1 mt-0.5 leading-none">{p.desc}</span>
+                <span className="text-[12px] font-black uppercase tracking-tight">{p.name}</span>
+                <span className="text-[12px] text-muted-foreground line-clamp-1 mt-0.5 leading-none">{p.desc}</span>
               </button>
             ))}
           </div>
 
           {/* Live Preview */}
-          {imageUrl && (
+          {imageUrl && imageCheck.ok && (
             <div className="mt-3 relative w-full h-32 rounded-xl overflow-hidden border border-border/40 group animate-in fade-in duration-300">
               <img loading="lazy" decoding="async" src={imageUrl} className="w-full h-full object-cover" alt="Announcement Preview" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-3">
-                <span className="text-[9px] text-white/80 font-black uppercase tracking-widest bg-black/40 px-2 py-0.5 rounded backdrop-blur-sm">Live Image Preview</span>
+                <span className="text-[12px] text-white/80 font-black uppercase tracking-widest bg-black/40 px-2 py-0.5 rounded">Live Image Preview</span>
               </div>
             </div>
           )}
@@ -326,10 +351,13 @@ export default function GlobalBroadcastPanel() {
         <div className="flex items-center justify-between p-4 bg-muted/20 border border-border/40 rounded-xl">
           <div className="flex flex-col gap-0.5">
             <span className="text-xs font-black uppercase tracking-wider text-foreground">Dispatch Push Alert</span>
-            <span className="text-[10px] text-muted-foreground">Trigger a high-priority mobile & web push notification to all devices.</span>
+            <span className="text-[12px] text-muted-foreground">Trigger a high-priority mobile & web push notification to all devices.</span>
           </div>
           <button
             type="button"
+            role="switch"
+            aria-checked={sendPush}
+            aria-label="Dispatch push alert"
             onClick={() => setSendPush(!sendPush)}
             className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 focus:outline-none ${sendPush ? 'bg-primary' : 'bg-muted'}`}
           >
@@ -337,10 +365,29 @@ export default function GlobalBroadcastPanel() {
           </button>
         </div>
 
-        <Button type="submit" disabled={isLoading} className="w-full font-black text-[10px] uppercase tracking-widest bg-primary hover:bg-primary/90 h-11 rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.01] transition-all">
+        <Button type="submit" disabled={isLoading || !formValid} className="w-full font-black text-[12px] uppercase tracking-widest bg-primary hover:bg-primary/90 h-11 rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.01] transition">
           <Send className="mr-2 h-4 w-4" /> Dispatch Global Broadcast
         </Button>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Send this to everyone?"
+        description={
+          <div className="space-y-2 text-sm">
+            <p><strong>Audience:</strong> every user on the platform{sendPush ? ', plus a push notification to all devices' : ' (in-app popup only, no push)'}.</p>
+            <p><strong>Title:</strong> {title.trim()}</p>
+            <p className="whitespace-pre-wrap break-words"><strong>Text:</strong> {body.trim()}</p>
+            {actionCheck.ok && actionCheck.value && <p className="break-all"><strong>Link:</strong> {actionCheck.value}</p>}
+            {imageCheck.ok && imageCheck.value && <p className="break-all"><strong>Image:</strong> {imageCheck.value}</p>}
+            <p className="text-muted-foreground">It goes out at once and cannot be recalled from devices that already received it.</p>
+          </div>
+        }
+        confirmLabel="Send broadcast"
+        destructive
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={sendBroadcast}
+      />
 
       <div className="pt-4 space-y-3">
         <h3 className="text-sm font-black uppercase tracking-wider text-muted-foreground">Recent Broadcasts</h3>
@@ -349,7 +396,7 @@ export default function GlobalBroadcastPanel() {
         ) : (
           <div className="space-y-3">
             {announcements.map((ann) => (
-              <div key={ann.id} className="flex flex-col sm:flex-row gap-4 p-4 bg-background/50 rounded-xl border border-white/5 overflow-hidden transition-all hover:bg-background/80">
+              <div key={ann.id} className="flex flex-col sm:flex-row gap-4 p-4 bg-background/50 rounded-xl border border-foreground/5 overflow-hidden transition hover:bg-background/80">
                 {ann.image_url && (
                   <div className="w-full sm:w-28 h-20 shrink-0 rounded-lg overflow-hidden border border-border/40">
                     <img loading="lazy" decoding="async" src={ann.image_url} className="w-full h-full object-cover" alt="" />
@@ -360,20 +407,20 @@ export default function GlobalBroadcastPanel() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-foreground truncate">{ann.title}</span>
                     {ann.send_push && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[8px] font-black uppercase tracking-widest">
+                      <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[12px] font-black uppercase tracking-widest">
                         ⚡ Push Active
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{ann.body}</p>
                   {ann.action_url && (
-                    <div className="text-[10px] text-primary font-mono mt-1 flex items-center gap-1">
+                    <div className="text-[12px] text-primary font-mono mt-1 flex items-center gap-1">
                       <LinkIcon className="w-2.5 h-2.5" /> {ann.action_url}
                     </div>
                   )}
                 </div>
                 
-                <Button 
+                <Button aria-label="Delete" 
                   type="button"
                   variant="ghost" 
                   size="icon" 

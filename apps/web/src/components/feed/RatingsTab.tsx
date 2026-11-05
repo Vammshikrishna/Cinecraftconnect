@@ -15,7 +15,7 @@ import {
 } from "@/services/tmdb";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { searchContent } from "@/services/tmdb";
 
 interface RatingItem extends TMDBContent {
@@ -47,7 +47,7 @@ const CategoryRow = ({ categoryId, title, items, onRate }: CategoryRowProps) => 
   if (items.length === 0) return null;
 
   return (
-    <div className="space-y-4 py-6">
+    <div className="space-y-4 py-6 [content-visibility:auto] [contain-intrinsic-size:auto_420px]">
       <div className="flex items-center justify-between px-4 md:px-0">
         <h3 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">{title}</h3>
         <div className="flex items-center gap-4">
@@ -57,15 +57,15 @@ const CategoryRow = ({ categoryId, title, items, onRate }: CategoryRowProps) => 
             </Link>
           )}
           <div className="hidden md:flex gap-2">
-            <button
+            <button aria-label="Previous"
               onClick={() => scroll('left')}
-              className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+              className="h-11 w-11 flex items-center justify-center rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors active:scale-95"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
-            <button
+            <button aria-label="Next"
               onClick={() => scroll('right')}
-              className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+              className="h-11 w-11 flex items-center justify-center rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors active:scale-95"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -76,7 +76,7 @@ const CategoryRow = ({ categoryId, title, items, onRate }: CategoryRowProps) => 
       <div className="group relative">
         <div
           ref={scrollRef}
-          className="flex gap-4 overflow-x-auto pb-4 px-4 md:px-0 scrollbar-hide snap-x"
+          className="flex gap-4 overflow-x-auto pb-4 px-4 md:px-0 scrollbar-hide snap-x scroll-pl-4 overscroll-x-contain"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {items.map((item) => (
@@ -449,20 +449,31 @@ const RatingsTab = () => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <input
             type="text"
+            aria-label="Search movies, TV shows, or creatives"
             placeholder="Search movies, TV shows, or creatives..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
-            className="w-full h-14 pl-12 pr-6 bg-secondary/30 border-2 border-transparent focus:border-primary/50 focus:bg-secondary/50 rounded-2xl text-[16px] font-medium transition-all shadow-xl backdrop-blur-xl outline-none"
+            className="w-full h-14 pl-12 pr-6 bg-secondary/30 border-2 border-transparent focus:border-primary/50 focus:bg-secondary/50 rounded-2xl text-base font-medium transition shadow-xl outline-none"
           />
           {loadingStates.search && (
             <div className="absolute right-4 top-1/2 -translate-y-1/2">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
             </div>
           )}
+          {searchQuery && !loadingStates.search && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => handleSearch("")}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-11 w-11 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="space-y-4 relative z-10 min-h-screen">
+      <div className="space-y-4 relative z-10 min-h-dvh">
         {/* Search Results */}
         {searchQuery.trim() !== "" && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -471,7 +482,7 @@ const RatingsTab = () => {
         )}
 
         {/* Discovery Grid — each row appears as soon as it loads */}
-        <div className={`${searchQuery.trim() !== "" ? 'opacity-40 grayscale-[0.5]' : 'opacity-100'} transition-all duration-700 space-y-2`}>
+        <div className={`${searchQuery.trim() !== "" ? 'opacity-40' : 'opacity-100'} transition-opacity duration-200 space-y-2`}>
           <CategoryRow title="Trending on CineCraft" items={communityTrending} onRate={handleRate} />
           {loadingStates.platformCinema ? <CategorySkeleton /> : <CategoryRow title="Native Cinema & Originals" items={platformCinema} onRate={handleRate} />}
           {loadingStates.trending ? <CategorySkeleton /> : <CategoryRow categoryId="trending" title="Trending Now" items={trending} onRate={handleRate} />}

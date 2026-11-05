@@ -3,7 +3,7 @@ import { View, Text, Modal, ScrollView, TouchableOpacity, TextInput, Switch, Sty
 import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
-import { describeAlert, JOB_TYPES, JOB_TYPE_LABELS, WORK_MODES, WORK_MODE_LABELS, type JobAlertCriteria } from '@cinecraft/core';
+import { describeAlert, JOB_TYPES, JOB_TYPE_LABELS, WORK_MODES, WORK_MODE_LABELS, type JobAlertCriteria, friendlyError } from '@cinecraft/core';
 import { ORANGE } from './JobsShared';
 
 interface Props {
@@ -46,6 +46,15 @@ export const JobAlertsModal = ({ visible, onClose, prefill }: Props) => {
   }, [visible]);
 
   const create = async () => {
+    // an alert with nothing to match would notify about every single job
+    if (!form.keywords.trim() && !form.job_type && !form.work_mode && !form.location.trim() && !form.min_salary) {
+      Alert.alert('Add something to match', 'Type a keyword or pick a job type, work mode, city or pay so the alert is about jobs you want.');
+      return;
+    }
+    if (form.min_salary && (!Number.isFinite(Number(form.min_salary)) || Number(form.min_salary) < 0)) {
+      Alert.alert('Check the minimum pay', 'Enter a number that is zero or more.');
+      return;
+    }
     setSaving(true);
     try {
       const { data: { user } } = await db().auth.getUser();
@@ -62,7 +71,7 @@ export const JobAlertsModal = ({ visible, onClose, prefill }: Props) => {
       Alert.alert('Alert saved', "We'll notify you when a matching job is posted.");
       load();
     } catch (e: any) {
-      Alert.alert('Could not save the alert', e?.message || 'Please try again.');
+      Alert.alert('Could not save the alert', friendlyError(e, 'Please try again.'));
     } finally {
       setSaving(false);
     }
@@ -89,13 +98,13 @@ export const JobAlertsModal = ({ visible, onClose, prefill }: Props) => {
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: T.bgScreen, borderColor: T.border }]}>
           <View style={styles.headRow}>
-            <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '800' }}>Job alerts</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Icon name="x" size={20} color={T.textSecondary} />
+            <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700' }}>Job alerts</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Icon name="x" size={20} color={T.iconSecondary} />
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 36 }} keyboardShouldPersistTaps="handled">
-            <Text style={{ color: T.textSecondary, fontSize: 12.5, marginBottom: 12 }}>
+            <Text style={{ color: T.textSecondary, fontSize: 12, marginBottom: 12 }}>
               Get notified the moment a job that fits you is posted. You can keep up to 10 alerts.
             </Text>
             {loading ? (
@@ -107,10 +116,10 @@ export const JobAlertsModal = ({ visible, onClose, prefill }: Props) => {
                 <View key={a.id} style={[styles.alertRow, { borderColor: T.border, backgroundColor: T.bgCard }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '700' }} numberOfLines={2}>{describeAlert(a)}</Text>
-                    <Text style={{ color: T.textMuted, fontSize: 11 }}>{a.is_active ? 'Active' : 'Paused'}</Text>
+                    <Text style={{ color: T.textMuted, fontSize: 12 }}>{a.is_active ? 'Active' : 'Paused'}</Text>
                   </View>
-                  <Switch value={!!a.is_active} onValueChange={() => toggle(a)} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
-                  <TouchableOpacity onPress={() => remove(a)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Switch accessibilityLabel={`Alert: ${describeAlert(a)}`} value={!!a.is_active} onValueChange={() => toggle(a)} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" onPress={() => remove(a)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Icon name="trash-2" size={17} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
@@ -118,19 +127,19 @@ export const JobAlertsModal = ({ visible, onClose, prefill }: Props) => {
             )}
 
             <View style={[styles.newBox, { borderColor: T.border }]}>
-              <Text style={{ color: T.textMuted, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>NEW ALERT</Text>
+              <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginBottom: 8 }}>NEW ALERT</Text>
               <TextInput style={field} placeholder="Keywords, e.g. focus puller" placeholderTextColor={T.textMuted} value={form.keywords} onChangeText={(v) => setForm({ ...form, keywords: v })} />
               <View style={styles.chipRow}>
                 {JOB_TYPES.map((t) => (
                   <TouchableOpacity key={t} style={chip(form.job_type === t)} onPress={() => setForm({ ...form, job_type: form.job_type === t ? '' : t })}>
-                    <Text style={{ color: form.job_type === t ? '#fff' : T.textPrimary, fontSize: 11.5, fontWeight: '700' }}>{JOB_TYPE_LABELS[t]}</Text>
+                    <Text style={{ color: form.job_type === t ? '#fff' : T.textPrimary, fontSize: 12, fontWeight: '700' }}>{JOB_TYPE_LABELS[t]}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
               <View style={styles.chipRow}>
                 {WORK_MODES.map((m) => (
                   <TouchableOpacity key={m} style={chip(form.work_mode === m)} onPress={() => setForm({ ...form, work_mode: form.work_mode === m ? '' : m })}>
-                    <Text style={{ color: form.work_mode === m ? '#fff' : T.textPrimary, fontSize: 11.5, fontWeight: '700' }}>{WORK_MODE_LABELS[m]}</Text>
+                    <Text style={{ color: form.work_mode === m ? '#fff' : T.textPrimary, fontSize: 12, fontWeight: '700' }}>{WORK_MODE_LABELS[m]}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -149,7 +158,7 @@ export const JobAlertsModal = ({ visible, onClose, prefill }: Props) => {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { maxHeight: '88%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', maxHeight: '88%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
   headRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
   alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 8 },
   newBox: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, padding: 12, marginTop: 14 },
@@ -157,5 +166,5 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
   chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
   saveBtn: { backgroundColor: ORANGE, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  saveText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 },
+  saveText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
 });

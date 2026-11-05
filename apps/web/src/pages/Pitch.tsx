@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Navigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -9,10 +9,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PitchCallCard } from '@/components/pitch/PitchCallCard';
 import { PitchCallCreationModal } from '@/components/pitch/PitchCallCreationModal';
 import { CallCreatorPitchInbox, WriterPitchTracker } from '@/components/pitch/PitchDashboard';
+import { PitchCallManager } from '@/components/pitch/PitchCallManager';
 import { usePitchCalls, canCreatePitchCall, canSubmitPitch } from '@/hooks/usePitch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
-import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useUnreadPitchSubmissions } from '@/hooks/useUnreadPitchSubmissions';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import SEO from '@/components/common/SEO';
@@ -30,14 +30,9 @@ import { Sparkles } from 'lucide-react';
 
 const Pitch = () => {
     const { user, profile } = useAuth();
-    const { push } = useAppNavigation();
     const { accountType: userAccountType, isFan } = useAccountType();
 
-    useEffect(() => {
-        if (isFan) {
-            push('/404');
-        }
-    }, [isFan, push]);
+    const [, setSearchParams] = useSearchParams();
 
     const location = useLocation();
     const [activeTab, setActiveTab] = useState(() => {
@@ -89,8 +84,11 @@ const Pitch = () => {
     const hasActiveFilters = filters.genre || filters.language || filters.format || 
         filters.budgetRange || filters.compensation || filters.openToDebut || filters.regionalWelcome;
 
+    // Fans never see this page: leave before rendering anything.
+    if (isFan) return <Navigate to="/404" replace />;
+
     return (
-        <div className="min-h-screen bg-background pb-36">
+        <div className="min-h-dvh bg-background pb-36">
             <SEO
                 title="Pitch"
                 description="The professional story pitching marketplace for India's entertainment industry. Call creators post pitch calls, writers submit scripts and concepts."
@@ -101,7 +99,7 @@ const Pitch = () => {
                 <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
             </div>
 
-            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 relative z-10">
+            <main className="max-w-[1560px] mx-auto px-4 md:px-8 pt-20 relative z-10">
                 <PageHeader
                     title="Pitch"
                     subtitle="The professional story pitching marketplace for the entertainment industry"
@@ -120,8 +118,8 @@ const Pitch = () => {
                     }
                 />
 
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                    <TabsList className="bg-card border border-border/50 p-1 rounded-xl h-auto flex-wrap">
+                <Tabs value={activeTab} onValueChange={(tab) => { setActiveTab(tab); setSearchParams((prev) => { const next = new URLSearchParams(prev); next.set('tab', tab); return next; }, { replace: true }); }} className="space-y-6">
+                    <TabsList className="bg-card border border-border/50 p-1 rounded-xl h-auto flex-nowrap justify-start overflow-x-auto no-scrollbar max-w-full [&>*]:shrink-0">
                         <TabsTrigger value="discover" className="rounded-lg gap-2 font-bold">
                             <Lightbulb className="h-4 w-4" /> Discover Pitch Calls
                         </TabsTrigger>
@@ -134,10 +132,15 @@ const Pitch = () => {
                             </TabsTrigger>
                         )}
                         {user && userCanCreate && (
+                            <TabsTrigger value="my-calls" className="rounded-lg gap-2 font-bold">
+                                <Megaphone className="h-4 w-4" /> My Pitch Calls
+                            </TabsTrigger>
+                        )}
+                        {user && userCanCreate && (
                             <TabsTrigger value="inbox" className="rounded-lg gap-2 font-bold relative">
                                 <Inbox className="h-4 w-4" /> Review Inbox
                                 {hasUnreadPitches && (
-                                    <span className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-background">
+                                    <span className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[12px] font-bold text-white border-2 border-background">
                                         {unreadPitchCount > 9 ? '9+' : unreadPitchCount}
                                     </span>
                                 )}
@@ -161,7 +164,7 @@ const Pitch = () => {
                                     <div className="space-y-2">
                                         <Label className="text-xs font-bold uppercase">Genre</Label>
                                         <Select value={filters.genre || 'all'} onValueChange={v => setFilters(f => ({ ...f, genre: v === 'all' ? '' : v }))}>
-                                            <SelectTrigger className="h-9"><SelectValue placeholder="Any genre" /></SelectTrigger>
+                                            <SelectTrigger><SelectValue placeholder="Any genre" /></SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="all">Any Genre</SelectItem>
                                                 {['Action', 'Thriller', 'Drama', 'Comedy', 'Horror', 'Sci-Fi', 'Documentary'].map(g => (
@@ -174,7 +177,7 @@ const Pitch = () => {
                                     <div className="space-y-2">
                                         <Label className="text-xs font-bold uppercase">Language</Label>
                                         <Select value={filters.language || 'all'} onValueChange={v => setFilters(f => ({ ...f, language: v === 'all' ? '' : v }))}>
-                                            <SelectTrigger className="h-9"><SelectValue placeholder="Any language" /></SelectTrigger>
+                                            <SelectTrigger><SelectValue placeholder="Any language" /></SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="all">Any Language</SelectItem>
                                                 {['Hindi', 'Telugu', 'Tamil', 'Malayalam', 'Kannada', 'English'].map(l => (
@@ -187,7 +190,7 @@ const Pitch = () => {
                                     <div className="space-y-2">
                                         <Label className="text-xs font-bold uppercase">Compensation</Label>
                                         <Select value={filters.compensation || 'all'} onValueChange={v => setFilters(f => ({ ...f, compensation: v === 'all' ? '' : v }))}>
-                                            <SelectTrigger className="h-9"><SelectValue placeholder="Any" /></SelectTrigger>
+                                            <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="all">Any</SelectItem>
                                                 <SelectItem value="paid">Paid Only</SelectItem>
@@ -200,14 +203,14 @@ const Pitch = () => {
                                     <div className="space-y-3 pt-2 border-t border-border">
                                         <div className="flex items-center justify-between">
                                             <Label className="text-sm">Open to Debut Writers</Label>
-                                            <Switch
+                                            <Switch aria-label="Open to Debut Writers"
                                                 checked={filters.openToDebut}
                                                 onCheckedChange={v => setFilters(f => ({ ...f, openToDebut: v }))}
                                             />
                                         </div>
                                         <div className="flex items-center justify-between">
                                             <Label className="text-sm">Regional Stories Welcome</Label>
-                                            <Switch
+                                            <Switch aria-label="Regional Stories Welcome"
                                                 checked={filters.regionalWelcome}
                                                 onCheckedChange={v => setFilters(f => ({ ...f, regionalWelcome: v }))}
                                             />
@@ -230,7 +233,7 @@ const Pitch = () => {
 
                         {/* Results */}
                         {loading ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-5">
                                 {[1,2,3,4,5,6].map(i => <CardSkeleton key={i} />)}
                             </div>
                         ) : pitchCalls.length === 0 ? (
@@ -249,7 +252,7 @@ const Pitch = () => {
                                 )}
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-5">
                                 <AnimatePresence>
                                     {pitchCalls.map((pc, index) => (
                                         <PitchCallCard
@@ -281,6 +284,17 @@ const Pitch = () => {
                                 </div>
                                 <WriterPitchTracker />
                             </div>
+                        </TabsContent>
+                    )}
+
+                    {/* ─── My Pitch Calls Tab (Call Creators manage their calls) ─── */}
+                    {user && userCanCreate && (
+                        <TabsContent value="my-calls">
+                            <div className="mb-6">
+                                <h2 className="text-xl font-black">Manage My Pitch Calls</h2>
+                                <p className="text-sm text-muted-foreground mt-1">Open the pitches for each call, edit, close, re-open or copy it</p>
+                            </div>
+                            <PitchCallManager onCreate={() => setIsCreateOpen(true)} key={isCreateOpen ? 'creating' : 'idle'} />
                         </TabsContent>
                     )}
 

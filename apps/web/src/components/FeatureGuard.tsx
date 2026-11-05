@@ -25,7 +25,7 @@ export const FeatureGuard = ({
 
   return (
     <div className="min-h-[70vh] bg-background flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-20 h-20 bg-amber-500/10 rounded-3xl flex items-center justify-center mb-6 animate-pulse">
+      <div className="w-20 h-20 bg-amber-500/10 rounded-3xl flex items-center justify-center mb-6">
         <Lock className="w-10 h-10 text-amber-600" />
       </div>
       <h2 className="text-2xl font-black uppercase tracking-tight mb-2">{fallbackTitle}</h2>
@@ -34,7 +34,7 @@ export const FeatureGuard = ({
       </p>
       <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-xl border border-border/50">
         <ShieldAlert className="w-4 h-4 text-amber-600" />
-        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Admin Protocol Enforcement Active</span>
+        <span className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Admin Protocol Enforcement Active</span>
       </div>
     </div>
   );

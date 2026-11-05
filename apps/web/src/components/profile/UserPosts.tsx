@@ -88,7 +88,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
         .from('posts')
         .select(`
           *,
-          profiles (
+          profiles:author_id (
             id,
             full_name,
             username,
@@ -112,7 +112,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-3 gap-1 md:gap-2">
+      <div className="grid grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-1 md:gap-3">
         {[...Array(9)].map((_, i) => (
           <EnhancedSkeleton key={i} className="aspect-square rounded-none md:rounded-sm" />
         ))}
@@ -135,7 +135,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
   }
 
   return (
-    <div className="grid grid-cols-3 gap-1 md:gap-2">
+    <div className="grid grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-1 md:gap-3">
       {posts.map((post) => {
         const effectiveMediaItems = (post.media_items && Array.isArray(post.media_items) && post.media_items.length > 0)
           ? post.media_items
@@ -173,7 +173,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
                   />
                 )
               ) : (
-                <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-card to-muted/5 group-hover:brightness-110 transition-all duration-500">
+                <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-card to-muted/5 group-hover:brightness-110 transition duration-500">
                   {post.content.includes('JOB_SHARE::') ? (
                     (() => {
                       try {
@@ -183,7 +183,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
 
                         return (
                           <div className="w-full h-full p-2.5 flex flex-col justify-between items-center text-center">
-                            <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl border-4 border-background shadow-xl ring-1 ring-white/10 bg-background overflow-hidden shrink-0 mt-2">
+                            <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl border-4 border-background shadow-xl ring-1 ring-foreground/10 bg-background overflow-hidden shrink-0 mt-2">
                               <Avatar className="h-full w-full rounded-none">
                                 <AvatarImage src={getOptimizedImage(shareData.logoUrl, { width: 200, height: 200 }) || undefined} className="object-cover" />
                                 <AvatarFallback className="bg-primary/20 text-primary font-black text-xl">
@@ -192,10 +192,10 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
                               </Avatar>
                             </div>
                             <div className="flex-1 w-full flex flex-col justify-center items-center gap-1.5 px-1 pb-2">
-                              <h4 className="text-[10px] md:text-xs font-black text-foreground leading-tight tracking-tighter uppercase truncate w-full max-w-[100px]">
+                              <h4 className="text-[12px] md:text-xs font-black text-foreground leading-tight tracking-tighter uppercase truncate w-full max-w-[100px]">
                                 {shareData.title || 'Opening'}
                               </h4>
-                              <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[6px] md:text-[8px] font-black text-primary uppercase tracking-widest shrink-0">
+                              <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-xs md:text-[12px] font-black text-primary uppercase tracking-widest shrink-0">
                                 Hiring
                               </div>
                             </div>
@@ -212,7 +212,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
                       }
                     })()
                   ) : (
-                    <div className="w-full h-full p-4 md:p-6 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-primary/20 via-background to-muted/10 group-hover:brightness-125 transition-all duration-700">
+                    <div className="w-full h-full p-4 md:p-6 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-primary/20 via-background to-muted/10 group-hover:brightness-125 transition duration-700">
                       <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent)] pointer-events-none" />
                       <p className="text-sm md:text-base font-black tracking-tight text-foreground leading-[1.2] text-center line-clamp-5 drop-shadow-sm uppercase">
                         {post.content.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim()}

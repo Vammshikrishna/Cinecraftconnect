@@ -10,12 +10,13 @@ import {
   Easing,
   Modal,
   ScrollView,
-  Dimensions,
+  useWindowDimensions,
   StatusBar,
   Switch,
   PanResponder,
   BackHandler,
   Alert,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Icon } from '../../components/common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
@@ -30,7 +31,9 @@ import {
   addPipListener,
 } from '../../services/pipService';
 import { useGlobalCall } from '../../contexts/CallContext';
+import { canStartCalls, FAN_CALL_TOOLTIP } from '../../utils/fanCallRule';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import type { ThemeColors } from '../../contexts/SettingsContext';
 import { useLiveCall } from '../../hooks/useLiveCall';
 import {
   joinLiveCall,
@@ -47,11 +50,13 @@ import {
   stopRingback,
   playBusyTone,
 } from '../../services/liveCall';
+import { isLockedCall, leaveCallScreen, useLockedCall } from '../../services/lockScreenGuard';
+import { CallParticipantGrid } from '../../components/calls/CallParticipantGrid';
 import { VideoView } from '@livekit/react-native';
+import { CallVideoView } from '../../components/calls/CallVideoView';
 import { beginCallSession, askHowToStart } from '../../services/callSession';
 import { AudioSpaceView } from '../../components/calls/AudioSpaceView';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { calmLoop } from '../../utils/motion';
 
 // Premium Color Palette
 const ORANGE = '#FF4B33';
@@ -65,29 +70,29 @@ const GLASS_BG = 'rgba(255, 255, 255, 0.06)';
 
 // Real video rendering helpers
 const ABS_FILL = { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 };
-const localPreviewStyle = {
+const localPreviewStyle = (t: boolean) => ({
   position: 'absolute' as const,
-  right: 16,
-  top: 16,
-  width: 108,
-  height: 156,
-  borderRadius: 14,
+  right: t ? 24 : 16,
+  top: t ? 24 : 16,
+  width: t ? 176 : 108,
+  height: t ? 252 : 156,
+  borderRadius: t ? 18 : 14,
   overflow: 'hidden' as const,
   backgroundColor: '#000000',
   borderWidth: 1,
   borderColor: 'rgba(255, 255, 255, 0.12)',
-};
-const flipBtnStyle = {
+});
+const flipBtnStyle = (t: boolean) => ({
   position: 'absolute' as const,
   right: 6,
   bottom: 6,
-  width: 28,
-  height: 28,
-  borderRadius: 14,
+  width: t ? 40 : 28,
+  height: t ? 40 : 28,
+  borderRadius: t ? 20 : 14,
   alignItems: 'center' as const,
   justifyContent: 'center' as const,
   backgroundColor: 'rgba(0, 0, 0, 0.55)',
-};
+});
 
 // PiP Constants
 const PIP_WIDTH = 180;
@@ -104,6 +109,17 @@ interface FloatingEmoji {
 }
 
 export const CallScreen = ({ route, navigation }: { route: any; navigation: any }) => {
+  // live window size (the sizes in the style sheet below were measured once when the app started)
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isTab = Math.min(winW, winH) >= 600;
+  // The control island is ~425dp wide with fixed-size buttons; on phones narrower than 400dp tighten it so nothing falls off screen.
+  const narrowBar = !isTab && winW < 400;
+  const iconBtnNarrow = narrowBar ? { width: 34, height: 34, borderRadius: 17 } : null;
+  const isLand = winW > winH;
+  // On a tablet the video stage fills the free height (in a column that fits the orientation); phones keep 58% of the screen
+  const videoStageSize = isTab
+    ? { flex: 1, height: undefined as any, maxWidth: isLand ? 1100 : 780, marginVertical: 8 }
+    : { height: winH * 0.58 };
   const params = route?.params ?? {};
   const {
     roomId,
@@ -128,7 +144,8 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
     updateCallState,
   } = useGlobalCall();
 
-  const { settings } = useUserSettings();
+  const { settings, themeColors, isDark } = useUserSettings();
+  const styles = useMemo(() => makeStyles(themeColors, isDark), [themeColors, isDark]);
 
   const isMinimizedRef = useRef(false);
   const presenceChannelRef = useRef<any>(null);
@@ -177,7 +194,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
 
   useEffect(() => {
     if (isSpeaking) {
-      Animated.loop(
+      calmLoop(
         Animated.sequence([
           Animated.timing(speakingGlowAnim, {
             toValue: 1,
@@ -312,16 +329,18 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
   const pulseAnim3 = useRef(new Animated.Value(1)).current;
 
   // Equalizer Bars Animations
-  const eqBar1 = useRef(new Animated.Value(8)).current;
-  const eqBar2 = useRef(new Animated.Value(18)).current;
-  const eqBar3 = useRef(new Animated.Value(28)).current;
-  const eqBar4 = useRef(new Animated.Value(14)).current;
-  const eqBar5 = useRef(new Animated.Value(8)).current;
+  // Bars are a fixed 36dp tall and animate scaleY (native driver) instead of height (JS thread layout every frame).
+  const EQ_FULL = 36;
+  const eqBar1 = useRef(new Animated.Value(8 / 36)).current;
+  const eqBar2 = useRef(new Animated.Value(18 / 36)).current;
+  const eqBar3 = useRef(new Animated.Value(28 / 36)).current;
+  const eqBar4 = useRef(new Animated.Value(14 / 36)).current;
+  const eqBar5 = useRef(new Animated.Value(8 / 36)).current;
 
   // Ripple Animations for Ringing State
   useEffect(() => {
     const createRipple = (anim: Animated.Value, delay: number) => {
-      return Animated.loop(
+      return calmLoop(
         Animated.sequence([
           Animated.delay(delay),
           Animated.timing(anim, {
@@ -361,10 +380,10 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
     }
 
     const animateEq = (bar: Animated.Value, minH: number, maxH: number, duration: number) => {
-      return Animated.loop(
+      return calmLoop(
         Animated.sequence([
-          Animated.timing(bar, { toValue: maxH, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-          Animated.timing(bar, { toValue: minH, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+          Animated.timing(bar, { toValue: maxH / EQ_FULL, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(bar, { toValue: minH / EQ_FULL, duration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ])
       );
     };
@@ -436,6 +455,21 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
           // The media session may still be running (user came back from the PiP bubble / chat).
           if (isLiveCallActive()) return;
 
+          // Fans can answer or join calls but not start one (call-back, profile buttons, history all end up here).
+          if (normalizedRoomType === 'direct' && !params.answering) {
+            let blocked = false;
+            try {
+              const { data: me } = await (supabase.from('profiles') as any).select('account_type').eq('id', user.id).maybeSingle();
+              blocked = !!me && !canStartCalls(me.account_type);
+            } catch { /* fail soft: the server still enforces it */ }
+            if (blocked) {
+              hasEndedRef.current = true;
+              Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+              try { if (navigation?.canGoBack?.()) navigation.goBack(); } catch { }
+              return;
+            }
+          }
+
           // Rooms and project spaces can run a normal call or an audio space: ask unless one is already running.
           const choice = params.callMode
             ? params.callMode === 'audio_space'
@@ -476,7 +510,6 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             videoOffOnJoin: !!settings.call_video_off_on_join,
             speakerOn: isSpeakerOn,
             onData: (msg) => {
-              if (msg.type === 'reaction' && msg.emoji) showReactionFromPeer(msg.emoji);
             },
           });
         }
@@ -520,16 +553,27 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
       broadcastCallEnded();
     }
     endCall();
-    try {
-      if (navigation?.canGoBack?.()) {
-        navigation.goBack();
-      } else if (navigation?.navigate) {
-        navigation.navigate('MainTabs');
+    leaveCallScreen(() => {
+      try {
+        if (navigation?.canGoBack?.()) {
+          navigation.goBack();
+        } else if (navigation?.navigate) {
+          navigation.navigate('MainTabs');
+        }
+      } catch {
+        // navigation dismissed
       }
-    } catch {
-      // navigation dismissed
-    }
+    });
   }, [navigation, roomType, roomId, partnerId, endCall]);
+
+  // Whatever order the screens changed focus in, the full-screen call must not sit under the floating bubble of the same call.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (callState.isActive && callState.roomId === roomId && callState.isMinimized && !isMinimizedRef.current) maximizeCall();
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callState.isMinimized, callState.isActive]);
 
   // Ringing tone, no-answer timeout, hang-up when the other person leaves, declined/cancelled handling and
   // setup-failure messages are handled app-wide by <CallLifecycle/> so they also work from the in-room Call tab.
@@ -543,17 +587,21 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
     if (callWasActiveRef.current && !isMinimizedRef.current && !hasEndedRef.current) {
       callWasActiveRef.current = false;
       hasEndedRef.current = true;
-      try {
-        if (navigation?.canGoBack?.()) navigation.goBack();
-      } catch {
-        // navigation dismissed
-      }
+      leaveCallScreen(() => {
+        try {
+          if (navigation?.canGoBack?.()) navigation.goBack();
+        } catch {
+          // navigation dismissed
+        }
+      });
     }
   }, [callState.isActive]);
 
   // Trigger In-App Picture-in-Picture (WhatsApp-Style)
   // Keeps call alive globally and navigates back to previous app screen with floating draggable bubble
   const handleMinimizeToPip = useCallback(() => {
+    // answered on the lock screen: the call screen is all anyone may see until the owner unlocks
+    if (isLockedCall()) return;
     isMinimizedRef.current = true;
     updateCallState({
       isActive: true,
@@ -599,6 +647,8 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
     navigation,
   ]);
 
+  const lockedCall = useLockedCall();
+
   // Handle hardware back button to minimize to in-app PiP
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -626,18 +676,25 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
   const showReactionFromPeer = (emoji: string) => {
     const newId = `${Date.now()}_${Math.random()}`;
     const anim = new Animated.Value(0);
-    const randomX = Math.floor(Math.random() * (SCREEN_WIDTH - 120)) + 40;
+    const randomX = Math.floor(Math.random() * (winW - 120)) + 40;
     setFloatingEmojis((prev) => [...prev, { id: newId, emoji, x: randomX, anim }]);
     Animated.timing(anim, { toValue: 1, duration: 1800, easing: Easing.out(Easing.ease), useNativeDriver: true }).start(() => {
       setFloatingEmojis((prev) => prev.filter((e) => e.id !== newId));
     });
   };
 
+  const showReactionFromPeerRef = useRef(showReactionFromPeer);
+  showReactionFromPeerRef.current = showReactionFromPeer;
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('liveCallReaction', (msg: any) => msg?.emoji && showReactionFromPeerRef.current(msg.emoji));
+    return () => sub.remove();
+  }, []);
+
   const sendReaction = (emoji: string) => {
     sendCallData({ type: 'reaction', emoji });
     const newId = `${Date.now()}_${Math.random()}`;
     const anim = new Animated.Value(0);
-    const randomX = Math.floor(Math.random() * (SCREEN_WIDTH - 120)) + 40;
+    const randomX = Math.floor(Math.random() * (winW - 120)) + 40;
 
     const newEmoji: FloatingEmoji = {
       id: newId,
@@ -695,11 +752,13 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
   if (live.mode === 'audio_space') {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={DARK_BG} />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={themeColors.bgScreen} />
         <View style={{ flexDirection: 'row', paddingHorizontal: 12, paddingTop: 8 }}>
-          <TouchableOpacity style={styles.minimizeBtn} onPress={handleMinimizeToPip} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Icon name="chevron-down" size={20} color="#FFFFFF" />
+          {!lockedCall && (
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand" style={styles.minimizeBtn} onPress={handleMinimizeToPip} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon name="chevron-down" size={20} color={themeColors.textPrimary} />
           </TouchableOpacity>
+          )}
         </View>
         <AudioSpaceView roomName={displayName} />
       </SafeAreaView>
@@ -708,12 +767,15 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={DARK_BG} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={themeColors.bgScreen} />
 
       {/* ── 1. Top Header Bar ──────────────────────────────────────────────── */}
-      <View style={styles.topHeader}>
+      <View style={[styles.topHeader, isTab && { paddingHorizontal: 28 }]}>
         {/* Left: Speaker / Earpiece Toggle Pill */}
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={isSpeakerOn ? 'Speaker on. Switch to earpiece' : 'Earpiece on. Switch to speaker'}
+          accessibilityState={{ selected: isSpeakerOn }}
           style={styles.speakerPill}
           onPress={() => {
             const next = !isSpeakerOn;
@@ -725,7 +787,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
           <Icon
             name={isSpeakerOn ? 'volume-2' : 'volume-x'}
             size={14}
-            color={isSpeakerOn ? EMERALD : '#94A3B8'}
+            color={isSpeakerOn ? EMERALD : themeColors.iconSecondary}
           />
           <Text style={[styles.speakerText, isSpeakerOn && styles.speakerTextActive]}>
             {isSpeakerOn ? 'Speaker' : 'Earpiece'}
@@ -743,32 +805,32 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
           <Text
             style={[
               styles.statusText,
-              { color: callStatus === 'Connected' ? qualityColor : '#FDBA74' },
+              { color: callStatus === 'Connected' ? qualityColor : isDark ? '#FDBA74' : '#C2410C' },
             ]}
           >
-            {callStatus === 'Connected' ? formatTimer(callDuration) : 'Ringing...'}
+            {callStatus === 'Connected' ? formatTimer(callDuration) : callState.partnerReconnecting || callStatus === 'Reconnecting' ? 'Reconnecting…' : 'Ringing...'}
           </Text>
         </View>
 
         {/* Right: Chat & Minimize Buttons */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, display: lockedCall ? 'none' : 'flex' }}>
           <TouchableOpacity
             style={styles.chatHeaderBtn}
             onPress={handleMinimizeToPip}
             activeOpacity={0.75}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Icon name="message-square" size={15} color="#FFFFFF" />
+            <Icon name="message-square" size={15} color={themeColors.textPrimary} />
             <Text style={styles.chatHeaderText}>Chat</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Expand"
             style={styles.minimizeBtn}
             onPress={handleMinimizeToPip}
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Icon name="chevron-down" size={20} color="#FFFFFF" />
+            <Icon name="chevron-down" size={20} color={themeColors.textPrimary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -779,7 +841,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
         {floatingEmojis.map((item) => {
           const translateY = item.anim.interpolate({
             inputRange: [0, 1],
-            outputRange: [SCREEN_HEIGHT * 0.65, 80],
+            outputRange: [winH * 0.65, 80],
           });
           const opacity = item.anim.interpolate({
             inputRange: [0, 0.15, 0.75, 1],
@@ -812,14 +874,14 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
       <View style={styles.stage}>
         {screenSharer ? (
           /* Screen-share stage: show the shared screen full-size (never our own, to avoid a mirror loop) */
-          <View style={styles.videoStage}>
+          <View style={[styles.videoStage, videoStageSize]}>
             <View style={[styles.videoTile, { backgroundColor: '#000000' }]}>
               {screenSharer.isLocal ? (
                 <View style={styles.videoPlaceholderAvatar}>
                   <Icon name="monitor" size={34} color="#FFFFFF" />
                 </View>
               ) : (
-                <VideoView style={ABS_FILL} videoTrack={screenSharer.screenTrack} objectFit="contain" />
+                <CallVideoView style={ABS_FILL} videoTrack={screenSharer.screenTrack} objectFit="contain" pip />
               )}
               <View style={styles.videoNameTag}>
                 <Text style={styles.videoNameText} numberOfLines={1}>
@@ -837,11 +899,14 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               </TouchableOpacity>
             ) : null}
           </View>
+        ) : roomType !== 'direct' && live.participants.length > 0 ? (
+          /* Group call: every participant as a tile (video, or their picture) */
+          <CallParticipantGrid participants={live.participants} />
         ) : isVideoOff ? (
           /* Audio Stage / Concentric Ripple Rings Mode */
           <View style={styles.audioStage}>
             {/* Concentric Ripple Rings */}
-            <View style={styles.rippleCenter}>
+            <View style={[styles.rippleCenter, isTab && { transform: [{ scale: 1.3 }], marginVertical: 24 }]}>
               <Animated.View
                 style={[
                   styles.rippleOuter,
@@ -893,7 +958,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             </View>
 
             {/* Caller Name & Subtitle */}
-            <Text style={styles.callerTitle} numberOfLines={1}>
+            <Text style={[styles.callerTitle, { maxWidth: winW - 64 }]} numberOfLines={1}>
               {displayName}
             </Text>
 
@@ -918,7 +983,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                 <Icon
                   name={roomType === 'direct' ? 'user' : roomType === 'project' ? 'briefcase' : 'radio'}
                   size={12}
-                  color="#94A3B8"
+                  color={themeColors.iconSecondary}
                 />
                 <Text style={styles.roomTypeText}>
                   {roomType === 'direct'
@@ -933,17 +998,17 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             {/* Real-time Animated Equalizer Sound Wave Bars */}
             {callStatus === 'Connected' && (
               <View style={styles.equalizerRow}>
-                <Animated.View style={[styles.equalizerBar, { height: eqBar1 }]} />
-                <Animated.View style={[styles.equalizerBar, { height: eqBar2 }]} />
-                <Animated.View style={[styles.equalizerBar, { height: eqBar3 }]} />
-                <Animated.View style={[styles.equalizerBar, { height: eqBar4 }]} />
-                <Animated.View style={[styles.equalizerBar, { height: eqBar5 }]} />
+                <Animated.View style={[styles.equalizerBar, { height: EQ_FULL, transform: [{ scaleY: eqBar1 }] }]} />
+                <Animated.View style={[styles.equalizerBar, { height: EQ_FULL, transform: [{ scaleY: eqBar2 }] }]} />
+                <Animated.View style={[styles.equalizerBar, { height: EQ_FULL, transform: [{ scaleY: eqBar3 }] }]} />
+                <Animated.View style={[styles.equalizerBar, { height: EQ_FULL, transform: [{ scaleY: eqBar4 }] }]} />
+                <Animated.View style={[styles.equalizerBar, { height: EQ_FULL, transform: [{ scaleY: eqBar5 }] }]} />
               </View>
             )}
           </View>
         ) : (
           /* Video Stage Arena: first remote camera full-size, own camera as a small preview */
-          <View style={styles.videoStage}>
+          <View style={[styles.videoStage, videoStageSize]}>
             {(() => {
               const remoteWithVideo = live.participants.find((p) => !p.isLocal && p.isCameraOn && p.videoTrack);
               const me = live.participants.find((p) => p.isLocal);
@@ -951,10 +1016,11 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                 <>
                   <View style={styles.videoTile}>
                     {remoteWithVideo ? (
-                      <VideoView
+                      <CallVideoView
                         style={ABS_FILL}
                         videoTrack={remoteWithVideo.videoTrack}
                         objectFit="cover"
+                        pip
                       />
                     ) : (
                       <View style={styles.videoPlaceholderAvatar}>
@@ -963,12 +1029,12 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                     )}
                     <View style={styles.videoNameTag}>
                       <Text style={styles.videoNameText} numberOfLines={1}>
-                        {remoteWithVideo ? remoteWithVideo.name : callStatus === 'Connected' ? displayName : 'Calling…'}
+                        {remoteWithVideo ? remoteWithVideo.name : callStatus === 'Connected' ? displayName : callState.partnerReconnecting ? 'Reconnecting…' : 'Calling…'}
                       </Text>
                     </View>
                   </View>
                   {me?.isCameraOn && me.videoTrack ? (
-                    <View style={localPreviewStyle}>
+                    <View style={localPreviewStyle(isTab)}>
                       <VideoView
                         style={ABS_FILL}
                         videoTrack={me.videoTrack}
@@ -976,7 +1042,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                         mirror={isMirrorCameraOn}
                         zOrder={1}
                       />
-                      <TouchableOpacity style={flipBtnStyle} onPress={() => void flipCamera()} activeOpacity={0.8}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={flipBtnStyle(isTab)} onPress={() => void flipCamera()} activeOpacity={0.8}>
                         <Icon name="refresh-cw" size={14} color="#FFFFFF" />
                       </TouchableOpacity>
                     </View>
@@ -997,7 +1063,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(15, 15, 18, 0.92)',
+            backgroundColor: isDark ? 'rgba(15, 15, 18, 0.92)' : 'rgba(248, 250, 252, 0.96)',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 28,
@@ -1005,8 +1071,8 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
           }}
         >
           <Icon name="wifi-off" size={44} color="#EF4444" />
-          <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800', marginTop: 16 }}>Connection lost</Text>
-          <Text style={{ color: '#94A3B8', fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
+          <Text style={{ color: themeColors.textPrimary, fontSize: 20, fontWeight: '700', marginTop: 16 }}>Connection lost</Text>
+          <Text style={{ color: themeColors.textSecondary, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
             You were disconnected from the call. The call may still be running — tap Rejoin to get back in.
           </Text>
           <TouchableOpacity
@@ -1020,17 +1086,17 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             onPress={() => void rejoinLiveCall()}
             activeOpacity={0.85}
           >
-            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '800' }}>Rejoin call</Text>
+            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Rejoin call</Text>
           </TouchableOpacity>
           <TouchableOpacity style={{ marginTop: 14, padding: 10 }} onPress={handleEndCall} activeOpacity={0.7}>
-            <Text style={{ color: '#EF4444', fontSize: 15, fontWeight: '700' }}>Leave</Text>
+            <Text style={{ color: '#EF4444', fontSize: 16, fontWeight: '700' }}>Leave</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {/* ── 4. Reaction Picker Popover (Centered above Control Bar) ──────────── */}
       {showReactions && (
-        <View style={styles.reactionPopover}>
+        <View style={[styles.reactionPopover, isTab && { bottom: 128 }]}>
           {['❤️', '👏', '🔥', '😂', '😮', '😢', '👍', '🎉'].map((emoji) => (
             <TouchableOpacity
               key={emoji}
@@ -1045,13 +1111,13 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
       )}
 
       {/* ── 5. Fixed Bottom Floating Island Control Bar ────────────────────── */}
-      <View style={styles.bottomBarContainer}>
-        <View style={styles.islandControlBar}>
+      <View style={[styles.bottomBarContainer, isTab && { height: 112 }]}>
+        <View style={[styles.islandControlBar, isTab && { paddingHorizontal: 22, paddingVertical: 14, borderRadius: 44 }, narrowBar && { paddingHorizontal: 10, maxWidth: '100%' }]}>
           {/* Core Media Controls */}
-          <View style={styles.coreControlsRow}>
+          <View style={[styles.coreControlsRow, narrowBar && { gap: 6 }]}>
             {/* Mic Toggle */}
-            <TouchableOpacity
-              style={[styles.ctrlActionBtn, isMuted && styles.ctrlActionBtnMuted]}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={isMuted ? 'Unmute microphone' : 'Mute microphone'} accessibilityState={{ selected: isMuted }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={[styles.ctrlActionBtn, isTab && styles.ctrlActionBtnT, isMuted && styles.ctrlActionBtnMuted]}
               onPress={() => {
                 const next = !isMuted;
                 setIsMuted(next);
@@ -1062,13 +1128,13 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               <Icon
                 name={isMuted ? 'mic-off' : 'mic'}
                 size={19}
-                color={isMuted ? '#EF4444' : '#FFFFFF'}
+                color={isMuted ? '#EF4444' : themeColors.textPrimary}
               />
             </TouchableOpacity>
 
             {/* Video Toggle */}
-            <TouchableOpacity
-              style={[styles.ctrlActionBtn, isVideoOff && styles.ctrlActionBtnMuted]}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={isVideoOff ? 'Turn camera on' : 'Turn camera off'} accessibilityState={{ selected: isVideoOff }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={[styles.ctrlActionBtn, isTab && styles.ctrlActionBtnT, isVideoOff && styles.ctrlActionBtnMuted]}
               onPress={async () => {
                 const turnOn = isVideoOff;
                 const ok = await setCameraEnabled(turnOn);
@@ -1080,13 +1146,13 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               <Icon
                 name={isVideoOff ? 'video-off' : 'video'}
                 size={19}
-                color={isVideoOff ? '#EF4444' : '#FFFFFF'}
+                color={isVideoOff ? '#EF4444' : themeColors.textPrimary}
               />
             </TouchableOpacity>
 
             {/* End Call Button */}
-            <TouchableOpacity
-              style={styles.endCallBtn}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="End call" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={[styles.endCallBtn, isTab && styles.ctrlActionBtnT]}
               onPress={handleEndCall}
               activeOpacity={0.8}
             >
@@ -1095,24 +1161,24 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
           </View>
 
           {/* Vertical Glass Separator */}
-          <View style={styles.ctrlDivider} />
+          <View style={[styles.ctrlDivider, narrowBar && { marginHorizontal: 6 }]} />
 
           {/* Secondary In-Call Actions */}
-          <View style={styles.secondaryControlsRow}>
-            {/* Switch to Chat Button */}
-            <TouchableOpacity
-              style={styles.ctrlIconBtn}
+          <View style={[styles.secondaryControlsRow, narrowBar && { gap: 5 }]}>
+            {/* Switch to Chat Button (hidden while the call is shown over the lock screen) */}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Message"
+              style={[styles.ctrlIconBtn, isTab && styles.ctrlIconBtnT, iconBtnNarrow, lockedCall && { display: 'none' }]}
               onPress={handleMinimizeToPip}
               activeOpacity={0.75}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Icon name="message-square" size={18} color="#E2E8F0" />
+              <Icon name="message-square" size={18} color={themeColors.textPrimary} />
             </TouchableOpacity>
 
-            {/* Screen share (Android) */}
-            {Platform.OS === 'android' && (
-              <TouchableOpacity
-                style={[styles.ctrlIconBtn, live.isScreenSharing && styles.ctrlIconBtnActive]}
+            {/* Screen share */}
+            {(Platform.OS === 'android' || Platform.OS === 'ios') && (
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share screen" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={[styles.ctrlIconBtn, isTab && styles.ctrlIconBtnT, iconBtnNarrow, live.isScreenSharing && styles.ctrlIconBtnActive]}
                 onPress={async () => {
                   const ok = await setScreenShareEnabled(!live.isScreenSharing);
                   if (!ok && !live.isScreenSharing) {
@@ -1121,13 +1187,13 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                 }}
                 activeOpacity={0.75}
               >
-                <Icon name="monitor" size={18} color={live.isScreenSharing ? ORANGE : '#E2E8F0'} />
+                <Icon name="monitor" size={18} color={live.isScreenSharing ? ORANGE : themeColors.textPrimary} />
               </TouchableOpacity>
             )}
 
             {/* Reactions Popover Trigger */}
-            <TouchableOpacity
-              style={[styles.ctrlIconBtn, showReactions && styles.ctrlIconBtnActive]}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Emoji" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={[styles.ctrlIconBtn, isTab && styles.ctrlIconBtnT, iconBtnNarrow, showReactions && styles.ctrlIconBtnActive]}
               onPress={() => {
                 setShowReactions((prev) => !prev);
                 setShowParticipants(false);
@@ -1138,13 +1204,13 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               <Icon
                 name="smile"
                 size={18}
-                color={showReactions ? ORANGE : '#E2E8F0'}
+                color={showReactions ? ORANGE : themeColors.textPrimary}
               />
             </TouchableOpacity>
 
             {/* Participants Modal Trigger */}
-            <TouchableOpacity
-              style={[styles.ctrlIconBtn, showParticipants && styles.ctrlIconBtnActive]}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Participants, ${liveConnectedCount} connected`} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              style={[styles.ctrlIconBtn, isTab && styles.ctrlIconBtnT, iconBtnNarrow, showParticipants && styles.ctrlIconBtnActive]}
               onPress={() => {
                 setShowParticipants(true);
                 setShowReactions(false);
@@ -1155,7 +1221,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               <Icon
                 name="users"
                 size={18}
-                color={showParticipants ? ORANGE : '#E2E8F0'}
+                color={showParticipants ? ORANGE : themeColors.textPrimary}
               />
               <View style={styles.participantBadge}>
                 <Text style={styles.participantBadgeText}>
@@ -1165,8 +1231,8 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             </TouchableOpacity>
 
             {/* Settings Modal Trigger */}
-            <TouchableOpacity
-              style={[styles.ctrlIconBtn, showSettings && styles.ctrlIconBtnActive]}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Settings" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={[styles.ctrlIconBtn, isTab && styles.ctrlIconBtnT, iconBtnNarrow, showSettings && styles.ctrlIconBtnActive]}
               onPress={() => {
                 setShowSettings(true);
                 setShowReactions(false);
@@ -1177,7 +1243,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               <Icon
                 name="settings"
                 size={18}
-                color={showSettings ? ORANGE : '#E2E8F0'}
+                color={showSettings ? ORANGE : themeColors.textPrimary}
               />
             </TouchableOpacity>
           </View>
@@ -1197,7 +1263,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             activeOpacity={1}
             onPress={() => setShowParticipants(false)}
           />
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxHeight: winH * 0.78 }, isTab && { maxWidth: 560 }]}>
             {/* Header */}
             <View style={styles.modalHeader}>
               <View>
@@ -1206,11 +1272,11 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                   In This Call ({liveConnectedCount})
                 </Text>
               </View>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 style={styles.modalCloseBtn}
                 onPress={() => setShowParticipants(false)}
               >
-                <Icon name="x" size={18} color="#FFFFFF" />
+                <Icon name="x" size={18} color={themeColors.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -1240,7 +1306,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                       </View>
                     </View>
                     <View style={styles.participantStatusRow}>
-                      <View style={[styles.participantStatusIndicator, { backgroundColor: isSpeaking ? EMERALD : '#94A3B8' }]} />
+                      <View style={[styles.participantStatusIndicator, { backgroundColor: isSpeaking ? EMERALD : themeColors.iconSecondary }]} />
                       <Text style={[styles.participantStatusText, isSpeaking && { color: EMERALD }]}>
                         {isSpeaking ? 'Speaking' : 'Connected'}
                       </Text>
@@ -1278,7 +1344,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                               {pName}
                             </Text>
                             <View style={styles.participantStatusRow}>
-                              <View style={[styles.participantStatusIndicator, { backgroundColor: pSpeaking ? EMERALD : '#94A3B8' }]} />
+                              <View style={[styles.participantStatusIndicator, { backgroundColor: pSpeaking ? EMERALD : themeColors.iconSecondary }]} />
                               <Text style={[styles.participantStatusText, pSpeaking && { color: EMERALD }]}>
                                 {pSpeaking ? 'Speaking' : 'Connected'}
                               </Text>
@@ -1315,7 +1381,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               {notInCallMembers.length > 0 && (
                 <View style={styles.notInCallSection}>
                   <View style={styles.sectionHeaderRow}>
-                    <Icon name="user-x" size={10} color="#64748B" />
+                    <Icon name="user-x" size={10} color={themeColors.iconMuted} />
                     <Text style={styles.sectionHeaderTitle}>NOT IN CALL ({notInCallMembers.length})</Text>
                   </View>
                   {notInCallMembers.map((m, idx) => {
@@ -1391,18 +1457,18 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
             activeOpacity={1}
             onPress={() => setShowSettings(false)}
           />
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxHeight: winH * 0.78 }, isTab && { maxWidth: 560 }]}>
             {/* Header */}
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalSubtitle}>PREFERENCES</Text>
                 <Text style={styles.modalTitle}>Call Settings</Text>
               </View>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 style={styles.modalCloseBtn}
                 onPress={() => setShowSettings(false)}
               >
-                <Icon name="x" size={18} color="#FFFFFF" />
+                <Icon name="x" size={18} color={themeColors.textPrimary} />
               </TouchableOpacity>
             </View>
 
@@ -1416,7 +1482,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               {/* Speaker Setting */}
               <View style={styles.settingRow}>
                 <View style={styles.settingIconWrap}>
-                  <Icon name="volume-2" size={16} color={isSpeakerOn ? EMERALD : '#94A3B8'} />
+                  <Icon name="volume-2" size={16} color={isSpeakerOn ? EMERALD : themeColors.iconSecondary} />
                 </View>
                 <View style={styles.settingInfo}>
                   <Text style={styles.settingLabel}>Speakerphone</Text>
@@ -1424,19 +1490,20 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                 </View>
                 <Switch
                   value={isSpeakerOn}
+                  accessibilityLabel="Speakerphone"
                   onValueChange={(v) => {
                     setIsSpeakerOn(v);
                     void setSpeakerOn(v);
                   }}
-                  trackColor={{ false: '#334155', true: 'rgba(16, 185, 129, 0.4)' }}
-                  thumbColor={isSpeakerOn ? EMERALD : '#94A3B8'}
+                  trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: 'rgba(16, 185, 129, 0.4)' }}
+                  thumbColor={isSpeakerOn ? EMERALD : themeColors.iconSecondary}
                 />
               </View>
 
               {/* Noise Suppression */}
               <View style={styles.settingRow}>
                 <View style={styles.settingIconWrap}>
-                  <Icon name="zap" size={16} color={isNoiseSuppressionOn ? AMBER : '#94A3B8'} />
+                  <Icon name="zap" size={16} color={isNoiseSuppressionOn ? AMBER : themeColors.iconSecondary} />
                 </View>
                 <View style={styles.settingInfo}>
                   <Text style={styles.settingLabel}>Noise Suppression</Text>
@@ -1444,9 +1511,10 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                 </View>
                 <Switch
                   value={isNoiseSuppressionOn}
+                  accessibilityLabel="Noise Suppression"
                   onValueChange={setIsNoiseSuppressionOn}
-                  trackColor={{ false: '#334155', true: 'rgba(245, 158, 11, 0.4)' }}
-                  thumbColor={isNoiseSuppressionOn ? AMBER : '#94A3B8'}
+                  trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: 'rgba(245, 158, 11, 0.4)' }}
+                  thumbColor={isNoiseSuppressionOn ? AMBER : themeColors.iconSecondary}
                 />
               </View>
 
@@ -1459,7 +1527,7 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
               {/* HD Video Quality */}
               <View style={styles.settingRow}>
                 <View style={styles.settingIconWrap}>
-                  <Icon name="monitor" size={16} color={isHDVideoOn ? ORANGE : '#94A3B8'} />
+                  <Icon name="monitor" size={16} color={isHDVideoOn ? ORANGE : themeColors.iconSecondary} />
                 </View>
                 <View style={styles.settingInfo}>
                   <Text style={styles.settingLabel}>HD Video Stream</Text>
@@ -1467,16 +1535,17 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                 </View>
                 <Switch
                   value={isHDVideoOn}
+                  accessibilityLabel="HD Video Stream"
                   onValueChange={setIsHDVideoOn}
-                  trackColor={{ false: '#334155', true: 'rgba(255, 75, 51, 0.4)' }}
-                  thumbColor={isHDVideoOn ? ORANGE : '#94A3B8'}
+                  trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: 'rgba(255, 75, 51, 0.4)' }}
+                  thumbColor={isHDVideoOn ? ORANGE : themeColors.iconSecondary}
                 />
               </View>
 
               {/* Mirror Front Camera */}
               <View style={styles.settingRow}>
                 <View style={styles.settingIconWrap}>
-                  <Icon name="refresh-cw" size={16} color={isMirrorCameraOn ? ORANGE : '#94A3B8'} />
+                  <Icon name="refresh-cw" size={16} color={isMirrorCameraOn ? ORANGE : themeColors.iconSecondary} />
                 </View>
                 <View style={styles.settingInfo}>
                   <Text style={styles.settingLabel}>Mirror Front Camera</Text>
@@ -1484,9 +1553,10 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
                 </View>
                 <Switch
                   value={isMirrorCameraOn}
+                  accessibilityLabel="Mirror Front Camera"
                   onValueChange={setIsMirrorCameraOn}
-                  trackColor={{ false: '#334155', true: 'rgba(255, 75, 51, 0.4)' }}
-                  thumbColor={isMirrorCameraOn ? ORANGE : '#94A3B8'}
+                  trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: 'rgba(255, 75, 51, 0.4)' }}
+                  thumbColor={isMirrorCameraOn ? ORANGE : themeColors.iconSecondary}
                 />
               </View>
 
@@ -1530,10 +1600,13 @@ export const CallScreen = ({ route, navigation }: { route: any; navigation: any 
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors, isDark: boolean) => {
+  const d = (dark: string, light: string) => (isDark ? dark : light);
+  return StyleSheet.create({
+
   container: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: c.bgScreen,
   },
 
   // ── Top Header ─────────────────────────────────────────────────────────────
@@ -1552,17 +1625,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: d('rgba(0, 0, 0, 0.65)', c.bgCard),
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: d(GLASS_BORDER, c.border),
   },
   speakerText: {
-    color: '#94A3B8',
+    color: c.textSecondary,
     fontSize: 12,
     fontWeight: '600',
   },
   speakerTextActive: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
   },
   statusPill: {
     flexDirection: 'row',
@@ -1571,9 +1644,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: d('rgba(0, 0, 0, 0.75)', c.bgCard),
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: d(GLASS_BORDER, c.border),
   },
   statusDot: {
     width: 6,
@@ -1587,12 +1660,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   minimizeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: d('rgba(0, 0, 0, 0.65)', c.bgCard),
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: d(GLASS_BORDER, c.border),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1608,9 +1681,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 75, 51, 0.5)',
   },
   chatHeaderText: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   // ── Floating Emojis ────────────────────────────────────────────────────────
@@ -1620,7 +1693,7 @@ const styles = StyleSheet.create({
   },
   floatingEmoji: {
     position: 'absolute',
-    fontSize: 42,
+    fontSize: 44,
   },
 
   // ── Main Stage ─────────────────────────────────────────────────────────────
@@ -1690,23 +1763,22 @@ const styles = StyleSheet.create({
   avatarInner: {
     flex: 1,
     borderRadius: 50,
-    backgroundColor: '#1E1E24',
+    backgroundColor: c.chipBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitial: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 44,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   callerTitle: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 24,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: -0.5,
     textAlign: 'center',
     marginBottom: 8,
-    maxWidth: SCREEN_WIDTH - 64,
   },
   speakingBadge: {
     flexDirection: 'row',
@@ -1724,14 +1796,14 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#94A3B8',
+    backgroundColor: c.iconSecondary,
   },
   speakingDotActive: {
     backgroundColor: EMERALD,
   },
   speakingText: {
-    color: '#34D399',
-    fontSize: 11,
+    color: d('#34D399', '#047857'),
+    fontSize: 12,
     fontWeight: '700',
   },
   ringingBadge: {
@@ -1753,10 +1825,9 @@ const styles = StyleSheet.create({
     backgroundColor: ORANGE,
   },
   ringingText: {
-    color: '#FDBA74',
-    fontSize: 11,
+    color: d('#FDBA74', '#C2410C'),
+    fontSize: 12,
     fontWeight: '700',
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   roomTypePill: {
@@ -1766,14 +1837,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: d('rgba(255, 255, 255, 0.05)', c.bgCard),
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: d(GLASS_BORDER, c.border),
     marginBottom: 24,
   },
   roomTypeText: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: c.textSecondary,
+    fontSize: 12,
     fontWeight: '600',
   },
   equalizerRow: {
@@ -1793,7 +1864,7 @@ const styles = StyleSheet.create({
   // ── Video Stage ────────────────────────────────────────────────────────────
   videoStage: {
     width: '100%',
-    height: SCREEN_HEIGHT * 0.58,
+    height: 360,
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#000000',
@@ -1817,7 +1888,7 @@ const styles = StyleSheet.create({
   videoPlaceholderText: {
     color: '#FFFFFF',
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   videoNameTag: {
     position: 'absolute',
@@ -1850,9 +1921,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 28,
-    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    backgroundColor: d('rgba(0, 0, 0, 0.92)', c.bgCard),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: d('rgba(255, 255, 255, 0.2)', c.border),
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.8,
@@ -1865,7 +1936,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   reactionEmojiText: {
-    fontSize: 22,
+    fontSize: 24,
   },
 
   // ── Fixed Bottom Floating Island Control Bar ──────────────────────────────
@@ -1882,9 +1953,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 36,
-    backgroundColor: 'rgba(24, 24, 28, 0.95)',
+    backgroundColor: d('rgba(24, 24, 28, 0.95)', c.bgCard),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: d('rgba(255, 255, 255, 0.18)', c.border),
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.75,
@@ -1900,12 +1971,14 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: d('rgba(255, 255, 255, 0.1)', c.chipBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: d('rgba(255, 255, 255, 0.15)', c.border),
     alignItems: 'center',
     justifyContent: 'center',
   },
+  ctrlActionBtnT: { width: 58, height: 58, borderRadius: 29 },
+  ctrlIconBtnT: { width: 48, height: 48, borderRadius: 24 },
   ctrlActionBtnMuted: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
     borderColor: 'rgba(239, 68, 68, 0.4)',
@@ -1928,7 +2001,7 @@ const styles = StyleSheet.create({
   ctrlDivider: {
     width: 1,
     height: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: d('rgba(255, 255, 255, 0.2)', c.divider),
     marginHorizontal: 10,
   },
   secondaryControlsRow: {
@@ -1940,9 +2013,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: d('rgba(255, 255, 255, 0.08)', c.chipBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: d('rgba(255, 255, 255, 0.12)', c.border),
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -1964,8 +2037,8 @@ const styles = StyleSheet.create({
   },
   participantBadgeText: {
     color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // ── Modals & Sheets ────────────────────────────────────────────────────────
@@ -1982,12 +2055,12 @@ const styles = StyleSheet.create({
   modalContent: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: '#0A0A0F',
+    backgroundColor: d('#0A0A0F', c.bgCard),
     borderRadius: 32,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: d('rgba(255, 255, 255, 0.12)', c.border),
     padding: 22,
-    maxHeight: SCREEN_HEIGHT * 0.78,
+    maxHeight: 560,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.9,
@@ -2002,23 +2075,23 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     color: ORANGE,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.5,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   modalTitle: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     marginTop: 2,
   },
   modalCloseBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: d('rgba(255, 255, 255, 0.08)', c.chipBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: d('rgba(255, 255, 255, 0.12)', c.border),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2035,11 +2108,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   sectionHeaderTitle: {
-    color: '#94A3B8',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    color: c.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   participantItem: {
     flexDirection: 'row',
@@ -2047,9 +2119,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 14,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: d('rgba(255, 255, 255, 0.04)', c.inputBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: d('rgba(255, 255, 255, 0.08)', c.border),
     marginBottom: 8,
   },
   participantLeft: {
@@ -2091,12 +2163,12 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   participantAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+    color: c.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
   },
   participantName: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 14,
     fontWeight: '700',
     flex: 1,
@@ -2111,8 +2183,8 @@ const styles = StyleSheet.create({
   },
   youBadgeText: {
     color: ORANGE,
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   participantStatusRow: {
@@ -2127,8 +2199,8 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
   },
   participantStatusText: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: c.textSecondary,
+    fontSize: 12,
     fontWeight: '500',
   },
   micIndicator: {
@@ -2157,7 +2229,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   securityText: {
-    color: '#A7F3D0',
+    color: d('#A7F3D0', '#047857'),
     fontSize: 12,
     fontWeight: '500',
     flex: 1,
@@ -2168,7 +2240,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: c.divider,
   },
   notInCallItem: {
     flexDirection: 'row',
@@ -2176,34 +2248,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 12,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: d('rgba(255, 255, 255, 0.03)', c.inputBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: d('rgba(255, 255, 255, 0.06)', c.border),
     marginBottom: 8,
   },
   notInCallAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: d('rgba(255, 255, 255, 0.08)', c.chipBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: d('rgba(255, 255, 255, 0.15)', c.border),
     alignItems: 'center',
     justifyContent: 'center',
   },
   notInCallAvatarText: {
-    color: '#94A3B8',
+    color: c.textSecondary,
     fontSize: 14,
     fontWeight: '700',
   },
   notInCallName: {
-    color: '#E2E8F0',
+    color: c.textPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
   notInCallStatus: {
-    color: '#64748B',
-    fontSize: 10,
+    color: c.textMuted,
+    fontSize: 12,
     fontWeight: '500',
     marginTop: 1,
   },
@@ -2230,7 +2302,7 @@ const styles = StyleSheet.create({
   },
   ringBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   ringBtnTextActive: {
@@ -2246,11 +2318,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   settingSectionTitle: {
-    color: '#64748B',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+    color: c.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   settingRow: {
     flexDirection: 'row',
@@ -2258,15 +2329,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+    borderBottomColor: c.divider,
   },
   settingIconWrap: {
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: d('rgba(255, 255, 255, 0.05)', c.chipBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: d('rgba(255, 255, 255, 0.08)', c.border),
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -2276,12 +2347,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   settingLabel: {
-    color: '#FFFFFF',
-    fontSize: 15,
+    color: c.textPrimary,
+    fontSize: 16,
     fontWeight: '700',
   },
   settingDescription: {
-    color: '#94A3B8',
+    color: c.textSecondary,
     fontSize: 12,
     marginTop: 2,
   },
@@ -2300,22 +2371,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingE2EETitle: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 13,
     fontWeight: '700',
   },
   settingE2EEDesc: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: c.textSecondary,
+    fontSize: 12,
     marginTop: 3,
     lineHeight: 16,
   },
   connectionInfoBox: {
     padding: 12,
     borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: d('rgba(255, 255, 255, 0.04)', c.inputBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: d('rgba(255, 255, 255, 0.08)', c.border),
     marginTop: 12,
   },
   connectionInfoRow: {
@@ -2328,8 +2399,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   connectionInfoDesc: {
-    color: '#64748B',
-    fontSize: 11,
+    color: c.textMuted,
+    fontSize: 12,
     marginTop: 3,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
@@ -2383,7 +2454,7 @@ const styles = StyleSheet.create({
   },
   nativePipTimer: {
     color: EMERALD,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
@@ -2409,11 +2480,11 @@ const styles = StyleSheet.create({
   nativePipAvatarText: {
     color: '#FFFFFF',
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   nativePipTitle: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     maxWidth: 120,
     textAlign: 'center',
@@ -2434,7 +2505,7 @@ const styles = StyleSheet.create({
   },
   nativePipStatus: {
     color: '#A7F3D0',
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -2482,7 +2553,7 @@ const styles = StyleSheet.create({
   },
   pipTimer: {
     color: EMERALD,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
@@ -2530,7 +2601,7 @@ const styles = StyleSheet.create({
   pipAvatarText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   pipName: {
     color: '#FFFFFF',
@@ -2559,7 +2630,7 @@ const styles = StyleSheet.create({
   },
   pipSpeakingText: {
     color: EMERALD,
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -2599,6 +2670,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-});
+  });
+};
 
 export default CallScreen;

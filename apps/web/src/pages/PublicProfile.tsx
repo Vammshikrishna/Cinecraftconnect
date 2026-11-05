@@ -8,28 +8,8 @@ import { supabase } from '@/integrations/supabase/client';
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
-import {
-  MapPin,
-  Globe,
-  MessageCircle,
-  UserPlus,
-  UserCheck,
-  Clock,
-  Instagram,
-  Linkedin,
-  Twitter,
-  Facebook,
-  Youtube,
-  Star,
-  Building2,
-  Zap,
-  Flag,
-  Briefcase,
-  Share2,
-  CalendarDays,
-} from 'lucide-react';
+import { MapPin, Globe, MessageCircle, UserPlus, UserCheck, Clock, Instagram, Linkedin, Twitter, Facebook, Youtube, Star, Building2, Zap, Flag, Briefcase, CalendarDays } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { NetworkListDialog } from '@/components/profile/NetworkListDialog';
 import ReportDialog from '@/components/common/ReportDialog';
@@ -46,11 +26,13 @@ import { formatURL } from '@/lib/utils';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useRecordView } from '@/hooks/useRecordView';
 import { useAppRole } from '@/hooks/useAppRole';
-import { Pencil } from 'lucide-react';
+import { Pencil, Lock, CalendarClock, FolderPlus, ListPlus } from 'lucide-react';
 import SEO from '@/components/common/SEO';
 import { getOptimizedImage } from '@/utils/image-optimization';
 import { useCachedImage } from '@/hooks/useCachedImage';
 import { BackButton } from '@/components/common/BackButton';
+import { LoadError } from '@/components/settings/LoadError';
+import { undoable } from '@/lib/undoable';
 import { ConnectNoteDialog } from '@/components/network/ConnectNoteDialog';
 import { IntroductionDialog } from '@/components/network/IntroductionDialog';
 import { ProfileHighlights, useProfileHighlights } from '@/components/profile/ProfileHighlights';
@@ -60,6 +42,12 @@ import { ProfileContextStrip } from '@/components/profile/ProfileContextStrip';
 import { RequestDatesDialog, InviteToProjectDialog, RecommendDialog, AddToShortlistDialog } from '@/components/profile/CollaborationDialogs';
 import { RecommendationsSection } from '@/components/profile/RecommendationsSection';
 import { AvailabilityBadge } from '@/components/network/AvailabilityBadge';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { ProfileHero } from '@/components/profile/ProfileHero';
+import { ProfileDetailsCard } from '@/components/profile/ProfileDetailsCard';
+import { ProfileSkeleton } from '@/components/profile/ProfileSkeleton';
+import { friendlyError } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 interface Profile {
   id: string;
@@ -71,7 +59,6 @@ interface Profile {
   location: string;
   website: string;
   skills: string[];
-  cover_image_url?: string;
   instagram_url?: string;
   youtube_url?: string;
   is_verified?: boolean;
@@ -105,6 +92,8 @@ const PublicProfile = () => {
   const [connectionStatus, setConnectionStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'connected'>('none');
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [relBusy, setRelBusy] = useState(false);
   const [introOpen, setIntroOpen] = useState(false);
   const [availability, setAvailability] = useState<any>(null);
   // what the viewer may see: ok | private | unavailable | blocked_by_me | self | not_found
@@ -133,8 +122,6 @@ const PublicProfile = () => {
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
 
-  const coverUrl = profile?.cover_image_url ? getOptimizedImage(profile.cover_image_url, { height: 400 }) : '';
-  const cachedCover = useCachedImage(coverUrl);
   const avatarUrl = profile?.avatar_url ? getOptimizedImage(profile.avatar_url, { width: 400, height: 400 }) : '';
   const cachedAvatar = useCachedImage(avatarUrl);
 
@@ -153,6 +140,7 @@ const PublicProfile = () => {
   const fetchProfile = async () => {
     setLoading(true);
     setAccess(null);
+    setLoadFailed(false);
     try {
       let identifier = (userId || '').trim();
       // Strip leading '@' if present
@@ -192,7 +180,7 @@ const PublicProfile = () => {
         }
       }
       if (resolvedId) {
-        const res = await supabase.from('profiles').select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, account_type, accept_direct_pitches, onboarding_completed, is_internal, public_key, is_verified, is_banned, trust_score, is_official_team').eq('id', resolvedId).maybeSingle();
+        const res = await supabase.from('profiles').select('id, updated_at, username, full_name, avatar_url, website, bio, location, experience, craft, account_type, accept_direct_pitches, onboarding_completed, is_internal, public_key, is_verified, is_banned, trust_score, is_official_team').eq('id', resolvedId).maybeSingle();
         data = res.data;
         error = res.error;
       }
@@ -214,7 +202,8 @@ const PublicProfile = () => {
       setProfile(mergeProfileExtras({ ...data, skills: (data as any).skills || [] } as any, extras) as unknown as Profile);
 
       // Now fetch connection status and other counts with the resolved UUID
-      fetchConnectionStatus(data.id);
+      // pass the loaded row: the profile state above is not updated yet, and a Fan profile is followed, not connected
+      fetchConnectionStatus(data.id, data);
       
       // real counts from the server (the old code downloaded every follow row, which the API caps at 1,000)
       const { data: counts } = await (supabase as any).rpc('get_profile_counts', { p_user: data.id });
@@ -227,7 +216,10 @@ const PublicProfile = () => {
 
     } catch (error) {
       console.error('Error fetching profile:', error);
-      toast({ title: 'Error', description: 'Failed to load profile', variant: 'destructive' });
+      // a network or server failure is not the same as "this person does not exist"
+      const notFound = error instanceof Error && error.message === 'Profile not found or is restricted';
+      setLoadFailed(!notFound);
+      if (!notFound) toast({ title: 'Could not load the profile', description: 'Check your connection and try again.', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -265,40 +257,50 @@ const PublicProfile = () => {
       toast({
         title: 'Sign in required',
         description: 'Redirecting to sign in page...',
-        variant: 'destructive'
       });
       push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
       return;
     }
-    if (!profile?.id) return;
+    if (!profile?.id || relBusy) return;
     const isFollowRelationship = isFan || profile.account_type === 'fan';
-    
+    const prevStatus = connectionStatus;
+    // answer at tap time: flip the button now, put it back if the write fails
+    setRelBusy(true);
+    setConnectionStatus(isFollowRelationship ? 'connected' : 'pending_sent');
+    if (isFollowRelationship) setFollowersCount(prev => prev + 1);
     try {
       if (isFollowRelationship) {
-        const { error } = await supabase.from('user_follows' as any).insert({ 
-          follower_id: user.id, 
+        const { error } = await supabase.from('user_follows' as any).insert({
+          follower_id: user.id,
           following_id: profile.id
         });
-        toast({ title: 'Success', description: 'You are now following' });
-        setFollowersCount(prev => prev + 1);
+        if (error) throw error;
+        toast({ title: 'Following', description: `You now follow ${profile.full_name || profile.username || 'this person'}.` });
       } else {
-        const { error } = await supabase.from('user_connections').insert({ 
-          follower_id: user.id, 
-          following_id: profile.id, 
-          status: 'pending' 
+        const { error } = await supabase.from('user_connections').insert({
+          follower_id: user.id,
+          following_id: profile.id,
+          status: 'pending'
         });
         if (error) throw error;
-        toast({ title: 'Success', description: 'Connection request sent' });
+        toast({ title: 'Connection request sent' });
       }
-      fetchConnectionStatus(profile.id);
+      await fetchConnectionStatus(profile.id);
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to send request', variant: 'destructive' });
+      setConnectionStatus(prevStatus);
+      if (isFollowRelationship) setFollowersCount(prev => Math.max(0, prev - 1));
+      toast({ title: 'Could not send the request', description: friendlyError(error, 'Failed to send request'), variant: 'destructive' });
+    } finally {
+      setRelBusy(false);
     }
   };
 
   // Connect (non-fan): send the request, optionally with a short note
   const sendConnectionWithNote = async (note?: string) => {
-    if (!user || !profile?.id) return;
+    if (!user || !profile?.id || relBusy) return;
+    const prevStatus = connectionStatus;
+    setRelBusy(true);
+    setConnectionStatus('pending_sent');
     try {
       const { error } = await (supabase as any).from('user_connections').insert({
         follower_id: user.id,
@@ -307,40 +309,75 @@ const PublicProfile = () => {
         note: note || null,
       });
       if (error) throw error;
-      toast({ title: 'Success', description: 'Connection request sent' });
-      fetchConnectionStatus(profile.id);
+      toast({ title: 'Connection request sent' });
+      await fetchConnectionStatus(profile.id);
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to send request', variant: 'destructive' });
+      setConnectionStatus(prevStatus);
+      toast({ title: 'Could not send the request', description: friendlyError(error, 'Failed to send request'), variant: 'destructive' });
+    } finally {
+      setRelBusy(false);
     }
   };
 
   const handleCancelRequest = async () => {
-    if (!connectionId) return;
+    if (!connectionId || relBusy) return;
     const isFollowRelationship = isFan || profile?.account_type === 'fan';
-    
+    const rowId = connectionId;
+    const prevStatus = connectionStatus;
+    if (isFollowRelationship) {
+      // unfollow is one tap, so give a few seconds to take it back; the delete happens after that
+      undoable({
+        title: 'Unfollowed',
+        description: profile?.full_name || profile?.username || undefined,
+        apply: () => { setConnectionStatus('none'); setFollowersCount(prev => Math.max(0, prev - 1)); },
+        revert: () => { setConnectionStatus(prevStatus); setFollowersCount(prev => prev + 1); },
+        commit: async () => {
+          const { error } = await supabase.from('user_follows' as any).delete().eq('id', rowId);
+          if (error) {
+            setConnectionStatus(prevStatus);
+            setFollowersCount(prev => prev + 1);
+            toast({ title: 'Could not unfollow', description: friendlyError(error), variant: 'destructive' });
+          } else {
+            setConnectionId(null);
+          }
+        },
+      });
+      return;
+    }
+    setRelBusy(true);
+    setConnectionStatus('none');
     try {
-      if (isFollowRelationship) {
-        const { error } = await supabase.from('user_follows' as any).delete().eq('id', connectionId);
-        toast({ title: 'Success', description: 'Unfollowed successfully' });
-        setFollowersCount(prev => Math.max(0, prev - 1));
-      } else {
-        const { error } = await supabase.from('user_connections').delete().eq('id', connectionId);
-        if (error) throw error;
-        toast({ title: 'Success', description: 'Connection request cancelled' });
-      }
-      setConnectionStatus('none');
+      const { error } = await supabase.from('user_connections').delete().eq('id', rowId);
+      if (error) throw error;
+      toast({ title: 'Connection request cancelled' });
       setConnectionId(null);
     } catch (error: any) {
-      toast({ title: 'Error', description: 'Failed to cancel', variant: 'destructive' });
+      setConnectionStatus(prevStatus);
+      toast({ title: 'Could not cancel', description: friendlyError(error), variant: 'destructive' });
+    } finally {
+      setRelBusy(false);
     }
   };
 
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><LoadingSpinner size="lg" /></div>;
-
+  if (loading) {
+    return (
+      <div className="bg-background min-h-dvh flex justify-center pt-20 pb-40">
+        <div className="w-full max-w-[1400px] px-4 md:px-8"><ProfileSkeleton withBackRow /></div>
+      </div>
+    );
+  }
+  if (!profile && loadFailed) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-4">
+        <LoadError title="Could not load this profile" onRetry={() => fetchProfile()} />
+        <BackButton />
+      </div>
+    );
+  }
   if (!profile) {
     return (
-      <div className="flex h-screen items-center justify-center text-center">
+      <div className="flex h-dvh items-center justify-center text-center">
         <div>
           <h2 className="text-2xl font-bold mb-2">{access?.state === 'unavailable' ? 'This profile is unavailable' : 'Profile Not Found'}</h2>
           <p className="text-muted-foreground mb-4 max-w-sm mx-auto">{access?.state === 'unavailable' ? 'It may have been removed or is not visible to you.' : 'The link may be mistyped, or the person changed their username.'}</p>
@@ -352,7 +389,7 @@ const PublicProfile = () => {
   }
 
   return (
-    <div className="bg-background text-foreground min-h-screen flex justify-center pt-20 pb-40 relative overflow-hidden">
+    <div className="bg-background text-foreground min-h-dvh flex justify-center pt-20 pb-40 relative overflow-hidden">
       <SEO 
         title={profile ? `${profile.full_name || profile.username} | ${profile.craft || 'Creator'}` : 'Professional Profile'} 
         description={profile?.bio || `View the professional portfolio and credits of ${profile?.full_name || 'this creator'} on CineCraft Connect.`} 
@@ -360,32 +397,22 @@ const PublicProfile = () => {
       {/* Background ambient effects */}
       <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] pointer-events-none opacity-50" />
 
-      <div className="w-full max-w-4xl px-4 md:px-8 relative z-10">
+      <div className="w-full max-w-[1400px] px-4 md:px-8 relative z-10">
         <div className="flex items-center justify-between gap-3 mb-6">
           <BackButton className="mb-0" />
 
           {/* Availability, Share, Flag buttons aligned to the right corner */}
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap ml-auto">
-            {profile.account_type !== 'fan' && (
-              <Button 
-                variant="outline"
-                className="h-9 px-3.5 border-primary/20 bg-card/70 backdrop-blur-md hover:bg-primary/10 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm text-foreground"
-                onClick={() => push(`/profile/availability/${profile.id}`)}
-              >
-                <CalendarDays className="h-4 w-4 text-primary" />
-                <span>Availability</span>
-              </Button>
-            )}
 
             {user && (
               <Button 
                 variant="outline" 
                 size="icon" 
-                className="h-9 w-9 rounded-full border-border/60 bg-card/70 backdrop-blur-md hover:bg-primary/10 hover:text-primary flex items-center justify-center shrink-0 shadow-sm" 
+                className="h-11 w-11 md:h-9 md:w-9 rounded-full border-border/60 bg-card/70 hover:bg-primary/10 hover:text-primary flex items-center justify-center shrink-0 shadow-sm" 
                 onClick={() => setShowShareSheet(true)}
                 title="Share Profile"
               >
-                <Share2 className="h-4 w-4" />
+                <ShareIcon className="h-4 w-4" />
               </Button>
             )}
 
@@ -393,7 +420,7 @@ const PublicProfile = () => {
               <Button 
                 variant="outline" 
                 size="icon" 
-                className="h-9 w-9 rounded-full border-border/60 bg-card/70 backdrop-blur-md hover:bg-rose-500/10 hover:text-rose-500 flex items-center justify-center shrink-0 shadow-sm" 
+                className="h-11 w-11 md:h-9 md:w-9 rounded-full border-border/60 bg-card/70 hover:bg-rose-500/10 hover:text-rose-500 flex items-center justify-center shrink-0 shadow-sm" 
                 onClick={() => setIsReportOpen(true)}
                 title="Report Profile"
               >
@@ -404,219 +431,60 @@ const PublicProfile = () => {
           </div>
         </div>
 
-        <header className="glass-card mb-10 relative overflow-hidden group">
-          {/* Cover Photo - Balanced height */}
-          <div className="relative w-full h-[clamp(120px,20vh,220px)] overflow-hidden">
-            {profile.cover_image_url ? (
-              <img loading="lazy" decoding="async" 
-                src={cachedCover} 
-                alt="Cover" 
-                className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" 
-              />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-primary/10 via-primary/5 to-secondary/5" />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-          </div>
-
-          <div className="relative z-10 px-6 md:px-10 pb-8">
-            {/* Main Content Row: 2 Zones on Desktop (Avatar & Info) */}
-            <div className="flex flex-col lg:flex-row items-center lg:items-center gap-6 lg:gap-10 -mt-[clamp(60px,11vw,90px)]">
-              
-              {/* Zone 1: Avatar + Professional Tags */}
-              <div className="shrink-0 flex flex-col items-center gap-3">
-                <div className="relative group/avatar">
-                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-700" />
-                  <Avatar className="w-[clamp(130px,22vw,180px)] h-[clamp(130px,22vw,180px)] border-[5px] border-background shadow-xl relative z-10">
-                    <AvatarImage 
-                      src={cachedAvatar} 
-                      alt={profile.username || 'User'} 
-                      className="object-cover" 
-                    />
-                    <AvatarFallback className="bg-muted text-3xl font-black text-muted-foreground">
-                      {profile.username?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-              </div>
-
-              {/* Zone 2: Name, Handle, Bio, Socials - The heart of the profile */}
-              <div className="flex-1 flex flex-col items-center lg:items-start min-w-0 lg:pt-24 w-full">
-                <div className="flex flex-col items-center lg:items-start gap-3 w-full">
-                  <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
-                    {profile.account_type === 'fan' ? (
-                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
-                        TYPE // FAN
-                      </div>
-                    ) : (
-                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
-                        TYPE // {profile.account_type === 'studio' ? 'STUDIO' : 'PRO'}
-                      </div>
-                    )}
-
-                    <AvailabilityBadge status={availability?.status} />
-                    {profile.craft && (
-                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
-                        CRAFT // {profile.craft}
-                      </div>
-                    )}
-                    {profile.location && (
-                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
-                        LOC // {profile.location}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col items-center lg:items-start leading-tight w-full">
-                    <h1 className="font-serif text-2xl sm:text-3xl md:text-4xl font-bold text-foreground tracking-tight text-center lg:text-left">
-                      <span className="inline-block">
-                        {profile.full_name || profile.username}
-                        {profile.is_verified && (
-                          <VerificationBadge size="sm" className="ml-1.5 align-middle" />
-                        )}
-                      </span>
-                    </h1>
-                    <p className="font-mono text-primary font-bold text-[11px] uppercase tracking-widest mt-0.5">
-                      @{profile.username}
-                    </p>
-                  </div>
-
-                  {profile.bio && (
-                    <p className="text-muted-foreground text-sm md:text-base max-w-xl leading-relaxed font-medium text-center lg:text-left mt-2 opacity-90">
-                      {profile.bio}
-                    </p>
-                  )}
-                </div>
-
-                {/* Social & Website - Tighter grouping */}
-                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 mt-4">
-                  <div className="flex items-center gap-0.5 bg-muted/5 p-0.5 rounded-full border border-border/5">
-                    {(profile.social_links?.instagram || profile.instagram_url) && (
-                      <a href={formatURL((profile.social_links?.instagram || profile.instagram_url) as string)} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:bg-pink-500/10 transition-colors">
-                          <Instagram size={16} />
-                        </Button>
-                      </a>
-                    )}
-                    {profile.social_links?.linkedin && (
-                      <a href={formatURL(profile.social_links.linkedin)} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:bg-blue-600/10 transition-colors">
-                          <Linkedin size={16} />
-                        </Button>
-                      </a>
-                    )}
-                    {profile.social_links?.twitter && (
-                      <a href={formatURL(profile.social_links.twitter)} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:bg-sky-500/10 transition-colors">
-                          <Twitter size={16} />
-                        </Button>
-                      </a>
-                    )}
-                    {profile.social_links?.facebook && (
-                      <a href={formatURL(profile.social_links.facebook)} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-500 hover:bg-blue-500/10 transition-colors">
-                          <Facebook size={16} />
-                        </Button>
-                      </a>
-                    )}
-                    {((profile.social_links?.youtube || profile.youtube_url) as string) && (
-                      <a href={formatURL((profile.social_links?.youtube || profile.youtube_url) as string)} target="_blank" rel="noopener noreferrer">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-red-600 hover:bg-red-600/10 transition-colors">
-                          <Youtube size={16} />
-                        </Button>
-                      </a>
-                    )}
-                  </div>
-
-                  {profile.website && (
-                    <a href={formatURL(profile.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-primary transition-all text-xs font-bold text-muted-foreground bg-muted/20 px-3 py-1.5 rounded-lg border border-border/50">
-                      <Globe size={12} />
-                      <span className="truncate max-w-[120px] md:max-w-[180px]">{profile.website.replace(/^(https?|ftp):\/\//, '')}</span>
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Stats Section & Actions - Integrated in one row */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-t border-border/10 pt-6 mt-8">
-              <div className="flex items-center gap-8 md:gap-12">
-                {profile.account_type !== 'fan' && (
-                  <div className="flex flex-col items-center lg:items-start">
-                    <span className="text-xl md:text-2xl font-black text-foreground">{postCount}</span>
-                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Posts</span>
-                  </div>
-                )}
-                <div 
-                  className="flex flex-col items-center lg:items-start cursor-pointer hover:opacity-70 transition-opacity"
-                  onClick={() => {
-                    setActiveNetworkTab('followers');
-                    setIsNetworkDialogOpen(true);
-                  }}
-                >
-                  <span className="text-xl md:text-2xl font-black text-foreground">{followersCount}</span>
-                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Followers</span>
-                </div>
-                <div 
-                  className="flex flex-col items-center lg:items-start cursor-pointer hover:opacity-70 transition-opacity"
-                  onClick={() => {
-                    setActiveNetworkTab(profile.account_type === 'fan' ? 'following' : 'connections');
-                    setIsNetworkDialogOpen(true);
-                  }}
-                >
-                  <span className="text-xl md:text-2xl font-black text-foreground">{profile.account_type === 'fan' ? followingCount : connectionsCount}</span>
-                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">
-                    {profile.account_type === 'fan' ? 'Following' : 'Connections'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Actions - Beside stats */}
-              <div className="flex items-center justify-center md:justify-end gap-1.5 w-full md:w-auto">
+        <div className="mb-10">
+          <ProfileHero
+            profile={profile as any}
+            avatarSrc={cachedAvatar}
+            handle={<span>@{profile.username}</span>}
+            stats={[
+              ...(profile.account_type !== 'fan' ? [{ label: 'Posts', value: postCount }] : []),
+              { label: 'Followers', value: followersCount, onClick: () => { setActiveNetworkTab('followers'); setIsNetworkDialogOpen(true); } },
+              { label: profile.account_type === 'fan' ? 'Following' : 'Connections', value: profile.account_type === 'fan' ? followingCount : connectionsCount, onClick: () => { setActiveNetworkTab(profile.account_type === 'fan' ? 'following' : 'connections'); setIsNetworkDialogOpen(true); } },
+            ]}
+            aside={profile.account_type !== 'fan' && access?.state !== 'blocked_by_me' ? <ProfileDetailsCard availability={availability} unions={(profile as any).union_membership} /> : null}
+            actions={<div className="w-full space-y-4">
+              <div className="grid grid-cols-2 gap-2">
                 {!isInternal && access?.state !== 'blocked_by_me' ? (
                   <>
                     {(isFan || profile.account_type === 'fan') ? (
                       <>
                         {connectionStatus === 'connected' ? (
-                          <Button onClick={handleCancelRequest} variant="outline" className="h-8 px-3 md:px-4 border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center"><UserCheck className="mr-1 h-3 w-3" />Following</Button>
+                          <Button onClick={handleCancelRequest} disabled={relBusy} variant="outline" className="col-span-2 w-full h-10 px-3.5 border-primary/20 bg-background/50 hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50 rounded-full text-sm font-semibold flex items-center justify-center"><UserCheck className="mr-1.5 h-4 w-4" />Following</Button>
                         ) : (
-                          <Button onClick={handleConnect} className="h-8 px-3 md:px-4 bg-primary text-white hover:bg-primary/90 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center"><UserPlus className="mr-1 h-3 w-3" />Follow</Button>
+                          <Button onClick={handleConnect} disabled={relBusy} className="col-span-2 w-full h-10 px-3.5 bg-primary text-white hover:bg-primary/90 rounded-full text-sm font-semibold flex items-center justify-center"><UserPlus className="mr-1.5 h-4 w-4" />Follow</Button>
                         )}
                         {(isFan && profile.account_type === 'fan' && isMutualFollow) && (
                           <Button 
-                            className="h-8 px-3 md:px-4 bg-secondary text-white hover:bg-secondary/80 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center"
+                            className="w-full h-10 px-3.5 border border-border bg-background text-foreground hover:bg-muted rounded-full text-sm font-semibold flex items-center justify-center"
                             onClick={() => push(`/messages/${profile.id}`)}
                           >
-                            <MessageCircle className="mr-1 h-3 w-3" />Message
+                            <MessageCircle className="mr-1.5 h-4 w-4" />Message
                           </Button>
                         )}
                       </>
                     ) : (
                       <>
                         {connectionStatus === 'connected' ? (
-                          <Button disabled variant="outline" className="h-8 px-3 md:px-4 border-primary/20 bg-background/50 backdrop-blur-sm rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center"><UserCheck className="mr-1 h-3 w-3" />Connected</Button>
+                          <Button disabled variant="outline" className="col-span-2 w-full h-10 px-3.5 border-primary/20 bg-background/50 rounded-full text-sm font-semibold flex items-center justify-center"><UserCheck className="mr-1.5 h-4 w-4" />Connected</Button>
                         ) : connectionStatus === 'pending_sent' ? (
-                          <Button onClick={handleCancelRequest} variant="outline" className="h-8 px-3 md:px-4 border-primary/20 bg-background/50 backdrop-blur-sm text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center"><Clock className="mr-1 h-3 w-3" />Request Sent</Button>
+                          <Button onClick={handleCancelRequest} disabled={relBusy} title="Tap to cancel this request" aria-label="Request sent. Tap to cancel it" variant="outline" className="col-span-2 w-full h-10 px-3.5 border-primary/20 bg-background/50 text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10 rounded-full text-sm font-semibold flex items-center justify-center"><Clock className="mr-1.5 h-4 w-4" />Request Sent</Button>
                         ) : (
-                          <Button onClick={() => (user ? setNoteOpen(true) : handleConnect())} className="h-8 px-3 md:px-4 bg-primary text-white hover:bg-primary/90 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center"><UserPlus className="mr-1 h-3 w-3" />Connect</Button>
-                        )}
-                        {profile.account_type !== 'fan' && (
-                          <Button asChild variant="outline" className="h-8 px-3 md:px-4 border-primary/20 bg-background/50 backdrop-blur-sm rounded-full text-[9px] font-bold uppercase tracking-wider"><a href={`/crew-sheet/${profile.username || profile.id}`} target="_blank" rel="noopener noreferrer">Crew sheet</a></Button>
+                          <Button onClick={() => (user ? setNoteOpen(true) : handleConnect())} className="col-span-2 w-full h-10 px-3.5 bg-primary text-white hover:bg-primary/90 rounded-full text-sm font-semibold flex items-center justify-center"><UserPlus className="mr-1.5 h-4 w-4" />Connect</Button>
                         )}
                         {user && connectionStatus === 'none' && (
-                          <Button onClick={() => setIntroOpen(true)} variant="outline" className="h-8 px-3 md:px-4 border-primary/20 bg-background/50 backdrop-blur-sm rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center">Ask for introduction</Button>
+                          <Button onClick={() => setIntroOpen(true)} variant="outline" className="col-span-2 w-full h-10 px-3.5 border-primary/20 bg-background/50 rounded-full text-sm font-semibold flex items-center justify-center">Ask for introduction</Button>
                         )}
                         {(connectionStatus === 'connected' || canMessage) && (
                           <Button 
-                            className="h-8 px-3 md:px-4 bg-secondary text-white hover:bg-secondary/80 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center"
+                            className="w-full h-10 px-3.5 border border-border bg-background text-foreground hover:bg-muted rounded-full text-sm font-semibold flex items-center justify-center"
                             onClick={() => push(`/messages/${profile.id}`)}
                           >
-                            <MessageCircle className="mr-1 h-3 w-3" />Message
+                            <MessageCircle className="mr-1.5 h-4 w-4" />Message
                           </Button>
                         )}
                         {profile && (profile as any).accept_direct_pitches !== false && canSubmitPitch((myProfile as any)?.craft || '', (myProfile as any)?.account_type || '') && canCreatePitchCall(profile.craft || '', profile.account_type || '') && (
                           <Button 
-                            className="h-8 px-3 md:px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 shrink-0"
+                            className="w-full h-10 px-3.5 bg-amber-500 hover:bg-amber-600 text-white rounded-full text-sm font-semibold flex items-center justify-center gap-1 shrink-0"
                             onClick={() => push(`/pitch/direct/submit?to=${profile.id}`)}
                           >
                             <Zap className="h-3 w-3" /> Direct Pitch
@@ -626,36 +494,71 @@ const PublicProfile = () => {
                     )}
                   </>
                 ) : (
-                  <div className="bg-muted/30 border border-border/50 px-3 py-1 rounded-full text-[9px] text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-1.5 flex-1 md:flex-none justify-center">
-                    <Zap className="w-3 h-3" /> Observation Mode
+                  <div className="col-span-2 bg-muted/30 border border-border/50 px-3 py-2 rounded-full text-xs text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-1.5 justify-center">
+                    <Zap className="w-3 h-3" /> Viewing as staff
                   </div>
                 )}
                 
+              </div>
+
+              {profile.account_type !== 'fan' && (
+                <div className="space-y-2">
+                  <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">Work together</p>
+                  <div className="grid grid-cols-2 gap-2 [&>*:last-child:nth-child(odd)]:col-span-2">
+                    {user && !isFan && !isInternal && access && (access.state === 'ok' || access.state === 'private') && (
+                      <>
+                        {([['dates', 'Request dates', CalendarClock], ['invite', 'Invite to project', FolderPlus]] as const).map(([key, label, Icon]) =>
+                          connectionStatus === 'connected' ? (
+                            <Button key={key} variant="outline" className="h-10 justify-start gap-2 px-3 rounded-xl text-sm font-semibold" onClick={() => setWorkDialog(key)}>
+                              <Icon className="h-4 w-4 text-primary shrink-0" /> {label}
+                            </Button>
+                          ) : (
+                            <Button
+                              key={key}
+                              variant="outline"
+                              className="h-10 justify-start gap-2 px-3 rounded-xl text-sm font-semibold text-muted-foreground bg-muted/30"
+                              title="Connect with this person first"
+                              aria-label={`${label} (connect first)`}
+                              onClick={() => {
+                                if (connectionStatus === 'pending_sent') toast({ title: 'Your connection request is waiting', description: 'You can do this once they accept it.' });
+                                else toast({ title: 'Connect first', description: `Connect with ${profile.full_name || profile.username || 'this person'} to ${key === 'dates' ? 'request their dates' : 'invite them to a project'}.` });
+                              }}
+                            >
+                              <Lock className="h-4 w-4 shrink-0" /> {label}
+                            </Button>
+                          ))}
+                        <Button variant="outline" className="h-10 justify-start gap-2 px-3 rounded-xl text-sm font-semibold" onClick={() => setWorkDialog('shortlist')}>
+                          <ListPlus className="h-4 w-4 text-primary shrink-0" /> Shortlist
+                        </Button>
+                        {connectionStatus === 'connected' && (
+                          <Button variant="outline" className="h-10 justify-start gap-2 px-3 rounded-xl text-sm font-semibold" onClick={() => setWorkDialog('recommend')}>
+                            <Star className="h-4 w-4 text-primary shrink-0" /> Recommend
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    <Button variant="outline" className="h-10 justify-start gap-2 px-3 rounded-xl text-sm font-semibold" onClick={() => push(`/profile/availability/${profile.id}`)}>
+                      <CalendarDays className="h-4 w-4 text-primary shrink-0" /> Availability
+                    </Button>
+                  </div>
+                </div>
+              )}
+
                 {isAdmin && (
-                  <Button
+                  <Button aria-label="Edit"
                     variant="outline"
-                    className="h-8 w-8 p-0 border-primary/20 hover:bg-primary/10 hover:text-primary rounded-full flex items-center justify-center shrink-0"
-                    onClick={() => push(`/admin/users?id=${profile.id}`)}
+                    className="h-11 w-11 md:h-9 md:w-9 p-0 border-primary/20 hover:bg-primary/10 hover:text-primary rounded-full flex items-center justify-center shrink-0"
+                    onClick={() => push(`/admin?user=${encodeURIComponent(profile.id)}`)}
                   >
                     <Pencil className="h-3 w-3" />
                   </Button>
                 )}
-              </div>
-            </div>
-          </div>
-        </header>
+            </div>}
+          />
+        </div>
 
         {access && access.state !== 'blocked_by_me' && (
           <ProfileContextStrip userId={profile.id} showContext={!!user && access.state !== 'self'} />
-        )}
-
-        {user && !isFan && !isInternal && profile.account_type !== 'fan' && access && (access.state === 'ok' || access.state === 'private') && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" className="rounded-full" onClick={() => setWorkDialog('dates')}>Request dates</Button>
-            <Button size="sm" variant="outline" className="rounded-full" onClick={() => setWorkDialog('invite')}>Invite to project</Button>
-            {connectionStatus === 'connected' && <Button size="sm" variant="outline" className="rounded-full" onClick={() => setWorkDialog('recommend')}>Recommend</Button>}
-            <Button size="sm" variant="outline" className="rounded-full" onClick={() => setWorkDialog('shortlist')}>Shortlist</Button>
-          </div>
         )}
 
         {access?.state === 'blocked_by_me' && (
@@ -702,7 +605,7 @@ const PublicProfile = () => {
                         <TabsTrigger
                           key={tab}
                           value={tab}
-                          className="flex items-center gap-2 px-5 py-2.5 md:px-7 md:py-3 rounded-2xl text-xs md:text-sm font-bold whitespace-nowrap transition-all duration-300 border-2 shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_8px_20px_-6px_rgba(var(--primary),0.5)] data-[state=active]:scale-105 bg-card/40 border-border/40 text-muted-foreground hover:bg-card/60 hover:text-foreground hover:border-border/80 capitalize"
+                          className="flex items-center gap-2 px-5 py-2.5 md:px-7 md:py-3 rounded-2xl text-xs md:text-sm font-bold whitespace-nowrap transition-[background-color,color,border-color] duration-200 border-2 shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_8px_20px_-6px_hsl(var(--primary)/0.5)] bg-card/40 border-border/40 text-muted-foreground hover:bg-card/60 hover:text-foreground hover:border-border/80 capitalize"
                         >
                           {tab}
                         </TabsTrigger>

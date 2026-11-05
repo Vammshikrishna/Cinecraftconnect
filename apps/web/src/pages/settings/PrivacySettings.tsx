@@ -1,12 +1,13 @@
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useBlockedUsers } from '@/hooks/useBlockedUsers';
-import { SettingsLinkRow, SettingsPageHeader, SettingsRadioRows, SettingsSection, SettingsToggleRow, useScrollToHash } from '@/components/settings/SettingsUI';
+import { SettingsLinkRow, SettingsPageHeader, SettingsRadioRows, SettingsSection, SettingsToggleRow, SettingsLoading, useScrollToHash } from '@/components/settings/SettingsUI';
 
 const PrivacySettings = () => {
   const { settings, loading, updateSetting } = useUserSettings();
-  const { blocked } = useBlockedUsers();
+  const { blocked, loading: blockedLoading } = useBlockedUsers();
   useScrollToHash(!loading);
   const s = settings || {};
+  if (loading) return <SettingsLoading />;
 
   return (
     <>
@@ -30,7 +31,7 @@ const PrivacySettings = () => {
       </SettingsSection>
 
       <SettingsSection title="Blocked">
-        <SettingsLinkRow title="Blocked accounts" value={String(blocked.length)} to="/settings/blocked" />
+        <SettingsLinkRow title="Blocked accounts" value={blockedLoading || blocked.length === 0 ? undefined : String(blocked.length)} to="/settings/blocked" />
       </SettingsSection>
     </>
   );

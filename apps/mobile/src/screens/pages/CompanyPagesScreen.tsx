@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ActivityIndicator,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -10,10 +11,12 @@ import {
   Modal,
   Switch,
   InteractionManager,
+  RefreshControl,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 const FlashListAny = FlashList as any;
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useFocusEffect } from '@react-navigation/native';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
@@ -27,6 +30,9 @@ import { useResponsive } from '../../hooks/useResponsive';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useAccountType } from '../../hooks/useAccountType';
 import { useAppRole } from '../../hooks/useAppRole';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
+import { orTerm } from '../../utils/postgrest';
+import { usePagedList, PAGE_SIZE } from '../../hooks/usePagedList';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -40,6 +46,8 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
   const [pages, setPages] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = React.useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [createModalVisible, setCreateModalVisible] = useState(false);
 
   // Filter state
@@ -49,30 +57,63 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
 
   const companySizes = ['1-10', '11-50', '51-200', '201-500', '500+'];
 
+  // The search goes to the server (debounced) so it covers every page, not just the loaded 25.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const { loadingMore, loadMore, resetPaging } = usePagedList<any>();
+
+  const buildPagesQuery = useCallback(() => {
+    const supabase = getSupabaseClient();
+    let query = ((supabase as any).from('company_pages') as any).select('*');
+    if (filterVerifiedOnly) {
+      query = query.eq('is_verified', true);
+    }
+    if (filterCompanySize) {
+      query = query.eq('company_size', filterCompanySize);
+    }
+    const q = orTerm(debouncedQuery);
+    if (q) {
+      query = query.or(`name.ilike.%${q}%,tagline.ilike.%${q}%,headquarters.ilike.%${q}%`);
+    }
+    return query.order('created_at', { ascending: false });
+  }, [filterVerifiedOnly, filterCompanySize, debouncedQuery]);
+
+  const loadMorePages = useCallback(
+    () =>
+      loadMore(
+        pages.length,
+        async (from, to) => {
+          const { data, error } = await buildPagesQuery().range(from, to);
+          if (error) throw error;
+          return data || [];
+        },
+        setPages,
+      ),
+    [loadMore, pages.length, buildPagesQuery],
+  );
+
   const fetchPages = useCallback(async () => {
     try {
-      setLoading(true);
-      const supabase = getSupabaseClient();
+      // Skeleton only on the very first load; realtime/filter refetches keep the list on screen.
+      if (!hasLoadedRef.current) setLoading(true);
 
-      let query = ((supabase as any).from('company_pages') as any).select('*');
-      if (filterVerifiedOnly) {
-        query = query.eq('is_verified', true);
-      }
-      if (filterCompanySize) {
-        query = query.eq('company_size', filterCompanySize);
-      }
-
-      const { data, error } = await query.order('created_at', { ascending: false }).limit(25);
+      const { data, error } = await buildPagesQuery().range(0, PAGE_SIZE - 1);
 
       if (!error && data) {
         setPages(data);
+        resetPaging(data.length);
+        hasLoadedRef.current = true;
       }
     } catch (e) {
       console.warn('[CompanyPages] Fetch error:', e);
     } finally {
       setLoading(false);
     }
-  }, [filterVerifiedOnly, filterCompanySize]);
+  }, [buildPagesQuery, resetPaging]);
 
   useFocusEffect(
     useCallback(() => {
@@ -131,7 +172,7 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
   const hasActiveFilters = filterVerifiedOnly || !!filterCompanySize;
 
   const renderPageItem = useCallback(({ item: p }: { item: any }) => (
-    <View style={isTablet ? (isLandscape ? styles.tabletCardWrapper3Col : styles.tabletCardWrapper) : undefined}>
+    <View style={isTablet ? styles.tabletCell : undefined}>
       <CompanyPageCard
         page={p}
         style={isTablet && { marginHorizontal: 0, marginBottom: 0, width: '100%' }}
@@ -151,11 +192,11 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
       <View style={styles.pageHeaderRow}>
         <View style={styles.pageTitleGroup}>
           <Icon name="company" size={26} color={themeColors.textPrimary} />
-          <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Companies</Text>
+          <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Companies</Text>
         </View>
 
         {isStudio && !isInternal && (
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.createBtn}
             onPress={() => setCreateModalVisible(true)}
             accessibilityLabel="Create a Page"
@@ -165,15 +206,15 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
         )}
       </View>
 
-      <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+      <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
         Explore film studios, production houses, and equipment rentals.
       </Text>
 
       {/* Search & Filter Bar */}
       <View style={styles.searchFilterRow}>
         <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-          <Icon name="search" size={16} color={themeColors.textMuted} />
-          <TextInput
+          <Icon name="search" size={16} color={themeColors.iconMuted} />
+          <TextInput returnKeyType="search" accessibilityLabel="Search pages by name, location, or industry"
             style={[styles.searchInput, { color: themeColors.textPrimary }]}
             placeholder="Search pages by name, location, or industry..."
             placeholderTextColor={themeColors.textMuted}
@@ -181,13 +222,13 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Icon name="x" size={16} color={themeColors.textMuted} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setSearchQuery('')}>
+              <Icon name="x" size={16} color={themeColors.iconMuted} />
             </TouchableOpacity>
           )}
         </View>
 
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Filter" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           style={[
             styles.filterBtn,
             { backgroundColor: hasActiveFilters ? ORANGE : themeColors.inputBg, borderColor: hasActiveFilters ? ORANGE : themeColors.border },
@@ -237,6 +278,8 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
         </ScrollView>
       ) : (
         <FlashListAny
+          keyboardShouldPersistTaps="handled"
+          {...scrollChrome}
           key={`company-pages-${numColumns}`}
           data={filteredPages}
           keyExtractor={(item: any) => item.id}
@@ -245,13 +288,24 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
           numColumns={numColumns}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={renderHeader()}
+          onEndReached={loadMorePages}
+          onEndReachedThreshold={0.6}
+          ListFooterComponent={loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color={ORANGE} /> : null}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => { setRefreshing(true); try { await fetchPages(); } finally { setRefreshing(false); } }}
+              tintColor={ORANGE}
+              colors={[ORANGE]}
+            />
+          }
           ListEmptyComponent={
             isOffline ? (
               <OfflineEmptyState />
             ) : (
               <View style={styles.emptyState}>
-                <Icon name="company" size={40} color={themeColors.textMuted} />
+                <Icon name="company" size={40} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>
                   {searchQuery ? 'No Pages Match Search' : 'No Company Pages Yet'}
                 </Text>
@@ -296,8 +350,8 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
           <View style={[styles.filterModalContent, { backgroundColor: themeColors.bgCard }]}>
             <View style={styles.filterHeaderRow}>
               <Text style={[styles.filterTitle, { color: themeColors.textPrimary }]}>Filter Companies</Text>
-              <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
-                <Icon name="x" size={20} color={themeColors.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setFilterModalVisible(false)}>
+                <Icon name="x" size={20} color={themeColors.iconSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -306,6 +360,7 @@ export const CompanyPagesScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={[styles.switchLabel, { color: themeColors.textPrimary }]}>Verified Only</Text>
                 <Switch
                   value={filterVerifiedOnly}
+                  accessibilityLabel="Verified Only"
                   onValueChange={setFilterVerifiedOnly}
                   trackColor={{ false: themeColors.border, true: ORANGE }}
                   thumbColor="#FFFFFF"
@@ -381,6 +436,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 16,
   },
+  // inside a list column: space either side of a card that fills its cell
+  tabletCell: {
+    // fills its list column (a list cell does not stretch its child by itself)
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingBottom: 16,
+  },
   tabletCardWrapper: {
     width: '48.5%',
   },
@@ -408,19 +470,19 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 18.5,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   pageSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 14,
   },
   createBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -441,7 +503,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 8,
@@ -449,11 +511,11 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: INK,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   filterBtn: {
     width: 42,
-    height: 42,
+    height: 44,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -473,7 +535,7 @@ const styles = StyleSheet.create({
   },
   sectionHeaderTitle: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     letterSpacing: -0.2,
@@ -486,7 +548,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   emptySub: {
@@ -505,7 +567,7 @@ const styles = StyleSheet.create({
   emptyCreateBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
@@ -513,6 +575,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   filterModalContent: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -527,7 +592,7 @@ const styles = StyleSheet.create({
   },
   filterTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   switchRow: {
@@ -544,8 +609,8 @@ const styles = StyleSheet.create({
     color: INK,
   },
   filterLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 10,
@@ -566,13 +631,13 @@ const styles = StyleSheet.create({
     backgroundColor: ORANGE,
   },
   sizeChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
   sizeChipTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   filterBtnRow: {
     flexDirection: 'row',
@@ -590,7 +655,7 @@ const styles = StyleSheet.create({
   resetFilterBtnText: {
     color: '#64748B',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   applyFilterBtn: {
     flex: 1,
@@ -603,7 +668,7 @@ const styles = StyleSheet.create({
   applyFilterBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

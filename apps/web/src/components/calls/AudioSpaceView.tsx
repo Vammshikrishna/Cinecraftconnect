@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { postCallSystemMessage, formatCallDuration } from '@/lib/calls/callSystemMessages';
 import { cn } from '@/lib/utils';
+import { confirmDialog } from '@/lib/confirmDialog';
 
 type Role = 'host' | 'cohost' | 'speaker' | 'listener';
 type SpeakingMode = 'open' | 'request';
@@ -207,7 +208,7 @@ export const AudioSpaceView = ({
   const toggleHand = () => (local as any).setAttributes({ hand: handRaised ? '' : '1' }).then(rerender).catch(() => {});
 
   const endSpace = async () => {
-    if (!window.confirm('End this space for everyone?')) return;
+    if (!await confirmDialog('End this space for everyone?')) return;
     await act('end');
     if (user?.id && roomType && roomId) {
       postCallSystemMessage(roomType, roomId, 'ended', duration, user.id, 'space');
@@ -238,14 +239,14 @@ export const AudioSpaceView = ({
   // Shared look: same pills / island as the call screen.
   const pill = cn(
     'flex items-center gap-1.5 backdrop-blur-xl px-3 py-1 rounded-full border shadow-sm',
-    isDark ? 'bg-black/70 border-white/15 text-white' : 'bg-white/95 border-slate-300 text-slate-800'
+    'bg-background/90 border-border text-foreground'
   );
   const iconBtn = cn(
-    'ctrl-icon-btn transition-all duration-200',
-    isDark ? 'bg-white/10 hover:bg-white/20 text-white/90 border border-white/15' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+    'ctrl-icon-btn transition duration-200',
+    'bg-muted hover:bg-muted/70 text-foreground border border-border'
   );
-  const card = cn('rounded-3xl border', isDark ? 'bg-gradient-to-b from-[#1d1d24] to-[#111115] border-white/10' : 'bg-gradient-to-b from-white to-slate-100 border-slate-200/80');
-  const mutedText = isDark ? 'text-slate-400' : 'text-slate-500';
+  const card = 'rounded-3xl border bg-card border-border';
+  const mutedText = 'text-muted-foreground';
 
   // ── Floating window (minimized) ──────────────────────────────────────────────────────────────────────────────
   if (isMinimized) {
@@ -258,22 +259,22 @@ export const AudioSpaceView = ({
       fn();
     };
     return (
-      <div className="@container/pip relative h-full w-full overflow-hidden rounded-3xl bg-gradient-to-br from-[#1f1b3a] via-[#15151f] to-[#0c0c12] text-white">
+      <div className="@container/pip relative h-full w-full overflow-hidden rounded-3xl bg-card text-foreground border border-border">
         {/* soft speaking glow */}
         <div className={cn('absolute -top-10 -right-10 w-40 h-40 rounded-full blur-3xl transition-opacity duration-500', speaking.length > 0 ? 'bg-emerald-500/30 opacity-100' : 'bg-purple-500/20 opacity-70')} />
 
         <div className="relative h-full w-full flex flex-col justify-between p-[clamp(0.5rem,3.5cqi,0.9rem)]">
           {/* Top: live dot, room, timer, expand */}
           <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
+            <div className="flex items-center gap-1.5 min-w-0 bg-muted/70 px-2.5 py-1 rounded-full border border-border">
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
               <p className="text-[clamp(9px,3cqi,11px)] font-black uppercase tracking-wider truncate">{roomName || 'Audio space'}</p>
-              <span className="text-[clamp(9px,3cqi,11px)] font-mono font-bold text-emerald-400 shrink-0">{connected ? duration : '…'}</span>
+              <span className="text-[clamp(9px,3cqi,11px)] font-medium text-emerald-400 shrink-0">{connected ? duration : '…'}</span>
             </div>
             <button
               onPointerDown={(e) => e.stopPropagation()}
               onClick={stop(() => onToggleMinimize?.())}
-              className="shrink-0 w-[clamp(24px,8cqi,32px)] h-[clamp(24px,8cqi,32px)] rounded-full bg-white/10 hover:bg-white/20 border border-white/15 flex items-center justify-center transition-colors"
+              className="shrink-0 w-[clamp(24px,8cqi,32px)] h-[clamp(24px,8cqi,32px)] rounded-full bg-muted hover:bg-muted/70 text-foreground border border-border flex items-center justify-center transition-colors"
               title="Expand"
             >
               <Maximize2 className="w-[55%] h-[55%]" />
@@ -287,15 +288,15 @@ export const AudioSpaceView = ({
                 <div
                   key={p.identity}
                   className={cn(
-                    'w-[clamp(30px,13cqi,44px)] h-[clamp(30px,13cqi,44px)] rounded-full overflow-hidden border-2 transition-all duration-300',
-                    p.isSpeaking ? 'border-emerald-400 scale-110 z-10 shadow-[0_0_14px_rgba(16,185,129,0.7)]' : 'border-[#15151f]'
+                    'w-[clamp(30px,13cqi,44px)] h-[clamp(30px,13cqi,44px)] rounded-full overflow-hidden border-2 transition duration-300',
+                    p.isSpeaking ? 'border-emerald-400 scale-110 z-10 shadow-[0_0_14px_rgba(16,185,129,0.7)]' : 'border-card'
                   )}
                 >
                   {avatarEl(p, 44)}
                 </div>
               ))}
               {stage.length > visible.length && (
-                <div className="w-[clamp(30px,13cqi,44px)] h-[clamp(30px,13cqi,44px)] rounded-full bg-white/15 border-2 border-[#15151f] flex items-center justify-center text-[10px] font-black">
+                <div className="w-[clamp(30px,13cqi,44px)] h-[clamp(30px,13cqi,44px)] rounded-full bg-muted border-2 border-card flex items-center justify-center text-[12px] font-black">
                   +{stage.length - visible.length}
                 </div>
               )}
@@ -304,7 +305,7 @@ export const AudioSpaceView = ({
               <p className="text-[clamp(11px,3.6cqi,13px)] font-bold truncate">
                 {speaking.length > 0 ? name(speaking[0]) : lead ? name(lead) : 'Audio space'}
               </p>
-              <div className="flex items-center gap-1.5 text-[clamp(9px,3cqi,11px)] text-slate-400">
+              <div className="flex items-center gap-1.5 text-[clamp(9px,3cqi,11px)] text-muted-foreground">
                 {speaking.length > 0 ? (
                   <>
                     <span className="flex items-end gap-0.5 h-3">
@@ -336,7 +337,7 @@ export const AudioSpaceView = ({
               <button
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={stop(toggleHand)}
-                className={cn('w-[clamp(30px,10cqi,40px)] h-[clamp(30px,10cqi,40px)] rounded-full flex items-center justify-center transition-colors border', handRaised ? 'bg-purple-600 border-purple-300/40' : 'bg-white/10 hover:bg-white/20 border-white/15')}
+                className={cn('w-[clamp(30px,10cqi,40px)] h-[clamp(30px,10cqi,40px)] rounded-full flex items-center justify-center transition-colors border', handRaised ? 'bg-purple-600 text-white border-purple-300/40' : 'bg-muted hover:bg-muted/70 text-foreground border-border')}
                 title={handRaised ? 'Lower hand' : 'Request to speak'}
               >
                 <Hand className="w-[48%] h-[48%]" />
@@ -372,7 +373,7 @@ export const AudioSpaceView = ({
   }
 
   return (
-    <div className={cn('relative flex flex-col h-full w-full font-sans select-none transition-colors duration-300', isDark ? 'bg-[#0f0f12] text-white' : 'bg-slate-100 text-slate-900')}>
+    <div className={cn('relative flex flex-col h-full w-full font-sans select-none transition-colors duration-300', 'bg-background text-foreground')}>
       {/* Header pills */}
       <header className="h-14 shrink-0 px-3 sm:px-6 flex items-center justify-between gap-2 z-30">
         <div className={pill}>
@@ -381,17 +382,17 @@ export const AudioSpaceView = ({
           <span className={cn('text-xs font-semibold', mutedText)}>· {stage.length} speaking · {listeners.length} listening</span>
         </div>
 
-        <div className={cn(pill, isDark ? 'text-emerald-400' : 'text-emerald-600')}>
+        <div className={cn(pill, 'text-emerald-600 dark:text-emerald-400')}>
           <span className={cn('w-1.5 h-1.5 rounded-full', connected ? 'bg-red-500 animate-pulse' : 'bg-amber-400 animate-ping')} />
-          <span className="text-[10px] font-black uppercase tracking-wider text-red-500">Live</span>
-          <span className="text-xs font-bold font-mono tracking-wider">{connected ? duration : 'Connecting…'}</span>
+          <span className="text-[12px] font-black uppercase tracking-wider text-red-500">Live</span>
+          <span className="text-xs font-medium">{connected ? duration : 'Connecting…'}</span>
         </div>
 
         <Button
           variant="ghost"
           size="sm"
           onClick={onToggleMinimize}
-          className={cn('rounded-full h-8 w-8 p-0 border backdrop-blur-md shadow-sm flex items-center justify-center', isDark ? 'bg-black/60 hover:bg-black/80 text-orange-400 border-white/15' : 'bg-white/90 hover:bg-white text-orange-500 border-slate-300')}
+          className={cn('rounded-full h-8 w-8 p-0 border backdrop-blur-md shadow-sm flex items-center justify-center', 'bg-background/90 hover:bg-muted text-orange-500 border-border')}
           title="Minimize"
         >
           <Minimize2 className="w-3.5 h-3.5" />
@@ -416,7 +417,7 @@ export const AudioSpaceView = ({
           </p>
         </div>
         {isManager && (
-          <div className={cn('flex items-center gap-1 rounded-full p-1 shrink-0 border', isDark ? 'bg-black/50 border-white/10' : 'bg-white border-slate-200')}>
+          <div className={cn('flex items-center gap-1 rounded-full p-1 shrink-0 border', 'bg-card border-border')}>
             {(['request', 'open'] as SpeakingMode[]).map((m) => (
               <button
                 key={m}
@@ -433,7 +434,7 @@ export const AudioSpaceView = ({
       {/* Stage + listeners */}
       <main className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-6 pb-3 z-10 space-y-5">
         <section>
-          <p className={cn('text-[11px] font-black tracking-widest mb-2.5 flex items-center gap-1.5', mutedText)}>
+          <p className={cn('text-[12px] font-black tracking-widest mb-2.5 flex items-center gap-1.5', mutedText)}>
             <Mic className="w-3 h-3" /> ON STAGE
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -445,7 +446,7 @@ export const AudioSpaceView = ({
                   key={p.identity}
                   onClick={() => manageable && setPicked(p)}
                   className={cn(
-                    card, 'relative h-44 sm:h-52 flex items-center justify-center overflow-hidden transition-all duration-300 border',
+                    card, 'relative h-44 sm:h-52 flex items-center justify-center overflow-hidden transition duration-300 border',
                     p.isSpeaking ? 'border-emerald-500 ring-4 ring-emerald-400/40 shadow-[0_0_36px_rgba(16,185,129,0.55)]' : isDark ? 'shadow-[0_15px_35px_rgba(0,0,0,0.6)]' : 'shadow-[0_10px_25px_rgba(0,0,0,0.06)]',
                     manageable ? 'cursor-pointer hover:scale-[1.01]' : 'cursor-default'
                   )}
@@ -456,18 +457,18 @@ export const AudioSpaceView = ({
                       <span className="absolute w-48 h-48 rounded-full bg-emerald-500/10 border border-emerald-400/20" />
                     </>
                   )}
-                  <div className={cn('relative w-20 h-20 sm:w-24 sm:h-24 rounded-full p-1 overflow-hidden shadow-2xl', p.isSpeaking ? 'bg-gradient-to-tr from-emerald-500 to-teal-400 scale-105' : isDark ? 'bg-white/10' : 'bg-slate-200')}>
+                  <div className={cn('relative w-20 h-20 sm:w-24 sm:h-24 rounded-full p-1 overflow-hidden shadow-2xl', p.isSpeaking ? 'bg-gradient-to-tr from-emerald-500 to-teal-400 scale-105' : 'bg-muted')}>
                     {avatarEl(p, 96)}
                   </div>
                   {r !== 'speaker' && (
-                    <span className="absolute top-2.5 left-2.5 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-600 text-white">
+                    <span className="absolute top-2.5 left-2.5 text-[12px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-600 text-white">
                       {r === 'host' ? 'Host' : 'Co-host'}
                     </span>
                   )}
                   <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
-                    <div className={cn('flex items-center gap-1 px-2 py-0.5 rounded-full backdrop-blur-xl border max-w-full', p.isSpeaking ? (isDark ? 'bg-black/85 border-emerald-500/50 text-emerald-400' : 'bg-white/95 border-emerald-500/60 text-emerald-700') : isDark ? 'bg-black/75 border-white/15 text-white' : 'bg-white/95 border-slate-200 text-slate-800')}>
+                    <div className={cn('flex items-center gap-1 px-2 py-0.5 rounded-full backdrop-blur-xl border max-w-full', p.isSpeaking ? 'bg-background/90 border-emerald-500/50 text-emerald-600 dark:text-emerald-400' : 'bg-background/90 border-border text-foreground')}>
                       {p.isMicrophoneEnabled ? <Mic className="w-3 h-3 text-emerald-400 shrink-0" /> : <MicOff className="w-3 h-3 text-red-400 shrink-0" />}
-                      <span className="text-[11px] font-bold truncate">{name(p)}{p.isLocal ? ' (You)' : ''}</span>
+                      <span className="text-[12px] font-bold truncate">{name(p)}{p.isLocal ? ' (You)' : ''}</span>
                     </div>
                   </div>
                 </button>
@@ -477,7 +478,7 @@ export const AudioSpaceView = ({
         </section>
 
         <section className={cn(card, 'p-4')}>
-          <p className={cn('text-[11px] font-black tracking-widest mb-3 flex items-center gap-1.5', mutedText)}>
+          <p className={cn('text-[12px] font-black tracking-widest mb-3 flex items-center gap-1.5', mutedText)}>
             <Headphones className="w-3 h-3" /> LISTENERS ({listeners.length})
           </p>
           {listeners.length === 0 ? (
@@ -490,11 +491,11 @@ export const AudioSpaceView = ({
                   <button
                     key={p.identity}
                     onClick={() => manageable && setPicked(p)}
-                    className={cn('relative flex flex-col items-center gap-1.5 rounded-2xl p-2 transition-colors', manageable ? (isDark ? 'hover:bg-white/5 cursor-pointer' : 'hover:bg-slate-100 cursor-pointer') : 'cursor-default')}
+                    className={cn('relative flex flex-col items-center gap-1.5 rounded-2xl p-2 transition-colors', manageable ? 'hover:bg-muted cursor-pointer' : 'cursor-default')}
                   >
                     <div className="w-11 h-11 rounded-full overflow-hidden">{avatarEl(p, 44)}</div>
                     {(p as any).attributes?.hand === '1' && <span className="absolute top-1 right-2 text-sm bg-amber-200 rounded-full px-0.5 shadow">✋</span>}
-                    <span className={cn('text-[11px] font-semibold truncate max-w-full', isDark ? 'text-slate-300' : 'text-slate-600')}>
+                    <span className={'text-[12px] font-semibold truncate max-w-full text-muted-foreground'}>
                       {name(p)}{p.isLocal ? ' (You)' : ''}
                     </span>
                   </button>
@@ -507,11 +508,11 @@ export const AudioSpaceView = ({
 
       {/* Floating control island (same style as the call screen) */}
       <footer className="h-20 shrink-0 flex items-center justify-center z-30 pb-2">
-        <div className={cn('px-3 py-2 backdrop-blur-2xl border rounded-full flex items-center gap-2 shadow-2xl max-w-[calc(100%-24px)] overflow-x-auto scrollbar-none transition-colors', isDark ? 'bg-[#18181c]/95 border-white/20 text-white shadow-[0_20px_50px_rgba(0,0,0,0.8)]' : 'bg-white/95 border-slate-300 text-slate-800 shadow-[0_15px_40px_rgba(0,0,0,0.15)]')}>
+        <div className={cn('px-3 py-2 backdrop-blur-2xl border rounded-full flex items-center gap-2 shadow-2xl max-w-[calc(100%-24px)] overflow-x-auto scrollbar-none transition-colors', 'bg-card/95 border-border text-foreground', isDark ? 'shadow-[0_20px_50px_rgba(0,0,0,0.8)]' : 'shadow-[0_15px_40px_rgba(0,0,0,0.15)]')}>
           {canSpeak ? (
             <button
               onClick={toggleMic}
-              className={cn('ctrl-action-btn transition-all duration-200 text-white border', micOn ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-400/50' : 'bg-red-500 hover:bg-red-600 border-red-400/50')}
+              className={cn('ctrl-action-btn transition duration-200 text-white border', micOn ? 'bg-emerald-500 hover:bg-emerald-600 border-emerald-400/50' : 'bg-red-500 hover:bg-red-600 border-red-400/50')}
               title={micOn ? 'Mute' : 'Unmute'}
             >
               {micOn ? <Mic /> : <MicOff />}
@@ -519,7 +520,7 @@ export const AudioSpaceView = ({
           ) : (
             <button
               onClick={toggleHand}
-              className={cn('ctrl-action-btn transition-all duration-200 border', handRaised ? 'bg-purple-600 text-white border-purple-400/50' : isDark ? 'bg-white/10 hover:bg-white/20 text-white border-white/15' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300')}
+              className={cn('ctrl-action-btn transition duration-200 border', handRaised ? 'bg-purple-600 text-white border-purple-400/50' : 'bg-muted hover:bg-muted/70 text-foreground border-border')}
               title={handRaised ? 'Lower hand' : 'Request to speak'}
             >
               <Hand />
@@ -532,13 +533,13 @@ export const AudioSpaceView = ({
             </button>
           )}
 
-          <div className={cn('h-6 w-px mx-1 shrink-0', isDark ? 'bg-white/20' : 'bg-slate-300')} />
+          <div className={'h-6 w-px mx-1 shrink-0 bg-border'} />
 
           {isManager && (
             <button onClick={() => setPanel(panel === 'requests' ? 'none' : 'requests')} className={cn(iconBtn, 'relative', panel === 'requests' && 'bg-primary/20 text-primary border-primary/40')} title="Requests to speak">
               <Hand className="w-4 h-4" />
               {hands.length > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-white text-[10px] font-black flex items-center justify-center">{hands.length}</span>
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-white text-[12px] font-black flex items-center justify-center">{hands.length}</span>
               )}
             </button>
           )}
@@ -549,11 +550,11 @@ export const AudioSpaceView = ({
             <SettingsIcon className="w-4 h-4" />
           </button>
 
-          <div className={cn('h-6 w-px mx-1 shrink-0', isDark ? 'bg-white/20' : 'bg-slate-300')} />
+          <div className={'h-6 w-px mx-1 shrink-0 bg-border'} />
 
           <button
             onClick={isHost ? endSpace : onLeave}
-            className="ctrl-action-btn bg-red-600 hover:bg-red-700 text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] border border-red-400/40 transition-all duration-200 active:scale-95"
+            className="ctrl-action-btn bg-red-600 hover:bg-red-700 text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] border border-red-400/40 transition duration-200 active:scale-95"
             title={isHost ? 'End space for everyone' : 'Leave quietly'}
           >
             {isHost ? <X /> : <LogOut />}
@@ -563,7 +564,7 @@ export const AudioSpaceView = ({
 
       {/* Popovers above the island */}
       {panel === 'reactions' && (
-        <div className={cn('absolute bottom-24 left-1/2 -translate-x-1/2 z-40 flex gap-1 p-2 rounded-full border shadow-2xl backdrop-blur-xl', isDark ? 'bg-[#18181c]/95 border-white/20' : 'bg-white/95 border-slate-300')}>
+        <div className={cn('absolute bottom-24 left-1/2 -translate-x-1/2 z-40 flex gap-1 p-2 rounded-full border shadow-2xl backdrop-blur-xl', 'bg-card/95 border-border')}>
           {EMOJIS.map((e) => (
             <button key={e} onClick={() => sendReaction(e)} className="text-2xl w-10 h-10 rounded-full hover:scale-125 transition-transform">
               {e}
@@ -593,12 +594,12 @@ export const AudioSpaceView = ({
       {/* Manage one person */}
       {picked && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center" onClick={() => setPicked(null)}>
-          <div className={cn('w-full sm:w-80 rounded-t-3xl sm:rounded-3xl p-4 shadow-2xl border', isDark ? 'bg-[#0f0f12] border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900')} onClick={(e) => e.stopPropagation()}>
+          <div className={cn('w-full sm:w-80 rounded-t-3xl sm:rounded-3xl p-4 shadow-2xl border', 'bg-card border-border text-foreground')} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-full overflow-hidden">{avatarEl(picked, 40)}</div>
               <div className="min-w-0">
                 <p className="font-bold truncate">{name(picked)}</p>
-                <p className={cn('text-[11px] uppercase tracking-wider font-bold', mutedText)}>{roleOf(picked)}</p>
+                <p className={cn('text-[12px] uppercase tracking-wider font-bold', mutedText)}>{roleOf(picked)}</p>
               </div>
             </div>
             {[
@@ -610,11 +611,11 @@ export const AudioSpaceView = ({
             ]
               .filter(Boolean)
               .map((item: any) => (
-                <button key={item.label} onClick={item.run} className={cn('w-full text-left px-2 py-3 border-t text-sm font-semibold', isDark ? 'border-white/10 hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50', item.danger && 'text-red-500')}>
+                <button key={item.label} onClick={item.run} className={cn('w-full text-left px-2 py-3 border-t text-sm font-semibold', 'border-border hover:bg-muted', item.danger && 'text-red-500')}>
                   {item.label}
                 </button>
               ))}
-            <button onClick={() => setPicked(null)} className={cn('w-full text-center px-2 py-3 border-t text-sm', isDark ? 'border-white/10 text-slate-400 hover:bg-white/5' : 'border-slate-200 text-slate-500 hover:bg-slate-50')}>
+            <button onClick={() => setPicked(null)} className={cn('w-full text-center px-2 py-3 border-t text-sm', 'border-border text-muted-foreground hover:bg-muted')}>
               Cancel
             </button>
           </div>
@@ -625,10 +626,10 @@ export const AudioSpaceView = ({
 };
 
 const PopoverCard = ({ isDark, title, onClose, children }: { isDark: boolean; title: string; onClose: () => void; children: React.ReactNode }) => (
-  <div className={cn('absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-[min(92%,380px)] rounded-3xl border p-4 shadow-2xl backdrop-blur-xl', isDark ? 'bg-[#18181c]/95 border-white/20 text-white' : 'bg-white/95 border-slate-300 text-slate-900')}>
+  <div className={cn('absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-[min(92%,380px)] rounded-3xl border p-4 shadow-2xl backdrop-blur-xl', 'bg-card/95 border-border text-foreground')}>
     <div className="flex items-center justify-between mb-2">
       <p className="font-extrabold text-sm flex items-center gap-2"><Users className="w-4 h-4" /> {title}</p>
-      <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-black/10"><X className="w-4 h-4" /></button>
+      <button aria-label="Close" onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-muted"><X className="w-4 h-4" /></button>
     </div>
     {children}
   </div>
@@ -638,14 +639,14 @@ const PopoverCard = ({ isDark, title, onClose, children }: { isDark: boolean; ti
 const SpaceAudioSettings = ({ isDark, onClose }: { isDark: boolean; onClose: () => void }) => {
   const { devices: mics, activeDeviceId: micId, setActiveMediaDevice: setMic } = useMediaDeviceSelect({ kind: 'audioinput' });
   const { devices: speakers, activeDeviceId: spkId, setActiveMediaDevice: setSpk } = useMediaDeviceSelect({ kind: 'audiooutput' });
-  const select = cn('w-full rounded-xl border px-3 py-2 text-sm', isDark ? 'bg-[#0f0f12] border-white/15 text-white' : 'bg-white border-slate-300 text-slate-900');
+  const select = cn('w-full rounded-xl border px-3 py-2 text-sm', 'bg-background border-border text-foreground');
   return (
     <PopoverCard isDark={isDark} title="Audio settings" onClose={onClose}>
-      <label className="text-[11px] font-black tracking-widest text-slate-500 flex items-center gap-1.5 mt-1 mb-1.5"><Mic className="w-3 h-3" /> MICROPHONE</label>
+      <label className="text-[12px] font-black tracking-widest text-muted-foreground flex items-center gap-1.5 mt-1 mb-1.5"><Mic className="w-3 h-3" /> MICROPHONE</label>
       <select className={select} value={micId} onChange={(e) => setMic(e.target.value)}>
         {mics.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Microphone'}</option>)}
       </select>
-      <label className="text-[11px] font-black tracking-widest text-slate-500 flex items-center gap-1.5 mt-3 mb-1.5"><Volume2 className="w-3 h-3" /> SPEAKER</label>
+      <label className="text-[12px] font-black tracking-widest text-muted-foreground flex items-center gap-1.5 mt-3 mb-1.5"><Volume2 className="w-3 h-3" /> SPEAKER</label>
       <select className={select} value={spkId} onChange={(e) => setSpk(e.target.value)}>
         {speakers.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || 'Speaker'}</option>)}
       </select>

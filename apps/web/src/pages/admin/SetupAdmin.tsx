@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { Shield, Crown, AlertTriangle, ArrowRight, CheckCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,8 +7,11 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import AppLogo from '@/components/common/AppLogo';
 import { motion } from 'framer-motion';
+import { friendlyError } from '@cinecraft/core';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import NotFound from '@/pages/NotFound';
 
-const SetupAdmin = () => {
+const SetupAdminPage = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -31,7 +35,7 @@ const SetupAdmin = () => {
     } catch (err: any) {
       toast({ 
         title: "Setup Failed", 
-        description: err.message, 
+        description: friendlyError(err), 
         variant: "destructive" 
       });
     } finally {
@@ -40,7 +44,7 @@ const SetupAdmin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
+    <div className="min-h-dvh bg-background flex flex-col items-center justify-center p-6">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -55,7 +59,7 @@ const SetupAdmin = () => {
         <AppLogo size="lg" className="mb-2 mx-auto justify-center" />
         <h1 className="text-2xl font-black text-foreground mb-2 uppercase tracking-tight">Platform Setup</h1>
         <p className="text-muted-foreground text-sm mb-8 leading-relaxed">
-          This is an emergency setup page to claim the first **Super Admin** account. 
+          This is an emergency setup page to claim the first <strong>Super Admin</strong> account. 
           Use this to unlock the governance layers.
         </p>
 
@@ -75,7 +79,7 @@ const SetupAdmin = () => {
             <Button 
               onClick={claimAdmin}
               disabled={loading || !user}
-              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold h-12 rounded-2xl shadow-xl shadow-amber-500/20 group"
+              className="w-full bg-amber-500 hover:bg-amber-600 text-amber-950 font-bold h-12 rounded-2xl shadow-xl shadow-amber-500/20 group"
             >
               {loading ? "Processing..." : (
                 <>
@@ -87,7 +91,7 @@ const SetupAdmin = () => {
             </Button>
             
             {!user && (
-              <p className="text-[10px] text-red-500 font-bold uppercase mt-2">
+              <p className="text-[12px] text-red-500 font-bold uppercase mt-2">
                 You are currently logged out. Please sign in first.
               </p>
             )}
@@ -97,6 +101,7 @@ const SetupAdmin = () => {
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="space-y-6"
+            role="status"
           >
             <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto border border-green-500/20">
               <CheckCircle className="w-8 h-8 text-green-500" />
@@ -117,11 +122,39 @@ const SetupAdmin = () => {
         )}
       </motion.div>
 
-      <p className="mt-8 text-[10px] text-muted-foreground uppercase font-medium tracking-[0.2em]">
+      <p className="mt-8 text-[12px] text-muted-foreground uppercase font-medium tracking-[0.2em]">
         Governance Layer v1.0 · Emergency Access
       </p>
     </div>
   );
+};
+
+/**
+ * The first-super-admin page only exists while there is no super admin (setup_admin_available(), supabase/manual/part_gd_staff_security.sql).
+ * Signed out: sign in first. Once a super admin exists, or if the check cannot be made, the page is simply not found.
+ */
+const SetupAdmin = () => {
+  const { user, isLoading } = useAuth();
+  const location = useLocation();
+  const [state, setState] = useState<'checking' | 'open' | 'closed'>('checking');
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let alive = true;
+    void (async () => {
+      const { data, error } = await (supabase as any).rpc('setup_admin_available');
+      if (!alive) return;
+      // a missing function means the SQL part has not been run: stay closed in production, stay usable while developing
+      setState(error ? (import.meta.env.DEV ? 'open' : 'closed') : data === true ? 'open' : 'closed');
+    })();
+    return () => { alive = false; };
+  }, [isLoading, user?.id]);
+
+  if (isLoading) return <div className="min-h-dvh bg-background flex items-center justify-center"><LoadingSpinner size="lg" /></div>;
+  if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
+  if (state === 'checking') return <div className="min-h-dvh bg-background flex items-center justify-center"><LoadingSpinner size="lg" /></div>;
+  if (state === 'closed') return <NotFound />;
+  return <SetupAdminPage />;
 };
 
 export default SetupAdmin;

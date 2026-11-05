@@ -3,6 +3,7 @@ import { Platform, PermissionsAndroid, AppState, Alert, Linking } from 'react-na
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NotificationService } from '@cinecraft/notifications';
 import { isUserInActiveChat } from './activeScreenTracker';
+import { getCurrentUserIdSync } from './offlineCache';
 
 /**
  * Safely obtain the Firebase messaging instance to prevent native crashes on unconfigured environments
@@ -108,6 +109,21 @@ export const registerForPushNotifications = async (userId: string): Promise<stri
     if (!hasPermission) {
       console.warn('[Push] Notification permission denied by user');
       return null;
+    }
+
+    // iOS: Firebase can only hand out an FCM token once Apple has issued the APNs token (a moment after the permission is
+    // granted). Wait for it, otherwise getToken() fails with "No APNS token specified". The iOS Simulator never gets one:
+    // push only works on a real device, so there we carry on and let getToken() report it.
+    if (Platform.OS === 'ios') {
+      try {
+        await fcm.registerDeviceForRemoteMessages();
+        for (let attempt = 0; attempt < 10; attempt++) {
+          if (await fcm.getAPNSToken()) break;
+          await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        }
+      } catch (apnsErr) {
+        console.warn('[Push] APNs registration check failed:', apnsErr);
+      }
     }
 
     // Ensure APNs / FCM token is registered
@@ -294,6 +310,7 @@ export const handleNotificationNavigation = (data: any, navigationRef?: any) => 
         roomName: data.roomName || data.roomTitle || data.senderName || 'Live Call',
         roomType: data.spaceId || type.includes('project') ? 'project' : (data.roomId || type.includes('room') ? 'room' : 'direct'),
         isVideo: /video/i.test(String(data.title || data.body || data.message || '')),
+        answering: true, // answering / joining a call someone else started (fans are allowed to)
       });
       return;
     }
@@ -336,9 +353,13 @@ export const handleNotificationNavigation = (data: any, navigationRef?: any) => 
       navigationRef.navigate('CompanyPageDetail', isId(segs[1]) ? { pageId: segs[1] } : { pageSlug: segs[1] });
       return;
     }
+    if (segs[0] === 'gifts') { navigationRef.navigate('Gifts'); return; }
+    if (segs[0] === 'payments') { navigationRef.navigate('MyPayments'); return; }
+    if (segs[0] === 'plans') { navigationRef.navigate('Plans'); return; }
     if (actionUrl === '/jobs/applications') { navigationRef.navigate('MyApplications'); return; }
     if (actionUrl === '/jobs/manage') { navigationRef.navigate('ManagePostings'); return; }
     if (jobId) { navigationRef.navigate('JobDetail', { jobId }); return; }
+    if (actionUrl === '/marketplace/disputes') { navigationRef.navigate('MarketplaceDisputes'); return; }
     if (actionUrl === '/marketplace/bookings') { navigationRef.navigate('MyBookings'); return; }
     if (actionUrl === '/marketplace/quotes') { navigationRef.navigate('MyQuotes'); return; }
     if (actionUrl === '/marketplace/hub') { navigationRef.navigate('SellerHub'); return; }
@@ -587,6 +608,7 @@ export const setupFCMListeners = (navigationRef?: any) => {
     // 1. Foreground Message Handler (Displays heads-up notification while app is open)
     const unsubscribeOnMessage = fcm.onMessage(async (remoteMessage: FirebaseMessagingTypes.RemoteMessage) => {
       console.log('[FCM] Foreground notification received:', remoteMessage);
+      if (!getCurrentUserIdSync()) return; // signed out: show nothing
 
       try {
         const data = remoteMessage.data || {};

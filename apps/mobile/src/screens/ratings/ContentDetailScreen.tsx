@@ -20,10 +20,16 @@ import { getSupabaseClient } from '@cinecraft/api';
 import { fetchContentDetails, getSafeImageUrl } from '../../services/tmdbService';
 import { getCache, saveCache } from '../../services/offlineCache';
 import { TabletContainer } from '../../components/common/TabletContainer';
+import { CreditLine } from '../../components/common/CreditLine';
 import { ReportModal } from '../../components/modals/ReportModal';
 import { AddToListModal } from '../../components/modals/AddToListModal';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { CachedImage } from '../../components/common/CachedImage';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { friendlyError } from '@cinecraft/core';
+import { isTabletDevice } from '../../utils/pageType';
+import { useAppRole } from '../../hooks/useAppRole';
+import { useResponsive } from '../../hooks/useResponsive';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -44,6 +50,9 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
 
   const targetId = String(contentId || movieId || '');
   const { themeColors, isDark } = useUserSettings();
+  const { isInternal } = useAppRole();
+  const { isTablet, isLandscape, isLargeTablet } = useResponsive();
+  const [castGridW, setCastGridW] = useState(0);
   const type = mediaType || contentType || 'movie';
   const isNativeCinema = targetId.includes('-');
 
@@ -170,7 +179,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
       : await supabase.from('film_watchlist').delete().eq('user_id', currentUserId).eq(col, val);
     if (error && error.code !== '23505') {
       setWatchlisted(!next);
-      Alert.alert('Could not update watchlist', error.message);
+      Alert.alert('Could not update watchlist', friendlyError(error));
     }
   };
 
@@ -178,7 +187,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
     const text = replyDraft.trim();
     if (!text) return;
     const { error } = await (getSupabaseClient() as any).rpc('reply_to_review', { p_review_id: reviewId, p_text: text });
-    if (error) return Alert.alert('Could not reply', error.message);
+    if (error) return Alert.alert('Could not reply', friendlyError(error));
     setReplyingId(null);
     setReplyDraft('');
     fetchReviews(0, true);
@@ -186,7 +195,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
 
   const deleteReply = async (reviewId: string) => {
     const { error } = await (getSupabaseClient() as any).from('film_review_replies').delete().eq('review_id', reviewId);
-    if (error) return Alert.alert('Could not delete the reply', error.message);
+    if (error) return Alert.alert('Could not delete the reply', friendlyError(error));
     fetchReviews(0, true);
   };
 
@@ -199,7 +208,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
         style: 'destructive',
         onPress: async () => {
           const { error } = await (getSupabaseClient() as any).from('film_reviews').delete().eq('id', myReviewId);
-          if (error) return Alert.alert('Could not delete', error.message);
+          if (error) return Alert.alert('Could not delete', friendlyError(error));
           setMyReviewId(null);
           setReviewText('');
           setIsSpoiler(false);
@@ -285,7 +294,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
               poster_url: getSafeImageUrl(data.poster_url),
               backdrop_url: data.backdrop_url || data.poster_url,
               release_date: data.release_date,
-              runtime: data.runtime || 120,
+              runtime: data.runtime || null,
               genres: (data.genre || []).map((g: string, i: number) => ({ id: i, name: g })),
               credits: data.credits || { cast: [], crew: [] },
               trailer_url: data.trailer_url,
@@ -337,6 +346,22 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
   }, [loadContentDetails]);
 
   // Handle Rate & Review submission
+  // takes the person's own star rating back (the review text, if any, is kept)
+  const handleRemoveRating = async () => {
+    if (!currentUserId || userRating === null) return;
+    try {
+      let q = (getSupabaseClient() as any).from('user_film_ratings').delete().eq('user_id', currentUserId);
+      q = isNativeCinema ? q.eq('platform_cinema_id', targetId) : q.eq('tmdb_id', parseInt(targetId, 10));
+      const { error } = await q;
+      if (error) throw error;
+      setUserRating(null);
+      setDraftRating(null);
+      loadContentDetails();
+    } catch {
+      Alert.alert('Could not remove your rating', 'Please try again in a moment.');
+    }
+  };
+
   const handleSubmitReview = async () => {
     if (!currentUserId) {
       Alert.alert('Sign In Required', 'Please sign in to rate and write reviews.');
@@ -378,7 +403,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
       loadContentDetails();
       loadExtras();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not save review.');
+      Alert.alert('Error', friendlyError(e, 'Could not save review.'));
     } finally {
       setSubmittingReview(false);
     }
@@ -405,7 +430,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
         : await (supabase.from('review_helpful_marks') as any).insert({ review_id: reviewId, user_id: currentUserId });
       if (error && error.code !== '23505') throw error;
     } catch (e: any) {
-      Alert.alert('Could not update', e?.message || 'Please try again.');
+      Alert.alert('Could not update', friendlyError(e, 'Please try again.'));
       loadContentDetails();
     }
   };
@@ -423,8 +448,8 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
     ? new Date(content.release_date).getFullYear()
     : content?.first_air_date
     ? new Date(content.first_air_date).getFullYear()
-    : (initialReleaseDate ? new Date(initialReleaseDate).getFullYear() : '2026');
-  const runtimeMin = content?.runtime || (content?.episode_run_time?.[0]) || 118;
+    : (initialReleaseDate ? new Date(initialReleaseDate).getFullYear() : null);
+  const runtimeMin = content?.runtime || (content?.episode_run_time?.[0]) || null;
 
   // Trailer URL resolution
   const trailerObj =
@@ -440,9 +465,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
     return (
       <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
         <Header title="Content Details" showLogo={false} onBack={() => navigation.goBack()} />
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={ORANGE} />
-        </View>
+        <ScreenSkeleton variant="detail" />
       </View>
     );
   }
@@ -454,14 +477,14 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
         showLogo={false}
         onBack={() => navigation.goBack()}
         rightAction={
-          <TouchableOpacity onPress={handleShare} style={styles.headerShareBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={handleShare} style={styles.headerShareBtn}>
             <Icon name="share" size={18} color={themeColors.textPrimary} />
           </TouchableOpacity>
         }
       />
 
-      <TabletContainer maxWidth={720} backgroundColor={themeColors.bgScreen}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <TabletContainer maxWidth="content" backgroundColor={themeColors.bgScreen}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Hero Backdrop Section */}
           <View style={styles.heroBackdropContainer}>
             <CachedImage uri={content?.backdrop_url || content?.poster_url} style={styles.backdropImage} resizeMode="cover" />
@@ -477,15 +500,19 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                 </Text>
 
                 <View style={styles.metaPillRow}>
-                  <View style={styles.metaPill}>
-                    <Icon name="calendar" size={11} color={ORANGE} />
-                    <Text style={styles.metaPillText}>{releaseYear}</Text>
-                  </View>
+                  {!!releaseYear && (
+                    <View style={styles.metaPill}>
+                      <Icon name="calendar" size={11} color={ORANGE} />
+                      <Text style={styles.metaPillText}>{releaseYear}</Text>
+                    </View>
+                  )}
 
-                  <View style={styles.metaPill}>
-                    <Icon name="clock" size={11} color={ORANGE} />
-                    <Text style={styles.metaPillText}>{runtimeMin} min</Text>
-                  </View>
+                  {!!runtimeMin && (
+                    <View style={styles.metaPill}>
+                      <Icon name="clock" size={11} color={ORANGE} />
+                      <Text style={styles.metaPillText}>{runtimeMin} min</Text>
+                    </View>
+                  )}
 
                   {!!(content?.vote_average || initialVoteAverage) && (
                     <View style={styles.metaPill}>
@@ -525,7 +552,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                   </TouchableOpacity>
 
                   {!!currentUserId && (
-                    <TouchableOpacity
+                    <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       style={[styles.shareBtn, { backgroundColor: themeColors.bgCard, borderColor: watchlisted ? ORANGE : themeColors.border }]}
                       onPress={toggleWatchlist}
                       activeOpacity={0.85}
@@ -536,7 +563,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                   )}
 
                   {!!currentUserId && (
-                    <TouchableOpacity
+                    <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       style={[styles.shareBtn, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
                       onPress={() => setListModalOpen(true)}
                       activeOpacity={0.85}
@@ -568,69 +595,68 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
             )}
           </View>
 
-          {/* Cast Section */}
-          {content?.credits?.cast && content.credits.cast.length > 0 && (
-            <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-              <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Cast</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.castRow}>
-                {content.credits.cast.slice(0, 14).map((person: any) => (
-                  <View key={person.id} style={styles.castCard}>
-                    {person.profile_path ? (
-                      <Image
-                        source={{
-                          uri: `https://image.tmdb.org/t/p/w185${person.profile_path}`,
-                        }}
-                        style={styles.castPhoto}
-                      />
-                    ) : (
-                      <View style={[styles.castPhotoFallback, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
-                        <Icon name="user" size={24} color={themeColors.textMuted} />
-                      </View>
-                    )}
-                    <Text style={[styles.castName, { color: themeColors.textPrimary }]} numberOfLines={1}>
-                      {person.name}
-                    </Text>
-                    <Text style={[styles.castRole, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                      {person.character || 'Cast'}
-                    </Text>
+          {/* Cast Section (web: wrapping grid 2/4/6 columns, 2:3 photos, centred text; phones keep the swipe row) */}
+          {content?.credits?.cast && content.credits.cast.length > 0 && (() => {
+            const castList = content.credits.cast.slice(0, 12);
+            const renderCast = (person: any, itemStyle: any, photoStyle: any) => (
+              <View key={person.id} style={itemStyle}>
+                {person.profile_path ? (
+                  <Image
+                    source={{ uri: `https://image.tmdb.org/t/p/w342${person.profile_path}` }}
+                    style={photoStyle}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[photoStyle, styles.castPhotoFallback, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
+                    <Icon name="user" size={isTablet ? 36 : 24} color={themeColors.iconMuted} />
                   </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+                )}
+                <Text style={[styles.castName, { color: themeColors.textPrimary }, isTablet && styles.castNameTablet]} numberOfLines={2}>
+                  {person.name}
+                </Text>
+                <Text style={[styles.castRole, { color: themeColors.textSecondary }, isTablet && styles.castRoleTablet]} numberOfLines={2}>
+                  {person.character || 'Cast'}
+                </Text>
+              </View>
+            );
+            const gap = 12;
+            const cols = isLargeTablet || (isTablet && isLandscape) ? 6 : 4;
+            const itemW = castGridW > 0 ? Math.floor((castGridW - gap * (cols - 1)) / cols) : 0;
+            return (
+              <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Cast</Text>
+                {isTablet ? (
+                  <View
+                    style={{ flexDirection: 'row', flexWrap: 'wrap', gap }}
+                    onLayout={(e) => setCastGridW(Math.floor(e.nativeEvent.layout.width))}
+                  >
+                    {itemW > 0 &&
+                      castList.map((person: any) =>
+                        renderCast(person, { width: itemW }, { width: itemW, height: Math.round(itemW * 1.5), borderRadius: 10, backgroundColor: themeColors.chipBg, marginBottom: 8 }),
+                      )}
+                  </View>
+                ) : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.castRow}>
+                    {castList.map((person: any) => renderCast(person, styles.castCard, styles.castPhoto))}
+                  </ScrollView>
+                )}
+              </View>
+            );
+          })()}
 
-          {/* Key Crew Section */}
+          {/* Key Crew Section (web: two columns of credit lines from md up) */}
           {content?.credits?.crew && content.credits.crew.length > 0 && (
             <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-              <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Key Crew</Text>
-              <View style={styles.crewGrid}>
+              <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Crew</Text>
+              <View style={isTablet ? styles.crewColumns : undefined}>
                 {content.credits.crew
                   .filter((p: any) =>
-                    ['Director', 'Producer', 'Writer', 'Director of Photography', 'Cinematographer', 'Editor'].includes(p.job)
+                    ['Director', 'Producer', 'Writer', 'Screenplay', 'Director of Photography', 'Cinematography', 'Cinematographer', 'Editor'].includes(p.job)
                   )
-                  .slice(0, 6)
+                  .slice(0, 8)
                   .map((person: any, idx: number) => (
-                    <View key={`${person.id}-${idx}`} style={[styles.crewCard, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
-                      {person.profile_path ? (
-                        <Image
-                          source={{
-                            uri: `https://image.tmdb.org/t/p/w185${person.profile_path}`,
-                          }}
-                          style={styles.crewAvatar}
-                        />
-                      ) : (
-                        <View style={[styles.crewAvatarFallback, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                          <Icon name="user" size={16} color={themeColors.textMuted} />
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.crewName, { color: themeColors.textPrimary }]} numberOfLines={1}>
-                          {person.name}
-                        </Text>
-                        <Text style={[styles.crewJob, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                          {person.job}
-                        </Text>
-                      </View>
+                    <View key={`${person.id}-${idx}`} style={isTablet ? styles.crewColumnItem : undefined}>
+                      <CreditLine lead={person.job} trail={person.name} />
                     </View>
                   ))}
               </View>
@@ -642,16 +668,16 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
             <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
               <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
                 <View style={{ alignItems: 'center', minWidth: 78 }}>
-                  <Text style={{ color: themeColors.textPrimary, fontSize: 34, fontWeight: '900' }}>{Number(summary.overall_average).toFixed(1)}</Text>
+                  <Text style={{ color: themeColors.textPrimary, fontSize: 32, fontWeight: '700' }}>{Number(summary.overall_average).toFixed(1)}</Text>
                   <View style={{ flexDirection: 'row', gap: 1, marginVertical: 2 }}>
                     {[1, 2, 3, 4, 5].map((s) => (
                       <Icon key={s} name="star" size={11} color={s <= Math.round(Number(summary.overall_average)) ? '#F59E0B' : (isDark ? '#374151' : '#E2E8F0')} />
                     ))}
                   </View>
-                  <Text style={{ color: themeColors.textMuted, fontSize: 11 }}>{summary.overall_count} rating{Number(summary.overall_count) === 1 ? '' : 's'}</Text>
+                  <Text style={{ color: themeColors.textMuted, fontSize: 12 }}>{summary.overall_count} rating{Number(summary.overall_count) === 1 ? '' : 's'}</Text>
                   {!!summary.weighted_average && (
                     <View style={{ marginTop: 6, backgroundColor: 'rgba(255,75,51,0.12)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
-                      <Text style={{ color: ORANGE, fontSize: 11, fontWeight: '800' }}>CineCraft {Number(summary.weighted_average).toFixed(1)}</Text>
+                      <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>CineCraft {Number(summary.weighted_average).toFixed(1)}</Text>
                     </View>
                   )}
                 </View>
@@ -661,11 +687,11 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                     const pct = Number(summary.overall_count) ? (count / Number(summary.overall_count)) * 100 : 0;
                     return (
                       <View key={n} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ color: themeColors.textMuted, fontSize: 11, width: 10, textAlign: 'right' }}>{n}</Text>
+                        <Text style={{ color: themeColors.textMuted, fontSize: 12, width: 10, textAlign: 'right' }}>{n}</Text>
                         <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: themeColors.chipBg, overflow: 'hidden' }}>
                           <View style={{ width: `${pct}%`, height: '100%', backgroundColor: '#F59E0B', borderRadius: 3 }} />
                         </View>
-                        <Text style={{ color: themeColors.textMuted, fontSize: 11, width: 24 }}>{count}</Text>
+                        <Text style={{ color: themeColors.textMuted, fontSize: 12, width: 24 }}>{count}</Text>
                       </View>
                     );
                   })}
@@ -677,14 +703,15 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
             </View>
           )}
 
-          {/* Interactive Rating & Review Form Card */}
+          {/* Interactive Rating & Review Form Card (staff only read: no rating or review inputs) */}
+          {!isInternal && (
           <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
             <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>{myReviewId ? 'Your Review' : 'Rate & Review This Title'}</Text>
 
             {/* Star Bar */}
             <View style={styles.interactiveStarBar}>
               {[1, 2, 3, 4, 5].map((star) => (
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Rate ${star} out of 5`} accessibilityState={{ selected: star <= displayRating }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   key={star}
                   onPress={() => setDraftRating(star)}
                   activeOpacity={0.7}
@@ -701,6 +728,11 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                 <View style={[styles.userRatingBadge, { backgroundColor: isDark ? 'rgba(255,75,51,0.12)' : '#FFF7F5', borderColor: isDark ? 'rgba(255,75,51,0.25)' : '#FFE5DF' }]}>
                   <Text style={styles.userRatingBadgeText}>Your Rating: {userRating}/5</Text>
                 </View>
+              )}
+              {userRating !== null && (
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove my rating" onPress={handleRemoveRating} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginLeft: 8 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#9CA3AF' : '#64748B' }}>Remove rating</Text>
+                </TouchableOpacity>
               )}
             </View>
 
@@ -719,6 +751,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
               multiline
               value={reviewText}
               onChangeText={setReviewText}
+              maxLength={2000}
             />
 
             {/* Options: Spoilers & Anonymous Toggles */}
@@ -774,6 +807,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
               </TouchableOpacity>
             )}
           </View>
+          )}
 
           {/* Community Reviews Feed Section */}
           <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
@@ -844,16 +878,19 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
 
                     {!!rev.reply_text && replyingId !== rev.id && (
                       <View style={{ marginLeft: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: ORANGE, gap: 3 }}>
-                        <Text style={{ color: ORANGE, fontSize: 11.5, fontWeight: '800' }}>
+                        <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>
                           Reply from the creator{rev.reply_by_name ? ` · ${rev.reply_by_name}` : ''}
                         </Text>
                         <Text style={{ color: themeColors.textSecondary, fontSize: 13 }}>{rev.reply_text}</Text>
                         {!!rev.can_reply && (
                           <View style={{ flexDirection: 'row', gap: 14 }}>
-                            <TouchableOpacity onPress={() => { setReplyingId(rev.id); setReplyDraft(rev.reply_text || ''); }}>
+                            <TouchableOpacity hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} onPress={() => { setReplyingId(rev.id); setReplyDraft(rev.reply_text || ''); }}>
                               <Text style={{ color: themeColors.textMuted, fontSize: 12 }}>Edit reply</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={() => deleteReply(rev.id)}>
+                            <TouchableOpacity hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} onPress={() => Alert.alert('Delete reply', 'Delete your reply to this review?', [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Delete', style: 'destructive', onPress: () => deleteReply(rev.id) },
+                            ])}>
                               <Text style={{ color: '#DC2626', fontSize: 12 }}>Delete</Text>
                             </TouchableOpacity>
                           </View>
@@ -862,7 +899,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                     )}
                     {!!rev.can_reply && !rev.reply_text && replyingId !== rev.id && (
                       <TouchableOpacity onPress={() => { setReplyingId(rev.id); setReplyDraft(''); }}>
-                        <Text style={{ color: ORANGE, fontSize: 12.5, fontWeight: '800' }}>Reply as the creator</Text>
+                        <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>Reply as the creator</Text>
                       </TouchableOpacity>
                     )}
                     {replyingId === rev.id && (
@@ -878,7 +915,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                         />
                         <View style={{ flexDirection: 'row', gap: 16 }}>
                           <TouchableOpacity onPress={() => sendReply(rev.id)} disabled={!replyDraft.trim()}>
-                            <Text style={{ color: ORANGE, fontWeight: '800', opacity: replyDraft.trim() ? 1 : 0.5 }}>Send reply</Text>
+                            <Text style={{ color: ORANGE, fontWeight: '700', opacity: replyDraft.trim() ? 1 : 0.5 }}>Send reply</Text>
                           </TouchableOpacity>
                           <TouchableOpacity onPress={() => setReplyingId(null)}>
                             <Text style={{ color: themeColors.textSecondary, fontWeight: '700' }}>Cancel</Text>
@@ -904,7 +941,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
                       )}
                       {!rev.is_mine && (
                         <TouchableOpacity onPress={() => setReportReview(rev)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Report review">
-                          <Icon name="flag" size={14} color={themeColors.textMuted} />
+                          <Icon name="flag" size={14} color={themeColors.iconMuted} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -914,7 +951,7 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
             )}
             {hasMoreReviews && (
               <TouchableOpacity onPress={loadMoreReviews} disabled={loadingMoreReviews} style={{ alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 18, marginTop: 6 }}>
-                {loadingMoreReviews ? <ActivityIndicator color={ORANGE} /> : <Text style={{ color: ORANGE, fontWeight: '800', fontSize: 13 }}>Load more reviews</Text>}
+                {loadingMoreReviews ? <ActivityIndicator color={ORANGE} /> : <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 13 }}>Load more reviews</Text>}
               </TouchableOpacity>
             )}
           </View>
@@ -939,13 +976,15 @@ export const ContentDetailScreen = ({ route, navigation }: { route: any; navigat
         onClose={() => setShareSheetVisible(false)}
         title={filmTitle}
         shareUrl={`https://cinecraftconnect.com/ratings/detail/${targetId}`}
-        itemType="project"
+        itemType="content"
         itemData={{
           id: targetId,
+          mediaType: type === 'tv' ? 'tv' : 'movie',
           title: filmTitle,
-          subtitle: content?.overview || initialOverview,
-          banner_url: content?.backdrop_url || content?.poster_url,
-          genre_display: content?.genres?.[0]?.name || (type === 'tv' ? 'TV Series' : 'Cinema'),
+          // native cinema titles have no TMDB path; the card then loads the poster from platform_cinema by id
+          poster_path: isNativeCinema ? null : (posterPath || content?.poster_path || null),
+          rating: Number(content?.vote_average ?? initialVoteAverage) || undefined,
+          overview: content?.overview || initialOverview,
         }}
       />
     </View>
@@ -970,7 +1009,7 @@ const styles = StyleSheet.create({
   },
   heroBackdropContainer: {
     width: '100%',
-    height: 260,
+    height: isTabletDevice ? 420 : 260,
     position: 'relative',
     backgroundColor: INK,
     marginBottom: 60,
@@ -995,11 +1034,11 @@ const styles = StyleSheet.create({
     right: 16,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 14,
+    gap: isTabletDevice ? 24 : 14,
   },
   heroPosterImage: {
-    width: 110,
-    height: 160,
+    width: isTabletDevice ? 190 : 110,
+    height: isTabletDevice ? 285 : 160,
     borderRadius: 14,
     borderWidth: 2,
     borderColor: '#FFFFFF',
@@ -1010,8 +1049,8 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   heroTitleText: {
-    fontSize: 19,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 30 : 20,
+    fontWeight: '700',
     color: '#FFFFFF',
     fontFamily: 'Lora-Bold',
     marginBottom: 6,
@@ -1035,8 +1074,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaPillText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: INK,
   },
   heroActionsRow: {
@@ -1069,7 +1108,7 @@ const styles = StyleSheet.create({
   trailerBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   trailerBtnTextDisabled: {
@@ -1094,7 +1133,7 @@ const styles = StyleSheet.create({
   shareBtnText: {
     color: INK,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',
@@ -1106,16 +1145,16 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginBottom: 10,
   },
   overviewParagraph: {
-    fontSize: 13.5,
+    fontSize: isTabletDevice ? 16 : 14,
     color: '#475569',
-    lineHeight: 20,
+    lineHeight: isTabletDevice ? 24 : 20,
   },
   genreRow: {
     flexDirection: 'row',
@@ -1133,8 +1172,8 @@ const styles = StyleSheet.create({
   },
   genrePillText: {
     color: ORANGE,
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   castRow: {
     paddingVertical: 4,
@@ -1150,6 +1189,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     marginBottom: 4,
   },
+  crewColumns: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  crewColumnItem: { width: '48%' },
+  castNameTablet: { fontSize: 14, textAlign: 'center' },
+  castRoleTablet: { fontSize: 12, textAlign: 'center' },
   castPhotoFallback: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1157,12 +1200,12 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   castName: {
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: INK,
   },
   castRole: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 1,
   },
@@ -1172,7 +1215,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   crewCard: {
-    width: '48%',
+    flexGrow: 1,
+    flexBasis: '47%',
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
@@ -1196,11 +1240,11 @@ const styles = StyleSheet.create({
   },
   crewName: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   crewJob: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 1,
   },
@@ -1223,8 +1267,8 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   userRatingBadgeText: {
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   reviewTextInput: {
@@ -1233,7 +1277,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 12,
     padding: 12,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
     height: 80,
     textAlignVertical: 'top',
@@ -1260,7 +1304,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFC8BF',
   },
   toggleChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -1277,7 +1321,7 @@ const styles = StyleSheet.create({
   submitReviewBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   noReviewsText: {
     color: '#64748B',
@@ -1317,19 +1361,19 @@ const styles = StyleSheet.create({
   reviewerFallbackText: {
     color: ORANGE,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   reviewerName: {
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: INK,
   },
   reviewerCraft: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
   },
   reviewDate: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#94A3B8',
   },
   spoilerWarningBox: {
@@ -1347,7 +1391,7 @@ const styles = StyleSheet.create({
   spoilerWarningText: {
     flex: 1,
     color: '#DC2626',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   spoilerToggleBtn: {
@@ -1356,8 +1400,8 @@ const styles = StyleSheet.create({
   },
   spoilerToggleText: {
     color: '#DC2626',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   reviewBodyText: {
     fontSize: 13,
@@ -1378,7 +1422,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   helpfulBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: INK,
   },

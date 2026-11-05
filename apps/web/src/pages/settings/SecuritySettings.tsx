@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Shield, Lock } from 'lucide-react';
-import { BackButton } from '@/components/common/BackButton';
+import { Lock, Eye, EyeOff } from 'lucide-react';
+import { SettingsPageHeader, SettingsSection, SettingsLinkRow } from '@/components/settings/SettingsUI';
 import {
     Dialog,
     DialogContent,
@@ -11,11 +10,12 @@ import {
     DialogTitle,
     DialogDescription,
     DialogFooter,
-    DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { friendlyError } from '@cinecraft/core';
+import { validateNewPassword } from '@/components/settings/settingsLogic';
 
 const SecuritySettings = () => {
     const { toast } = useToast();
@@ -25,18 +25,17 @@ const SecuritySettings = () => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showPasswords, setShowPasswords] = useState(false);
+    const passwordMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
 
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
 
-        if (newPassword.length < 8) {
-            setError('Password must be at least 8 characters long.');
-            return;
-        }
-
-        if (newPassword !== confirmPassword) {
-            setError('Passwords do not match.');
+        // validateNewPassword mirrors this rule (minimum 8, must match) and is unit tested
+        const invalid = newPassword.length < 8 ? 'Password must be at least 8 characters long.' : validateNewPassword(newPassword, confirmPassword);
+        if (invalid) {
+            setError(invalid);
             return;
         }
 
@@ -79,10 +78,10 @@ const SecuritySettings = () => {
             setIsDialogOpen(false);
         } catch (err: any) {
             console.error('Failed to change password:', err);
-            setError(err.message || 'Failed to update password.');
+            setError(friendlyError(err, 'Failed to update password.'));
             toast({
                 title: "Error updating password",
-                description: err.message || "Please try again later.",
+                description: friendlyError(err, "Please try again later."),
                 variant: "destructive"
             });
         } finally {
@@ -91,47 +90,29 @@ const SecuritySettings = () => {
     };
 
     return (
-        <div className="pb-10">
-            <div className="w-full">
-                <div className="mb-6">
-                    <BackButton label="BACK TO SETTINGS" to="/settings" className="mb-4 lg:hidden" />
-                    <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
-                        <Shield className="h-8 w-8 text-primary" />
-                        Security
-                    </h1>
-                    <p className="text-muted-foreground mt-2">Protect your account</p>
+        <>
+            <SettingsPageHeader title="Password and security" description="Protect your account." />
+            <SettingsSection>
+                <SettingsLinkRow icon={Lock} title="Change password" description="Update your password regularly" onClick={() => setIsDialogOpen(true)} />
+                <SettingsLinkRow title="Where you are logged in" description="Manage your trusted devices and logins" to="/settings/sessions" />
+                <div className="flex items-center gap-4 px-4 py-3.5" aria-disabled="true">
+                    <div className="flex-1 min-w-0 opacity-60">
+                        <p className="text-base">Two-factor authentication</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Add an extra layer of security</p>
+                    </div>
+                    <span className="text-xs font-medium rounded-full bg-muted text-muted-foreground px-2.5 py-1">Coming soon</span>
                 </div>
+            </SettingsSection>
 
-                <div className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Account Security</CardTitle>
-                            <CardDescription>Protect your account with additional security measures</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <Label className="text-base font-medium">Two-Factor Authentication</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">Add an extra layer of security</p>
-                                </div>
-                                <Button variant="outline" disabled>Coming Soon</Button>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <Label className="text-base font-medium">Change Password</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">Update your password regularly</p>
-                                </div>
-                                <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            <Dialog open={isDialogOpen} onOpenChange={(open) => {
                                     setIsDialogOpen(open);
                                     if (!open) {
+                                        setCurrentPassword('');
                                         setNewPassword('');
                                         setConfirmPassword('');
                                         setError('');
                                     }
                                 }}>
-                                    <DialogTrigger asChild>
-                                        <Button variant="outline">Change</Button>
-                                    </DialogTrigger>
                                     <DialogContent className="max-w-md w-[95vw] rounded-2xl bg-card border border-border shadow-lg">
                                         <DialogHeader>
                                             <DialogTitle className="flex items-center gap-2 text-foreground font-bold">
@@ -139,13 +120,13 @@ const SecuritySettings = () => {
                                                 Change Password
                                             </DialogTitle>
                                             <DialogDescription className="text-muted-foreground text-xs leading-relaxed">
-                                                Enter your new password below. It must be at least 6 characters long.
+                                                Enter your new password below. It must be at least 8 characters long.
                                             </DialogDescription>
                                         </DialogHeader>
 
                                         <form onSubmit={handlePasswordChange} className="space-y-4 py-2">
                                             {error && (
-                                                <div className="p-3 text-xs bg-destructive/10 border border-destructive/20 text-destructive rounded-xl font-medium">
+                                                <div role="alert" className="p-3 text-xs bg-destructive/10 border border-destructive/20 text-destructive rounded-xl font-medium">
                                                     {error}
                                                 </div>
                                             )}
@@ -154,12 +135,13 @@ const SecuritySettings = () => {
                                                 <Label htmlFor="current-password">Current Password</Label>
                                                 <Input
                                                     id="current-password"
-                                                    type="password"
+                                                    type={showPasswords ? "text" : "password"}
                                                     placeholder="Enter current password"
                                                     value={currentPassword}
                                                     onChange={(e) => setCurrentPassword(e.target.value)}
                                                     className="rounded-xl focus-visible:ring-primary/30"
                                                     autoComplete="current-password"
+                                                    autoFocus
                                                 />
                                             </div>
 
@@ -167,12 +149,13 @@ const SecuritySettings = () => {
                                                 <Label htmlFor="new-password">New Password</Label>
                                                 <Input
                                                     id="new-password"
-                                                    type="password"
+                                                    type={showPasswords ? "text" : "password"}
                                                     placeholder="Enter new password"
                                                     value={newPassword}
                                                     onChange={(e) => setNewPassword(e.target.value)}
                                                     className="rounded-xl focus-visible:ring-primary/30"
                                                     required
+                                                    autoComplete="new-password"
                                                 />
                                             </div>
 
@@ -180,13 +163,28 @@ const SecuritySettings = () => {
                                                 <Label htmlFor="confirm-password">Confirm Password</Label>
                                                 <Input
                                                     id="confirm-password"
-                                                    type="password"
+                                                    type={showPasswords ? "text" : "password"}
                                                     placeholder="Confirm new password"
                                                     value={confirmPassword}
                                                     onChange={(e) => setConfirmPassword(e.target.value)}
                                                     className="rounded-xl focus-visible:ring-primary/30"
+                                                    autoComplete="new-password"
                                                     required
+                                                    aria-invalid={passwordMismatch}
+                                                    aria-describedby="confirm-password-hint"
                                                 />
+                                                <p id="confirm-password-hint" role="status" className="min-h-4 text-xs text-destructive">
+                                                    {passwordMismatch ? 'Passwords do not match' : ''}
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowPasswords(v => !v)}
+                                                    aria-pressed={showPasswords}
+                                                    className="inline-flex min-h-11 items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                                                >
+                                                    {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                    {showPasswords ? 'Hide passwords' : 'Show passwords'}
+                                                </button>
                                             </div>
 
                                             <DialogFooter className="pt-2 gap-2 flex-row sm:justify-end">
@@ -210,19 +208,7 @@ const SecuritySettings = () => {
                                         </form>
                                     </DialogContent>
                                 </Dialog>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <Label className="text-base font-medium">Active Sessions</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">Manage your trusted devices and logins</p>
-                                </div>
-                                <Button variant="outline" onClick={() => window.location.href = '/settings/sessions'}>View</Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
-        </div>
+        </>
     );
 };
 

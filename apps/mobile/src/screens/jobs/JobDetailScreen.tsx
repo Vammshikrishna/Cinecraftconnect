@@ -1,10 +1,13 @@
 import { ReportModal } from '../../components/modals/ReportModal';
-import React, { useEffect, useState } from 'react';
+import { showToast } from '../../contexts/ToastContext';
+import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  findNodeHandle,
   TouchableOpacity,
   TextInput,
   Image,
@@ -20,12 +23,14 @@ import { TabletContainer } from '../../components/common/TabletContainer';
 import { getSupabaseClient } from '@cinecraft/api';
 import { VerificationBadge } from '../../components/common/VerificationBadge';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useResponsive } from '../../hooks/useResponsive';
+import { isTabletDevice } from '../../utils/pageType';
 import { CachedImage } from '../../components/common/CachedImage';
 import { useAccountType } from '../../hooks/useAccountType';
 import { useAppRole } from '../../hooks/useAppRole';
 import { resolveCurrentUserId, getCacheSync, saveCache } from '../../services/offlineCache';
 import { pickAttachments, type PickedAttachment } from '../../services/attachmentPicker';
-import { uploadResume, RESUME_MAX_BYTES } from '../../services/resumeFiles';
+import { uploadResume, RESUME_MAX_BYTES, isAllowedResumeType } from '../../services/resumeFiles';
 import {
   JOB_TYPE_LABELS,
   EXPERIENCE_LABELS,
@@ -36,12 +41,16 @@ import {
   jobShareMessage,
   normalizeScreeningQuestions,
 } from '@cinecraft/core';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 
 export const JobDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isTablet, isLandscape } = useResponsive();
+  const twoCol = isTablet && isLandscape;
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
   const { jobId, jobTitle } = route.params || {};
@@ -55,6 +64,17 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
 
   // Application Form State
   const [coverNote, setCoverNote] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+  const applyFormRef = useRef<View>(null);
+  // The hero button used to submit a blank application. It now takes the person to the real form below.
+  const goToApplyForm = () => {
+    const scroller: any = scrollRef.current;
+    const form: any = applyFormRef.current;
+    const node = scroller ? findNodeHandle(scroller) : null;
+    if (form && node) {
+      form.measureLayout(node, (_x: number, y: number) => scroller.scrollTo({ y: Math.max(0, y - 12), animated: true }), () => {});
+    }
+  };
   const [portfolioLink, setPortfolioLink] = useState('');
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [resumeFile, setResumeFile] = useState<PickedAttachment | null>(null);
@@ -227,6 +247,7 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
 
     // Broadcast across screens in real-time
     DeviceEventEmitter.emit('jobBookmarkChanged', { jobId, isBookmarked: nextBookmarked });
+    showToast({ title: nextBookmarked ? 'Job saved' : 'Removed from saved', type: 'success' });
 
     const supabase = getSupabaseClient();
     try {
@@ -247,6 +268,7 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
       console.warn('[JobDetail] Toggle bookmark error:', e);
       setBookmarked(!nextBookmarked);
       DeviceEventEmitter.emit('jobBookmarkChanged', { jobId, isBookmarked: !nextBookmarked });
+      Alert.alert('Could not update your saved jobs', friendlyError(e, 'Please try again.'));
     }
   };
 
@@ -258,9 +280,13 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
         Alert.alert('File too large', 'Please attach a file up to 10 MB.');
         return;
       }
+      if (!isAllowedResumeType(file)) {
+        Alert.alert('That file type is not allowed', 'Attach a PDF, JPG or PNG.');
+        return;
+      }
       setResumeFile(file);
     } catch (e: any) {
-      Alert.alert('Could not attach the file', e?.message || 'Please try again.');
+      Alert.alert('Could not attach the file', friendlyError(e, 'Please try again.'));
     }
   };
 
@@ -306,7 +332,7 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
       setApplicationCount((prev) => prev + 1);
       Alert.alert('Application Submitted! 🎬', 'Your application has been delivered to the hiring team. You will be notified when its status changes.');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to submit application.');
+      Alert.alert('Error', friendlyError(err, 'Failed to submit application.'));
     } finally {
       setApplying(false);
     }
@@ -321,23 +347,28 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
         onPress: async () => {
           try {
             const supabase = getSupabaseClient();
-            await (supabase.from('job_applications') as any)
+            const { error: withdrawError } = await (supabase.from('job_applications') as any)
               .delete()
               .eq('job_id', jobId)
               .eq('applicant_id', currentUserId);
+            if (withdrawError) throw withdrawError;
 
             setIsApplied(false);
             setApplicationCount((prev) => Math.max(0, prev - 1));
             Alert.alert('Withdrawn', 'Your application has been removed.');
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Could not withdraw application.');
+            Alert.alert('Error', friendlyError(e, 'Could not withdraw application.'));
           }
         },
       },
     ]);
   };
 
+  const [showShareSheet, setShowShareSheet] = useState(false);
+
+  // Share opens the in-app share sheet (send to people, rooms, Share to Feed, copy link, share outside the app)
   const handleShare = async () => {
+    if (job) { setShowShareSheet(true); return; }
     try {
       await Share.share({
         message: job
@@ -357,26 +388,33 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
     return (
       <View style={styles.container}>
         <Header title="Job Details" showLogo={false} onBack={() => navigation.goBack()} />
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={ORANGE} />
+        <ScreenSkeleton variant="detail" />
+      </View>
+    );
+  }
+
+  // The job could not be loaded (deleted, no access, or no connection): say so instead of showing a made-up job.
+  if (!job) {
+    return (
+      <View style={styles.container}>
+        <Header title="Job Details" showLogo={false} onBack={() => navigation.goBack()} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 8 }}>
+          <Icon name="briefcase" size={40} color={themeColors.iconMuted} />
+          <Text style={{ fontSize: 18, fontWeight: '700', color: themeColors.textPrimary }}>{jobTitle || 'This job'} could not be loaded</Text>
+          <Text style={{ fontSize: 13, color: themeColors.textSecondary, textAlign: 'center' }}>It may have been removed, or your connection dropped.</Text>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            style={{ marginTop: 12, minHeight: 44, paddingHorizontal: 22, borderRadius: 22, backgroundColor: '#FF4B33', justifyContent: 'center' }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Go back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  const currentJob = job || {
-    title: jobTitle || 'UI/UX Designer & Graphic Designer',
-    company: 'Geetha Arts Production',
-    location: 'Hyderabad, Telangana, IND',
-    type: 'freelance',
-    experience_level: '1-5 Years',
-    salary_min: 150000,
-    salary_max: 250000,
-    description:
-      'We are building innovative digital products focused on social networking, entertainment, and creator ecosystems. We are looking for a creative and detail-oriented Designer who can transform ideas into visually appealing and user-friendly experiences.',
-    requirements:
-      '• UI/UX Design: Design intuitive and engaging web and mobile interfaces.\n• Brand & Marketing Assets: Create social media graphics and pitch decks.\n• Prototyping: Experience with Figma, Adobe XD, or Illustrator.',
-  };
+  const currentJob = job;
 
   const salaryFormatted = formatSalary(currentJob) || 'On discussion';
   const deadline = getDeadlineInfo(job?.deadline);
@@ -390,6 +428,7 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
 
   return (
     <TabletContainer
+      maxWidth="content"
       backgroundColor={themeColors.bgScreen}
       header={
         <Header
@@ -398,16 +437,18 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
           onBack={() => navigation.goBack()}
           rightAction={
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity onPress={() => setReportOpen(true)}>
-                <Icon name="flag" size={18} color={themeColors.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Report" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setReportOpen(true)}>
+                <Icon name="flag" size={18} color={themeColors.iconSecondary} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleShare}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={handleShare}>
                 <Icon name="share" size={18} color={themeColors.textPrimary} />
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleToggleBookmark}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                accessibilityLabel="Bookmark job"
+                accessibilityRole="button"
+                accessibilityLabel={bookmarked ? 'Remove saved job' : 'Bookmark job'}
+                accessibilityState={{ selected: !!bookmarked }}
               >
                 <Icon
                   name="bookmark"
@@ -421,7 +462,9 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
         />
       }
     >
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} contentContainerStyle={[styles.content, isTablet && { padding: 24, paddingBottom: 72 }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={twoCol ? { flexDirection: 'row', alignItems: 'flex-start', gap: 20 } : undefined}>
+        <View style={twoCol ? { width: '40%' } : undefined}>
         {/* Main Hero Card */}
         <View style={[styles.heroCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
           {/* Organization Header Row: Studio Logo + Name */}
@@ -471,11 +514,11 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
           {/* Location & Applicants Meta */}
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
-              <Icon name="map-pin" size={13} color={themeColors.textSecondary} />
+              <Icon name="map-pin" size={13} color={themeColors.iconSecondary} />
               <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>{whereText}</Text>
             </View>
             <View style={styles.metaItem}>
-              <Icon name="users" size={13} color={themeColors.textSecondary} />
+              <Icon name="users" size={13} color={themeColors.iconSecondary} />
               <Text style={[styles.metaText, { color: themeColors.textSecondary }]}>
                 {applicantCount > 0 ? `${applicantCount} Applicants` : 'Be first to apply'}
               </Text>
@@ -511,7 +554,7 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity style={[styles.applyHeroBtn, isClosed && { backgroundColor: '#64748B' }]} onPress={handleApply} disabled={applying || isClosed}>
+              <TouchableOpacity style={[styles.applyHeroBtn, isClosed && { backgroundColor: '#64748B' }]} onPress={goToApplyForm} disabled={applying || isClosed}>
                 {applying ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
@@ -543,6 +586,8 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
           ))}
         </View>
 
+        </View>
+        <View style={twoCol ? { flex: 1 } : undefined}>
         {/* Role Overview Section */}
         <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
           <Text style={[styles.sectionHeaderTitle, { color: themeColors.textPrimary }]}>Role Overview</Text>
@@ -577,12 +622,12 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
           </View>
         ) : !isApplied && !isOwner && isClosed ? (
           <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border, alignItems: 'center', paddingVertical: 20 }]}>
-            <Icon name="lock" size={22} color={themeColors.textMuted} />
+            <Icon name="lock" size={22} color={themeColors.iconMuted} />
             <Text style={[styles.applyFormTitle, { color: themeColors.textPrimary, marginTop: 8 }]}>Applications are closed</Text>
             <Text style={[styles.applyFormSub, { color: themeColors.textSecondary, textAlign: 'center' }]}>This job is no longer accepting applications.</Text>
           </View>
         ) : !isApplied && !isOwner ? (
-          <View style={[styles.applyFormCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+          <View ref={applyFormRef} collapsable={false} style={[styles.applyFormCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
             <Text style={[styles.applyFormTitle, { color: themeColors.textPrimary }]}>Direct Application Note</Text>
             <Text style={[styles.applyFormSub, { color: themeColors.textSecondary }]}>
               Attach custom showreel link or note to the hiring production team.
@@ -610,7 +655,7 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
                           onPress={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
                           style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: on ? ORANGE : themeColors.border, backgroundColor: on ? ORANGE : themeColors.inputBg }}
                         >
-                          <Text style={{ color: on ? '#FFFFFF' : themeColors.textPrimary, fontSize: 12.5, fontWeight: '700' }}>{opt}</Text>
+                          <Text style={{ color: on ? '#FFFFFF' : themeColors.textPrimary, fontSize: 12, fontWeight: '700' }}>{opt}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -626,11 +671,11 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
             >
               <Icon name={resumeFile ? 'file-text' : 'upload'} size={18} color={ORANGE} />
               <Text style={{ color: resumeFile ? themeColors.textPrimary : themeColors.textSecondary, fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>
-                {resumeFile ? resumeFile.name : 'Attach a PDF, document or photo'}
+                {resumeFile ? resumeFile.name : 'Attach a PDF, JPG or PNG'}
               </Text>
               {resumeFile ? (
-                <TouchableOpacity onPress={() => setResumeFile(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={16} color={themeColors.textMuted} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={() => setResumeFile(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={16} color={themeColors.iconMuted} />
                 </TouchableOpacity>
               ) : null}
             </TouchableOpacity>
@@ -701,7 +746,44 @@ export const JobDetailScreen = ({ route, navigation }: { route: any; navigation:
             </TouchableOpacity>
           </View>
         )}
+        </View>
+        </View>
       </ScrollView>
+      {!!job && (
+        <UniversalShareSheet
+          visible={showShareSheet}
+          onClose={() => setShowShareSheet(false)}
+          title={job.title}
+          shareUrl={`https://cinecraftconnect.com/jobs/${job.id}`}
+          itemType="job"
+          itemData={{
+            id: job.id,
+            title: job.title,
+            company: job.company_pages?.name || job.company,
+            location: job.location,
+            type: job.type,
+            logoUrl: job.company_pages?.logo_url,
+            salary: formatSalary(job) || undefined,
+            description: String(job.description || '').slice(0, 160),
+          }}
+          onShareToFeed={(isInternal || isFan) ? undefined : () => {
+            setShowShareSheet(false);
+            navigation.navigate('CreatePost', {
+              sharedJob: {
+                id: job.id,
+                jobId: job.id,
+                title: job.title,
+                company: job.company_pages?.name || job.company,
+                location: job.location,
+                type: job.type,
+                logoUrl: job.company_pages?.logo_url,
+                salary: formatSalary(job) || undefined,
+                description: String(job.description || '').slice(0, 160),
+              },
+            });
+          }}
+        />
+      )}
       <ReportModal
         visible={reportOpen}
         onClose={() => setReportOpen(false)}
@@ -730,7 +812,7 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 18,
+    padding: isTabletDevice ? 24 : 18,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 14,
@@ -769,15 +851,15 @@ const styles = StyleSheet.create({
   studioLogoFallbackText: {
     color: ORANGE,
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   studioNameText: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   studioTaglineText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: ORANGE,
     fontWeight: '700',
     marginTop: 1,
@@ -792,8 +874,8 @@ const styles = StyleSheet.create({
   },
   hiringBadgeText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   pillRow: {
@@ -810,13 +892,13 @@ const styles = StyleSheet.create({
   },
   typePillText: {
     color: ORANGE,
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   jobTitleText: {
-    fontSize: 20,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 26 : 20,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginBottom: 8,
@@ -833,7 +915,7 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   metaText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '600',
   },
@@ -845,14 +927,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ORANGE,
-    height: 46,
+    height: isTabletDevice ? 52 : 46,
     borderRadius: 14,
     gap: 8,
   },
   applyHeroBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   manageBtn: {
     flexDirection: 'row',
@@ -865,8 +947,8 @@ const styles = StyleSheet.create({
   },
   manageBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   appliedActionRow: {
     flexDirection: 'row',
@@ -886,8 +968,8 @@ const styles = StyleSheet.create({
   },
   appliedBadgeText: {
     color: '#16A34A',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   withdrawBtn: {
     flexDirection: 'row',
@@ -903,8 +985,8 @@ const styles = StyleSheet.create({
   },
   withdrawBtnText: {
     color: '#DC2626',
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   specsGrid: {
     flexDirection: 'row',
@@ -913,43 +995,44 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   specBox: {
-    width: '48%',
+    flexGrow: 1,
+    flexBasis: '47%', // two per row that fill the whole row (48% + gap left a strip empty on the right)
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 12,
+    padding: isTabletDevice ? 16 : 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   specLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     letterSpacing: 0.6,
     marginBottom: 2,
   },
   specVal: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 15 : 13,
+    fontWeight: '700',
     color: INK,
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
+    padding: isTabletDevice ? 22 : 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 14,
   },
   sectionHeaderTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     marginBottom: 10,
   },
   bodyParagraph: {
-    fontSize: 13.5,
+    fontSize: isTabletDevice ? 15 : 14,
     color: '#475569',
-    lineHeight: 20,
+    lineHeight: isTabletDevice ? 23 : 20,
   },
   reqBulletRow: {
     flexDirection: 'row',
@@ -959,9 +1042,9 @@ const styles = StyleSheet.create({
   },
   reqBulletText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: isTabletDevice ? 14 : 13,
     color: '#475569',
-    lineHeight: 18,
+    lineHeight: isTabletDevice ? 21 : 18,
   },
   applyFormCard: {
     backgroundColor: '#FFFFFF',
@@ -972,8 +1055,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   applyFormTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   applyFormSub: {
@@ -983,8 +1066,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   inputLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.5,
     marginTop: 6,
@@ -996,26 +1079,26 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13.5,
+    paddingVertical: isTabletDevice ? 13 : 10,
+    fontSize: isTabletDevice ? 15 : 14,
     color: INK,
   },
   textArea: {
-    height: 80,
+    height: isTabletDevice ? 120 : 80,
     textAlignVertical: 'top',
   },
   submitAppBtn: {
     backgroundColor: ORANGE,
     borderRadius: 12,
-    height: 44,
+    height: isTabletDevice ? 52 : 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 14,
   },
   submitAppBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   recruiterWidget: {
     flexDirection: 'row',
@@ -1043,17 +1126,17 @@ const styles = StyleSheet.create({
   recruiterAvatarFallbackText: {
     color: '#FF4B33',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   recruiterTitle: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.5,
   },
   recruiterName: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     marginTop: 1,
   },
@@ -1071,7 +1154,7 @@ const styles = StyleSheet.create({
   msgPosterBtnText: {
     color: ORANGE,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

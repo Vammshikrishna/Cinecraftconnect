@@ -64,7 +64,7 @@ export const VendorCard: React.FC<VendorCardProps> = ({ vendor, onPress, onDelet
         </View>
 
         {canManage && onDelete ? (
-          <TouchableOpacity style={[styles.deleteBtn, { backgroundColor: themeColors.bgCard }]} onPress={onDelete}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={[styles.deleteBtn, { backgroundColor: themeColors.bgCard }]} onPress={onDelete}>
             <Icon name="trash-2" size={14} color="#DC2626" />
           </TouchableOpacity>
         ) : null}
@@ -93,13 +93,13 @@ export const VendorCard: React.FC<VendorCardProps> = ({ vendor, onPress, onDelet
         <View style={styles.metaRow}>
           <View style={[styles.mono, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
             <Text style={[styles.monoText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-              LOC // {vendor.location || 'Pan-India'}
+              {vendor.location || 'Pan-India'}
             </Text>
           </View>
           {categories[1] ? (
             <View style={[styles.mono, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF7F5', borderColor: isDark ? 'rgba(255, 75, 51, 0.3)' : '#FFE5DF' }]}>
               <Text style={[styles.monoText, { color: ORANGE }]} numberOfLines={1}>
-                CAT // {String(categories[1]).toUpperCase()}
+                {String(categories[1])}
               </Text>
             </View>
           ) : null}
@@ -134,22 +134,22 @@ const styles = StyleSheet.create({
   coverFallback: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   logoTile: { width: 76, height: 76, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   logoImage: { width: '100%', height: '100%' },
-  logoInitial: { color: ORANGE, fontSize: 30, fontWeight: '900' },
+  logoInitial: { color: ORANGE, fontSize: 32, fontWeight: '700' },
   badgesRow: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   badge: { backgroundColor: 'rgba(13,13,13,0.75)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeText: { color: '#FFFFFF', fontSize: 9.5, fontWeight: '800' },
+  badgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   deleteBtn: { position: 'absolute', bottom: 10, right: 10, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', elevation: 3 },
   body: { padding: 14 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 4 },
-  title: { flex: 1, fontSize: 14, fontWeight: '900', fontFamily: 'Lora-Bold', lineHeight: 18 },
+  title: { flex: 1, fontSize: 14, fontWeight: '700', fontFamily: 'Lora-Bold', lineHeight: 18 },
   ratingBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3, gap: 3 },
-  ratingText: { fontSize: 10.5, fontWeight: '800', color: '#D97706' },
-  desc: { fontSize: 11.5, lineHeight: 16, marginBottom: 8 },
+  ratingText: { fontSize: 12, fontWeight: '700', color: '#D97706' },
+  desc: { fontSize: 12, lineHeight: 16, marginBottom: 8 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
   mono: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, maxWidth: '100%' },
-  monoText: { fontSize: 10, fontWeight: '800' },
+  monoText: { fontSize: 12, fontWeight: '700' },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 8 },
-  viewText: { color: ORANGE, fontSize: 13, fontWeight: '900' },
+  viewText: { color: ORANGE, fontSize: 13, fontWeight: '700' },
   vendorPill: { backgroundColor: '#FFF7F5', borderWidth: 1, borderColor: '#FFE5DF', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  vendorPillText: { color: ORANGE, fontSize: 10, fontWeight: '800' },
+  vendorPillText: { color: ORANGE, fontSize: 12, fontWeight: '700' },
 });

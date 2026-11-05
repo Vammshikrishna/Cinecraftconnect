@@ -4,7 +4,9 @@ import { AwardsPanel, ProfileCompletenessCard, ProfileHighlightsModal, ProfileHi
 import { AnnouncementMenuButton } from '../../components/announcements/AnnouncementParts';
 import { CachedImage } from '../../components/common/CachedImage';
 import { fetchProfileExtras, mergeProfileExtras } from '../../utils/profileExtras';
+import { SocialLinksRow } from '../../components/profile/SocialLinksRow';
 import React, { useState, useEffect, useCallback } from 'react';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import {
   View,
   Text,
@@ -21,14 +23,15 @@ import {
   Modal,
   TouchableWithoutFeedback,
   Platform,
-  Dimensions,
   InteractionManager,
+  DeviceEventEmitter,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Polyline, Circle, Line, G } from 'react-native-svg';
 import { Icon } from '../../components/common/Icon';
 import { VerificationBadge } from '../../components/common/VerificationBadge';
 import { TabletContainer } from '../../components/common/TabletContainer';
+import { CreditLine } from '../../components/common/CreditLine';
 import { saveCache, getCache, getCacheSync, getCurrentUserIdSync, resolveCurrentUserId, setCachedCurrentUserId } from '../../services/offlineCache';
 import { performMobileSignOut } from '../../services/authService';
 import { NativeSecureKeyStore } from '../../services/mobileStorage';
@@ -36,6 +39,7 @@ import { notifyKeyChanged } from '../../services/e2eeKeyEvents';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useResponsive } from '../../hooks/useResponsive';
+import { useHeaderInset } from '../../hooks/useHeaderInset';
 import { useAccountType } from '../../hooks/useAccountType';
 import LinearGradient from 'react-native-linear-gradient';
 import {
@@ -49,13 +53,23 @@ import {
   signOutAllAccounts,
 } from '../../services/accountManager';
 import { useAccountSwitch } from '../../contexts/AccountSwitchContext';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 
 export const ProfileScreen = ({ navigation }: { navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
-  const { isTablet } = useResponsive();
+  const { isTablet, isLandscape, width: winW, maxContentWidth } = useResponsive();
+  const headerInset = useHeaderInset();
+  const colW = isTablet ? Math.min(winW, maxContentWidth) : winW;
+  const tabPad = isTablet ? 24 : 14;
+  const gridCols = isTablet ? (isLandscape ? 5 : 4) : 3;
+  const gridGap = isTablet ? 10 : 6;
+  const gridCellW = Math.floor((colW - tabPad * 2 - gridGap * (gridCols - 1)) / gridCols) - 1;
+  const twoColW = Math.floor((colW - tabPad * 2 - 16) / 2) - 1;
+  const wideHeader = isTablet;
+  const sideBySide = isTablet && isLandscape;
   const { accountType, isFan: hookIsFan, isStudio: hookIsStudio, isCreator } = useAccountType();
   // Account switch callback from App.tsx root (via context), used by AccountManager
   const { onAccountSwitch } = useAccountSwitch();
@@ -210,13 +224,13 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
         targetAccount as ManagedSavedAccount,
         profile,
         onAccountSwitch,
-        (errMsg) => {
+        (errMsg, expiredEmail) => {
           Alert.alert(
             'Session Expired',
-            `${errMsg}\n\nPlease sign in again.`,
+            errMsg,
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Sign In', onPress: () => navigation.navigate('Login') },
+              { text: 'Sign In', onPress: () => navigation.navigate('Login', { expiredEmail, addAccount: true, previousUserId: profile?.id }) },
             ]
           );
           // Refresh the saved accounts list to remove the stale entry
@@ -224,7 +238,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
         }
       );
     } catch (e: any) {
-      Alert.alert('Switch Failed', e.message || 'Could not switch account.');
+      Alert.alert('Switch Failed', friendlyError(e, 'Could not switch account.'));
     } finally {
       setSwitchingAccountId(null);
     }
@@ -456,7 +470,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
         (supabase.from('posts') as any)
           .select(`
             *,
-            profiles (id, full_name, username, avatar_url, craft, is_verified)
+            profiles:author_id (id, full_name, username, avatar_url, craft, is_verified)
           `)
           .eq('author_id', userId)
           .order('is_pinned', { ascending: false })
@@ -607,6 +621,25 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
     return () => task.cancel();
   }, [fetchProfileData]);
 
+  // The tab stays mounted under Edit Profile: reload when it comes back into view (not the first time, that load is above)
+  // and right after a save, so the new photo and the completeness score show at once.
+  useEffect(() => {
+    let firstFocus = true;
+    const reload = () => {
+      fetchProfileData();
+      setCompletenessKey((k) => k + 1);
+    };
+    const unsubFocus = navigation?.addListener?.('focus', () => {
+      if (firstFocus) { firstFocus = false; return; }
+      reload();
+    });
+    const sub = DeviceEventEmitter.addListener('cinecraft:profile-updated', reload);
+    return () => {
+      unsubFocus?.();
+      sub.remove();
+    };
+  }, [navigation, fetchProfileData]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchProfileData();
@@ -643,10 +676,57 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
         setNewSkill('');
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not save skill.');
+      Alert.alert('Error', friendlyError(e, 'Could not save skill.'));
     } finally {
       setAddingSkill(false);
     }
+  };
+
+  const [undoExp, setUndoExp] = useState<{ item: any; index: number } | null>(null);
+  const undoExpTimer = React.useRef<any>(null);
+  const commitExpDelete = async (item: any) => {
+    try {
+      const { error } = await (getSupabaseClient().from('user_experience') as any).delete().eq('id', item.id);
+      if (error) throw error;
+    } catch (e: any) {
+      setExperience((prev) => (prev.some((x) => x.id === item.id) ? prev : [item, ...prev]));
+      Alert.alert('Could not remove', friendlyError(e, 'Could not remove experience.'));
+    }
+  };
+  const handleDeleteExperience = (exp: any) => {
+    Alert.alert('Remove', `Remove "${exp.title}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          if (undoExpTimer.current) {
+            clearTimeout(undoExpTimer.current);
+            if (undoExp) commitExpDelete(undoExp.item);
+          }
+          const index = experience.findIndex((x) => x.id === exp.id);
+          setExperience((prev) => prev.filter((x) => x.id !== exp.id));
+          setUndoExp({ item: exp, index });
+          undoExpTimer.current = setTimeout(() => {
+            undoExpTimer.current = null;
+            setUndoExp(null);
+            commitExpDelete(exp);
+          }, 5000);
+        },
+      },
+    ]);
+  };
+  const handleUndoExperience = () => {
+    if (!undoExp) return;
+    if (undoExpTimer.current) clearTimeout(undoExpTimer.current);
+    undoExpTimer.current = null;
+    const { item, index } = undoExp;
+    setExperience((prev) => {
+      const next = [...prev];
+      next.splice(Math.min(Math.max(index, 0), next.length), 0, item);
+      return next;
+    });
+    setUndoExp(null);
   };
 
   const handleDeleteSkill = async (id: number) => {
@@ -659,7 +739,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
       setSkills((prev) => prev.filter((s) => s.id !== id));
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not delete skill.');
+      Alert.alert('Error', friendlyError(e, 'Could not delete skill.'));
     }
   };
 
@@ -698,7 +778,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
         Alert.alert('Success', 'Work experience recorded.');
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not save experience.');
+      Alert.alert('Error', friendlyError(e, 'Could not save experience.'));
     } finally {
       setSubmittingExp(false);
     }
@@ -740,7 +820,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
         Alert.alert('Success!', 'Portfolio showcase item added.');
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not add portfolio item.');
+      Alert.alert('Error', friendlyError(e, 'Could not add portfolio item.'));
     } finally {
       setSubmittingPort(false);
     }
@@ -753,7 +833,6 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
     location: 'HYDERABAD, TELANGANA, IND',
     bio: 'Entrepreneur • Product Builder • Community Creator\n\nFounder of CineCraft Connect, a creator-focused platform connecting filmmakers, artists, media professionals, and storytellers through networking, collaboration, project spaces, and creative communities.',
     avatar_url: null,
-    cover_image_url: null,
     is_verified: true,
     account_type: 'creator',
   };
@@ -780,9 +859,9 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
   return (
     <TabletContainer
       backgroundColor={themeColors.bgScreen}
-      maxWidth={960}
+      maxWidth="content"
       header={
-        <View style={[styles.igTopHeader, { backgroundColor: themeColors.bgScreen, borderBottomColor: themeColors.border }]}>
+        <View style={[styles.igTopHeader, { backgroundColor: themeColors.bgScreen, borderBottomColor: themeColors.border, paddingHorizontal: 16 + headerInset }]}>
           <TouchableOpacity
             style={styles.igTopUserRow}
             activeOpacity={0.7}
@@ -798,15 +877,17 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
           </TouchableOpacity>
 
           <View style={styles.igTopActionsRow}>
-            <TouchableOpacity
+            {!effectiveIsFan && (
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.igTopActionBtn}
               onPress={() => navigation.navigate('AvailabilityCalendar')}
               accessibilityLabel="Crew Availability"
             >
               <Icon name="calendar" size={22} color={themeColors.textPrimary} />
             </TouchableOpacity>
+            )}
 
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.igTopActionBtn}
               onPress={() => navigation.navigate('Settings')}
               accessibilityLabel="Settings"
@@ -818,6 +899,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
       }
     >
       <ScrollView
+        {...scrollChrome}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -828,38 +910,13 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
           />
         }
       >
-        {/* LinkedIn-Style Cover Banner */}
-        <View style={[styles.linkedinBannerContainer, { height: isTablet ? 190 : 145 }]}>
-          <Image
-            source={{
-              uri:
-                p.cover_image_url ||
-                'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=1200&auto=format&fit=crop&q=80',
-            }}
-            style={styles.linkedinBannerImg}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={['rgba(0,0,0,0.25)', 'transparent', 'rgba(0,0,0,0.5)']}
-            style={StyleSheet.absoluteFillObject}
-          />
-          {/* Edit Cover Photo Camera Button */}
-          <TouchableOpacity
-            style={styles.linkedinBannerCameraBtn}
-            onPress={() => navigation.navigate('EditProfile')}
-            activeOpacity={0.8}
-            accessibilityLabel="Edit cover photo"
-          >
-            <Icon name="camera" size={15} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-
         {/* Profile Info Section with Overlapping Avatar */}
-        <View style={styles.linkedinProfileSection}>
+        <View style={[styles.linkedinProfileSection, wideHeader && styles.tabletProfileSection, sideBySide && styles.tabletProfileSectionRow]}>
+         <View style={[wideHeader && styles.tabletHeaderLeft, sideBySide && { flex: 1 }]}>
           {/* Avatar Row */}
-          <View style={styles.linkedinAvatarRow}>
+          <View style={[styles.linkedinAvatarRow, wideHeader && styles.tabletAvatarRow]}>
             {/* Overlapping Avatar */}
-            <View style={[styles.linkedinAvatarWrapper, { marginTop: isTablet ? -84 : -72 }]}>
+            <View style={[styles.linkedinAvatarWrapper, { marginTop: 20 }]}>
               <View
                 style={[
                   styles.linkedinAvatarRing,
@@ -888,7 +945,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
           </View>
 
           {/* Name & Headline Area */}
-          <View style={styles.linkedinBioSection}>
+          <View style={[styles.linkedinBioSection, wideHeader && styles.tabletBioSection]}>
             <View style={styles.linkedinNameRow}>
               <Text style={[styles.linkedinFullName, { color: themeColors.textPrimary }]}>
                 {p.full_name || p.username}
@@ -918,7 +975,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
 
               {p.location ? (
                 <View style={styles.linkedinLocRow}>
-                  <Icon name="map-pin" size={11} color={themeColors.textSecondary} />
+                  <Icon name="map-pin" size={11} color={themeColors.iconSecondary} />
                   <Text style={[styles.linkedinLocText, { color: themeColors.textSecondary }]} numberOfLines={1}>
                     {p.location}
                   </Text>
@@ -933,66 +990,17 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
               </Text>
             ) : null}
 
-            {/* Website Link */}
-            {p.website ? (
-              <TouchableOpacity
-                style={styles.igLinkRow}
-                onPress={() => Linking.openURL(p.website)}
-                activeOpacity={0.7}
-              >
-                <Icon name="globe" size={12} color="#0A66C2" />
-                <Text style={[styles.igLinkText, { color: '#0A66C2' }]} numberOfLines={1}>
-                  {p.website.replace(/^(https?|ftp):\/\//, '')}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-
-            {/* Social Links */}
-            {(p.instagram_url || p.social_links?.instagram || p.youtube_url || p.social_links?.youtube || p.spotify_url || p.social_links?.spotify || p.social_links?.linkedin) ? (
-              <View style={styles.igSocialRow}>
-                {p.instagram_url || p.social_links?.instagram ? (
-                  <TouchableOpacity
-                    style={[styles.igSocialIconBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                    onPress={() => Linking.openURL(p.instagram_url || p.social_links?.instagram)}
-                  >
-                    <Icon name="instagram" size={14} color="#E1306C" />
-                  </TouchableOpacity>
-                ) : null}
-
-                {p.youtube_url || p.social_links?.youtube ? (
-                  <TouchableOpacity
-                    style={[styles.igSocialIconBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                    onPress={() => Linking.openURL(p.youtube_url || p.social_links?.youtube)}
-                  >
-                    <Icon name="youtube" size={16} />
-                  </TouchableOpacity>
-                ) : null}
-
-                {p.spotify_url || p.social_links?.spotify ? (
-                  <TouchableOpacity
-                    style={[styles.igSocialIconBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                    onPress={() => Linking.openURL(p.spotify_url || p.social_links?.spotify)}
-                  >
-                    <Icon name="spotify" size={16} />
-                  </TouchableOpacity>
-                ) : null}
-
-                {p.social_links?.linkedin ? (
-                  <TouchableOpacity
-                    style={[styles.igSocialIconBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                    onPress={() => Linking.openURL(p.social_links?.linkedin)}
-                  >
-                    <Icon name="linkedin" size={14} color="#0A66C2" />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            ) : null}
+            {/* Website + social links as icon buttons */}
+            <SocialLinksRow profile={p} />
           </View>
 
+         </View>
+         <View style={sideBySide ? styles.tabletHeaderRight : undefined}>
           {/* Neat Posts, Followers & Connections Stats Box (Placed directly ABOVE Edit profile buttons) */}
           <View
             style={[
               styles.neatStatsRow,
+              wideHeader && styles.tabletStatsRow,
               { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC', borderColor: themeColors.border },
             ]}
           >
@@ -1037,7 +1045,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
           </View>
 
           {/* Simple Action Buttons: Edit profile, Share profile & Crew Availability */}
-          <View style={styles.simpleActionButtonsRow}>
+          <View style={[styles.simpleActionButtonsRow, wideHeader && styles.tabletActionsRow]}>
             <TouchableOpacity
               style={[
                 styles.simpleActionButton,
@@ -1069,17 +1077,6 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                 Share profile
               </Text>
             </TouchableOpacity>
-
-            {!effectiveIsFan && (
-              <TouchableOpacity
-                style={[styles.simpleActionButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9', borderColor: themeColors.border }]}
-                onPress={() => Share.share({ message: `My crew sheet on CineCraft Connect\nhttps://cinecraftconnect.com/crew-sheet/${profile?.username || profile?.id}` }).catch(() => {})}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.simpleActionButtonText, { color: themeColors.textPrimary }]}>Crew sheet</Text>
-              </TouchableOpacity>
-            )}
-
             {!effectiveIsFan && (
               <TouchableOpacity
                 style={[styles.simpleActionButton, { backgroundColor: isDark ? 'rgba(5,150,105,0.15)' : '#ECFDF5', borderColor: '#05966955' }]}
@@ -1090,6 +1087,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
               </TouchableOpacity>
             )}
           </View>
+         </View>
         </View>
 
         {!effectiveIsFan && (
@@ -1167,13 +1165,13 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
             <ActivityIndicator color={ORANGE} size="large" />
           </View>
         ) : (
-          <View style={styles.tabContentArea}>
+          <View style={[styles.tabContentArea, { paddingHorizontal: tabPad }]}>
             {/* 1. POSTS TAB - 3-Column Grid Matching True Aspect Ratios */}
             {activeTab === 'posts' && (
               <View>
                 {posts.length === 0 ? (
                   <View style={[styles.emptyCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                    <Icon name="grid" size={32} color={themeColors.textMuted} />
+                    <Icon name="grid" size={32} color={themeColors.iconMuted} />
                     <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Posts Yet</Text>
                     <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
                       When you share posts on CineCraft Connect, they'll appear here.
@@ -1186,7 +1184,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                       <Text style={[styles.gridCountText, { color: themeColors.textSecondary }]}>{posts.length} Posts</Text>
                     </View>
 
-                    <View style={styles.threeColumnGrid}>
+                    <View style={[styles.threeColumnGrid, { gap: gridGap }]}>
                       {posts.map((post) => {
                         // Robust multi-format media resolution
                         let mediaUrl: string | null = null;
@@ -1234,7 +1232,9 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         return (
                           <TouchableOpacity
                             key={post.id}
-                            style={[styles.gridSquareCell, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Post by ${profile?.full_name || profile?.username || 'you'}: ${String(post.content || '').trim().slice(0, 60) || (isVideo ? 'video' : mediaUrl ? 'photo' : 'text post')}`}
+                            style={[styles.gridSquareCell, { width: gridCellW, backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}
                             activeOpacity={0.9}
                             onPress={() =>
                               navigation.navigate('PostDetail', {
@@ -1320,16 +1320,16 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
 
                 {portfolioItems.length === 0 ? (
                   <View style={[styles.emptyCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                    <Icon name="image" size={32} color={themeColors.textMuted} />
+                    <Icon name="image" size={32} color={themeColors.iconMuted} />
                     <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>Portfolio Showcase Empty</Text>
                     <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
                       Add high-res stills, film posters, and reel clips to showcase your craft.
                     </Text>
                   </View>
                 ) : (
-                  <View style={styles.threeColumnGrid}>
+                  <View style={[styles.threeColumnGrid, { gap: gridGap }]}>
                     {portfolioItems.map((item) => (
-                      <View key={item.id} style={[styles.gridSquareCell, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
+                      <View accessible accessibilityLabel={`Portfolio item ${item.title || ''}`.trim()} key={item.id} style={[styles.gridSquareCell, { width: gridCellW, backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
                         <CachedImage uri={item.image_url} style={styles.gridCellImg} />
                       </View>
                     ))}
@@ -1373,7 +1373,8 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  projects.map((item) => {
+                  <View style={isTablet ? styles.tabletTwoColWrap : undefined}>
+                  {projects.map((item) => {
                     const isBookmarked = !!bookmarkedProjects[item.id];
                     const statusDisplay = (item.status_display || item.status || 'ACTIVE').toUpperCase();
                     const rolesCount = item.roles_count || (Array.isArray(item.required_roles) ? item.required_roles.length : 0);
@@ -1384,6 +1385,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         key={item.id}
                         style={[
                           styles.apkProjectCard,
+                          isTablet && { width: twoColW },
                           { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
                         ]}
                         activeOpacity={0.9}
@@ -1403,7 +1405,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                           />
 
                           {/* Top Right Bookmark Button */}
-                          <TouchableOpacity
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save"
                             style={[
                               styles.apkBookmarkBadge,
                               { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.65)' : 'rgba(255, 255, 255, 0.92)' },
@@ -1436,7 +1438,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                           </View>
 
                           {/* Bottom Right Share Button */}
-                          <TouchableOpacity
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share"
                             style={[
                               styles.apkCardMenuBtn,
                               { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.65)' : 'rgba(255, 255, 255, 0.92)' },
@@ -1467,7 +1469,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                             {item.location ? (
                               <View style={styles.apkSlugTagLocationRow}>
                                 <View style={[styles.apkSlugTagGray, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F8FAFC', borderColor: themeColors.border }]}>
-                                  <Text style={[styles.apkSlugTagGrayText, { color: themeColors.textSecondary }]}>LOC // {item.location}</Text>
+                                  <Text style={[styles.apkSlugTagGrayText, { color: themeColors.textSecondary }]}>{item.location}</Text>
                                 </View>
                               </View>
                             ) : null}
@@ -1475,13 +1477,13 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                             <View style={styles.apkSlugTagsSecondaryRow}>
                               {rolesCount > 0 ? (
                                 <View style={styles.apkSlugTagRed}>
-                                  <Text style={styles.apkSlugTagRedText}>ROLES // {rolesCount} OPEN</Text>
+                                  <Text style={styles.apkSlugTagRedText}>{rolesCount} open roles</Text>
                                 </View>
                               ) : null}
 
                               {genreDisplay ? (
                                 <View style={[styles.apkSlugTagGray, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F8FAFC', borderColor: themeColors.border }]}>
-                                  <Text style={[styles.apkSlugTagGrayText, { color: themeColors.textSecondary }]}>GENRE // {String(genreDisplay).toUpperCase()}</Text>
+                                  <Text style={[styles.apkSlugTagGrayText, { color: themeColors.textSecondary }]}>{String(genreDisplay)}</Text>
                                 </View>
                               ) : null}
                             </View>
@@ -1500,7 +1502,8 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         </View>
                       </TouchableOpacity>
                     );
-                  })
+                  })}
+                  </View>
                 )}
               </View>
             )}
@@ -1540,7 +1543,8 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  announcements.map((item) => {
+                  <View style={isTablet ? styles.tabletTwoColWrap : undefined}>
+                  {announcements.map((item) => {
                     const timeAgo = getTimeAgo(item.posted_at || item.created_at);
                     const publisherName =
                       item.company_pages?.name ||
@@ -1554,6 +1558,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         key={item.id}
                         style={[
                           styles.apkAnnouncementCard,
+                          isTablet && { width: twoColW },
                           { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
                         ]}
                       >
@@ -1572,9 +1577,9 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                               {item.title}
                             </Text>
                             <View style={styles.apkTimeRow}>
-                              <Icon name="clock" size={11} color={themeColors.textSecondary} />
+                              <Icon name="clock" size={11} color={themeColors.iconSecondary} />
                               <Text style={[styles.apkTimeText, { color: themeColors.textSecondary }]}>{timeAgo}</Text>
-                              {item.is_pinned ? <Text style={[styles.apkTimeText, { color: ORANGE, fontWeight: '800' }]}>  ·  PINNED</Text> : null}
+                              {item.is_pinned ? <Text style={[styles.apkTimeText, { color: ORANGE, fontWeight: '700' }]}>  ·  PINNED</Text> : null}
                             </View>
                           </View>
                           <AnnouncementMenuButton item={item} force onEdit={setEditingAnn} onChanged={fetchProfileData} />
@@ -1595,20 +1600,21 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         {/* Card Footer Row */}
                         <View style={[styles.apkCardFooterRow, { borderTopColor: themeColors.border }]}>
                           <View style={[styles.apkFromTagBox, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF7F5', borderColor: isDark ? 'rgba(255, 75, 51, 0.3)' : '#FFE5DF' }]}>
-                            <Text style={styles.apkFromTagText}>FROM // {publisherName.toUpperCase()}</Text>
+                            <Text style={styles.apkFromTagText}>From {publisherName}</Text>
                           </View>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto', marginRight: 10 }}>
-                            <Icon name="eye" size={13} color={themeColors.textMuted} />
-                            <Text style={{ color: themeColors.textMuted, fontSize: 11.5 }}>{item.view_count || 0} views</Text>
+                            <Icon name="eye" size={13} color={themeColors.iconMuted} />
+                            <Text style={{ color: themeColors.textMuted, fontSize: 12 }}>{item.view_count || 0} views</Text>
                           </View>
 
-                          <TouchableOpacity style={styles.apkShareBtn} onPress={() => handleShareAnnouncement(item)}>
-                            <Icon name="share" size={15} color={themeColors.textSecondary} />
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.apkShareBtn} onPress={() => handleShareAnnouncement(item)}>
+                            <Icon name="share" size={15} color={themeColors.iconSecondary} />
                           </TouchableOpacity>
                         </View>
                       </View>
                     );
-                  })
+                  })}
+                  </View>
                 )}
               </View>
             )}
@@ -1633,7 +1639,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                 {/* 7 Metric Cards Grid (Matching Web App) */}
                 <View style={styles.analyticsMetricGrid}>
                   {/* Total Views */}
-                  <View style={[styles.analyticsMetricCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={[styles.analyticsMetricCard, isTablet && styles.analyticsMetricCardTablet, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                     <View style={styles.metricCardTop}>
                       <Text style={[styles.metricCardLabel, { color: themeColors.textSecondary }]}>TOTAL VIEWS</Text>
                       <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(59, 130, 246, 0.12)' }]}>
@@ -1647,7 +1653,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   </View>
 
                   {/* Total Posts */}
-                  <View style={[styles.analyticsMetricCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={[styles.analyticsMetricCard, isTablet && styles.analyticsMetricCardTablet, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                     <View style={styles.metricCardTop}>
                       <Text style={[styles.metricCardLabel, { color: themeColors.textSecondary }]}>TOTAL POSTS</Text>
                       <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
@@ -1661,7 +1667,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   </View>
 
                   {/* Total Likes */}
-                  <View style={[styles.analyticsMetricCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={[styles.analyticsMetricCard, isTablet && styles.analyticsMetricCardTablet, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                     <View style={styles.metricCardTop}>
                       <Text style={[styles.metricCardLabel, { color: themeColors.textSecondary }]}>TOTAL LIKES</Text>
                       <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
@@ -1675,7 +1681,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   </View>
 
                   {/* Total Comments */}
-                  <View style={[styles.analyticsMetricCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={[styles.analyticsMetricCard, isTablet && styles.analyticsMetricCardTablet, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                     <View style={styles.metricCardTop}>
                       <Text style={[styles.metricCardLabel, { color: themeColors.textSecondary }]}>TOTAL COMMENTS</Text>
                       <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
@@ -1689,7 +1695,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   </View>
 
                   {/* Connections */}
-                  <View style={[styles.analyticsMetricCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={[styles.analyticsMetricCard, isTablet && styles.analyticsMetricCardTablet, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                     <View style={styles.metricCardTop}>
                       <Text style={[styles.metricCardLabel, { color: themeColors.textSecondary }]}>CONNECTIONS</Text>
                       <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(139, 92, 246, 0.12)' }]}>
@@ -1703,7 +1709,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   </View>
 
                   {/* Followers */}
-                  <View style={[styles.analyticsMetricCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={[styles.analyticsMetricCard, isTablet && styles.analyticsMetricCardTablet, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                     <View style={styles.metricCardTop}>
                       <Text style={[styles.metricCardLabel, { color: themeColors.textSecondary }]}>FOLLOWERS</Text>
                       <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(6, 182, 212, 0.12)' }]}>
@@ -1717,7 +1723,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   </View>
 
                   {/* Projects */}
-                  <View style={[styles.analyticsMetricCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={[styles.analyticsMetricCard, isTablet && styles.analyticsMetricCardTablet, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                     <View style={styles.metricCardTop}>
                       <Text style={[styles.metricCardLabel, { color: themeColors.textSecondary }]}>PROJECTS</Text>
                       <View style={[styles.metricIconWrap, { backgroundColor: 'rgba(255, 75, 51, 0.12)' }]}>
@@ -1767,7 +1773,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                 {/* Performance Overview Interactive Chart */}
                 <View style={[styles.chartCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                   <View style={styles.chartCardHeaderRow}>
-                    <Text style={[styles.chartTitle, { color: themeColors.textPrimary, fontSize: 14, fontWeight: '800' }]}>
+                    <Text style={[styles.chartTitle, { color: themeColors.textPrimary, fontSize: 14, fontWeight: '700' }]}>
                       Performance Overview
                     </Text>
                     <Text style={[styles.analyticsHeaderSub, { color: themeColors.textSecondary }]}>
@@ -1777,8 +1783,8 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
 
                   {(() => {
                     const currentData = historicalAnalytics[activeAnalyticsRange] || [];
-                    const chartW = Dimensions.get('window').width - 64;
-                    const chartH = 150;
+                    const chartW = Math.min(winW, maxContentWidth) - (isTablet ? 92 : 64);
+                    const chartH = isTablet ? 230 : 150;
 
                     if (currentData.length === 0) {
                       return (
@@ -1850,7 +1856,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         {/* X-Axis Date Labels */}
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 10, marginTop: 4 }}>
                           {currentData.map((d, i) => (
-                            <Text key={i} style={{ fontSize: 9, color: themeColors.textMuted, fontWeight: '600' }}>
+                            <Text key={i} style={{ fontSize: 12, color: themeColors.textMuted, fontWeight: '600' }}>
                               {d.name}
                             </Text>
                           ))}
@@ -1899,19 +1905,19 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#6366F1' }} />
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: themeColors.textSecondary }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: themeColors.textSecondary }}>
                               Posts ({posts.length})
                             </Text>
                           </View>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' }} />
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: themeColors.textSecondary }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: themeColors.textSecondary }}>
                               Likes ({totalLikes})
                             </Text>
                           </View>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' }} />
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: themeColors.textSecondary }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: themeColors.textSecondary }}>
                               Comments ({totalComments})
                             </Text>
                           </View>
@@ -1982,22 +1988,22 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={[styles.creditTitle, { color: themeColors.textPrimary }]}>Credits waiting for your answer</Text>
                     {credits.filter((cr) => cr.status === 'pending').map((cr) => (
                       <View key={cr.id} style={{ gap: 6 }}>
-                        <Text style={{ color: themeColors.textPrimary, fontWeight: '800' }}>{cr.role} · {cr.project_title}</Text>
+                        <Text style={{ color: themeColors.textPrimary, fontWeight: '700' }}>{cr.role} · {cr.project_title}</Text>
                         <Text style={{ color: themeColors.textMuted, fontSize: 12 }}>Added by {cr.profiles?.full_name || (cr.profiles?.username ? '@' + cr.profiles.username : 'a project creator')}</Text>
                         <View style={{ flexDirection: 'row', gap: 12 }}>
                           <TouchableOpacity
                             onPress={async () => {
                               const { error } = await (getSupabaseClient() as any).rpc('respond_credit', { p_id: cr.id, p_accept: true });
-                              if (error) return Alert.alert('Could not update the credit', error.message);
+                              if (error) return Alert.alert('Could not update the credit', friendlyError(error));
                               fetchProfileData();
                             }}
                           >
-                            <Text style={{ color: ORANGE, fontWeight: '800' }}>Confirm</Text>
+                            <Text style={{ color: ORANGE, fontWeight: '700' }}>Confirm</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             onPress={async () => {
                               const { error } = await (getSupabaseClient() as any).rpc('respond_credit', { p_id: cr.id, p_accept: false });
-                              if (error) return Alert.alert('Could not update the credit', error.message);
+                              if (error) return Alert.alert('Could not update the credit', friendlyError(error));
                               fetchProfileData();
                             }}
                           >
@@ -2013,12 +2019,11 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Verified Credits</Text>
                   </View>
                 ) : (
-                  credits.filter((cr) => (cr.status || 'accepted') === 'accepted').map((cred) => (
-                    <View key={cred.id} style={[styles.creditCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                      <Text style={[styles.creditTitle, { color: themeColors.textPrimary }]}>{cred.project_title}</Text>
-                      <Text style={styles.creditRole}>{cred.role}</Text>
-                    </View>
-                  ))
+                  <View>
+                    {credits.filter((cr) => (cr.status || 'accepted') === 'accepted').map((cred) => (
+                      <CreditLine key={cred.id} serifLead lead={cred.project_title} trail={cred.role} />
+                    ))}
+                  </View>
                 )}
               </View>
             )}
@@ -2050,8 +2055,8 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   {skills.map((s) => (
                     <View key={s.id} style={[styles.skillChip, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
                       <Text style={[styles.skillChipText, { color: themeColors.textPrimary }]}>{s.skill_name}{(skillEndorsements[s.id]?.endorsements || 0) > 0 ? `  👍 ${skillEndorsements[s.id].endorsements}` : ''}</Text>
-                      <TouchableOpacity onPress={() => handleDeleteSkill(s.id)}>
-                        <Icon name="x" size={12} color={themeColors.textSecondary} />
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => handleDeleteSkill(s.id)}>
+                        <Icon name="x" size={12} color={themeColors.iconSecondary} />
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -2105,9 +2110,21 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   </View>
                 )}
 
+                {undoExp && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.bgCard }}>
+                    <Text style={{ color: themeColors.textPrimary }}>Experience removed</Text>
+                    <TouchableOpacity accessibilityRole="button" onPress={handleUndoExperience}>
+                      <Text style={{ color: '#FF4B33', fontWeight: '700' }}>Undo</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 {experience.map((exp) => (
                   <View key={exp.id} style={[styles.expCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                    <Text style={[styles.expTitle, { color: themeColors.textPrimary }]}>{exp.title}</Text>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove experience" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ position: 'absolute', top: 10, right: 10, zIndex: 1 }} onPress={() => handleDeleteExperience(exp)}>
+                      <Icon name="trash-2" size={16} color={themeColors.textMuted} />
+                    </TouchableOpacity>
+                    <Text style={[styles.expTitle, { color: themeColors.textPrimary, paddingRight: 28 }]}>{exp.title}</Text>
                     <Text style={styles.expCompany}>{exp.company}</Text>
                     <Text style={[styles.expDate, { color: themeColors.textMuted }]}>
                       {exp.start_date} - {exp.end_date || 'Present'}
@@ -2147,12 +2164,12 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                   <Text style={[styles.modalTitle, { color: themeColors.textPrimary }]}>
                     Switch Profile
                   </Text>
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                     onPress={() => setIsAccountSwitcherOpen(false)}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.modalCloseBtn}
                   >
-                    <Icon name="x" size={18} color={themeColors.textSecondary} />
+                    <Icon name="x" size={18} color={themeColors.iconSecondary} />
                   </TouchableOpacity>
                 </View>
 
@@ -2322,7 +2339,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                         }}
                         activeOpacity={0.7}
                       >
-                        <Text style={[styles.modalSignOutBtnText, { color: '#94A3B8', fontSize: 12.5 }]}>
+                        <Text style={[styles.modalSignOutBtnText, { color: '#94A3B8', fontSize: 12 }]}>
                           Sign Out of All Accounts
                         </Text>
                       </TouchableOpacity>
@@ -2349,12 +2366,12 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                 <View style={[styles.modalHandle, { backgroundColor: themeColors.border }]} />
                 <View style={styles.modalHeader}>
                   <Text style={[styles.modalTitle, { color: themeColors.textPrimary }]}>Add Portfolio Showcase Item</Text>
-                  <TouchableOpacity onPress={() => setShowPortfolioModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Icon name="x" size={20} color={themeColors.textSecondary} />
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={() => setShowPortfolioModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Icon name="x" size={20} color={themeColors.iconSecondary} />
                   </TouchableOpacity>
                 </View>
                 <ScrollView contentContainerStyle={{ padding: 16 }}>
-                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>ITEM TITLE *</Text>
+                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>ITEM TITLE *</Text>
                   <TextInput
                     style={{ backgroundColor: themeColors.inputBg, color: themeColors.textPrimary, borderColor: themeColors.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12, fontSize: 13 }}
                     placeholder="e.g. Director's Cut Showcase / Feature Poster"
@@ -2363,7 +2380,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     onChangeText={setPortTitle}
                   />
 
-                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>MEDIA / IMAGE / VIDEO URL</Text>
+                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>MEDIA / IMAGE / VIDEO URL</Text>
                   <TextInput
                     style={{ backgroundColor: themeColors.inputBg, color: themeColors.textPrimary, borderColor: themeColors.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12, fontSize: 13 }}
                     placeholder="https://..."
@@ -2372,7 +2389,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     onChangeText={setPortMediaUrl}
                   />
 
-                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>ROLE / CRAFT</Text>
+                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>ROLE / CRAFT</Text>
                   <TextInput
                     style={{ backgroundColor: themeColors.inputBg, color: themeColors.textPrimary, borderColor: themeColors.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12, fontSize: 13 }}
                     placeholder="e.g. Lead Director / Cinematographer"
@@ -2381,7 +2398,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     onChangeText={setPortRole}
                   />
 
-                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>DESCRIPTION</Text>
+                  <Text style={{ color: themeColors.textSecondary, marginBottom: 4, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>DESCRIPTION</Text>
                   <TextInput
                     style={{ backgroundColor: themeColors.inputBg, color: themeColors.textPrimary, borderColor: themeColors.border, borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, height: 80, textAlignVertical: 'top', marginBottom: 16, fontSize: 13 }}
                     placeholder="Describe technical specs, camera gear used, or production awards..."
@@ -2396,7 +2413,7 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     onPress={handleAddPortfolioItem}
                     disabled={submittingPort}
                   >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
                       {submittingPort ? 'Adding Item...' : 'Add to Portfolio Showcase →'}
                     </Text>
                   </TouchableOpacity>
@@ -2440,7 +2457,7 @@ const styles = StyleSheet.create({
   },
   igTopUsername: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   igTopActionsRow: {
@@ -2449,7 +2466,11 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   igTopActionBtn: {
-    padding: 4,
+    padding: 10,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // LinkedIn-style Profile Header & Info
   linkedinBannerContainer: {
@@ -2477,6 +2498,48 @@ const styles = StyleSheet.create({
   },
   linkedinProfileSection: {
     paddingBottom: 4,
+  },
+  tabletProfileSection: {
+    paddingHorizontal: 8,
+    paddingTop: 8,
+  },
+  tabletProfileSectionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 28,
+  },
+  tabletHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  tabletAvatarRow: {
+    marginBottom: 0,
+  },
+  tabletBioSection: {
+    flex: 1,
+    marginTop: 20,
+  },
+  tabletHeaderRight: {
+    width: 380,
+    paddingTop: 20,
+    paddingRight: 4,
+  },
+  tabletStatsRow: {
+    marginHorizontal: 16,
+    paddingVertical: 14,
+  },
+  tabletActionsRow: {
+    marginBottom: 12,
+  },
+  tabletTwoColWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 16,
+  },
+  analyticsMetricCardTablet: {
+    width: '32%',
+    padding: 16,
   },
   linkedinAvatarRow: {
     flexDirection: 'row',
@@ -2511,7 +2574,7 @@ const styles = StyleSheet.create({
   },
   linkedinAvatarFallbackText: {
     color: '#FF4B33',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   linkedinAvatarPlusBadge: {
     position: 'absolute',
@@ -2548,11 +2611,11 @@ const styles = StyleSheet.create({
   },
   headerInlineStatNum: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   headerInlineStatLbl: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 1,
   },
@@ -2568,11 +2631,11 @@ const styles = StyleSheet.create({
   },
   linkedinFullName: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   linkedinHeadline: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '600',
     lineHeight: 18,
     marginTop: 2,
@@ -2611,12 +2674,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   neatStatNum: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     marginBottom: 1,
   },
   neatStatLbl: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   neatStatDivider: {
@@ -2634,8 +2697,8 @@ const styles = StyleSheet.create({
   },
   igProBadgeText: {
     color: ORANGE,
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   igFanBadge: {
     flexDirection: 'row',
@@ -2648,8 +2711,8 @@ const styles = StyleSheet.create({
   },
   igFanBadgeText: {
     color: '#D97706',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   igBioText: {
     fontSize: 13,
@@ -2665,7 +2728,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   igLinkText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   igSocialRow: {
@@ -2691,14 +2754,14 @@ const styles = StyleSheet.create({
   },
   simpleActionButton: {
     flex: 1,
-    height: 36,
+    height: 44,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   simpleActionButtonText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   igTabsScrollView: {
@@ -2724,12 +2787,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
   },
   igTabBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   igTabBtnTextActive: {
-    fontWeight: '800',
+    fontWeight: '700',
   },
   webGlassCardContainer: {
     backgroundColor: '#FFFFFF',
@@ -2786,8 +2849,8 @@ const styles = StyleSheet.create({
   },
   webAvatarCenterFallbackText: {
     color: '#FF4B33',
-    fontSize: 42,
-    fontWeight: '900',
+    fontSize: 44,
+    fontWeight: '700',
   },
   webCardBody: {
     alignItems: 'center',
@@ -2815,8 +2878,8 @@ const styles = StyleSheet.create({
   },
   proBadgeText: {
     color: ORANGE,
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   fanBadge: {
     flexDirection: 'row',
@@ -2831,8 +2894,8 @@ const styles = StyleSheet.create({
   },
   fanBadgeText: {
     color: '#D97706',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   craftBadge: {
     flexDirection: 'row',
@@ -2847,7 +2910,7 @@ const styles = StyleSheet.create({
   },
   craftBadgeText: {
     color: '#64748B',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
   nameCenterRow: {
@@ -2858,11 +2921,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   webFullNameCentered: {
-    fontSize: 19,
-    fontWeight: '900',
+    fontSize: 20,
+    fontWeight: '700',
     color: INK,
     textAlign: 'center',
-    textTransform: 'uppercase',
   },
   verifiedBadgeCircle: {
     width: 16,
@@ -2881,7 +2943,7 @@ const styles = StyleSheet.create({
   },
   webHandleText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: ORANGE,
     letterSpacing: 0.5,
     textTransform: 'lowercase',
@@ -2923,7 +2985,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   websiteText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -2942,12 +3004,12 @@ const styles = StyleSheet.create({
   },
   statCenterVal: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
   },
   statCenterLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 2,
@@ -2963,7 +3025,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ORANGE,
-    height: 38,
+    height: 44,
     paddingHorizontal: 22,
     borderRadius: 10,
     gap: 6,
@@ -2971,7 +3033,7 @@ const styles = StyleSheet.create({
   webEditBtnLargeText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   actionIconRoundBtn: {
@@ -3006,14 +3068,14 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   webTabBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.5,
   },
   webTabBtnTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   loadingBox: {
     paddingVertical: 40,
@@ -3033,8 +3095,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     color: INK,
   },
   emptySub: {
@@ -3051,7 +3113,7 @@ const styles = StyleSheet.create({
   },
   gridCountText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.3,
   },
@@ -3074,7 +3136,7 @@ const styles = StyleSheet.create({
     backgroundColor: INK,
   },
   gridModeBtnText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -3123,19 +3185,19 @@ const styles = StyleSheet.create({
   },
   gridJobPillText: {
     color: ORANGE,
-    fontSize: 8,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   gridJobTitle: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: INK,
     textAlign: 'center',
     lineHeight: 13,
   },
   gridJobCompany: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '600',
     color: '#64748B',
     textAlign: 'center',
@@ -3170,7 +3232,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   gridCellTextContent: {
-    fontSize: 10,
+    fontSize: 12,
     color: INK,
     lineHeight: 13,
     textAlign: 'center',
@@ -3181,14 +3243,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: ORANGE,
     borderRadius: 12,
-    height: 42,
+    height: 44,
     gap: 6,
     marginBottom: 12,
   },
   addPortfolioBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   postCard: {
     backgroundColor: '#FFFFFF',
@@ -3199,7 +3261,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   postContent: {
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
     lineHeight: 19,
   },
@@ -3252,11 +3314,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   apkSceneBadgeText: {
-    fontSize: 9.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   apkCardMenuBtn: {
     position: 'absolute',
@@ -3278,9 +3338,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   apkProjectTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontFamily: Platform.OS === 'ios' ? 'Lora-Bold' : 'serif',
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   apkProjectLogline: {
@@ -3310,11 +3370,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   apkSlugTagGrayText: {
-    fontSize: 9.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   apkSlugTagRed: {
     backgroundColor: '#FFF5F4',
@@ -3326,11 +3384,9 @@ const styles = StyleSheet.create({
   },
   apkSlugTagRedText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   apkCardFooterRow: {
     flexDirection: 'row',
@@ -3351,7 +3407,7 @@ const styles = StyleSheet.create({
   },
   apkViewProjectCTAText: {
     color: '#FF8A7A',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -3389,8 +3445,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   apkCardTitleText: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Lora-Bold' : 'serif',
     lineHeight: 20,
   },
@@ -3401,14 +3457,14 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   apkTimeText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   apkMoreOptionsBtn: {
     padding: 6,
   },
   apkContentBodyText: {
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 18,
     marginBottom: 10,
   },
@@ -3426,9 +3482,9 @@ const styles = StyleSheet.create({
   },
   apkFromTagText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   apkShareBtn: {
     padding: 6,
@@ -3443,12 +3499,12 @@ const styles = StyleSheet.create({
   },
   projectTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   projectCategory: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
     marginTop: 2,
     marginBottom: 6,
@@ -3466,8 +3522,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   announcementTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   announcementBody: {
@@ -3479,8 +3535,8 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   analyticsHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   analyticsStatsGrid: {
@@ -3497,13 +3553,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   analyticsVal: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
     color: ORANGE,
   },
   analyticsLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     marginTop: 2,
   },
@@ -3515,8 +3571,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   chartTitle: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.5,
     marginBottom: 12,
@@ -3530,8 +3586,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   creditTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   creditRole: {
@@ -3561,14 +3617,14 @@ const styles = StyleSheet.create({
     backgroundColor: ORANGE,
     borderRadius: 10,
     paddingHorizontal: 14,
-    height: 40,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   addBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   skillsChipRow: {
     flexDirection: 'row',
@@ -3597,14 +3653,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: ORANGE,
     borderRadius: 12,
-    height: 42,
+    height: 44,
     gap: 6,
     marginBottom: 14,
   },
   addExpTriggerText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   expFormCard: {
     backgroundColor: '#FFFFFF',
@@ -3616,7 +3672,7 @@ const styles = StyleSheet.create({
   },
   expFormTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     marginBottom: 10,
   },
@@ -3629,27 +3685,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F1F5F9',
     borderRadius: 8,
-    height: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelBtnText: {
     color: '#64748B',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   saveBtn: {
     flex: 1,
     backgroundColor: ORANGE,
     borderRadius: 8,
-    height: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   saveBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   expCard: {
     backgroundColor: '#FFFFFF',
@@ -3660,8 +3716,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   expTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   expCompany: {
@@ -3671,7 +3727,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   expDate: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
     marginTop: 4,
   },
@@ -3682,6 +3738,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContainer: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderTopWidth: 1,
@@ -3711,7 +3770,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.2,
   },
   modalCloseBtn: {
@@ -3728,11 +3787,10 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   modalSectionLabel: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.8,
     marginBottom: 8,
-    textTransform: 'uppercase',
   },
   modalActiveCard: {
     flexDirection: 'row',
@@ -3766,7 +3824,7 @@ const styles = StyleSheet.create({
   },
   modalAvatarFallbackText: {
     color: '#FF4B33',
-    fontWeight: '800',
+    fontWeight: '700',
     fontSize: 18,
   },
   modalOnlineDot: {
@@ -3789,8 +3847,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   modalActiveName: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   modalActiveHandle: {
     fontSize: 12,
@@ -3839,20 +3897,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   modalAddAccountBtnText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   modalSignOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 40,
+    height: 44,
     borderRadius: 12,
     gap: 8,
   },
   modalSignOutBtnText: {
     color: '#EF4444',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   tabSectionHeaderRow: {
@@ -3863,7 +3921,7 @@ const styles = StyleSheet.create({
   },
   tabSectionHeaderTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     flex: 1,
     marginRight: 8,
   },
@@ -3878,8 +3936,8 @@ const styles = StyleSheet.create({
   },
   tabSectionAddBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   emptyIconCircle: {
     width: 56,
@@ -3900,7 +3958,7 @@ const styles = StyleSheet.create({
   emptyCtaBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   richProjectCard: {
     borderRadius: 16,
@@ -3924,8 +3982,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   projectStatusText: {
-    fontSize: 9.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   projectGenrePill: {
@@ -3934,16 +3992,16 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   projectGenreText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   richProjectTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 4,
   },
   richProjectDesc: {
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 17,
     marginBottom: 10,
   },
@@ -3961,7 +4019,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   projectMetaText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   projectCardActionsRow: {
@@ -3981,7 +4039,7 @@ const styles = StyleSheet.create({
   openProjectSpaceBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   viewProjectDetailBtn: {
     flex: 1,
@@ -4018,20 +4076,20 @@ const styles = StyleSheet.create({
   },
   announcementBadgeText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   announcementDateText: {
-    fontSize: 11,
+    fontSize: 12,
   },
   richAnnouncementTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     marginBottom: 4,
   },
   richAnnouncementBody: {
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 18,
     marginBottom: 10,
   },
@@ -4059,7 +4117,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   announcementStatText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   announcementShareBtn: {
@@ -4068,7 +4126,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   announcementShareText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   analyticsTitleHeader: {
@@ -4086,7 +4144,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   analyticsHeaderSub: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 1,
   },
   analyticsMetricGrid: {
@@ -4107,8 +4165,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   metricCardLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   metricIconWrap: {
@@ -4120,7 +4178,7 @@ const styles = StyleSheet.create({
   },
   metricCardValue: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   metricGrowthRow: {
     flexDirection: 'row',
@@ -4130,11 +4188,11 @@ const styles = StyleSheet.create({
   },
   metricGrowthText: {
     color: '#10B981',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   metricSubLabel: {
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 4,
   },
   analyticsSummaryCard: {
@@ -4144,7 +4202,7 @@ const styles = StyleSheet.create({
   },
   analyticsSummaryTitle: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 10,
   },
   summaryMetricsRow: {
@@ -4157,16 +4215,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   summaryItemLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
   summaryItemValue: {
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
     marginVertical: 2,
   },
   summaryItemSub: {
-    fontSize: 9.5,
+    fontSize: 12,
   },
   summaryDivider: {
     width: 1,
@@ -4192,8 +4250,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   analyticsRangePillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   analyticsUpdatedBadge: {
@@ -4206,10 +4264,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   analyticsUpdatedText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   chartCardHeaderRow: {
@@ -4232,7 +4289,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   chartLegendText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
   },
   gridCellPinBadge: {

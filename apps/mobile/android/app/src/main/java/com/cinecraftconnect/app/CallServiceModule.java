@@ -9,6 +9,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -84,7 +85,10 @@ public class CallServiceModule extends ReactContextBaseJavaModule {
             Intent intent = new Intent(ctx, CallForegroundService.class);
             intent.setAction(CallForegroundService.ACTION_START);
             intent.putExtra(CallForegroundService.EXTRA_TITLE, title);
-            intent.putExtra(CallForegroundService.EXTRA_WITH_MIC, withMic);
+            // never ask for the microphone type without the permission: Android refuses it
+            boolean micAllowed = withMic && ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO)
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            intent.putExtra(CallForegroundService.EXTRA_WITH_MIC, micAllowed);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ctx.startForegroundService(intent);
             } else {

@@ -46,7 +46,7 @@ const SharedWishlist = () => {
             if (error) throw error;
             
             const wishlistItems = data as unknown as SharedWishlistItem[];
-            setItems(wishlistItems);
+            setItems(wishlistItems ?? []);
 
             // Fetch the user's name if we got any wishlist items using the owner user_id from items
             if (wishlistItems && wishlistItems.length > 0) {
@@ -71,8 +71,8 @@ const SharedWishlist = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-background pt-20 pb-40">
-                <div className="max-w-7xl mx-auto px-4 md:px-8">
+            <div className="min-h-dvh bg-background pt-20 pb-40">
+                <div className="max-w-[1560px] mx-auto px-4 md:px-8">
                     <EnhancedSkeleton className="h-20 w-full mb-8 rounded-2xl" />
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
                         {[1, 2, 3, 4].map(i => (
@@ -86,7 +86,7 @@ const SharedWishlist = () => {
 
     if (error) {
         return (
-            <div className="min-h-screen bg-background pt-32 px-4 flex flex-col items-center">
+            <div className="min-h-dvh bg-background pt-32 px-4 flex flex-col items-center">
                 <Heart size={48} className="text-muted-foreground/30 mb-6" />
                 <h2 className="text-2xl font-black mb-2">Wishlist Unavailable</h2>
                 <p className="text-muted-foreground mb-8">{error}</p>
@@ -96,8 +96,8 @@ const SharedWishlist = () => {
     }
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-40">
-            <div className="max-w-7xl mx-auto px-4 md:px-8">
+        <div className="min-h-dvh bg-background pt-20 pb-40">
+            <div className="max-w-[1560px] mx-auto px-4 md:px-8">
                 <PageHeader
                     title={`${userName}'s Gear Wishlist`}
                     subtitle="Shared equipment list"
@@ -111,6 +111,8 @@ const SharedWishlist = () => {
                             size="icon"
                             className={`rounded-lg h-8 w-8 ${viewMode === 'grid' ? 'shadow-sm' : ''}`}
                             onClick={() => setViewMode('grid')}
+                            aria-label="Grid view"
+                            aria-pressed={viewMode === 'grid'}
                         >
                             <Grid size={14} />
                         </Button>
@@ -119,6 +121,8 @@ const SharedWishlist = () => {
                             size="icon"
                             className={`rounded-lg h-8 w-8 ${viewMode === 'list' ? 'shadow-sm' : ''}`}
                             onClick={() => setViewMode('list')}
+                            aria-label="List view"
+                            aria-pressed={viewMode === 'list'}
                         >
                             <ListIcon size={14} />
                         </Button>
@@ -135,7 +139,7 @@ const SharedWishlist = () => {
                 ) : (
                     <div className={
                         viewMode === 'grid'
-                            ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+                            ? "grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-6"
                             : "flex flex-col gap-4"
                     }>
                         {items.map((item) => (
@@ -144,7 +148,7 @@ const SharedWishlist = () => {
                                 key={item.id} 
                                 className="no-underline block group h-full cursor-pointer"
                             >
-                                <div className="glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2">
+                                <div className="glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-1">
                                     <div className="relative aspect-video overflow-hidden bg-muted flex-shrink-0">
                                         {item.images && item.images.length > 0 ? (
                                             <LazyImage
@@ -168,7 +172,7 @@ const SharedWishlist = () => {
                                         <div className="mt-auto pt-4 flex items-baseline gap-1 text-primary">
                                             <span className="text-sm font-bold">₹</span>
                                             <span className="text-xl font-black">{item.price_per_day}</span>
-                                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">/ day</span>
+                                            <span className="text-[12px] text-muted-foreground uppercase font-bold tracking-widest">/ day</span>
                                         </div>
                                     </div>
                                 </div>

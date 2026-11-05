@@ -14,7 +14,9 @@ export type ExploreItemType =
   | 'announcement'
   | 'vendor'
   | 'marketplace'
-  | 'company';
+  | 'company'
+  | 'job'
+  | 'pitch';
 
 export interface ExploreItem {
   id: string;
@@ -48,7 +50,15 @@ export interface ExploreItem {
   review_count?: number;
   like_count?: number;
   comment_count?: number;
-  genre?: string[];
+  company?: string;
+  job_type?: string;
+  experience_level?: string;
+  salary_min?: number;
+  salary_max?: number;
+  project_type?: string;
+  budget_range?: string;
+  deadline?: string;
+  genre?: string | string[];
   craft?: string;
   member_count?: number;
   industry?: string | string[];
@@ -246,7 +256,7 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
                 )}
                 <View style={styles.projectStatusPill}>
                   <Text style={styles.projectStatusText}>
-                    STATUS // {(item.status || 'ACTIVE').toUpperCase()}
+                    {(item.status || 'Active')}
                   </Text>
                 </View>
               </View>
@@ -264,7 +274,7 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
                     <View style={styles.metaIconRow}>
                       <Icon name="film" size={9} color={ORANGE} />
                       <Text style={[styles.metaIconText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                        GENRE // {item.genre[0].toUpperCase()}
+                        {item.genre[0]}
                       </Text>
                     </View>
                   )}
@@ -272,7 +282,7 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
                     <View style={styles.metaIconRow}>
                       <Icon name="map-pin" size={9} color={ORANGE} />
                       <Text style={[styles.metaIconText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                        LOC // {item.location.toUpperCase()}
+                        {item.location}
                       </Text>
                     </View>
                   )}
@@ -284,7 +294,9 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
       }
 
       case 'user': {
-        const craftsStr = item.craft || 'CREATOR';
+        const craftsStr = item.craft
+          ? (Array.isArray(item.craft) ? item.craft.join(', ') : String(item.craft))
+          : ((item as any).account_type === 'studio' ? 'STUDIO' : (item as any).account_type === 'fan' ? 'FAN' : 'CREATOR');
         const initial = (item.full_name || item.username || 'U').charAt(0).toUpperCase();
 
         return (
@@ -458,7 +470,7 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
                 <View style={styles.companyLocRow}>
                   <Icon name="map-pin" size={8} color={ORANGE} />
                   <Text style={[styles.companyLocText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                    LOC // {(item.location || item.headquarters || 'GLOBAL').toUpperCase()}
+                    {(item.location || item.headquarters || 'Global')}
                   </Text>
                 </View>
 
@@ -501,11 +513,11 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
               <View style={styles.cardBody}>
                 <View style={styles.catPillRow}>
                   <Text style={styles.catPillText} numberOfLines={1}>
-                    CAT // {String(item.category || 'RENTAL').toUpperCase()}
+                    {String(item.category || 'Rental')}
                   </Text>
                 </View>
                 <Text style={[styles.vendorLocSub, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                  LOC // {(item.city || item.location || 'GLOBAL').toUpperCase()}
+                  {(item.city || item.location || 'Global')}
                 </Text>
 
                 <Text style={[styles.vendorName, { color: themeColors.textPrimary }]} numberOfLines={1}>
@@ -551,7 +563,7 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
                 <View style={styles.gearPriceRow}>
                   <View style={styles.catBluePill}>
                     <Text style={styles.catBlueText} numberOfLines={1}>
-                      CAT // {String(item.category || 'GEAR').toUpperCase()}
+                      {String(item.category || 'Gear')}
                     </Text>
                   </View>
                   <Text style={styles.gearPriceText}>
@@ -560,7 +572,7 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
                 </View>
 
                 <Text style={[styles.gearLocSub, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                  LOC // {(item.location || 'GLOBAL').toUpperCase()}
+                  {(item.location || 'Global')}
                 </Text>
 
                 <Text style={[styles.gearTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>
@@ -576,6 +588,61 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
         );
       }
 
+      case 'job': {
+        const pay = item.salary_min || item.salary_max
+          ? `₹${(item.salary_min || 0).toLocaleString()}${item.salary_max ? ` – ₹${item.salary_max.toLocaleString()}` : '+'}`
+          : null;
+        return (
+          <TouchableOpacity
+            style={dynamicCardStyle}
+            activeOpacity={0.92}
+            onPress={() => navigation.navigate('JobDetail', { jobId: item.id, jobTitle: item.title })}
+            accessibilityRole="button"
+            accessibilityLabel={`Job: ${item.title}`}
+          >
+            <View style={[styles.cardInner, themeInner, { padding: 14 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: '#FF4B3318', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="briefcase" size={16} color={ORANGE} />
+                </View>
+                <Text style={{ flex: 1, fontSize: 12, color: themeColors.textSecondary }} numberOfLines={1}>{item.company || 'Hiring'}</Text>
+              </View>
+              <Text style={{ marginTop: 10, fontSize: 16, fontWeight: '700', color: themeColors.textPrimary }} numberOfLines={3}>{item.title}</Text>
+              <Text style={{ marginTop: 6, fontSize: 12, lineHeight: 17, color: themeColors.textSecondary }} numberOfLines={3}>{item.description}</Text>
+              <View style={{ marginTop: 'auto', paddingTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {!!item.job_type && <Text style={styles.metaPill}>{String(item.job_type).replace(/_/g, ' ')}</Text>}
+                {!!item.location && <Text style={styles.metaPill} numberOfLines={1}>{item.location}</Text>}
+                {!!pay && <Text style={[styles.metaPill, { color: ORANGE, backgroundColor: '#FF4B3318' }]}>{pay}</Text>}
+              </View>
+            </View>
+          </TouchableOpacity>
+        );
+      }
+
+      case 'pitch':
+        return (
+          <TouchableOpacity
+            style={dynamicCardStyle}
+            activeOpacity={0.92}
+            onPress={() => navigation.navigate('PitchDetail', { pitchId: item.id, pitchTitle: item.title })}
+            accessibilityRole="button"
+            accessibilityLabel={`Pitch call: ${item.title}`}
+          >
+            <View style={[styles.cardInner, themeInner, { padding: 14 }]}>
+              <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: '#FF4B3318', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="film" size={16} color={ORANGE} />
+              </View>
+              <Text style={{ marginTop: 10, fontSize: 16, fontWeight: '700', color: themeColors.textPrimary }} numberOfLines={3}>{item.title}</Text>
+              <Text style={{ marginTop: 6, fontSize: 12, lineHeight: 17, color: themeColors.textSecondary }} numberOfLines={4}>{item.description}</Text>
+              <View style={{ marginTop: 'auto', paddingTop: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {!!item.genre && <Text style={styles.metaPill}>{Array.isArray(item.genre) ? item.genre[0] : item.genre}</Text>}
+                {!!item.project_type && <Text style={styles.metaPill}>{item.project_type}</Text>}
+                {!!item.deadline && <Text style={[styles.metaPill, { color: ORANGE, backgroundColor: '#FF4B3318' }]}>Due {new Date(item.deadline).toLocaleDateString()}</Text>}
+              </View>
+            </View>
+          </TouchableOpacity>
+        );
+
       default:
         return null;
     }
@@ -585,6 +652,7 @@ export const ExploreCard: React.FC<ExploreCardProps> = React.memo(({
 });
 
 const styles = StyleSheet.create({
+  metaPill: { fontSize: 12, fontWeight: '700', color: '#475569', backgroundColor: '#E2E8F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, overflow: 'hidden', textTransform: 'capitalize' },
   cardBox: {
     width: '48%',
     height: 225,
@@ -650,8 +718,8 @@ const styles = StyleSheet.create({
   },
   typeBadgeText: {
     color: '#FFFFFF',
-    fontSize: 7.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   mediaContainer: {
@@ -693,12 +761,12 @@ const styles = StyleSheet.create({
   },
   hiringLogoFallback: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     color: ORANGE,
   },
   hiringTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     textAlign: 'center',
@@ -711,8 +779,8 @@ const styles = StyleSheet.create({
   },
   applyNowText: {
     color: '#FFFFFF',
-    fontSize: 9.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   centerTextContainer: {
     flex: 1,
@@ -724,7 +792,7 @@ const styles = StyleSheet.create({
   insightText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
     textAlign: 'center',
     lineHeight: 18,
@@ -746,8 +814,8 @@ const styles = StyleSheet.create({
   },
   projectStatusText: {
     color: '#FFFFFF',
-    fontSize: 7.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardBody: {
     flex: 1,
@@ -756,12 +824,12 @@ const styles = StyleSheet.create({
   },
   projectTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
   projectDesc: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
@@ -777,8 +845,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaIconText: {
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   userCardCenter: {
@@ -798,7 +866,7 @@ const styles = StyleSheet.create({
   userInitialText: {
     color: '#FFFFFF',
     fontSize: 24,
-    fontWeight: '900',
+    fontWeight: '700',
     textAlign: 'center',
     lineHeight: 54,
   },
@@ -809,8 +877,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   userFullName: {
-    fontSize: 12.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
@@ -827,12 +895,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   userCraftText: {
-    fontSize: 8.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   userBioQuote: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     fontStyle: 'italic',
     textAlign: 'center',
@@ -860,18 +928,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   discHeaderText1: {
-    fontSize: 8.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: INK,
   },
   discHeaderText2: {
-    fontSize: 7.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   discRoomTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: ORANGE,
     fontFamily: 'Lora-Bold',
     marginVertical: 4,
@@ -882,7 +950,7 @@ const styles = StyleSheet.create({
     paddingLeft: 6,
   },
   discDescText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     fontStyle: 'italic',
   },
@@ -893,8 +961,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   discMemberText: {
-    fontSize: 8.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   newsBg: {
@@ -919,7 +987,7 @@ const styles = StyleSheet.create({
   },
   newsTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     textAlign: 'center',
@@ -933,8 +1001,8 @@ const styles = StyleSheet.create({
   },
   readUpdateText: {
     color: ORANGE,
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   studioTopLikesBadge: {
     position: 'absolute',
@@ -951,8 +1019,8 @@ const styles = StyleSheet.create({
   },
   studioTopLikesText: {
     color: '#FFFFFF',
-    fontSize: 8.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   companyHeroBanner: {
     width: '100%',
@@ -980,7 +1048,7 @@ const styles = StyleSheet.create({
   companyLogoFallbackText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   companyIndBadge: {
     backgroundColor: ORANGE,
@@ -992,12 +1060,12 @@ const styles = StyleSheet.create({
   },
   companyIndText: {
     color: '#FFFFFF',
-    fontSize: 7.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   companyName: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     textAlign: 'center',
@@ -1009,12 +1077,12 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   companyLocText: {
-    fontSize: 8.5,
+    fontSize: 12,
     color: '#64748B',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   companyDescQuote: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: '#64748B',
     fontStyle: 'italic',
     textAlign: 'center',
@@ -1027,7 +1095,7 @@ const styles = StyleSheet.create({
   vendorLogoFallback: {
     color: '#FFFFFF',
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: '700',
     textAlign: 'center',
     lineHeight: 90,
   },
@@ -1041,25 +1109,25 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   catPillText: {
-    fontSize: 7.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   vendorLocSub: {
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     marginTop: 2,
   },
   vendorName: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginTop: 2,
   },
   vendorDesc: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
@@ -1082,30 +1150,30 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   catBlueText: {
-    fontSize: 7.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#2563EB',
   },
   gearPriceText: {
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   gearLocSub: {
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     marginTop: 2,
   },
   gearTitle: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginTop: 2,
   },
   gearDesc: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },

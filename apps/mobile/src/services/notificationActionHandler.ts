@@ -2,7 +2,8 @@ import { orTerm } from '../utils/postgrest';
 import { NativeModules, DeviceEventEmitter } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabaseClient } from '@cinecraft/api';
-import { resolveCurrentUserId } from './offlineCache';
+import { resolveCurrentUserId, getCache } from './offlineCache';
+import { decideDmEncryption } from '@cinecraft/core';
 
 const generateDirectRoomId = (userId1: string, userId2: string): string => {
   const [id1, id2] = [userId1, userId2].sort();
@@ -211,6 +212,17 @@ export async function handleNotificationAction(data: NotificationActionData): Pr
             }
           } catch {}
         }
+
+        // a message request stays unread until the user decides
+        try {
+          const { data: reqRows, error: reqErr }: any = await (supabase.rpc as any)('get_message_requests');
+          if (!reqErr && Array.isArray(reqRows) && reqRows.some((r: any) => !r.hidden && r.partner_id === senderId)) {
+            if (conversationKey && NativeModules.NotificationBridge?.dismissNotification) {
+              NativeModules.NotificationBridge.dismissNotification(conversationKey);
+            }
+            return;
+          }
+        } catch { /* check failed: carry on */ }
 
         try {
           // A. Mark messages as read by receiver_id + sender_id
@@ -475,21 +487,38 @@ export async function handleNotificationAction(data: NotificationActionData): Pr
           } catch {}
         }
 
+        // Same rules as the chat screen (docs/E2EE_OPT_IN_DESIGN.md), using what the app cached. A reply from a
+        // notification never quietly goes out as plain text when it should be encrypted.
         let contentToSend = replyContent;
-        // Attempt E2EE encryption if keys exist
         try {
-          const { encryptDirectMessage } = require('@cinecraft/e2ee');
-          const userKeysRaw = await AsyncStorage.getItem(`@e2ee_keys_${userId}`);
-          const partnerKeysRaw = await AsyncStorage.getItem(`@e2ee_keys_${targetPartnerId}`);
-          if (userKeysRaw && partnerKeysRaw) {
-            const userKeys = JSON.parse(userKeysRaw);
-            const partnerKeys = JSON.parse(partnerKeysRaw);
-            if (userKeys.publicKey && partnerKeys.publicKey) {
-              contentToSend = await encryptDirectMessage(replyContent, userKeys.publicKey, partnerKeys.publicKey);
-            }
+          const [selfEnabledCached, selfPub, partnerPub, partnerEnabledCached] = await Promise.all([
+            getCache<boolean>(`e2ee_enabled_${userId}`),
+            getCache<string>(`pub_key_${userId}`),
+            getCache<string>(`pub_key_${targetPartnerId}`),
+            getCache<boolean>(`e2ee_en_${targetPartnerId}`),
+          ]);
+          const selfEnabled = selfEnabledCached === true;
+          if (selfEnabled && (partnerEnabledCached === null || partnerEnabledCached === undefined)) {
+            console.warn('[NotificationActionHandler] Reply not sent: cannot tell if this chat is encrypted. Open the app to reply.');
+            return;
+          }
+          const policy = decideDmEncryption({
+            selfEnabled,
+            selfHasKeys: !!selfPub,
+            partnerEnabled: partnerEnabledCached === true,
+            partnerHasPublicKey: !!partnerPub,
+          });
+          if (policy.mode === 'encrypt' && selfPub && partnerPub) {
+            const { encryptDirectMessage } = require('@cinecraft/e2ee');
+            contentToSend = await encryptDirectMessage(replyContent, selfPub, partnerPub);
+          } else if (policy.mode === 'blocked_locked') {
+            console.warn('[NotificationActionHandler] Reply not sent: encrypted messages are locked. Open the app to unlock.');
+            return;
           }
         } catch (encErr) {
-          console.log('[NotificationActionHandler] Plaintext fallback for reply:', encErr);
+          // never fall back to plain text for a chat that should be encrypted
+          console.warn('[NotificationActionHandler] Reply not sent: could not encrypt.', encErr);
+          return;
         }
 
         const { data: insertedMsg, error } = await (supabase.from('direct_messages' as any) as any)
@@ -520,7 +549,17 @@ export async function handleNotificationAction(data: NotificationActionData): Pr
           } catch {}
         }
       } else if (screen === 'DiscussionRoomDetail' && partnerId) {
-        // 2. Discussion Room Reply
+        // 2. Discussion Room Reply (private and secret rooms are end-to-end encrypted: no plain-text quick reply)
+        try {
+          const { data: roomRow } = await (supabase.from('discussion_rooms' as any) as any).select('room_type').eq('id', partnerId).maybeSingle();
+          if (roomRow?.room_type === 'private' || roomRow?.room_type === 'secret') {
+            console.warn('[NotificationActionHandler] Reply not sent: this room is encrypted. Open the app to reply.');
+            return;
+          }
+        } catch {
+          console.warn('[NotificationActionHandler] Reply not sent: could not check whether this room is encrypted.');
+          return;
+        }
         const { data: insertedRoomMsg, error } = await (supabase.from('room_messages' as any) as any)
           .insert({
             room_id: partnerId,
@@ -558,89 +597,8 @@ export async function handleNotificationAction(data: NotificationActionData): Pr
           } catch {}
         }
       } else if (screen === 'ProjectSpace' && partnerId) {
-        // 3. Project Space Reply
-        const { spaceId, projectId } = await resolveSpaceInfo(supabase, partnerId);
-        const { data: insertedSpaceMsg, error } = await (supabase.from('project_space_messages' as any) as any)
-          .insert({
-            project_space_id: spaceId,
-            user_id: userId,
-            content: replyContent,
-            attachment_url: null,
-            attachment_type: null,
-          })
-          .select()
-          .single();
-
-        if (error) {
-          console.warn('[NotificationActionHandler] Failed to insert project space reply:', error);
-        } else {
-          console.log('[NotificationActionHandler] Project space reply sent to space:', spaceId);
-          const nowIso = new Date().toISOString();
-          const userProfile = await resolveUserProfile(supabase, userId);
-
-          // Direct upsert read status
-          try {
-            await (supabase.from('project_message_read_status' as any) as any)
-              .upsert({ project_space_id: spaceId, user_id: userId, last_read_at: nowIso }, { onConflict: 'project_space_id,user_id' });
-          } catch {}
-
-          if (insertedSpaceMsg?.id) {
-            try {
-              await (supabase.rpc as any)('mark_project_message_as_seen', {
-                p_message_id: insertedSpaceMsg.id,
-                p_user_id: userId,
-              });
-            } catch {}
-          }
-
-          // Broadcast to web and mobile channels
-          const broadcastPayload = {
-            userId,
-            user_id: userId,
-            spaceId,
-            project_space_id: spaceId,
-            last_read_at: nowIso,
-            profile: userProfile,
-          };
-
-          const targetChannels = new Set([
-            `project_messages-v2:${spaceId}`,
-            `ps_messages:${spaceId}`,
-          ]);
-          if (partnerId && partnerId !== spaceId) {
-            targetChannels.add(`project_messages-v2:${partnerId}`);
-            targetChannels.add(`ps_messages:${partnerId}`);
-          }
-          if (projectId && projectId !== spaceId) {
-            targetChannels.add(`project_messages-v2:${projectId}`);
-            targetChannels.add(`ps_messages:${projectId}`);
-          }
-
-          for (const chName of targetChannels) {
-            try {
-              const ch = supabase.channel(chName);
-              ch.send({
-                type: 'broadcast',
-                event: 'new_message',
-                payload: insertedSpaceMsg,
-              }).catch(() => {});
-              ch.send({
-                type: 'broadcast',
-                event: 'read_update',
-                payload: broadcastPayload,
-              }).catch(() => {});
-            } catch {}
-          }
-
-          try {
-            const globalCh = supabase.channel('global_chat_updates');
-            globalCh.send({
-              type: 'broadcast',
-              event: 'chat_list_update',
-              payload: { spaceId, userId },
-            }).catch(() => {});
-          } catch {}
-        }
+        // 3. Project Space Reply: project spaces are end-to-end encrypted, so there is no plain-text quick reply
+        console.warn('[NotificationActionHandler] Reply not sent: project spaces are encrypted. Open the app to reply.');
       }
     }
   } catch (err) {

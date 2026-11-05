@@ -7,7 +7,7 @@ export const AvailabilityBadge = ({ status, className }: { status?: string | nul
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider',
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] font-bold uppercase tracking-wider',
         open ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
         className
       )}

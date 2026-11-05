@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { describeAlert, DEPARTMENTS, JOB_TYPES, JOB_TYPE_LABELS, WORK_MODES, WORK_MODE_LABELS, type JobAlertCriteria } from '@cinecraft/core';
+import { describeAlert, DEPARTMENTS, JOB_TYPES, JOB_TYPE_LABELS, WORK_MODES, WORK_MODE_LABELS, type JobAlertCriteria, friendlyError } from '@cinecraft/core';
 
 interface AlertRow extends JobAlertCriteria {
   id: string;
@@ -59,6 +59,15 @@ export const JobAlertsDialog = ({ prefill, triggerButton, defaultOpen = false }:
 
   const create = async () => {
     if (!user) return;
+    // an alert with nothing to match would notify about every single job
+    if (!form.keywords.trim() && form.job_type === ANY && form.work_mode === ANY && form.department === ANY && !form.location.trim() && !form.min_salary) {
+      toast({ title: 'Add something to match', description: 'Type a keyword or pick a job type, department, city or pay so the alert is about jobs you want.', variant: 'destructive' });
+      return;
+    }
+    if (form.min_salary && (!Number.isFinite(Number(form.min_salary)) || Number(form.min_salary) < 0)) {
+      toast({ title: 'Check the minimum pay', description: 'Enter a number that is zero or more.', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
     const { error } = await db.from('job_alerts').insert({
       user_id: user.id,
@@ -71,7 +80,7 @@ export const JobAlertsDialog = ({ prefill, triggerButton, defaultOpen = false }:
     });
     setSaving(false);
     if (error) {
-      toast({ title: 'Could not save the alert', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not save the alert', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     toast({ title: 'Alert saved', description: "We'll notify you when a matching job is posted." });
@@ -115,10 +124,10 @@ export const JobAlertsDialog = ({ prefill, triggerButton, defaultOpen = false }:
               <div key={a.id} className="flex items-center gap-3 rounded-2xl border border-border/60 p-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold truncate">{describeAlert(a)}</p>
-                  <p className="text-[11px] text-muted-foreground">{a.is_active ? 'Active' : 'Paused'}</p>
+                  <p className="text-[12px] text-muted-foreground">{a.is_active ? 'Active' : 'Paused'}</p>
                 </div>
-                <Switch checked={a.is_active} onCheckedChange={() => toggle(a)} />
-                <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => remove(a)}><Trash2 className="w-4 h-4" /></Button>
+                <Switch aria-label={a.is_active ? 'Pause job alert' : 'Resume job alert'} checked={a.is_active} onCheckedChange={() => toggle(a)} />
+                <Button aria-label="Delete" variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => remove(a)}><Trash2 className="w-4 h-4" /></Button>
               </div>
             ))
           )}

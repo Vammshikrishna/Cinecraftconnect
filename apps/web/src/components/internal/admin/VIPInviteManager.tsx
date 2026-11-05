@@ -5,6 +5,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Crown, Key, Copy, Plus } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
+import { randomInviteCode } from '../shared/staffHelpers';
 
 export default function VIPInviteManager() {
   const [invites, setInvites] = useState<any[]>([]);
@@ -28,28 +30,29 @@ export default function VIPInviteManager() {
     }
   };
 
-  const generateInviteCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = 'VIP-';
-    for (let i = 0; i < 8; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  };
-
+  // NOTE: the role that a code grants ('creator_pro') is decided here in the browser when the server function is not
+  // installed. Preferred path: rpc staff_create_vip_invite (part_dv_staff_console_fixes.sql), where the database picks both
+  // the code and the role. The browser fallback uses crypto.getRandomValues (12 characters) instead of Math.random.
   const createInvite = async () => {
     if (!user) return;
     setIsLoading(true);
-    const code = generateInviteCode();
-    
-    try {
-      const { error } = await supabase.from('vip_invites' as any).insert({
-        code,
-        created_by: user.id,
-        role_granted: 'creator_pro'
-      });
 
-      if (error) throw error;
+    try {
+      let code: string | null = null;
+      const rpc = await (supabase as any).rpc('staff_create_vip_invite');
+      if (!rpc.error && typeof rpc.data === 'string') {
+        code = rpc.data;
+      } else if (rpc.error && (rpc.error.code === 'PGRST202' || rpc.error.code === '42883' || /could not find the function|does not exist/i.test(rpc.error.message || ''))) {
+        code = randomInviteCode(12);
+        const { error } = await supabase.from('vip_invites' as any).insert({
+          code,
+          created_by: user.id,
+          role_granted: 'creator_pro'
+        });
+        if (error) throw error;
+      } else if (rpc.error) {
+        throw rpc.error;
+      }
 
       toast({
         title: "VIP Invite Created",
@@ -59,7 +62,7 @@ export default function VIPInviteManager() {
     } catch (error: any) {
       toast({
         title: "Generation Failed",
-        description: error.message,
+        description: friendlyError(error),
         variant: "destructive"
       });
     } finally {
@@ -94,7 +97,7 @@ export default function VIPInviteManager() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {invites.map((invite) => (
-              <div key={invite.code} className="flex items-center justify-between p-4 bg-background/50 rounded-xl border border-white/5 shadow-inner">
+              <div key={invite.code} className="flex items-center justify-between p-4 bg-background/50 rounded-xl border border-foreground/5 shadow-inner">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 font-mono font-bold text-lg text-primary tracking-wider">
                     <Key size={16} className="text-muted-foreground" />
@@ -106,7 +109,7 @@ export default function VIPInviteManager() {
                 </div>
                 
                 {!invite.is_used && (
-                  <Button variant="ghost" size="icon" onClick={() => copyCode(invite.code)} className="text-muted-foreground hover:text-foreground">
+                  <Button aria-label="Copy" variant="ghost" size="icon" onClick={() => copyCode(invite.code)} className="text-muted-foreground hover:text-foreground">
                     <Copy className="h-4 w-4" />
                   </Button>
                 )}

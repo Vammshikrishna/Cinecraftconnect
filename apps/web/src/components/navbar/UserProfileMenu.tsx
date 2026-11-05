@@ -67,7 +67,7 @@ const UserProfileMenu = () => {
         onContextMenu={handleContextMenu}
         style={{ WebkitTouchCallout: 'none' }}
       >
-        <Avatar className="h-7 w-7 sm:h-8 sm:w-8 cursor-pointer hover:ring-2 hover:ring-primary transition-all pointer-events-none">
+        <Avatar className="h-7 w-7 sm:h-8 sm:w-8 cursor-pointer hover:ring-2 hover:ring-primary transition pointer-events-none">
           {profile?.avatar_url && (
             <AvatarImage src={cachedAvatar} alt={displayName} />
           )}

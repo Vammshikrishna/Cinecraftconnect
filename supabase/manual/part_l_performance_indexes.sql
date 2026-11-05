@@ -36,12 +36,12 @@ DECLARE
     'CREATE INDEX IF NOT EXISTS idx_job_applications_job ON public.job_applications (job_id)',
     'CREATE INDEX IF NOT EXISTS idx_job_applications_applicant ON public.job_applications (applicant_id)',
     -- ILIKE '%term%' search (pg_trgm GIN); profiles.full_name already has one
-    'CREATE INDEX IF NOT EXISTS idx_profiles_username_trgm ON public.profiles USING gin (username public.gin_trgm_ops)',
-    'CREATE INDEX IF NOT EXISTS idx_projects_title_trgm ON public.projects USING gin (title public.gin_trgm_ops)',
-    'CREATE INDEX IF NOT EXISTS idx_discussion_rooms_title_trgm ON public.discussion_rooms USING gin (title public.gin_trgm_ops)',
-    'CREATE INDEX IF NOT EXISTS idx_vendors_business_name_trgm ON public.vendors USING gin (business_name public.gin_trgm_ops)',
-    'CREATE INDEX IF NOT EXISTS idx_marketplace_listings_title_trgm ON public.marketplace_listings USING gin (title public.gin_trgm_ops)',
-    'CREATE INDEX IF NOT EXISTS idx_company_pages_name_trgm ON public.company_pages USING gin (name public.gin_trgm_ops)'
+    'CREATE INDEX IF NOT EXISTS idx_profiles_username_trgm ON public.profiles USING gin (username gin_trgm_ops)',
+    'CREATE INDEX IF NOT EXISTS idx_projects_title_trgm ON public.projects USING gin (title gin_trgm_ops)',
+    'CREATE INDEX IF NOT EXISTS idx_discussion_rooms_title_trgm ON public.discussion_rooms USING gin (title gin_trgm_ops)',
+    'CREATE INDEX IF NOT EXISTS idx_vendors_business_name_trgm ON public.vendors USING gin (business_name gin_trgm_ops)',
+    'CREATE INDEX IF NOT EXISTS idx_marketplace_listings_title_trgm ON public.marketplace_listings USING gin (title gin_trgm_ops)',
+    'CREATE INDEX IF NOT EXISTS idx_company_pages_name_trgm ON public.company_pages USING gin (name gin_trgm_ops)'
   ];
 BEGIN
   FOREACH stmt IN ARRAY stmts LOOP

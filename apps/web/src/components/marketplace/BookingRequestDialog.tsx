@@ -84,7 +84,7 @@ export const BookingRequestDialog = ({ open, onOpenChange, listing, onRequested 
 
           {booked.length > 0 && (
             <div className="rounded-xl border border-border/60 p-3 text-xs space-y-1">
-              <p className="font-black uppercase tracking-widest text-muted-foreground text-[10px]">Already booked</p>
+              <p className="font-black uppercase tracking-widest text-muted-foreground text-[12px]">Already booked</p>
               {booked.slice(0, 6).map((b, i) => (
                 <p key={i} className={clash === b ? 'text-red-500 font-bold' : 'text-muted-foreground'}>
                   {fmt(b.start_date)}{b.end_date !== b.start_date ? ` – ${fmt(b.end_date)}` : ''}
@@ -100,10 +100,10 @@ export const BookingRequestDialog = ({ open, onOpenChange, listing, onRequested 
 
           <div className="rounded-2xl bg-primary/5 border border-primary/20 p-4 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{days || 0} day{days === 1 ? '' : 's'}</p>
+              <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">{days || 0} day{days === 1 ? '' : 's'}</p>
               <p className="text-2xl font-black text-primary">₹{total.toLocaleString()}</p>
             </div>
-            <p className="text-[11px] text-muted-foreground max-w-[170px] text-right">Estimate. The owner confirms the request; you pay them directly.</p>
+            <p className="text-[12px] text-muted-foreground max-w-[170px] text-right">Estimate. The owner confirms the request; you pay them directly.</p>
           </div>
 
           <Button className="w-full h-12 rounded-xl font-bold" onClick={submit} disabled={busy || !days || !!clash}>

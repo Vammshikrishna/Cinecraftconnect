@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Award, Newspaper, Clapperboard, Plus, Trash2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@cinecraft/core';
+import { undoable } from '@/lib/undoable';
 
 const KINDS = [
   { id: 'award', label: 'Award', Icon: Award },
@@ -39,20 +41,29 @@ export const AwardsSection = ({ userId, isOwner }: { userId: string; isOwner: bo
       user_id: userId, kind, title: title.trim(), org: org.trim() || null, year: year ? parseInt(year, 10) : null, url: url.trim() || null,
     });
     if (error) {
-      toast({ title: 'Could not add', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not add', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     setTitle(''); setOrg(''); setYear(''); setUrl(''); setAdding(false);
     load();
   };
 
-  const remove = async (id: string) => {
-    const { error } = await (supabase as any).from('profile_awards').delete().eq('id', id);
-    if (error) {
-      toast({ title: 'Could not remove', description: error.message, variant: 'destructive' });
-      return;
-    }
-    setRows(prev => prev.filter(r => r.id !== id));
+  // the row goes at once and the delete is final after a few seconds, with an Undo in between (same as unblocking)
+  const remove = (id: string) => {
+    const gone = rows.find((r) => r.id === id);
+    undoable({
+      title: 'Removed',
+      description: 'Tap Undo to keep it on your profile.',
+      apply: () => setRows(prev => prev.filter(r => r.id !== id)),
+      revert: () => { if (gone) setRows(prev => [...prev, gone].sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))); },
+      commit: async () => {
+        const { error } = await (supabase as any).from('profile_awards').delete().eq('id', id);
+        if (error) {
+          if (gone) setRows(prev => [...prev, gone]);
+          toast({ title: 'Could not remove', description: friendlyError(error), variant: 'destructive' });
+        }
+      },
+    });
   };
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
@@ -98,12 +109,12 @@ export const AwardsSection = ({ userId, isOwner }: { userId: string; isOwner: bo
               <div key={r.id} className="rounded-xl border bg-card/40 p-4 flex gap-3">
                 <div className="h-10 w-10 shrink-0 rounded-full bg-primary/10 text-primary flex items-center justify-center"><K.Icon className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">{K.label}{r.year ? ` · ${r.year}` : ''}</p>
+                  <p className="text-[12px] uppercase tracking-widest font-bold text-muted-foreground">{K.label}{r.year ? ` · ${r.year}` : ''}</p>
                   <p className="font-semibold leading-snug">{r.title}</p>
                   {r.org && <p className="text-sm text-muted-foreground">{r.org}</p>}
                   {r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary inline-flex items-center gap-1 mt-1">Open link <ExternalLink className="h-3 w-3" /></a>}
                 </div>
-                {isOwner && <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4" /></Button>}
+                {isOwner && <Button aria-label="Delete" size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => remove(r.id)}><Trash2 className="h-4 w-4" /></Button>}
               </div>
             );
           })}

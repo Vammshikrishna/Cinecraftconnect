@@ -1,5 +1,7 @@
 import { fetchProfileExtras, mergeProfileExtras } from '../../utils/profileExtras';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { scrollChrome } from '../../components/common/scrollChrome';
+import { Toast } from '../../contexts/ToastContext';
 import {
   View,
   Text,
@@ -11,16 +13,18 @@ import {
   Alert,
   Linking,
   Share,
-  Dimensions,
   InteractionManager,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { Icon } from '../../components/common/Icon';
 import { VerificationBadge } from '../../components/common/VerificationBadge';
 import { TabletContainer } from '../../components/common/TabletContainer';
+import { CreditLine } from '../../components/common/CreditLine';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useAppRole } from '../../hooks/useAppRole';
 import { useResponsive } from '../../hooks/useResponsive';
+import { useHeaderInset } from '../../hooks/useHeaderInset';
 import { useAccountType } from '../../hooks/useAccountType';
 import { CachedImage } from '../../components/common/CachedImage';
 
@@ -30,16 +34,25 @@ import { IntroductionModal } from '../../components/modals/NetworkModals';
 import { AvailabilityBadge } from '../../components/network/NetworkParts';
 import { AwardsPanel, ProfileContextStrip, ProfileHighlightsView, RecommendationsPanel, useProfileHighlights, useSkillEndorsements } from '../../components/profile/ProfileExtras';
 import { RequestDatesModal, InviteToProjectModal, RecommendModal, AddToShortlistModal } from '../../components/modals/CollaborationModals';
-import { toSafeUrl } from '../../utils/safeUrl';
+import { SocialLinksRow } from '../../components/profile/SocialLinksRow';
 import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 
 export const PublicProfileScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
-  const { isTablet } = useResponsive();
+  const { isTablet, isLandscape, width: winW, maxContentWidth } = useResponsive();
+  const headerInset = useHeaderInset();
+  const colW = isTablet ? Math.min(winW, maxContentWidth) : winW;
+  const tabPad = isTablet ? 24 : 16;
+  const gridCols = isTablet ? (isLandscape ? 5 : 4) : 3;
+  const gridGap = isTablet ? 10 : 8;
+  const gridCellW = Math.floor((colW - tabPad * 2 - gridGap * (gridCols - 1)) / gridCols) - 1;
+  const sideBySide = isTablet && isLandscape;
   const { isFan: isViewerFan } = useAccountType();
+  const { isInternal } = useAppRole(); // staff accounts do not connect, follow or message
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
 
@@ -53,7 +66,6 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
     location: initialLocation,
     bio: initialBio,
     avatarUrl: initialAvatar,
-    coverUrl: initialCover,
     tab: initialTab,
   } = route.params || {};
 
@@ -68,7 +80,6 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
     location: initialLocation || '',
     bio: initialBio || '',
     avatar_url: initialAvatar || null,
-    cover_image_url: initialCover || null,
     is_verified: false,
     website: '',
     social_links: {},
@@ -97,7 +108,6 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
   const [canMessage, setCanMessage] = useState(false);
   const [workModal, setWorkModal] = useState<null | 'dates' | 'invite' | 'recommend' | 'shortlist'>(null);
   const [recKey, setRecKey] = useState(0);
-  const [gridFitMode, setGridFitMode] = useState<'contain' | 'cover'>('cover');
 
   // Tab Data States
   const [posts, setPosts] = useState<any[]>([]);
@@ -155,7 +165,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
         const viewerPromise = supabase.auth.getSession().then((r) => r?.data?.session?.user || null).catch(() => null);
 
         const profilePromise = (async () => {
-          const { data: profDataRaw } = await supabase.from('profiles').select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, account_type, accept_direct_pitches, onboarding_completed, is_internal, public_key, is_verified, is_banned, is_official_team').eq('id', targetUserId).maybeSingle();
+          const { data: profDataRaw } = await supabase.from('profiles').select('id, updated_at, username, full_name, avatar_url, website, bio, location, experience, craft, account_type, accept_direct_pitches, onboarding_completed, is_internal, public_key, is_verified, is_banned, is_official_team').eq('id', targetUserId).maybeSingle();
           return profDataRaw
             ? mergeProfileExtras(profDataRaw as any, await fetchProfileExtras(targetUserId))
             : profDataRaw;
@@ -219,7 +229,6 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
             bio: profData.bio || prev.bio,
             location: profData.location || prev.location,
             avatar_url: profData.avatar_url || prev.avatar_url,
-            cover_image_url: profData.cover_image_url || prev.cover_image_url,
             account_type: profData.account_type || 'creator',
           }));
         }
@@ -263,66 +272,106 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
   const isStudio = isTargetStudio;
   const isFollowRelationship = isViewerFan || isTargetFan;
 
+  // one connect/follow action at a time: a double tap must not send two writes
+  const connectBusyRef = useRef(false);
+
+  const performDisconnect = async (userId: string) => {
+    if (connectBusyRef.current) return;
+    connectBusyRef.current = true;
+    try {
+      const db = getSupabaseClient().from('user_connections') as any;
+      const { error } = await db.delete().or(`follower_id.eq.${userId},following_id.eq.${userId}`).or(`follower_id.eq.${targetUserId},following_id.eq.${targetUserId}`);
+      if (error) throw error;
+      setIsConnected(false);
+      setRequestState('none');
+      setConnectionRowId(null);
+      setConnectionsCount(prev => Math.max(0, prev - 1));
+      Toast.success('Connection removed');
+    } catch (e: any) {
+      Alert.alert('Error', friendlyError(e, 'Could not remove the connection.'));
+    } finally {
+      connectBusyRef.current = false;
+    }
+  };
+
   const handleConnectOrFollow = async () => {
+    if (connectBusyRef.current) return;
+    connectBusyRef.current = true;
     try {
       const supabase = getSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      // the saved session is read locally (getUser() is a network call and made the button feel slow)
+      const user = (await supabase.auth.getSession()).data.session?.user ?? null;
       if (!user) {
         Alert.alert('Authentication required', 'Please sign in to continue.');
         return;
       }
 
       if (isFollowRelationship) {
-        if (isFollowing) {
-          await (supabase.from('user_follows') as any)
-            .delete()
-            .eq('follower_id', user.id)
-            .eq('following_id', targetUserId);
-          setIsFollowing(false);
-          setFollowersCount(prev => Math.max(0, prev - 1));
-        } else {
-          await (supabase.from('user_follows') as any)
-            .insert({
-              follower_id: user.id,
-              following_id: targetUserId,
-            });
-          setIsFollowing(true);
-          setFollowersCount(prev => prev + 1);
+        // Follow/unfollow: the button flips at once and goes back if the write fails.
+        const wasFollowing = isFollowing;
+        setIsFollowing(!wasFollowing);
+        setFollowersCount(prev => (wasFollowing ? Math.max(0, prev - 1) : prev + 1));
+        const { error } = wasFollowing
+          ? await (supabase.from('user_follows') as any).delete().eq('follower_id', user.id).eq('following_id', targetUserId)
+          : await (supabase.from('user_follows') as any).insert({ follower_id: user.id, following_id: targetUserId });
+        if (error && error.code !== '23505') {
+          setIsFollowing(wasFollowing);
+          setFollowersCount(prev => (wasFollowing ? prev + 1 : Math.max(0, prev - 1)));
+          throw error;
         }
       } else {
         const db = supabase.from('user_connections') as any;
         if (isConnected) {
-          await db.delete().or(`follower_id.eq.${user.id},following_id.eq.${user.id}`).or(`follower_id.eq.${targetUserId},following_id.eq.${targetUserId}`);
-          setIsConnected(false);
-          setRequestState('none');
-          setConnectionRowId(null);
-          setConnectionsCount(prev => Math.max(0, prev - 1));
-          Alert.alert('Disconnected', 'Connection removed.');
+          // removing a connection cannot simply be undone (they would have to accept again), so this one asks first
+          const userId = user.id;
+          Alert.alert('Remove connection?', 'You will no longer be connected. To connect again, a new request is needed.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Remove', style: 'destructive', onPress: () => { void performDisconnect(userId); } },
+          ]);
         } else if (requestState === 'sent' && connectionRowId) {
-          const { error } = await db.delete().eq('id', connectionRowId);
-          if (error) throw error;
-          setRequestState('none');
-          setConnectionRowId(null);
+          const rowId = connectionRowId;
+          Alert.alert('Request pending', 'Your connection request is waiting for a reply. Withdraw it?', [
+            { text: 'Keep request', style: 'cancel' },
+            {
+              text: 'Withdraw',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  const { error: delErr } = await db.delete().eq('id', rowId);
+                  if (delErr) throw delErr;
+                  setRequestState('none');
+                  setConnectionRowId(null);
+                  Toast.success('Request withdrawn', 'Your connection request was withdrawn.');
+                } catch (e2: any) {
+                  Alert.alert('Error', friendlyError(e2, 'Could not withdraw request.'));
+                }
+              },
+            },
+          ]);
         } else if (requestState === 'received' && connectionRowId) {
           const { error } = await db.update({ status: 'accepted' }).eq('id', connectionRowId);
           if (error) throw error;
           setIsConnected(true);
           setRequestState('none');
           setConnectionsCount(prev => prev + 1);
-          Alert.alert('Connected', 'You are now connected.');
+          Toast.success('Connected', 'You are now connected.');
         } else {
           setNoteOpen(true);
         }
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not update connection status.');
+      Alert.alert('Error', friendlyError(e, 'Could not update connection status.'));
+    } finally {
+      connectBusyRef.current = false;
     }
   };
 
   const sendConnectionRequest = async (note?: string) => {
+    if (connectBusyRef.current) return;
+    connectBusyRef.current = true;
     try {
       const supabase = getSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = (await supabase.auth.getSession()).data.session?.user ?? null;
       if (!user) return;
       const { data, error } = await (supabase.from('user_connections') as any)
         .insert({ follower_id: user.id, following_id: targetUserId, status: 'pending', note: note || null })
@@ -341,7 +390,9 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
         Alert.alert('Connected', 'You are now connected.');
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not send the request.');
+      Alert.alert('Error', friendlyError(e, 'Could not send the request.'));
+    } finally {
+      connectBusyRef.current = false;
     }
   };
 
@@ -373,27 +424,27 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
       const { data: { session } } = await db.auth.getSession();
       if (!session) return;
       const { error } = await db.from('blocked_users').delete().eq('user_id', session.user.id).eq('blocked_user_id', targetUserId);
-      if (error) return Alert.alert('Could not unblock', error.message);
+      if (error) return Alert.alert('Could not unblock', friendlyError(error));
       setAccess(null);
       navigation.replace('PublicProfile', { userId: targetUserId });
     };
     return (
       <View style={{ flex: 1, backgroundColor: themeColors.bgScreen }}>
-        <TouchableOpacity style={{ padding: 16, paddingTop: 48 }} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ padding: 16, paddingTop: 48 }} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <Icon name="arrow-left" size={20} color={themeColors.textPrimary} />
         </TouchableOpacity>
         <View style={{ alignItems: 'center', paddingHorizontal: 28, gap: 8, marginTop: 24 }}>
           {access.state !== 'unavailable' && access.state !== 'not_found' && (
             <>
               {p.avatar_url ? <CachedImage uri={p.avatar_url} style={{ width: 96, height: 96, borderRadius: 48 }} /> : null}
-              <Text style={{ color: themeColors.textPrimary, fontSize: 20, fontWeight: '900' }}>{name}</Text>
+              <Text style={{ color: themeColors.textPrimary, fontSize: 20, fontWeight: '700' }}>{name}</Text>
               {!!p.craft && <Text style={{ color: themeColors.textSecondary }}>{p.craft}</Text>}
             </>
           )}
-          <Text style={{ color: themeColors.textPrimary, fontSize: 17, fontWeight: '800', marginTop: 14, textAlign: 'center' }}>
+          <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '700', marginTop: 14, textAlign: 'center' }}>
             {access.state === 'private' ? 'This profile is private' : access.state === 'blocked_by_me' ? 'You blocked ' + name : 'This profile is unavailable'}
           </Text>
-          <Text style={{ color: themeColors.textMuted, textAlign: 'center', fontSize: 13.5 }}>
+          <Text style={{ color: themeColors.textMuted, textAlign: 'center', fontSize: 14 }}>
             {access.state === 'private'
               ? (access.visibility === 'connections' ? 'Connect with ' + name + ' to see their work, skills and credits.' : name + ' keeps their work private.')
               : access.state === 'blocked_by_me'
@@ -402,13 +453,13 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
           </Text>
           {access.state === 'private' && !isTargetFan && !isViewerFan && !isConnected && requestState === 'none' && (
             <TouchableOpacity onPress={() => sendConnectionRequest()} style={{ marginTop: 10, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 12, backgroundColor: ORANGE }}>
-              <Text style={{ color: '#fff', fontWeight: '800' }}>Connect</Text>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Connect</Text>
             </TouchableOpacity>
           )}
           {access.state === 'private' && requestState === 'sent' && <Text style={{ color: themeColors.textMuted, marginTop: 8 }}>Request sent</Text>}
           {access.state === 'blocked_by_me' && (
             <TouchableOpacity onPress={unblock} style={{ marginTop: 10, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border }}>
-              <Text style={{ color: themeColors.textPrimary, fontWeight: '800' }}>Unblock</Text>
+              <Text style={{ color: themeColors.textPrimary, fontWeight: '700' }}>Unblock</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -419,10 +470,10 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
   return (
     <TabletContainer
       backgroundColor={themeColors.bgScreen}
-      maxWidth={960}
+      maxWidth="content"
       header={
-        <View style={[styles.igTopHeader, { backgroundColor: themeColors.bgScreen, borderBottomColor: themeColors.border }]}>
-          <TouchableOpacity
+        <View style={[styles.igTopHeader, { backgroundColor: themeColors.bgScreen, borderBottomColor: themeColors.border, paddingHorizontal: 16 + headerInset }]}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
@@ -474,29 +525,13 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
         </View>
       }
     >
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Cover Banner */}
-        <View style={[styles.linkedinBannerContainer, { height: isTablet ? 190 : 145 }]}>
-          <Image
-            source={{
-              uri:
-                p.cover_image_url ||
-                'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=1200&auto=format&fit=crop&q=80',
-            }}
-            style={styles.linkedinBannerImg}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={['rgba(0,0,0,0.25)', 'transparent', 'rgba(0,0,0,0.5)']}
-            style={StyleSheet.absoluteFillObject}
-          />
-        </View>
-
+      <ScrollView {...scrollChrome} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile Info Section with Overlapping Avatar */}
-        <View style={styles.linkedinProfileSection}>
+        <View style={[styles.linkedinProfileSection, isTablet && styles.tabletProfileSection, sideBySide && styles.tabletProfileSectionRow]}>
+         <View style={[isTablet && styles.tabletHeaderLeft, sideBySide && { flex: 1 }]}>
           {/* Avatar Row */}
-          <View style={styles.linkedinAvatarRow}>
-            <View style={[styles.linkedinAvatarWrapper, { marginTop: isTablet ? -82 : -70 }]}>
+          <View style={[styles.linkedinAvatarRow, isTablet && { marginBottom: 0 }]}>
+            <View style={[styles.linkedinAvatarWrapper, { marginTop: 20 }]}>
               <View
                 style={[
                   styles.linkedinAvatarRing,
@@ -525,7 +560,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
           </View>
 
           {/* Name & Headline Area */}
-          <View style={styles.linkedinBioSection}>
+          <View style={[styles.linkedinBioSection, isTablet && styles.tabletBioSection]}>
             <View style={styles.linkedinNameRow}>
               <Text style={[styles.linkedinFullName, { color: themeColors.textPrimary }]}>
                 {p.full_name || p.username}
@@ -555,7 +590,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
 
               {p.location ? (
                 <View style={styles.linkedinLocRow}>
-                  <Icon name="map-pin" size={11} color={themeColors.textSecondary} />
+                  <Icon name="map-pin" size={11} color={themeColors.iconSecondary} />
                   <Text style={[styles.linkedinLocText, { color: themeColors.textSecondary }]} numberOfLines={1}>
                     {p.location}
                   </Text>
@@ -570,53 +605,12 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
               </Text>
             ) : null}
 
-            {/* Website Link */}
-            {p.website ? (
-              <TouchableOpacity
-                style={styles.igLinkRow}
-                onPress={() => { const u = toSafeUrl(p.website); if (u) Linking.openURL(u).catch(() => {}); else Alert.alert('Link not supported', 'This link cannot be opened.'); }}
-                activeOpacity={0.7}
-              >
-                <Icon name="globe" size={12} color="#0A66C2" />
-                <Text style={[styles.igLinkText, { color: '#0A66C2' }]} numberOfLines={1}>
-                  {p.website.replace(/^(https?|ftp):\/\//, '')}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-
-            {/* Social Links Row */}
-            {(p.instagram_url || p.social_links?.instagram || p.youtube_url || p.social_links?.youtube || p.spotify_url || p.social_links?.spotify) ? (
-              <View style={styles.igSocialRow}>
-                {p.instagram_url || p.social_links?.instagram ? (
-                  <TouchableOpacity
-                    style={[styles.igSocialIconBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                    onPress={() => Linking.openURL(p.instagram_url || p.social_links?.instagram)}
-                  >
-                    <Icon name="instagram" size={14} color="#E1306C" />
-                  </TouchableOpacity>
-                ) : null}
-
-                {p.youtube_url || p.social_links?.youtube ? (
-                  <TouchableOpacity
-                    style={[styles.igSocialIconBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                    onPress={() => Linking.openURL(p.youtube_url || p.social_links?.youtube)}
-                  >
-                    <Icon name="youtube" size={16} />
-                  </TouchableOpacity>
-                ) : null}
-
-                {p.spotify_url || p.social_links?.spotify ? (
-                  <TouchableOpacity
-                    style={[styles.igSocialIconBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                    onPress={() => Linking.openURL(p.spotify_url || p.social_links?.spotify)}
-                  >
-                    <Icon name="spotify" size={16} />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            ) : null}
+            {/* Website + social links as icon buttons */}
+            <SocialLinksRow profile={p} />
           </View>
 
+         </View>
+         <View style={sideBySide ? styles.tabletHeaderRight : undefined}>
           {/* Neat Posts, Followers & Connections Stats Box (Placed directly ABOVE action buttons) */}
           <View
             style={[
@@ -664,7 +658,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
               <View style={{ alignItems: 'center', marginBottom: 8, gap: 4 }}>
                 <AvailabilityBadge status={availability.status} />
                 {availability.status === 'booked' && !!availability.booked_until && (
-                  <Text style={{ color: themeColors.textMuted, fontSize: 11.5 }}>Booked until {new Date(availability.booked_until).toLocaleDateString()}</Text>
+                  <Text style={{ color: themeColors.textMuted, fontSize: 12 }}>Booked until {new Date(availability.booked_until).toLocaleDateString()}</Text>
                 )}
                 {availability.status === 'open' && (availability.rate_min != null || availability.rate_max != null) && (
                   <Text style={{ color: themeColors.textSecondary, fontSize: 12 }}>
@@ -672,7 +666,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                   </Text>
                 )}
                 {(availability.cities || []).length > 0 && (
-                  <Text style={{ color: themeColors.textMuted, fontSize: 11.5 }}>{(availability.cities || []).join(' · ')}</Text>
+                  <Text style={{ color: themeColors.textMuted, fontSize: 12 }}>{(availability.cities || []).join(' · ')}</Text>
                 )}
               </View>
             )}
@@ -688,37 +682,26 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
             </View>
 
             {!isFan && !isViewerFan && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 6 }} style={{ marginBottom: 6 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 6, marginBottom: 6 }}>
+                {/* Introduce: original rule, not connected and no pending request (outer wrapper already excludes fans) */}
+                {!isFan && !isViewerFan && !isConnected && requestState === 'none' && (
+                  <TouchableOpacity onPress={() => setIntroOpen(true)} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Ask for an introduction"
+                    style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}>
+                    <Text style={{ color: themeColors.textPrimary, fontSize: 12, fontWeight: '700' }}>Introduce</Text>
+                  </TouchableOpacity>
+                )}
                 {([['dates', 'Request dates'], ['invite', 'Invite to project'], ...(isConnected ? [['recommend', 'Recommend']] : []), ['shortlist', 'Shortlist']] as [string, string][]).map(([k, l]) => (
                   <TouchableOpacity key={k} onPress={() => setWorkModal(k as any)} activeOpacity={0.8}
                     style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}>
-                    <Text style={{ color: themeColors.textPrimary, fontSize: 12.5, fontWeight: '800' }}>{l}</Text>
+                    <Text style={{ color: themeColors.textPrimary, fontSize: 12, fontWeight: '700' }}>{l}</Text>
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
             )}
 
-            {/* Action Buttons Row */}
+            {/* Action Buttons Row: Connect / Message / Direct Pitch, evenly sized, no scrolling */}
             <View style={styles.simpleActionButtonsRow}>
-              {!isFan && (
-                <TouchableOpacity
-                  style={[styles.simpleActionButton, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border, flex: 0, paddingHorizontal: 12 }]}
-                  onPress={() => Linking.openURL(`https://cinecraftconnect.com/crew-sheet/${profileData?.username || targetUserId}`)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.simpleActionButtonText, { color: themeColors.textPrimary }]}>Crew sheet</Text>
-                </TouchableOpacity>
-              )}
-              {!isFan && !isViewerFan && !isConnected && requestState === 'none' && (
-                <TouchableOpacity
-                  style={[styles.simpleActionButton, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border, flex: 0, paddingHorizontal: 12 }]}
-                  onPress={() => setIntroOpen(true)}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Ask for an introduction"
-                >
-                  <Text style={[styles.simpleActionButtonText, { color: themeColors.textPrimary }]}>Introduce</Text>
-                </TouchableOpacity>
-              )}
+              {!isInternal && (
               <TouchableOpacity
                 style={[
                   styles.simpleActionButton,
@@ -727,6 +710,9 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                 ]}
                 onPress={handleConnectOrFollow}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={!(isFan || isViewerFan) && !isConnected && requestState === 'sent' ? 'Requested' : undefined}
+                accessibilityHint={!(isFan || isViewerFan) && !isConnected && requestState === 'sent' ? 'Tap to cancel the request' : undefined}
               >
                 <Icon
                   name={(isFan || isViewerFan ? isFollowing : (isConnected || requestState === 'sent')) ? (requestState === 'sent' ? 'clock' : 'check') : 'user-plus'}
@@ -734,12 +720,13 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                   color={(isFan || isViewerFan ? isFollowing : (isConnected || requestState === 'sent')) ? '#059669' : '#FFFFFF'}
                   strokeWidth={2.5}
                 />
-                <Text style={[styles.connectPillText, (isFan || isViewerFan ? isFollowing : (isConnected || requestState === 'sent')) && styles.connectedPillText]}>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.connectPillText, styles.actionLabel, (isFan || isViewerFan ? isFollowing : (isConnected || requestState === 'sent')) && styles.connectedPillText]}>
                   {isFan || isViewerFan ? (isFollowing ? 'Following' : 'Follow') : isConnected ? 'Connected' : requestState === 'sent' ? 'Requested' : requestState === 'received' ? 'Accept' : 'Connect'}
                 </Text>
               </TouchableOpacity>
+              )}
 
-              {(canMessage || isConnected) && (
+              {!isInternal && (canMessage || isConnected) && (
               <TouchableOpacity
                 style={[
                   styles.simpleActionButton,
@@ -752,7 +739,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                 activeOpacity={0.7}
               >
                 <Icon name="message-square" size={14} color={themeColors.textPrimary} />
-                <Text style={[styles.simpleActionButtonText, { color: themeColors.textPrimary }]}>
+                <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.simpleActionButtonText, styles.actionLabel, { color: themeColors.textPrimary }]}>
                   Message
                 </Text>
               </TouchableOpacity>
@@ -760,18 +747,22 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
 
 
 
-              {!isViewerFan && (
+              {/* Direct Pitch: not for fans or staff, and only if this person accepts direct pitches */}
+              {!isViewerFan && !isInternal && !isTargetFan && profileData.accept_direct_pitches !== false && (
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Send a direct pitch"
                   style={[styles.simpleActionButton, styles.directPitchPillBtn]}
                   onPress={handleDirectPitch}
                   activeOpacity={0.8}
                 >
                   <Icon name="zap" size={14} color="#FFFFFF" strokeWidth={2.5} />
-                  <Text style={styles.directPitchPillText}>Direct Pitch</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.directPitchPillText, styles.actionLabel]}>Direct Pitch</Text>
                 </TouchableOpacity>
               )}
             </View>
-          </View>
+         </View>
+        </View>
 
           {/* Horizontal Scroll Tabs Bar */}
           <ScrollView
@@ -846,7 +837,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
           </ScrollView>
 
           {/* Active Tab Content Area */}
-          <View style={styles.tabContentArea}>
+          <View style={[styles.tabContentArea, { paddingHorizontal: tabPad }]}>
             {loading ? (
               <View style={styles.loadingBox}>
                 <ActivityIndicator size="small" color={ORANGE} />
@@ -859,41 +850,27 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                     {posts.length > 0 && (
                       <View style={styles.gridModeBar}>
                         <Text style={styles.gridCountText}>{posts.length} Posts</Text>
-                        <View style={styles.gridModeToggleRow}>
-                          <TouchableOpacity
-                            style={[styles.gridModeBtn, gridFitMode === 'cover' && styles.gridModeBtnActive]}
-                            onPress={() => setGridFitMode('cover')}
-                          >
-                            <Icon name="grid" size={12} color={gridFitMode === 'cover' ? '#FFF' : '#64748B'} />
-                            <Text style={[styles.gridModeBtnText, gridFitMode === 'cover' && styles.gridModeBtnTextActive]}>Grid</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.gridModeBtn, gridFitMode === 'contain' && styles.gridModeBtnActive]}
-                            onPress={() => setGridFitMode('contain')}
-                          >
-                            <Icon name="list" size={12} color={gridFitMode === 'contain' ? '#FFF' : '#64748B'} />
-                            <Text style={[styles.gridModeBtnText, gridFitMode === 'contain' && styles.gridModeBtnTextActive]}>List</Text>
-                          </TouchableOpacity>
-                        </View>
                       </View>
                     )}
 
                     {posts.length === 0 ? (
                       <View style={styles.emptyStateBox}>
-                        <Icon name="camera" size={32} color={themeColors.textMuted} />
+                        <Icon name="camera" size={32} color={themeColors.iconMuted} />
                         <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Posts Yet</Text>
                         <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>
                           This creator hasn't published any public posts.
                         </Text>
                       </View>
-                    ) : gridFitMode === 'cover' ? (
-                      <View style={styles.threeColumnGrid}>
+                    ) : (
+                      <View style={[styles.threeColumnGrid, { gap: gridGap }]}>
                         {posts.map(post => {
                           const mediaUrl = post.media_url || (Array.isArray(post.media_urls) ? post.media_urls[0] : null);
                           return (
                             <TouchableOpacity
                               key={post.id}
-                              style={[styles.gridSquareCell, isDark && styles.gridSquareCellDark]}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Post by ${profileData?.full_name || profileData?.username || 'this user'}: ${String(post.content || '').trim().slice(0, 60) || (mediaUrl ? 'photo' : 'text post')}`}
+                              style={[styles.gridSquareCell, { width: gridCellW }, isDark && styles.gridSquareCellDark]}
                               onPress={() => navigation.navigate('PostDetail', { postId: post.id })}
                               activeOpacity={0.8}
                             >
@@ -922,12 +899,6 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                           );
                         })}
                       </View>
-                    ) : (
-                      posts.map(post => (
-                        <View key={post.id} style={[styles.postCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                          <Text style={[styles.postContent, { color: themeColors.textPrimary }]}>{post.content}</Text>
-                        </View>
-                      ))
                     )}
                   </View>
                 )}
@@ -937,18 +908,18 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                   <View>
                     {portfolio.length === 0 ? (
                       <View style={styles.emptyStateBox}>
-                        <Icon name="image" size={32} color={themeColors.textMuted} />
+                        <Icon name="image" size={32} color={themeColors.iconMuted} />
                         <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Portfolio Assets</Text>
                         <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>
                           No media assets added to portfolio.
                         </Text>
                       </View>
                     ) : (
-                      <View style={styles.threeColumnGrid}>
+                      <View style={[styles.threeColumnGrid, { gap: gridGap }]}>
                         {portfolio.map((item, i) => {
                           const mediaUri = item?.image_url || item?.media_url || item?.file_url || (typeof item === 'string' ? item : null);
                           return (
-                            <View key={item?.id || i} style={[styles.gridSquareCell, isDark && styles.gridSquareCellDark]}>
+                            <View key={item?.id || i} accessible accessibilityLabel={`Portfolio item ${item?.title || i + 1}`} style={[styles.gridSquareCell, { width: gridCellW }, isDark && styles.gridSquareCellDark]}>
                               {mediaUri ? (
                                 <CachedImage uri={mediaUri} style={styles.gridCellImg} />
                               ) : (
@@ -974,29 +945,29 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                   <View>
                     {credits.length === 0 ? (
                       <View style={styles.emptyStateBox}>
-                        <Icon name="award" size={32} color={themeColors.textMuted} />
+                        <Icon name="award" size={32} color={themeColors.iconMuted} />
                         <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Credits Locked</Text>
                         <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>
                           No verified production credits found.
                         </Text>
                       </View>
                     ) : (
-                      credits.map(credit => (
-                        <View key={credit.id} style={[styles.creditCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', borderColor: themeColors.border }]}>
-                          <View style={styles.creditIconBadge}>
-                            <Icon name="award" size={18} color="#D97706" />
+                      credits.map(credit => {
+                        const verifier = credit.profiles?.username || credit.verifier?.username;
+                        return (
+                          <View key={credit.id} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                            <View style={{ flex: 1 }}>
+                              <CreditLine
+                                serifLead
+                                lead={credit.project_title || credit.title}
+                                trail={credit.role}
+                                note={verifier ? `Verified by @${verifier}` : undefined}
+                              />
+                            </View>
+                            <Icon name="award" size={16} color="#D97706" style={{ marginTop: 18 }} />
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.creditTitle, { color: themeColors.textPrimary }]}>{credit.project_title || credit.title}</Text>
-                            <Text style={styles.creditRole}>{credit.role}</Text>
-                            {(credit.profiles?.username || credit.verifier?.username) && (
-                              <Text style={[styles.creditVerifier, { color: themeColors.textSecondary }]}>
-                                Verified by @{credit.profiles?.username || credit.verifier?.username}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                      ))
+                        );
+                      })
                     )}
                   </View>
                 )}
@@ -1006,7 +977,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                   <View style={styles.skillsGrid}>
                     {skills.length === 0 ? (
                       <View style={styles.emptyStateBox}>
-                        <Icon name="zap" size={32} color={themeColors.textMuted} />
+                        <Icon name="zap" size={32} color={themeColors.iconMuted} />
                         <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Skills Declared</Text>
                         <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>
                           Skills and crafts will appear here.
@@ -1030,7 +1001,7 @@ export const PublicProfileScreen = ({ route, navigation }: { route: any; navigat
                   <View>
                     {experience.length === 0 ? (
                       <View style={styles.emptyStateBox}>
-                        <Icon name="briefcase" size={32} color={themeColors.textMuted} />
+                        <Icon name="briefcase" size={32} color={themeColors.iconMuted} />
                         <Text style={[styles.emptyStateTitle, { color: themeColors.textPrimary }]}>No Work Experience</Text>
                         <Text style={[styles.emptyStateDesc, { color: themeColors.textSecondary }]}>
                           Professional experience history.
@@ -1111,7 +1082,7 @@ const styles = StyleSheet.create({
   },
   igTopUsername: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   igTopActionsRow: {
     flexDirection: 'row',
@@ -1136,6 +1107,28 @@ const styles = StyleSheet.create({
   linkedinProfileSection: {
     paddingHorizontal: 16,
   },
+  tabletProfileSection: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  tabletProfileSectionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 28,
+  },
+  tabletHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 20,
+  },
+  tabletBioSection: {
+    flex: 1,
+    marginTop: 20,
+  },
+  tabletHeaderRight: {
+    width: 380,
+    paddingTop: 20,
+  },
   headerAvatarStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1157,11 +1150,11 @@ const styles = StyleSheet.create({
   },
   headerInlineStatNum: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   headerInlineStatLbl: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 1,
   },
@@ -1193,7 +1186,7 @@ const styles = StyleSheet.create({
   },
   linkedinAvatarFallbackText: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   linkedinBioSection: {
     marginTop: 8,
@@ -1205,7 +1198,7 @@ const styles = StyleSheet.create({
   },
   linkedinFullName: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   linkedinHeadline: {
     fontSize: 13,
@@ -1229,8 +1222,8 @@ const styles = StyleSheet.create({
   },
   igProBadgeText: {
     color: ORANGE,
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   igFanBadge: {
@@ -1244,8 +1237,8 @@ const styles = StyleSheet.create({
   },
   igFanBadgeText: {
     color: '#D97706',
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   linkedinLocRow: {
@@ -1254,7 +1247,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   linkedinLocText: {
-    fontSize: 11.5,
+    fontSize: 12,
   },
   neatStatsRow: {
     flexDirection: 'row',
@@ -1271,11 +1264,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   neatStatNum: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   neatStatLbl: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 1,
   },
@@ -1323,9 +1316,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 9,
+    paddingHorizontal: 6,
+    minWidth: 0,
     borderRadius: 10,
     borderWidth: 1,
-    gap: 6,
+    gap: 5,
+  },
+  actionLabel: {
+    flexShrink: 1,
   },
   simpleActionButtonText: {
     fontSize: 12,
@@ -1338,7 +1336,7 @@ const styles = StyleSheet.create({
   connectPillText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   connectedPillBtn: {
     backgroundColor: 'rgba(5, 150, 105, 0.1)',
@@ -1347,7 +1345,7 @@ const styles = StyleSheet.create({
   connectedPillText: {
     color: '#059669',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   directPitchPillBtn: {
     backgroundColor: '#8B5CF6',
@@ -1356,7 +1354,7 @@ const styles = StyleSheet.create({
   directPitchPillText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   igTabsScrollView: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -1381,12 +1379,12 @@ const styles = StyleSheet.create({
     borderBottomColor: ORANGE,
   },
   igTabLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   igTabLabelActive: {
-    fontWeight: '900',
+    fontWeight: '700',
   },
   igTabBadge: {
     paddingHorizontal: 5,
@@ -1394,8 +1392,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   igTabBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   tabContentArea: {
     marginTop: 16,
@@ -1413,34 +1411,8 @@ const styles = StyleSheet.create({
   },
   gridCountText: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#64748B',
-  },
-  gridModeToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 8,
-    padding: 2,
-    gap: 2,
-  },
-  gridModeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
-  },
-  gridModeBtnActive: {
-    backgroundColor: INK,
-  },
-  gridModeBtnText: {
-    fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
-  },
-  gridModeBtnTextActive: {
-    color: '#FFFFFF',
   },
   threeColumnGrid: {
     flexDirection: 'row',
@@ -1473,20 +1445,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   gridCellTextContent: {
-    fontSize: 10,
+    fontSize: 12,
     color: INK,
     lineHeight: 13,
     textAlign: 'center',
-  },
-  postCard: {
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-  },
-  postContent: {
-    fontSize: 13.5,
-    lineHeight: 19,
   },
   emptyStateBox: {
     paddingVertical: 40,
@@ -1495,8 +1457,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyStateTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   emptyStateDesc: {
     fontSize: 12,
@@ -1522,7 +1484,7 @@ const styles = StyleSheet.create({
   },
   creditTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   creditRole: {
     fontSize: 12,
@@ -1531,7 +1493,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   creditVerifier: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   skillsGrid: {
@@ -1557,7 +1519,7 @@ const styles = StyleSheet.create({
   },
   expTitleText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   expCompanyText: {
     fontSize: 12,
@@ -1566,7 +1528,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   expDateText: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 4,
   },
   expDescText: {
@@ -1581,18 +1543,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   projectTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   projectCategory: {
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
     marginTop: 2,
     marginBottom: 4,
   },
   projectDesc: {
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 17,
   },
   gridCellPinBadge: {

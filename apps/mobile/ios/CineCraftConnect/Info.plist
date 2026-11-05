@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.cinecraftconnect.app</string>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -17,24 +17,50 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<!-- Keeps call audio running when the app is in the background / screen is locked -->
+
+	<!-- Web traffic must be https. Local networking stays allowed so a debug build can reach the Metro dev server. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
+	<!-- Calls keep playing with the screen locked / app in the background; remote-notification lets pushes wake the app. -->
+	<!-- Screen sharing in calls (react-native-webrtc reads both keys). The extension is the ScreenShare target; the group is in both entitlements files. -->
+	<key>RTCAppGroupIdentifier</key>
+	<string>group.com.cinecraftconnect.app</string>
+	<key>RTCScreenSharingExtension</key>
+	<string>com.cinecraftconnect.app.ScreenShare</string>
+
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>remote-notification</string>
 	</array>
+
+	<!-- The texts iOS shows in the permission prompts. Same wording as the Android permission prompts. -->
 	<key>NSCameraUsageDescription</key>
 	<string>CineCraft Connect needs camera access for live video calls and production sessions.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>CineCraft Connect needs microphone access for live stage calls and voice discussions.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>CineCraft Connect needs photo library access to upload production attachments and avatars.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CineCraft Connect saves photos and videos you choose to your library.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>CineCraft Connect uses Bluetooth to route call audio to your headphones or car.</string>
+
+	<!-- Deep links: cinecraftconnect://... . The second scheme is Google sign-in's "reversed client id": replace the placeholder with the
+	     REVERSED_CLIENT_ID value from GoogleService-Info.plist (IOS_SETUP.md, step 4). Universal links (https://cinecraftconnect.com) are in the entitlements. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -45,20 +71,57 @@
 				<string>cinecraftconnect</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.REPLACE_WITH_REVERSED_CLIENT_ID</string>
+			</array>
+		</dict>
 	</array>
+
+	<!-- Lora, Work Sans and Inconsolata: same files as the Android assets/fonts folder; the names match the fontFamily strings in the JS. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Inconsolata-Bold.ttf</string>
+		<string>Inconsolata-Regular.ttf</string>
+		<string>Lora-Bold.ttf</string>
+		<string>Lora-Medium.ttf</string>
+		<string>Lora-Regular.ttf</string>
+		<string>Lora-SemiBold.ttf</string>
+		<string>WorkSans-Bold.ttf</string>
+		<string>WorkSans-ExtraBold.ttf</string>
+		<string>WorkSans-Medium.ttf</string>
+		<string>WorkSans-Regular.ttf</string>
+		<string>WorkSans-SemiBold.ttf</string>
+	</array>
+
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
+	<key>UIRequiresFullScreen</key>
+	<false/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Lets animations run at 120 Hz on ProMotion iPhones. -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 </dict>
 </plist>

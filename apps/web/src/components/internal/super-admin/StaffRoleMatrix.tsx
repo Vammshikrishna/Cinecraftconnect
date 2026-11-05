@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { 
-  Shield, ShieldCheck, Crown, 
+  Shield, ShieldCheck, Crown, Landmark,
   User, UserPlus, UserMinus,
-  Activity, Key, ShieldAlert
+  ShieldAlert
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useToast } from '@/hooks/use-toast';
+import { escapeIlike } from '../shared/staffHelpers';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface StaffMember {
@@ -24,13 +26,13 @@ interface StaffMember {
   username: string;
   full_name: string;
   avatar_url: string | null;
-  role: 'moderator' | 'admin' | 'super_admin';
+  role: 'moderator' | 'admin' | 'super_admin' | 'finance';
   last_active?: string;
 }
 
 interface StaffRoleMatrixProps {
   staff: StaffMember[];
-  onPromote: (userId: string, role: string, metadata?: { username: string; fullName: string }) => void;
+  onPromote: (userId: string, role: string, metadata?: { username: string; fullName: string }, reason?: string) => void;
   onRevoke: (userId: string, role: string) => void;
 }
 
@@ -38,9 +40,11 @@ const ROLE_CONFIG = {
   moderator:   { icon: Shield,      color: 'text-purple-500', bg: 'bg-purple-500/10', label: 'Moderator' },
   admin:       { icon: ShieldCheck, color: 'text-blue-500',   bg: 'bg-blue-500/10',   label: 'Admin' },
   super_admin: { icon: Crown,       color: 'text-amber-500',  bg: 'bg-amber-500/10',  label: 'Super Admin' },
+  finance:     { icon: Landmark,    color: 'text-emerald-500', bg: 'bg-emerald-500/10', label: 'Finance' },
 };
 
 const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onRevoke }) => {
+  const { toast } = useToast();
   const [isProvisionOpen, setIsProvisionOpen] = useState(false);
   const [isProvisioning, setIsProvisioning] = useState(false);
   const [provisionMethod, setProvisionMethod] = useState('new'); // 'new' | 'existing'
@@ -52,10 +56,18 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [provisionRole, setProvisionRole] = useState('moderator');
+  // why this person needs staff access: shown to the second super admin who has to approve it
+  const [reason, setReason] = useState('');
 
   const handleProvisionSubmit = async () => {
     setIsProvisioning(true);
     try {
+      if (reason.trim().length < 5) {
+        throw new Error('Write a reason (at least 5 characters) so the second approver knows why this person needs staff access.');
+      }
+      if (provisionMethod === 'new' && email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        throw new Error('Enter a valid email address.');
+      }
       if (provisionMethod === 'existing') {
         if (!provisionId.trim()) {
           throw new Error('Username is required');
@@ -65,19 +77,22 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('id')
-          .ilike('username', provisionId.trim())
+          .ilike('username', escapeIlike(provisionId.trim()))
           .maybeSingle();
           
         if (profileError || !profileData) {
-          throw new Error(`Could not find a user with username or email: ${provisionId.trim()}`);
+          throw new Error(`Could not find a user with the username: ${provisionId.trim()}`);
         }
         
         // Promote existing user using the resolved UUID
-        onPromote(profileData.id, provisionRole);
+        onPromote(profileData.id, provisionRole, undefined, reason.trim());
       } else {
         // Create new user
         if (!email || !password || !username || !fullName) {
           throw new Error('All fields are required');
+        }
+        if (password.length < 12) {
+          throw new Error('Use a temporary password of at least 12 characters.');
         }
         
         const tempClient = createClient(
@@ -111,7 +126,10 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
           // Wait briefly for triggers to complete
           await new Promise(resolve => setTimeout(resolve, 1000));
           // Promote the newly created user with explicit metadata to ensure sync
-          onPromote(data.user.id, provisionRole, { username, fullName });
+          // the person must choose their own password before anything opens (the temporary one is only for the first sign-in)
+          const { error: pwError } = await (supabase as any).rpc('staff_require_password_change', { p_user: data.user.id, p_reason: 'New staff account: choose your own password at first sign-in' });
+          if (pwError) toast({ title: 'Password change not forced', description: 'Run supabase/manual/part_gd_staff_security.sql, then ask this person to change their password.', variant: 'destructive' });
+          onPromote(data.user.id, provisionRole, { username, fullName }, reason.trim());
         }
       }
 
@@ -123,9 +141,10 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
       setFullName('');
       setProvisionId('');
       setProvisionRole('moderator');
+      setReason('');
     } catch (e: any) {
       console.error("Provisioning error:", e);
-      alert(e.message || "Failed to provision staff");
+      toast({ title: 'Could not provision staff', description: e.message || 'Failed to provision staff', variant: 'destructive' });
     } finally {
       setIsProvisioning(false);
     }
@@ -136,7 +155,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-black text-foreground uppercase tracking-tight">Staff Role Matrix</h2>
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest mt-1">
+          <p className="text-[12px] text-muted-foreground font-medium uppercase tracking-widest mt-1">
             Global Permission & Access Governance
           </p>
         </div>
@@ -149,18 +168,19 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
       </div>
 
       <div className="glass-card overflow-hidden border-border/50">
+        <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-border/50 bg-muted/20">
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Identity</th>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Scope</th>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Trust Level</th>
-              <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Operations</th>
+              <th className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-muted-foreground">Identity</th>
+              <th className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-muted-foreground">Scope</th>
+              <th className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-muted-foreground">Trust Level</th>
+              <th className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-muted-foreground text-right">Operations</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/30">
             {staff.map((member) => {
-              const config = ROLE_CONFIG[member.role];
+              const config = ROLE_CONFIG[member.role] || ROLE_CONFIG.moderator;
               return (
                 <tr key={member.id} className="hover:bg-muted/10 transition-colors group">
                   <td className="px-6 py-4">
@@ -177,7 +197,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                           {member.username && member.username !== 'no_username' ? `@${member.username}` : (member.full_name || 'Staff Member')}
                         </p>
                         {member.username && member.username !== 'no_username' && (
-                          <p className="text-[10px] text-muted-foreground font-medium truncate">{member.full_name || 'Internal Staff'}</p>
+                          <p className="text-[12px] text-muted-foreground font-medium truncate">{member.full_name || 'Internal Staff'}</p>
                         )}
                       </div>
                     </div>
@@ -185,14 +205,14 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                   <td className="px-6 py-4">
                     <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-border/50 ${config.bg}`}>
                       <config.icon className={`w-3.5 h-3.5 ${config.color}`} />
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${config.color}`}>
+                      <span className={`text-[12px] font-black uppercase tracking-widest ${config.color}`}>
                         {config.label}
                       </span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="space-y-2 max-w-[200px]">
-                      <div className="flex justify-between text-[9px] font-bold uppercase tracking-tighter text-muted-foreground mb-1">
+                      <div className="flex justify-between text-[12px] font-bold uppercase tracking-tighter text-muted-foreground mb-1">
                         <span>Access Level</span>
                         <span className={config.color}>{member.role === 'super_admin' ? 'ROOT' : 'RESTRICTED'}</span>
                       </div>
@@ -206,14 +226,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <Button variant="ghost" size="icon" className="w-8 h-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Activity className="w-4 h-4 text-muted-foreground" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="w-8 h-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Key className="w-4 h-4 text-muted-foreground" />
-                      </Button>
-                      <Separator orientation="vertical" className="h-4 mx-1" />
-                      <Button variant="outline" size="sm" className="h-8 rounded-lg text-[10px] font-bold border-red-500/20 text-red-500 hover:bg-red-500/5 px-3"
+                      <Button variant="outline" size="sm" className="h-8 rounded-lg text-[12px] font-bold border-red-500/20 text-red-500 hover:bg-red-500/5 px-3"
                         onClick={() => onRevoke(member.id, member.role)}
                       >
                         <UserMinus className="w-3.5 h-3.5 mr-2" /> Revoke
@@ -225,12 +238,13 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
             })}
           </tbody>
         </table>
+        </div>
 
         {staff.length === 0 && (
           <div className="py-20 text-center">
             <ShieldAlert className="w-16 h-16 text-muted-foreground/20 mx-auto mb-4" />
             <h3 className="text-sm font-black text-foreground uppercase tracking-tight">No Staff Provisioned</h3>
-            <p className="text-[11px] text-muted-foreground font-medium mt-1">Initialize the governance layer to assign roles.</p>
+            <p className="text-[12px] text-muted-foreground font-medium mt-1">Initialize the governance layer to assign roles.</p>
           </div>
         )}
       </div>
@@ -239,7 +253,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { icon: Shield, title: 'Moderator', desc: 'Case resolution, content removal, warnings, muted users.', color: 'text-purple-500' },
-          { icon: ShieldCheck, title: 'Admin', desc: 'Verification, billing, appeals, staff view, unban users.', color: 'text-blue-500' },
+          { icon: ShieldCheck, title: 'Admin', desc: 'Verification, appeals, payments desks, staff view, unban users.', color: 'text-blue-500' },
           { icon: Crown, title: 'Super Admin', desc: 'Policy rules, role management, root security, feature flags.', color: 'text-amber-500' },
         ].map((p, i) => (
           <div key={i} className="glass-card p-5 border-border/50">
@@ -247,7 +261,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
               <p.icon className={`w-4 h-4 ${p.color}`} />
               <h4 className="text-xs font-black uppercase tracking-widest">{p.title} Scope</h4>
             </div>
-            <p className="text-[10px] text-muted-foreground font-medium leading-relaxed">
+            <p className="text-[12px] text-muted-foreground font-medium leading-relaxed">
               {p.desc}
             </p>
           </div>
@@ -272,7 +286,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
             <TabsContent value="new" className="mt-4">
               <div className="grid grid-cols-2 gap-4 py-2">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Email</label>
+                  <label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground px-1">Email</label>
                   <Input 
                     type="email"
                     placeholder="staff@cinecraft.com" 
@@ -282,7 +296,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Temporary Password</label>
+                  <label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground px-1">Temporary Password</label>
                   <Input 
                     type="password"
                     placeholder="••••••••" 
@@ -292,7 +306,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Username</label>
+                  <label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground px-1">Username</label>
                   <Input 
                     placeholder="admin_john" 
                     value={username}
@@ -307,7 +321,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Full Name</label>
+                  <label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground px-1">Full Name</label>
                   <Input 
                     placeholder="John Doe" 
                     value={fullName}
@@ -320,8 +334,9 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
             
             <TabsContent value="existing" className="mt-4">
               <div className="space-y-2 py-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Username</label>
+                <label htmlFor="promote-username" className="text-[12px] font-black uppercase tracking-widest text-muted-foreground px-1">Username</label>
                 <Input 
+                  id="promote-username"
                   placeholder="e.g., cinecraft_admin"  
                   value={provisionId}
                   onChange={(e) => setProvisionId(e.target.value)}
@@ -332,7 +347,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
           </Tabs>
 
           <div className="space-y-2 mt-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Internal Role</label>
+            <label className="text-[12px] font-black uppercase tracking-widest text-muted-foreground px-1">Internal Role</label>
             <Select value={provisionRole} onValueChange={setProvisionRole}>
               <SelectTrigger className="w-full rounded-2xl bg-muted/50 border-border/50">
                 <SelectValue placeholder="Select a role" />
@@ -341,8 +356,22 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                 <SelectItem value="moderator">Moderator</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="super_admin">Super Admin</SelectItem>
+                <SelectItem value="finance">Finance (refunds only)</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2 mt-2">
+            <label htmlFor="provision-reason" className="text-[12px] font-black uppercase tracking-widest text-muted-foreground px-1">Reason (required)</label>
+            <Input
+              id="provision-reason"
+              placeholder="Why does this person need staff access?"
+              value={reason}
+              maxLength={300}
+              onChange={(e) => setReason(e.target.value)}
+              className="rounded-2xl bg-muted/50 border-border/50"
+            />
+            <p className="text-[12px] text-muted-foreground px-1">A different super admin sees this reason before approving. The role takes effect only after that approval.</p>
           </div>
 
           <DialogFooter className="mt-4">
@@ -359,9 +388,3 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
 
 export default StaffRoleMatrix;
 
-const Separator = ({ orientation = 'horizontal', className = '', ...props }) => (
-  <div
-    className={`shrink-0 bg-border ${orientation === 'horizontal' ? 'h-[1px] w-full' : 'h-full w-[1px]'} ${className}`}
-    {...props}
-  />
-);

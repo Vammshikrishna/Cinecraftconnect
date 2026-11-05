@@ -5,7 +5,7 @@ import { ClientIdManager } from '@/lib/offline/clientIds';
 export function usePostMutation() {
   const { user } = useAuth();
 
-  const createPost = async (content: string, options?: { mediaItems?: any[], tags?: string[], pageId?: string | null }) => {
+  const createPost = async (content: string, options?: { mediaItems?: any[], tags?: string[], pageId?: string | null, category?: string | null, audience?: string | null }) => {
     if (!user) return;
     
     mutationQueue.enqueue(
@@ -16,6 +16,8 @@ export function usePostMutation() {
         mediaItems: options?.mediaItems,
         tags: options?.tags,
         pageId: options?.pageId,
+        category: options?.category,
+        audience: options?.audience,
         tempId: ClientIdManager.generate() 
       },
       { id: ClientIdManager.generate() }

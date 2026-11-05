@@ -11,10 +11,13 @@ import {
 } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FileText, Image as ImageIcon, File, Eye, Download, Loader2, Trash2, ShieldAlert, Video } from 'lucide-react';
+import { FileText, Image as ImageIcon, File, Eye, Download, Loader2, Paperclip, Trash2, ShieldAlert, Video } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { WorkspaceHero } from './WorkspaceUI';
 import { useAppRole } from '@/hooks/useAppRole';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface ProjectFile {
     id: string;
@@ -123,7 +126,7 @@ const Files = ({ project_id }: FilesProps) => {
             toast({ title: "Success", description: "File uploaded successfully" });
             setSelectedFile(null);
         } catch (err: any) {
-            toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
+            toast({ title: "Upload Failed", description: friendlyError(err), variant: "destructive" });
         } finally {
             setUploading(false);
         }
@@ -139,12 +142,12 @@ const Files = ({ project_id }: FilesProps) => {
             if (!ok) throw new Error('Could not generate secure download link');
             toast({ title: "Started", description: "Download initiated" });
         } catch (err: any) {
-            toast({ title: "Download Failed", description: err.message, variant: "destructive" });
+            toast({ title: "Download Failed", description: friendlyError(err), variant: "destructive" });
         }
     };
 
     const handleDelete = async (id: string, url: string) => {
-        if (!confirm('Are you sure you want to delete this file?')) return;
+        if (!await confirmDialog('Are you sure you want to delete this file?')) return;
 
         try {
             const storageErr = await removeStorageFile(url, STORAGE_BUCKETS.PROJECT_FILES);
@@ -170,7 +173,7 @@ const Files = ({ project_id }: FilesProps) => {
 
     if (error) {
         return (
-            <div className="flex flex-col items-center justify-center p-12 text-center bg-red-500/10 rounded-3xl border border-red-500/20 m-4">
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-red-500/10 rounded-2xl border border-red-500/20 m-4">
                 <ShieldAlert className="w-12 h-12 text-red-500 mb-4" />
                 <h3 className="text-xl font-bold text-foreground mb-2">Error loading files</h3>
                 <p className="text-red-400/80 max-w-xs">{error.message}</p>
@@ -179,33 +182,40 @@ const Files = ({ project_id }: FilesProps) => {
     }
 
     return (
-        <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar bg-transparent">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-                <div className="flex flex-col gap-1">
-                    <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Storage</h1>
-                    <p className="text-2xl font-bold text-foreground text-gradient">Project Files</p>
-                </div>
+        <div className="px-4 sm:px-6 lg:px-8 py-6 h-full overflow-y-auto no-scrollbar bg-transparent">
+            <div className="mb-6">
+                <WorkspaceHero
+                    icon={FileText}
+                    title="Files"
+                    description="Scripts, references and assets shared with your team."
+                    stats={[
+                        { label: 'Files', value: (files || []).length },
+                        { label: 'Images', value: (files || []).filter((x) => isImage(x.name)).length, tone: 'primary' },
+                        { label: 'Videos', value: (files || []).filter((x) => isVideo(x.name)).length, tone: 'warn' },
+                        { label: 'Documents', value: (files || []).filter((x) => !isImage(x.name) && !isVideo(x.name)).length, tone: 'success' },
+                    ]}
+                />
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
                 
                 {!isInternal ? (
-                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                        <div className="relative group overflow-hidden bg-card border border-border rounded-2xl p-1 flex-grow">
-                            <Input 
-                                type="file" 
-                                onChange={handleFileChange} 
-                                className="bg-transparent border-0 focus-visible:ring-0 cursor-pointer h-10 py-1" 
-                            />
-                        </div>
-                        <Button 
-                            onClick={handleUpload} 
+                    <div className="flex flex-wrap items-center gap-2">
+                        <label className="inline-flex items-center gap-2 h-10 px-4 max-w-[240px] rounded-xl border border-border bg-card text-sm font-medium cursor-pointer hover:bg-muted/50 transition-colors focus-within:ring-2 focus-within:ring-ring">
+                            <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate">{selectedFile ? selectedFile.name : 'Choose a file'}</span>
+                            <input type="file" onChange={handleFileChange} className="sr-only" />
+                        </label>
+                        <Button
+                            onClick={handleUpload}
                             disabled={uploading || !selectedFile}
-                            className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-8 h-12 shadow-lg shadow-primary/20 transition-all font-bold"
+                            className="h-10 rounded-xl px-5 font-semibold"
                         >
-                            {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Upload File'}
+                            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Upload'}
                         </Button>
                     </div>
                 ) : (
-                    <div className="bg-muted/30 border border-border/50 px-6 py-2 rounded-2xl text-xs text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-2">
-                        <FileText className="w-4 h-4" /> Observation Mode
+                    <div className="rounded-xl border border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Observation mode
                     </div>
                 )}
             </div>
@@ -214,7 +224,7 @@ const Files = ({ project_id }: FilesProps) => {
                 {files && files.map(file => (
                     <div 
                         key={file.id} 
-                        className="group bg-card border border-border rounded-[28px] overflow-hidden transition-all duration-300 hover:bg-accent/50 hover:border-primary/20 hover:translate-y-[-4px] shadow-sm hover:shadow-xl"
+                        className="group bg-card border border-border rounded-2xl overflow-hidden transition duration-300 hover:bg-accent/50 hover:border-primary/20 hover:translate-y-[-4px] shadow-sm hover:shadow-md"
                     >
                         {/* Thumbnail Area */}
                         <div className="aspect-video relative overflow-hidden bg-background/40 flex items-center justify-center border-b border-border">
@@ -229,7 +239,7 @@ const Files = ({ project_id }: FilesProps) => {
                                     <div className="p-4 bg-red-400/10 rounded-2xl">
                                         <Video className="w-8 h-8 text-red-400" />
                                     </div>
-                                    <span className="text-[10px] font-bold text-red-400 tracking-widest uppercase bg-red-400/10 px-3 py-1 rounded-full">Cinema Preview</span>
+                                    <span className="text-[12px] font-bold text-red-400 tracking-widest uppercase bg-red-400/10 px-3 py-1 rounded-full">Cinema Preview</span>
                                 </div>
                             ) : (
                                 <div className="p-6 bg-card rounded-full">
@@ -265,13 +275,13 @@ const Files = ({ project_id }: FilesProps) => {
                                 {file.name}
                             </h3>
                             <div className="flex items-center justify-between mt-1">
-                                <span className="text-[10px] sm:text-xs text-muted-foreground font-medium">{formatBytes(file.size)}</span>
+                                <span className="text-[12px] sm:text-xs text-muted-foreground font-medium">{formatBytes(file.size)}</span>
                                 {!isInternal && (
-                                    <Button 
+                                    <Button aria-label="Delete" 
                                         size="sm" 
                                         variant="ghost" 
                                         onClick={() => handleDelete(file.id, file.url)}
-                                        className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all p-0 h-8 w-8 rounded-full"
+                                        className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition p-0 h-8 w-8 rounded-full"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </Button>
@@ -294,7 +304,7 @@ const Files = ({ project_id }: FilesProps) => {
 
             {/* Quick Look Dialog */}
             <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
-                <DialogContent className="max-w-5xl w-[95vw] h-[85vh] bg-card border border-border p-0 rounded-[32px] overflow-hidden flex flex-col shadow-3xl">
+                <DialogContent className="max-w-5xl w-[95vw] h-[85vh] bg-card border border-border p-0 rounded-2xl overflow-hidden flex flex-col shadow-md">
                     <DialogHeader className="p-6 border-b border-border flex flex-row items-center justify-between shrink-0">
                         <div className="flex items-center gap-3 min-w-0">
                             {previewFile && getFileIcon(previewFile.name)}
@@ -323,13 +333,13 @@ const Files = ({ project_id }: FilesProps) => {
                             <img loading="lazy" decoding="async" 
                                 src={previewFile.signedUrl || previewFile.url} 
                                 alt={previewFile.name} 
-                                className="max-w-full max-h-full object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-500" 
+                                className="max-w-full max-h-full object-contain rounded-xl shadow-md animate-in zoom-in-95 duration-500" 
                             />
                         ) : previewFile && isVideo(previewFile.name) ? (
                             <video 
                                 src={previewFile.signedUrl || previewFile.url} 
                                 controls 
-                                className="max-w-full max-h-full rounded-xl shadow-2xl animate-in fade-in duration-500" 
+                                className="max-w-full max-h-full rounded-xl shadow-md animate-in fade-in duration-500" 
                                 preload="metadata"
                             />
                         ) : (

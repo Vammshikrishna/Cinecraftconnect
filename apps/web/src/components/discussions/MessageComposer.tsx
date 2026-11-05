@@ -189,10 +189,10 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
               ) : (
                 <div className="h-20 w-20 bg-primary/10 rounded-xl flex flex-col items-center justify-center border-2 border-primary/20 shadow-md">
                   <VideoIcon className="h-6 w-6 text-primary mb-1" />
-                  <span className="text-[9px] font-bold uppercase tracking-tighter opacity-60 truncate px-1 max-w-full">{item.file.name.split('.').pop()}</span>
+                  <span className="text-[12px] font-bold uppercase tracking-tighter opacity-60 truncate px-1 max-w-full">{item.file.name.split('.').pop()}</span>
                 </div>
               )}
-              <button
+              <button aria-label="Close"
                 type="button"
                 onClick={() => removeSelectedFile(idx)}
                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors z-10"
@@ -200,7 +200,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
                 <X className="h-3 w-3" />
               </button>
               <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                <span className="text-[9px] font-black text-white uppercase tracking-widest">{Math.round(item.file.size / 1024)}KB</span>
+                <span className="text-[12px] font-black text-white uppercase tracking-widest">{Math.round(item.file.size / 1024)}KB</span>
               </div>
             </div>
           ))}
@@ -225,7 +225,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
         )}>
           <div className="flex gap-0.5 pb-0.5 shrink-0">
             {!disableMedia && (
-            <Button
+            <Button aria-label="Attach file"
               type="button"
               size="icon"
               variant="ghost"
@@ -255,7 +255,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
                 <Keyboard className="h-5 w-5" />
               </Button>
             ) : (
-              <Button
+              <Button aria-label="Emoji"
                 type="button"
                 size="icon"
                 variant="ghost"
@@ -267,7 +267,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
             )}
           </div>
 
-          <div className="flex-1 relative bg-muted/50 rounded-2xl border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-all">
+          <div className="flex-1 relative bg-muted/50 rounded-2xl border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-[border-color,background-color]">
             <Textarea
               ref={textareaRef}
               value={content}
@@ -276,7 +276,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
               onFocus={handleInputFocus}
               onBlur={() => onStopTyping?.()}
               placeholder="Message..."
-              className="min-h-[40px] max-h-[120px] py-2.5 px-4 bg-transparent border-none shadow-none focus-visible:ring-0 resize-none text-sm sm:text-base w-full"
+              className="min-h-[40px] max-h-[120px] py-2.5 px-4 bg-transparent border-none shadow-none focus-visible:ring-0 resize-none text-base w-full"
               disabled={disabled || sending}
               rows={1}
             />
@@ -289,13 +289,13 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
             className="h-10 w-10 rounded-full shrink-0 shadow-sm mb-0.5 relative"
             title={slowModeCooldown > 0 ? `Slow mode: wait ${slowModeCooldown}s` : undefined}
           >
-            {sending || isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : slowModeCooldown > 0 ? <span className="text-[11px] font-black">{slowModeCooldown}s</span> : <Send className="h-5 w-5 ml-0.5" />}
+            {sending || isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : slowModeCooldown > 0 ? <span className="text-[12px] font-black">{slowModeCooldown}s</span> : <Send className="h-5 w-5 ml-0.5" />}
           </Button>
         </div>
       )}
 
       {(isNearLimit || isOverLimit) && (
-        <div className="text-[10px] text-right px-2 text-muted-foreground">
+        <div className="text-[12px] text-right px-2 text-muted-foreground">
           {charCount}/2000
           {isOverLimit && <span className="text-destructive ml-1">Limit exceeded</span>}
         </div>
@@ -303,7 +303,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
 
       <div
         className={cn(
-          "w-full bg-[#161618] border-t border-border overflow-hidden transition-all duration-300",
+          "w-full bg-[#161618] border-t border-border overflow-hidden transition duration-300",
           showEmojiPicker ? "block animate-in slide-in-from-bottom" : "hidden"
         )}
         style={{

@@ -26,6 +26,8 @@ export interface SavedAccount {
   fullName: string;
   avatarUrl: string;
   accountType: string;
+  /** Real onboarding flag at the time of saving. Missing (saved by an older build) counts as finished. */
+  onboardingCompleted?: boolean;
   session: {
     access_token: string;
     refresh_token: string;
@@ -139,6 +141,8 @@ export const saveCurrentAccount = async (
     fullName: profile.full_name || '',
     avatarUrl: profile.avatar_url || '',
     accountType: profile.account_type || 'creator',
+    // only record the flag when the profile really carries it, so a partial profile never marks someone as finished
+    ...(typeof profile.onboarding_completed === 'boolean' ? { onboardingCompleted: profile.onboarding_completed } : {}),
     session: {
       access_token: supabaseSession.access_token,
       refresh_token: supabaseSession.refresh_token,
@@ -177,7 +181,7 @@ export const switchToAccount = async (
   targetAccount: SavedAccount,
   currentProfile: ProfileIdentity | null,
   onSwitch: (newSession: any) => void,
-  onError: (msg: string) => void
+  onError: (msg: string, expiredEmail?: string) => void
 ): Promise<SwitchAccountResult> => {
   const supabase = getSupabaseClient();
 
@@ -201,7 +205,8 @@ export const switchToAccount = async (
           account_type: targetAccount.accountType,
           email: targetAccount.email,
           is_verified: false,
-          onboarding_completed: true,
+          // remember the real flag; accounts saved before this field existed count as finished
+          onboarding_completed: targetAccount.onboardingCompleted !== false,
           is_banned: false,
         }).catch(() => {});
       }
@@ -287,7 +292,8 @@ export const switchToAccount = async (
         const errMsg = error?.message || 'Session expired';
         console.warn('[AccountManager] setSession failed for target:', targetAccount.userId, errMsg);
         await removeSavedAccount(targetAccount.userId);
-        onError(`The session for @${targetAccount.username} has expired. Please sign in again.`);
+        const who = targetAccount.email || `@${targetAccount.username}`;
+        onError(`The saved sign-in for ${who} has expired. Please sign in again to add it back.`, targetAccount.email || undefined);
         return;
       }
 

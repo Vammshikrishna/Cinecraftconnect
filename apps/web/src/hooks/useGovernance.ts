@@ -1,6 +1,25 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { GovernanceAction, GovernanceScope } from '@/services/governance/types';
 
+/** Pure scope rule used by hasPermission (exported so it can be unit tested). */
+export const scopeAllows = (
+  role: string,
+  assigned: GovernanceScope | null | undefined,
+  requested?: GovernanceScope,
+): boolean => {
+  if (role === 'super_admin') return true;
+  if (!requested) return true;
+  if (requested.global) return false;
+  for (const key of ['region', 'category', 'entity_id'] as const) {
+    const want = requested[key];
+    if (!want || want.length === 0) continue;
+    const have = assigned?.[key];
+    if (!have || have.length === 0) continue; // nothing assigned for this dimension = not restricted
+    if (!want.every(v => have.includes(v))) return false;
+  }
+  return true;
+};
+
 /**
  * useGovernance Hook
  * Centralizes permission validation, scoping, and operational safety checks.
@@ -49,15 +68,12 @@ export const useGovernance = () => {
     
     if (!hasBasePermission) return false;
 
-    // Scope check logic (to be expanded)
-    if (scope && profile.role !== 'super_admin') {
-      // Implement granular scope validation here
-      // For now, if a scope is requested, we verify against assigned staff scopes
-      return true; 
-    }
-
-    return true;
+    // Scope check (F-08). Super admin is unrestricted. A request for the global scope is super admin only.
+    // Otherwise, if the staff member has assigned scopes (profile.staff_scope), every region / category / entity asked for
+    // must be inside what is assigned; a dimension with nothing assigned is not restricted. The server still enforces the real limits.
+    return scopeAllows(profile.role, (profile as any).staff_scope, scope);
   };
+
 
   /**
    * Returns whether an action requires approval (Maker-Checker)

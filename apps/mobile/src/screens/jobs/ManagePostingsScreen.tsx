@@ -1,3 +1,4 @@
+import { LoadErrorState } from '../../components/common/LoadErrorState';
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
@@ -36,6 +37,10 @@ import {
   type HiringJob,
   type HiringApplicant,
 } from '../../services/jobsApi';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { friendlyError } from '@cinecraft/core';
+import { TabletColumn } from '../../components/common/TabletContainer';
+import { isTabletDevice } from '../../utils/pageType';
 
 type Tab = 'pipeline' | 'list' | 'analytics';
 type Sort = 'match' | 'newest' | 'rating';
@@ -65,6 +70,7 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
   const [analytics, setAnalytics] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [busyJob, setBusyJob] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (uid: string) => {
@@ -72,10 +78,12 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
       // Postings whose deadline passed are closed in the database before we read them.
       await (getSupabaseClient() as any).rpc('close_overdue_jobs');
       const list = await fetchHiringJobs(uid);
+      setLoadError(false);
       setJobs(list);
       setSelectedJobId((cur) => (cur && list.some((j) => j.id === cur) ? cur : list.find((j) => !j.is_draft)?.id || list[0]?.id || null));
     } catch (e) {
       console.warn('[ManagePostings] Fetch error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -160,7 +168,7 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
       refetch();
       if (ok) Alert.alert(ok);
     } catch (e: any) {
-      Alert.alert('Something went wrong', e?.message || 'Please try again.');
+      Alert.alert('Something went wrong', friendlyError(e, 'Please try again.'));
     } finally {
       setBusyJob(false);
     }
@@ -210,28 +218,30 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
     return { label: 'LIVE', color: '#10B981' };
   };
 
-  const ApplicantRow = ({ a }: { a: HiringApplicant }) => {
+  // Plain render functions (not components): a component defined inside render got a new type every render, so every
+  // busyJob toggle remounted every applicant row. Keys are set at the call sites.
+  const renderApplicantRow = (a: HiringApplicant) => {
     const p = a.applicant;
     const name = p?.full_name || p?.username || 'Applicant';
     const next = NEXT_STAGE[a.status];
     return (
-      <TouchableOpacity activeOpacity={0.85} onPress={() => setOpenApplicantId(a.id)} style={[styles.applicantCard, { backgroundColor: T.bgCard, borderColor: T.border }]}>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => setOpenApplicantId(a.id)} style={[styles.applicantCard, isTabletDevice && { width: '49.3%' }, { backgroundColor: T.bgCard, borderColor: T.border }]}>
         <View style={styles.row}>
           {p?.avatar_url ? (
             <CachedImage uri={p.avatar_url} style={styles.avatar} />
           ) : (
             <View style={[styles.avatar, styles.avatarFallback]}>
-              <Text style={{ color: ORANGE, fontWeight: '800', fontSize: 16 }}>{name.charAt(0).toUpperCase()}</Text>
+              <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 16 }}>{name.charAt(0).toUpperCase()}</Text>
             </View>
           )}
           <View style={{ flex: 1 }}>
             <Text style={[styles.applicantName, { color: T.textPrimary }]} numberOfLines={1}>{name}</Text>
-            <Text style={{ color: T.textSecondary, fontSize: 11.5 }} numberOfLines={1}>
+            <Text style={{ color: T.textSecondary, fontSize: 12 }} numberOfLines={1}>
               {[p?.craft, p?.location].filter(Boolean).join(' · ') || 'No craft or location added'}
             </Text>
           </View>
           <MatchBadge match={a.match} />
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={a.is_shortlisted ? "Remove from shortlist" : "Shortlist"}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             onPress={() => guard(() => setShortlisted([a.id], !a.is_shortlisted))}
             style={[styles.starBtn, a.is_shortlisted && { backgroundColor: 'rgba(245,158,11,0.18)' }]}
@@ -244,11 +254,11 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
             <StageBadge status={a.status} />
             <StarRating value={a.rating} readOnly size={13} />
           </View>
-          <Text style={{ color: T.textMuted, fontSize: 11 }}>{new Date(a.created_at).toLocaleDateString()}</Text>
+          <Text style={{ color: T.textMuted, fontSize: 12 }}>{new Date(a.created_at).toLocaleDateString()}</Text>
         </View>
         {tab === 'pipeline' && next && (
           <TouchableOpacity style={[styles.nextBtn, { borderColor: getStage(next).color }]} onPress={() => advance(a)}>
-            <Text style={{ color: getStage(next).color, fontSize: 12, fontWeight: '800' }}>Move to {getStage(next).label}</Text>
+            <Text style={{ color: getStage(next).color, fontSize: 12, fontWeight: '700' }}>Move to {getStage(next).label}</Text>
             <Icon name="chevron-right" size={14} color={getStage(next).color} />
           </TouchableOpacity>
         )}
@@ -256,25 +266,25 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
     );
   };
 
-  const DraftRow = ({ j }: { j: HiringJob }) => (
+  const renderDraftRow = (j: HiringJob) => (
     <View style={[styles.draftCard, { backgroundColor: T.bgCard, borderColor: T.border }]}>
       <View style={{ flex: 1 }}>
-        <Text style={{ color: T.textPrimary, fontWeight: '800', fontSize: 13.5 }} numberOfLines={1}>{j.title || 'Untitled draft'}</Text>
-        <Text style={{ color: T.textMuted, fontSize: 11.5 }}>Draft · only you can see it</Text>
+        <Text style={{ color: T.textPrimary, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>{j.title || 'Untitled draft'}</Text>
+        <Text style={{ color: T.textMuted, fontSize: 12 }}>Draft · only you can see it</Text>
       </View>
       <TouchableOpacity style={[styles.smallBtn, { borderColor: T.border }]} onPress={() => setEditor({ visible: true, edit: j })}>
         <Text style={styles.smallBtnText}>Continue</Text>
       </TouchableOpacity>
-      <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => confirmDelete(j)}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => confirmDelete(j)}>
         <Icon name="trash-2" size={16} color="#EF4444" />
       </TouchableOpacity>
     </View>
   );
 
-  const Stat = ({ label, value }: { label: string; value: number | string }) => (
+  const renderStat = (label: string, value: number | string) => (
     <View style={[styles.statBox, { backgroundColor: T.bgCard, borderColor: T.border }]}>
-      <Text style={{ color: T.textPrimary, fontSize: 22, fontWeight: '800' }}>{value}</Text>
-      <Text style={{ color: T.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginTop: 2 }}>{label}</Text>
+      <Text style={{ color: T.textPrimary, fontSize: 24, fontWeight: '700' }}>{value}</Text>
+      <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 0.6, marginTop: 2 }}>{label}</Text>
     </View>
   );
 
@@ -282,7 +292,7 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
     return (
       <View style={[styles.container, { backgroundColor: T.bgScreen }]}>
         <Header title="Manage Postings" showLogo={false} onBack={() => navigation.goBack()} />
-        <View style={styles.center}><ActivityIndicator size="large" color={ORANGE} /></View>
+        <ScreenSkeleton variant="detail" />
       </View>
     );
   }
@@ -304,10 +314,13 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
           </TouchableOpacity>
         }
       />
+      <TabletColumn maxWidth="content">
 
-      {jobs.length === 0 ? (
+      {jobs.length === 0 && loadError ? (
+        <LoadErrorState onRetry={() => { setLoadError(false); refetch(); }} />
+      ) : jobs.length === 0 ? (
         <View style={styles.center}>
-          <Icon name="briefcase" size={40} color={T.textMuted} />
+          <Icon name="briefcase" size={40} color={T.iconMuted} />
           <Text style={[styles.emptyTitle, { color: T.textPrimary }]}>No Job Postings Found</Text>
           <Text style={{ color: T.textSecondary, fontSize: 13, marginBottom: 14 }}>You have not posted any production openings yet.</Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => setEditor({ visible: true })}>
@@ -317,13 +330,14 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
       ) : (
         <ScrollView
           contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); refetch(); }} tintColor={ORANGE} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); refetch(); }} tintColor={ORANGE} colors={[ORANGE]} />}
         >
           {drafts.length > 0 && (
             <>
               <Text style={[styles.sectionHeader, { color: T.textSecondary }]}>DRAFTS ({drafts.length})</Text>
-              {drafts.map((d) => <DraftRow key={d.id} j={d} />)}
+              {drafts.map((d) => <React.Fragment key={d.id}>{renderDraftRow(d)}</React.Fragment>)}
             </>
           )}
 
@@ -341,7 +355,7 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
                       onPress={() => setSelectedJobId(j.id)}
                     >
                       <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: st.color }} />
-                      <Text style={{ color: on ? ORANGE : T.textSecondary, fontSize: 12.5, fontWeight: '700', maxWidth: 150 }} numberOfLines={1}>{j.title}</Text>
+                      <Text style={{ color: on ? ORANGE : T.textSecondary, fontSize: 12, fontWeight: '700', maxWidth: 150 }} numberOfLines={1}>{j.title}</Text>
                       <View style={[styles.countBadge, { backgroundColor: on ? ORANGE : '#94A3B8' }]}>
                         <Text style={styles.countText}>{j.applications.length}</Text>
                       </View>
@@ -357,18 +371,18 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.jobTitle, { color: T.textPrimary }]}>{job.title}</Text>
-                  <Text style={{ color: T.textSecondary, fontSize: 12.5, marginTop: 2 }}>
+                  <Text style={{ color: T.textSecondary, fontSize: 12, marginTop: 2 }}>
                     {job.company_pages?.name || job.company}{pay ? ` · ${pay}` : ''}
                   </Text>
                   {dl && (
-                    <Text style={{ color: dl.urgent ? '#F59E0B' : T.textMuted, fontSize: 11, fontWeight: '800', marginTop: 4, letterSpacing: 0.4 }}>
+                    <Text style={{ color: dl.urgent ? '#F59E0B' : T.textMuted, fontSize: 12, fontWeight: '700', marginTop: 4, letterSpacing: 0.4 }}>
                       {dl.label.toUpperCase()}
                     </Text>
                   )}
                 </View>
                 {state && (
                   <View style={[styles.statePill, { backgroundColor: `${state.color}22` }]}>
-                    <Text style={{ color: state.color, fontSize: 10, fontWeight: '800', letterSpacing: 0.6 }}>{state.label}</Text>
+                    <Text style={{ color: state.color, fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>{state.label}</Text>
                   </View>
                 )}
               </View>
@@ -403,7 +417,7 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
               <View style={[styles.tabs, { backgroundColor: T.inputBg }]}>
                 {([['pipeline', 'Pipeline'], ['list', 'List'], ['analytics', 'Analytics']] as [Tab, string][]).map(([k, label]) => (
                   <TouchableOpacity key={k} style={[styles.tab, tab === k && { backgroundColor: T.bgCard }]} onPress={() => setTab(k)}>
-                    <Text style={{ color: tab === k ? ORANGE : T.textSecondary, fontSize: 12.5, fontWeight: '800' }}>{label}</Text>
+                    <Text style={{ color: tab === k ? ORANGE : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -419,8 +433,8 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
                           onPress={() => setStageFilter(s.key)}
                           style={[styles.stageChip, { borderColor: on ? s.color : T.border, backgroundColor: on ? s.tint : 'transparent' }]}
                         >
-                          <Text style={{ color: on ? s.color : T.textSecondary, fontSize: 12, fontWeight: '800' }}>{s.label}</Text>
-                          <Text style={{ color: on ? s.color : T.textMuted, fontSize: 12, fontWeight: '800' }}>{s.n}</Text>
+                          <Text style={{ color: on ? s.color : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{s.label}</Text>
+                          <Text style={{ color: on ? s.color : T.textMuted, fontSize: 12, fontWeight: '700' }}>{s.n}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -430,10 +444,10 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
 
               {tab === 'list' && total > 1 && (
                 <View style={[styles.row, { marginTop: 12, gap: 8 }]}>
-                  <Text style={{ color: T.textMuted, fontSize: 11, fontWeight: '800' }}>SORT</Text>
+                  <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700' }}>SORT</Text>
                   {([['match', 'Best match'], ['rating', 'Rating'], ['newest', 'Newest']] as [Sort, string][]).map(([k, label]) => (
                     <TouchableOpacity key={k} onPress={() => setSort(k)} style={[styles.sortChip, { backgroundColor: sort === k ? ORANGE : T.inputBg }]}>
-                      <Text style={{ color: sort === k ? '#fff' : T.textSecondary, fontSize: 11.5, fontWeight: '700' }}>{label}</Text>
+                      <Text style={{ color: sort === k ? '#fff' : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -448,10 +462,10 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
                   ) : (
                     <>
                       <View style={styles.statGrid}>
-                        <Stat label="VIEWS" value={analytics.views} />
-                        <Stat label="PEOPLE" value={analytics.unique_viewers} />
-                        <Stat label="SAVES" value={analytics.saves} />
-                        <Stat label="APPLIED" value={analytics.applications} />
+                        <React.Fragment key="views">{renderStat("VIEWS", analytics.views)}</React.Fragment>
+                        <React.Fragment key="people">{renderStat("PEOPLE", analytics.unique_viewers)}</React.Fragment>
+                        <React.Fragment key="saves">{renderStat("SAVES", analytics.saves)}</React.Fragment>
+                        <React.Fragment key="applied">{renderStat("APPLIED", analytics.applications)}</React.Fragment>
                       </View>
                       <Text style={{ color: T.textSecondary, fontSize: 12, marginTop: 10 }}>
                         {analytics.unique_viewers > 0
@@ -465,8 +479,8 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
                         return (
                           <View key={s.key} style={{ marginBottom: 10 }}>
                             <View style={[styles.row, { justifyContent: 'space-between' }]}>
-                              <Text style={{ color: T.textPrimary, fontSize: 12.5, fontWeight: '700' }}>{s.label}</Text>
-                              <Text style={{ color: T.textSecondary, fontSize: 12.5, fontWeight: '700' }}>{n}</Text>
+                              <Text style={{ color: T.textPrimary, fontSize: 12, fontWeight: '700' }}>{s.label}</Text>
+                              <Text style={{ color: T.textSecondary, fontSize: 12, fontWeight: '700' }}>{n}</Text>
                             </View>
                             <View style={[styles.bar, { backgroundColor: T.inputBg }]}>
                               <View style={{ width: `${pct}%`, height: '100%', borderRadius: 4, backgroundColor: s.color }} />
@@ -482,7 +496,7 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
                               const max = Math.max(1, ...(analytics.daily as any[]).map((x) => x.views));
                               return (
                                 <View key={d.day} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
-                                  <View style={{ width: '70%', height: Math.max(3, (d.views / max) * 70), backgroundColor: ORANGE, borderRadius: 3, opacity: 0.85 }} />
+                                  <View style={{ width: '70%', height: Math.max(3, (d.views / max) * (isTabletDevice ? 104 : 70)), backgroundColor: ORANGE, borderRadius: 3, opacity: 0.85 }} />
                                 </View>
                               );
                             })}
@@ -493,12 +507,12 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
                   )
                 ) : visibleApplicants.length === 0 ? (
                   <View style={[styles.emptyBox, { backgroundColor: T.inputBg, borderColor: T.border }]}>
-                    <Text style={{ color: T.textMuted, fontSize: 12.5 }}>
+                    <Text style={{ color: T.textMuted, fontSize: 12 }}>
                       {total === 0 ? 'No applicants for this role yet.' : 'Nobody in this stage.'}
                     </Text>
                   </View>
                 ) : (
-                  visibleApplicants.map((a) => <ApplicantRow key={a.id} a={a} />)
+                  <View style={isTabletDevice ? { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10 } : undefined}>{visibleApplicants.map((a) => <React.Fragment key={a.id}>{renderApplicantRow(a)}</React.Fragment>)}</View>
                 )}
               </View>
             </View>
@@ -524,6 +538,7 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
         onClose={() => setEditor({ visible: false })}
         onCreated={refetch}
       />
+      </TabletColumn>
     </View>
   );
 };
@@ -531,36 +546,36 @@ export const ManagePostingsScreen = ({ navigation, route }: { navigation: any; r
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  emptyTitle: { fontSize: 18, fontWeight: '800' },
-  content: { padding: 16, paddingBottom: 60 },
-  sectionHeader: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: '700' },
+  content: { padding: isTabletDevice ? 24 : 16, paddingBottom: 72 },
+  sectionHeader: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   jobPill: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginRight: 8, gap: 7 },
   countBadge: { borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
-  countText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
-  jobCard: { borderRadius: 18, padding: 14, borderWidth: 1 },
-  jobTitle: { fontSize: 17, fontWeight: '800' },
+  countText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  jobCard: { borderRadius: 18, padding: isTabletDevice ? 20 : 14, borderWidth: 1 },
+  jobTitle: { fontSize: 18, fontWeight: '700' },
   statePill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  smallBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
-  smallBtnText: { color: ORANGE, fontSize: 12, fontWeight: '800' },
+  smallBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: isTabletDevice ? 10 : 7 },
+  smallBtnText: { color: ORANGE, fontSize: 12, fontWeight: '700' },
   tabs: { flexDirection: 'row', borderRadius: 12, padding: 3, marginTop: 14 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10 },
   stageChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
-  sortChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  sortChip: { paddingHorizontal: 12, paddingVertical: isTabletDevice ? 8 : 5, borderRadius: 999 },
   applicantCard: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 10 },
   avatar: { width: 40, height: 40, borderRadius: 20 },
   avatarFallback: { backgroundColor: 'rgba(255,75,51,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,75,51,0.2)' },
-  applicantName: { fontSize: 14, fontWeight: '800' },
+  applicantName: { fontSize: 14, fontWeight: '700' },
   starBtn: { padding: 6, borderRadius: 8 },
-  nextBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1, borderRadius: 10, height: 34, marginTop: 10 },
+  nextBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1, borderRadius: 10, height: isTabletDevice ? 40 : 34, marginTop: 10 },
   draftCard: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 8 },
   emptyBox: { borderRadius: 12, borderWidth: 1, padding: 18, alignItems: 'center' },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  statBox: { width: '48%', borderWidth: 1, borderRadius: 14, padding: 12 },
+  statBox: { flexGrow: 1, flexBasis: isTabletDevice ? '22%' : '47%', borderWidth: 1, borderRadius: 14, padding: 12 },
   bar: { height: 8, borderRadius: 4, marginTop: 5, overflow: 'hidden' },
-  chart: { flexDirection: 'row', height: 76, alignItems: 'flex-end', gap: 3 },
+  chart: { flexDirection: 'row', height: isTabletDevice ? 110 : 76, alignItems: 'flex-end', gap: 3 },
   primaryBtn: { backgroundColor: ORANGE, borderRadius: 12, paddingHorizontal: 22, height: 44, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 },
+  primaryBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
 });
 
 export default ManagePostingsScreen;

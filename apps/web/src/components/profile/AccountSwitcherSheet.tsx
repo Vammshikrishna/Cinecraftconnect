@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { SavedSessionExpiredError, savedSessionExpiredUrl } from '@/lib/auth/savedSessionExpired';
 import { useToast } from '@/hooks/use-toast';
 import { getOptimizedImage } from '@/utils/image-optimization';
 import { useCachedImage } from '@/hooks/useCachedImage';
@@ -51,10 +52,16 @@ export const AccountSwitcherSheet = ({ isOpen, onOpenChange }: AccountSwitcherSh
         description: `Now logged in as @${username}`,
       });
     } catch (error: any) {
+      if (error instanceof SavedSessionExpiredError) {
+        // show the message on the sign-in page, with the email filled in
+        onOpenChange(false);
+        window.location.href = savedSessionExpiredUrl(error.email);
+        return;
+      }
       console.error('Account switch error:', error);
       toast({
         title: "Switch Failed",
-        description: "Could not switch accounts. Please try again.",
+        description: error?.message || "Could not switch accounts. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -96,7 +103,7 @@ export const AccountSwitcherSheet = ({ isOpen, onOpenChange }: AccountSwitcherSh
                     handleSwitchAccount(acc.userId, acc.username);
                   }
                 }}
-                className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all duration-200 ${
+                className={`flex items-center justify-between p-3.5 rounded-2xl border transition duration-200 ${
                   isActive
                     ? 'bg-primary/10 border-primary shadow-sm cursor-default'
                     : 'bg-background hover:bg-muted/70 border-border cursor-pointer active:scale-[0.99]'
@@ -118,7 +125,7 @@ export const AccountSwitcherSheet = ({ isOpen, onOpenChange }: AccountSwitcherSh
                     <span className="text-sm font-bold text-foreground truncate leading-tight">
                       {acc.username}
                     </span>
-                    <span className="text-xs text-muted-foreground truncate mt-0.5 font-mono">
+                    <span className="text-xs text-muted-foreground truncate mt-0.5">
                       {acc.email}
                     </span>
                   </div>

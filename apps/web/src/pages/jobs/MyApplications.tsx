@@ -4,12 +4,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Calendar, MapPin, Building2, Trash2, FileText, CalendarCheck, Check, X, Video, Phone, Users } from "lucide-react";
+import { Calendar, MapPin, Building2, Trash2, FileText, CalendarCheck, Check, X, Video, Phone, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import { PageHeader } from "@/components/common/PageHeader";
 import { BackButton } from "@/components/common/BackButton";
 import { getStage, stageProgress, interviewIcs, formatSalary, JOB_TYPE_LABELS } from "@cinecraft/core";
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { LoadError } from '@/components/settings/LoadError';
+import { confirmDialog } from '@/lib/confirmDialog';
 
 interface Interview {
     id: string;
@@ -60,6 +63,7 @@ const downloadIcs = (title: string, i: Interview) => {
 const MyApplications = () => {
     const [applications, setApplications] = useState<Application[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [busyInterview, setBusyInterview] = useState<string | null>(null);
     const { user } = useAuth();
     const { toast } = useToast();
@@ -91,8 +95,10 @@ const MyApplications = () => {
                 });
             }
             setApplications(rows.map((r) => ({ ...r, interviews: byApp[r.id] || [] })));
+            setLoadError(false);
         } catch (error) {
             console.error('Error fetching applications:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -113,7 +119,7 @@ const MyApplications = () => {
     }, [user?.id, fetchApplications]);
 
     const handleWithdraw = async (applicationId: string) => {
-        if (!confirm("Are you sure you want to withdraw this application? This action cannot be undone.")) return;
+        if (!await confirmDialog("Employers will see that you withdrew. This action cannot be undone.", { title: 'Withdraw this application?', confirmLabel: 'Withdraw application' })) return;
 
         try {
             const { error } = await supabase.from('job_applications').delete().eq('id', applicationId);
@@ -138,17 +144,11 @@ const MyApplications = () => {
         fetchApplications();
     };
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center min-h-screen bg-background">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-        );
-    }
+    if (loading) return <ScreenSkeleton variant="list" />;
 
     return (
-        <div className="min-h-screen bg-background pt-16 md:pt-20 pb-24 selection:bg-primary/30">
-            <div className="max-w-4xl mx-auto px-4 md:px-8 relative z-10">
+        <div className="min-h-dvh bg-background pt-16 md:pt-20 pb-24 selection:bg-primary/30">
+            <div className="max-w-[1152px] mx-auto px-4 md:px-8 relative z-10">
                 <BackButton label="BACK TO JOBS" to="/jobs" className="mb-8" />
 
                 <PageHeader
@@ -157,8 +157,10 @@ const MyApplications = () => {
                     Icon={FileText}
                 />
 
-                {applications.length === 0 ? (
-                    <div className="bg-card/40 backdrop-blur-xl border border-border/50 border-dashed rounded-[3rem] text-center py-20 mt-8">
+                {loadError && applications.length === 0 ? (
+                    <LoadError className="mt-8" title="Could not load your applications" onRetry={() => { setLoading(true); fetchApplications(); }} />
+                ) : applications.length === 0 ? (
+                    <div className="bg-card/40 border border-border/50 border-dashed rounded-[3rem] text-center py-20 mt-8">
                         <div className="w-16 h-16 rounded-[1.5rem] bg-muted/20 flex items-center justify-center mx-auto mb-6">
                             <FileText className="h-8 w-8 text-muted-foreground/30" />
                         </div>
@@ -175,18 +177,20 @@ const MyApplications = () => {
                             const progress = stageProgress(app.status);
                             const job = app.jobs;
                             const pay = job ? formatSalary(job) : null;
-                            const open = app.interviews.filter((i) => i.status === 'proposed' || i.status === 'confirmed');
+                            // once the application is closed (not selected, withdrawn) an old interview must not keep showing Confirm / Add to calendar
+                            const closed = ['rejected', 'withdrawn'].includes(app.status);
+                            const open = closed ? [] : app.interviews.filter((i) => i.status === 'proposed' || i.status === 'confirmed');
                             return (
-                                <Card key={app.id} className="bg-card/40 backdrop-blur-xl border-border/50 hover:border-primary/40 transition-all duration-500 rounded-[2rem] overflow-hidden group shadow-lg hover:shadow-2xl">
+                                <Card key={app.id} className="bg-card/40 border-border/50 hover:border-primary/40 transition-[border-color,box-shadow] duration-200 rounded-[2rem] overflow-hidden group shadow-lg hover:shadow-xl">
                                     <CardHeader className="p-6 md:p-8 pb-4">
-                                        <div className="flex justify-between items-start gap-4">
-                                            <div className="flex gap-5 min-w-0">
-                                                <div className="w-14 h-14 rounded-2xl bg-muted/30 border border-white/5 flex items-center justify-center shrink-0 shadow-inner">
+                                        <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-4">
+                                            <div className="flex gap-5 min-w-0 w-full sm:w-auto">
+                                                <div className="w-14 h-14 rounded-2xl bg-muted/30 border border-foreground/5 flex items-center justify-center shrink-0 shadow-inner">
                                                     <Building2 className="h-7 w-7 text-muted-foreground/40" />
                                                 </div>
                                                 <div className="min-w-0">
                                                     <Link to={job ? `/jobs/${job.id}` : '/jobs'}>
-                                                        <CardTitle className="text-2xl font-black tracking-tight mb-2 group-hover:text-primary transition-colors">{job?.title || 'Job removed'}</CardTitle>
+                                                        <CardTitle className="text-2xl font-black tracking-tight mb-2 group-hover:text-primary transition-colors break-words">{job?.title || 'Job removed'}</CardTitle>
                                                     </Link>
                                                     <div className="flex items-center text-xs font-black uppercase tracking-widest text-muted-foreground/60">
                                                         <Building2 className="h-3.5 w-3.5 mr-2 opacity-50" />
@@ -196,7 +200,7 @@ const MyApplications = () => {
                                             </div>
                                             <div className="flex items-center gap-3 shrink-0">
                                                 <span
-                                                    className="text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full"
+                                                    className="text-[12px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full"
                                                     style={{ color: stage.color, backgroundColor: stage.tint }}
                                                 >
                                                     {stage.applicantLabel}
@@ -205,9 +209,10 @@ const MyApplications = () => {
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
-                                                        className="h-10 w-10 text-rose-500 hover:text-white hover:bg-rose-500 transition-all duration-300 rounded-xl"
+                                                        className="h-11 w-11 text-rose-500 hover:text-white hover:bg-rose-500 transition duration-200 rounded-xl"
                                                         onClick={() => handleWithdraw(app.id)}
                                                         title="Withdraw Application"
+                                                        aria-label="Withdraw application"
                                                     >
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
@@ -218,18 +223,18 @@ const MyApplications = () => {
                                     <CardContent className="p-6 md:p-8 pt-0 space-y-5">
                                         {/* Progress: five steps, rejected shows as a stopped bar */}
                                         <div>
-                                            <div className="flex gap-1.5">
+                                            <div className="flex gap-1.5" role="progressbar" aria-label="Application stage" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.stopped ? 0 : progress.index + 1} aria-valuetext={stage.applicantLabel}>
                                                 {Array.from({ length: progress.total }).map((_, i) => (
                                                     <div
                                                         key={i}
-                                                        className="h-1.5 flex-1 rounded-full"
+                                                        className="h-1.5 flex-1 rounded-full transition-colors duration-300"
                                                         style={{
                                                             backgroundColor: progress.stopped ? stage.tint : i <= progress.index ? stage.color : 'rgba(148,163,184,0.2)',
                                                         }}
                                                     />
                                                 ))}
                                             </div>
-                                            <p className="text-[11px] font-bold text-muted-foreground/70 mt-2">
+                                            <p className="text-[12px] font-bold text-muted-foreground/70 mt-2">
                                                 {app.status_updated_at && app.status !== 'pending'
                                                     ? `Updated ${formatDistanceToNow(new Date(app.status_updated_at), { addSuffix: true })}`
                                                     : 'Waiting for the hiring team to look at it'}
@@ -284,22 +289,22 @@ const MyApplications = () => {
                                             );
                                         })}
 
-                                        <div className="flex flex-wrap gap-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 border-t border-border/20 pt-5">
+                                        <div className="flex flex-wrap gap-3 text-[12px] font-black uppercase tracking-widest text-muted-foreground/60 border-t border-border/20 pt-5">
                                             {job?.location && (
-                                                <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-white/5">
+                                                <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-foreground/5">
                                                     <MapPin className="h-3.5 w-3.5 mr-2 text-primary/40" />
                                                     {job.location}
                                                 </div>
                                             )}
                                             {job && (
-                                                <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-white/5">
+                                                <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-foreground/5">
                                                     {JOB_TYPE_LABELS[job.type as keyof typeof JOB_TYPE_LABELS] || job.type}
                                                 </div>
                                             )}
                                             {pay && (
-                                                <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-white/5">{pay}</div>
+                                                <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-foreground/5">{pay}</div>
                                             )}
-                                            <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-white/5">
+                                            <div className="flex items-center bg-muted/20 px-3 py-1.5 rounded-lg border border-foreground/5">
                                                 <Calendar className="h-3.5 w-3.5 mr-2 text-primary/40" />
                                                 Applied {formatDistanceToNow(new Date(app.created_at), { addSuffix: true })}
                                             </div>

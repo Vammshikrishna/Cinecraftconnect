@@ -32,8 +32,13 @@ import {
   Info,
   Clock,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { WorkspaceEmpty, WorkspaceHero } from './WorkspaceUI';
+import { useProjectBudget } from '@/hooks/useProjectBudget';
+import { CalendarDays, Copy, ExternalLink, Pencil } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAppRole } from '@/hooks/useAppRole';
+import { confirmDialog } from '@/lib/confirmDialog';
 
 interface CallSheetProps {
   project_id: string;
@@ -43,13 +48,27 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
   const { isInternal } = useAppRole();
   const { toast } = useToast();
 
-  const { callSheets, isLoading, error, createCallSheet, deleteCallSheet } =
+  const { callSheets, isLoading, error, createCallSheet, deleteCallSheet, updateCallSheet } =
     useProjectCallSheets(project_id);
+
+  // A call sheet belongs to the schedule phase whose dates include its day
+  const { scheduleData } = useProjectBudget(project_id);
+  const phaseFor = (day: string) => {
+    if (!day) return null;
+    const t = new Date(day).setHours(0, 0, 0, 0);
+    const inside = scheduleData.filter((p) => {
+      const a = new Date(p.start_date).setHours(0, 0, 0, 0);
+      const b = p.end_date ? new Date(p.end_date).setHours(0, 0, 0, 0) : a;
+      return t >= a && t <= b;
+    });
+    return inside.sort((x, y) => new Date(y.start_date).getTime() - new Date(x.start_date).getTime())[0] || null;
+  };
 
   // ── Dialog state ─────────────────────────────────────────────────────────
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // ── Form state ───────────────────────────────────────────────────────────
@@ -63,6 +82,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
   const [notes, setNotes] = useState('');
 
   const resetForm = () => {
+    setEditingId(null);
     setDate('');
     setCallTime('');
     setLocation('');
@@ -75,9 +95,29 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
   };
 
   // ── Handlers ─────────────────────────────────────────────────────────────
+  const handleEdit = (sheet: (typeof callSheets)[number]) => {
+    setEditingId(sheet.id);
+    setDate(sheet.date ? String(sheet.date).slice(0, 10) : '');
+    setCallTime(sheet.call_time ? sheet.call_time.split(':').slice(0, 2).join(':') : '');
+    setLocation(sheet.location || '');
+    setDirector(sheet.director || '');
+    setDirectorPhone(sheet.director_phone || '');
+    setProducer(sheet.producer || '');
+    setProducerPhone(sheet.producer_phone || '');
+    setNotes(sheet.notes || '');
+    setDialogOpen(true);
+  };
+
   const handleCreate = () => {
     if (!date) {
       toast({ title: 'Error', description: 'Date is required', variant: 'destructive' });
+      return;
+    }
+    if (editingId) {
+      updateCallSheet.mutate(
+        { id: editingId, date, call_time: callTime || null, location, director, director_phone: directorPhone, producer, producer_phone: producerPhone, notes },
+        { onSuccess: () => { setDialogOpen(false); resetForm(); } }
+      );
       return;
     }
     createCallSheet.mutate(
@@ -145,8 +185,8 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     }
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm('Delete this call sheet?')) return;
+  const handleDelete = async (id: string) => {
+    if (!await confirmDialog('Delete this call sheet?')) return;
     deleteCallSheet.mutate(id);
   };
 
@@ -166,71 +206,97 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     );
   }
 
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const dayMs = 86400000;
+  const dayState = (d: string) => {
+    const t = new Date(d); t.setHours(0, 0, 0, 0);
+    const diff = Math.round((t.getTime() - startOfToday.getTime()) / dayMs);
+    return diff === 0 ? 'today' : diff > 0 ? 'upcoming' : 'wrapped';
+  };
+  const upcomingSheets = callSheets.filter((c) => dayState(c.date) !== 'wrapped');
+  const nextSheet = [...upcomingSheets].sort((x, y) => new Date(x.date).getTime() - new Date(y.date).getTime())[0];
+  const nextIn = nextSheet ? Math.round((new Date(nextSheet.date).setHours(0, 0, 0, 0) - startOfToday.getTime()) / dayMs) : null;
+  const places = new Set(callSheets.map((c) => c.location).filter(Boolean)).size;
+
   return (
-    <div className="p-4 sm:p-8 h-full overflow-y-auto w-full no-scrollbar bg-transparent">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Production</h1>
-          <p className="text-2xl font-bold text-foreground text-gradient">Call Sheets</p>
-        </div>
+    <div className="px-4 sm:px-6 lg:px-8 py-6 h-full overflow-y-auto w-full no-scrollbar bg-transparent">
+      <div className="max-w-6xl mx-auto space-y-6">
+      <WorkspaceHero
+        icon={CalendarDays}
+        title="Call sheets"
+        description="The plan for each shooting day."
+        stats={[
+          { label: 'Shoot days', value: callSheets.length },
+          { label: 'Coming up', value: upcomingSheets.length, tone: 'primary' },
+          { label: 'Next shoot', value: nextIn === null ? '—' : nextIn === 0 ? 'Today' : nextIn === 1 ? 'Tomorrow' : `In ${nextIn} days`, tone: 'warn' },
+          { label: 'Locations', value: places },
+        ]}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
 
         {!isInternal ? (
           <div className="flex gap-3 w-full sm:w-auto">
             {/* Create Dialog */}
             <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
               <DialogTrigger asChild>
-                <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-sm transition">
                   <Plus className="h-5 w-5 mr-2" /> Create New
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+              <DialogContent className="max-w-2xl w-[95vw] bg-card border border-border p-0 rounded-2xl overflow-hidden shadow-md">
                 <DialogHeader className="p-6 border-b border-border">
-                  <DialogTitle className="text-xl font-bold text-foreground">Sheet Details</DialogTitle>
+                  <DialogTitle className="text-xl font-bold text-foreground">{editingId ? 'Edit call sheet' : 'New call sheet'}</DialogTitle>
                   <DialogDescription className="text-muted-foreground mt-1">
-                    Populate production requirements for the upcoming day.
+                    {editingId ? 'Change anything below and save.' : 'Plan the shooting day: when, where and who to call.'}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto no-scrollbar">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Production Date</Label>
+                      <Label className="text-sm font-medium text-foreground">Production Date</Label>
                       <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
+                      {date && (() => {
+                        const p = phaseFor(date);
+                        return p
+                          ? <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1.5"><CalendarDays className="h-3.5 w-3.5 text-primary" /> Part of the phase <span className="font-medium text-foreground">{p.title}</span></p>
+                          : <p className="text-xs text-muted-foreground mt-1.5">{scheduleData.length > 0 ? 'This day is not inside any scheduled phase.' : 'No phases scheduled yet.'}</p>;
+                      })()}
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">General Call Time</Label>
+                      <Label className="text-sm font-medium text-foreground">General Call Time</Label>
                       <Input type="time" value={callTime} onChange={(e) => setCallTime(e.target.value)} className="bg-background border-border rounded-xl h-12" />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Location Details</Label>
+                    <Label className="text-sm font-medium text-foreground">Location Details</Label>
                     <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g., Studio 42, Los Angeles" className="bg-background border-border rounded-xl h-12" />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director</Label>
+                      <Label className="text-sm font-medium text-foreground">Director</Label>
                       <Input value={director} onChange={(e) => setDirector(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director Mobile</Label>
+                      <Label className="text-sm font-medium text-foreground">Director Mobile</Label>
                       <Input value={directorPhone} onChange={(e) => setDirectorPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer</Label>
+                      <Label className="text-sm font-medium text-foreground">Producer</Label>
                       <Input value={producer} onChange={(e) => setProducer(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer Mobile</Label>
+                      <Label className="text-sm font-medium text-foreground">Producer Mobile</Label>
                       <Input value={producerPhone} onChange={(e) => setProducerPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Safety & Talent Notes</Label>
+                    <Label className="text-sm font-medium text-foreground">Safety & Talent Notes</Label>
                     <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions for cast and crew..." className="bg-background border-border rounded-xl min-h-[120px] resize-none" />
                   </div>
-                  <Button onClick={handleCreate} disabled={createCallSheet.isPending} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
-                    {createCallSheet.isPending ? <Loader2 className="animate-spin" /> : 'Create Call Sheet'}
+                  <Button onClick={handleCreate} disabled={createCallSheet.isPending || updateCallSheet.isPending} className="w-full bg-primary hover:bg-primary/80 h-12 rounded-xl font-semibold text-base shadow-sm">
+                    {createCallSheet.isPending || updateCallSheet.isPending ? <Loader2 className="animate-spin" /> : editingId ? 'Save changes' : 'Create call sheet'}
                   </Button>
                 </div>
               </DialogContent>
@@ -239,11 +305,11 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
             {/* Upload Dialog */}
             <Dialog open={uploadDialogOpen} onOpenChange={(open) => { setUploadDialogOpen(open); if (!open) resetForm(); }}>
               <DialogTrigger asChild>
-                <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent/50 text-foreground rounded-2xl px-6 h-12 font-bold backdrop-blur-xl transition-all">
+                <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent/50 text-foreground rounded-2xl px-6 h-12 font-bold transition">
                   <Upload className="h-5 w-5 mr-2" /> Upload PDF
                 </Button>
               </DialogTrigger>
-              <DialogContent className="w-[95vw] sm:max-w-md bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+              <DialogContent className="w-[95vw] sm:max-w-md bg-card border border-border p-0 rounded-2xl overflow-hidden shadow-md">
                 <DialogHeader className="p-6 border-b border-border">
                   <DialogTitle className="text-xl font-bold text-foreground">Upload Metadata</DialogTitle>
                   <DialogDescription className="text-muted-foreground mt-1">
@@ -252,11 +318,11 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                 </DialogHeader>
                 <div className="p-6 space-y-6">
                   <div className="space-y-2">
-                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Shoot Date</Label>
+                    <Label className="text-sm font-medium text-foreground">Shoot Date</Label>
                     <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Document File</Label>
+                    <Label className="text-sm font-medium text-foreground">Document File</Label>
                     <div className="group relative">
                       <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="bg-background border-border rounded-xl h-12 py-3 cursor-pointer file:bg-transparent file:text-primary file:font-bold file:border-0" />
                     </div>
@@ -266,7 +332,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                       </span>
                     )}
                   </div>
-                  <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
+                  <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-sm">
                     {uploading ? <Loader2 className="animate-spin" /> : <><Upload className="h-5 w-5 mr-2" /> Confirm Upload</>}
                   </Button>
                 </div>
@@ -274,7 +340,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
             </Dialog>
           </div>
         ) : (
-          <div className="bg-muted/30 border border-border/50 px-6 py-3 rounded-2xl text-sm text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-3">
+          <div className="bg-muted/30 border border-border/50 px-6 py-3 rounded-2xl text-sm text-muted-foreground font-bold flex items-center gap-3">
             <Info className="w-4 h-4" /> Observation Mode
           </div>
         )}
@@ -285,157 +351,189 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
           <Loader2 className="h-10 w-10 animate-spin" />
         </div>
       ) : callSheets.length > 0 ? (
-        <div className="flex flex-col gap-16 max-w-4xl mx-auto pb-64 snap-y snap-proximity">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] items-start pb-24">
+        <div className="space-y-6 min-w-0">
           {[...callSheets]
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            .map((sheet, index) => (
-              <div
-                key={sheet.id}
-                className="relative pl-8 sm:pl-16 border-l-[3px] border-primary/20 last:border-l-0 pb-16 snap-start"
-              >
-                {/* Timeline Node */}
-                <div className="absolute top-0 left-[-12px] w-[21px] h-[21px] bg-primary rounded-full border-4 border-background shadow-lg shadow-primary/40 z-20" />
+            .sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime())
+            .map((sheet, index) => {
+              const time = (() => {
+                if (!sheet.call_time) return null;
+                const [hh, mm] = sheet.call_time.split(':');
+                const h = parseInt(hh, 10);
+                if (Number.isNaN(h)) return { clock: sheet.call_time, period: '' };
+                return { clock: `${h % 12 || 12}:${(mm || '00').slice(0, 2)}`, period: h >= 12 ? 'PM' : 'AM' };
+              })();
+              const hasFile = !!sheet.notes && sheet.notes.startsWith('Uploaded file:');
+              const state = dayState(sheet.date);
+              return (
+                <section key={sheet.id} aria-label={`Call sheet for ${formatDate(sheet.date)}`}
+                  className={cn('relative overflow-hidden rounded-2xl border bg-card', state === 'today' ? 'border-primary/50 shadow-md shadow-primary/10' : 'border-border', state === 'wrapped' && 'opacity-90')}>
+                  <span aria-hidden className={cn('absolute inset-y-0 left-0 w-1.5', state === 'today' ? 'bg-primary' : state === 'upcoming' ? 'bg-primary/40' : 'bg-muted-foreground/25')} />
 
-                {/* Date Header */}
-                <div className="relative mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4 z-10 p-2 rounded-2xl -ml-2">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[10px] font-black tracking-[0.3em] text-primary uppercase ml-1">
-                        Production Day {callSheets.length - index}
+                  {/* header: which day, and the actions */}
+                  <div className="flex items-start justify-between gap-3 pl-6 pr-3 pt-4">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                        Day {callSheets.length - index}
+                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', state === 'today' ? 'bg-primary text-primary-foreground' : state === 'upcoming' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>
+                          {state === 'today' ? 'Today' : state === 'upcoming' ? 'Upcoming' : 'Wrapped'}
+                        </span>
+                        {phaseFor(sheet.date) && (
+                          <span className="rounded-full px-2 py-0.5 text-xs font-medium border border-border text-foreground/80 flex items-center gap-1">
+                            <CalendarDays className="h-3 w-3" /> {phaseFor(sheet.date)!.title}
+                          </span>
+                        )}
                       </p>
-                      <span className="h-px w-8 bg-primary/30" />
+                      <h2 className="text-lg sm:text-xl font-semibold text-foreground mt-0.5">{formatDate(sheet.date)}</h2>
                     </div>
-                    <h2 className="text-3xl sm:text-5xl font-black text-foreground tracking-tighter">
-                      {formatDate(sheet.date)}
-                    </h2>
-                  </div>
-                  {!isInternal && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleDelete(sheet.id)}
-                      className="bg-destructive/10 hover:bg-destructive text-destructive hover:text-white rounded-full p-2 h-10 w-10 transition-all opacity-40 hover:opacity-100 self-start sm:self-auto"
-                    >
-                      <Trash2 className="h-5 w-5" />
-                    </Button>
-                  )}
-                </div>
-
-                <div className="group bg-card/60 border border-border shadow-2xl rounded-[40px] p-6 sm:p-12 hover:bg-accent/40 active:scale-[0.99] transition-all duration-700 relative overflow-hidden backdrop-blur-xl">
-                  {/* Cinematic Gradient Overlays */}
-                  <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/10 blur-[120px] rounded-full group-hover:bg-primary/20 transition-all pointer-events-none" />
-                  <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-primary/5 blur-[80px] rounded-full pointer-events-none" />
-
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
-                    {/* Left — Core Specs */}
-                    <div className="lg:col-span-12 xl:col-span-7 space-y-10">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                        {sheet.call_time && (
-                          <div className="bg-card border border-border/50 rounded-3xl p-8 shadow-sm hover:shadow-lg transition-all group/stat">
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="p-2 bg-primary/10 rounded-xl group-hover/stat:bg-primary/20 transition-colors">
-                                <Clock className="w-4 h-4 text-primary" />
-                              </div>
-                              <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">General Call</p>
-                            </div>
-                            <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-foreground font-mono tracking-tighter">
-                              {sheet.call_time.includes(':')
-                                ? sheet.call_time.split(':').slice(0, 2).join(':')
-                                : sheet.call_time}
-                            </p>
-                          </div>
+                    {!isInternal && (
+                      <div className="flex shrink-0">
+                        {!hasFile && (
+                          <Button aria-label={`Edit the call sheet for ${formatDate(sheet.date)}`} size="icon" variant="ghost" onClick={() => handleEdit(sheet)} className="h-9 w-9 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                         )}
-                        {sheet.location && (
-                          <div className="bg-card border border-border/50 rounded-3xl p-8 shadow-sm hover:shadow-lg transition-all group/stat">
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="p-2 bg-primary/10 rounded-xl group-hover/stat:bg-primary/20 transition-colors">
-                                <MapPin className="w-4 h-4 text-primary" />
-                              </div>
-                              <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Live Location</p>
-                            </div>
-                            <p className="text-base sm:text-lg font-bold text-foreground/90 leading-snug tracking-tight">
-                              {sheet.location}
-                            </p>
-                          </div>
-                        )}
+                        <Button aria-label={`Delete the call sheet for ${formatDate(sheet.date)}`} size="icon" variant="ghost" onClick={() => handleDelete(sheet.id)} className="h-9 w-9 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
+                    )}
+                  </div>
 
-                      {(sheet.director || sheet.producer) && (
-                        <div className="flex flex-wrap gap-12 py-8 border-y border-border/40">
-                          {sheet.director && (
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2 opacity-50 mb-1">
-                                <User className="w-3.5 h-3.5" />
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em]">Director</p>
-                              </div>
-                              <p className="text-xl font-black text-foreground tracking-tight">{sheet.director}</p>
-                              {sheet.director_phone && (
-                                <a href={`tel:${sheet.director_phone}`} className="text-xs text-primary font-bold hover:underline flex items-center gap-2 group/phone">
-                                  <Phone className="w-3 h-3 group-hover/phone:rotate-12 transition-transform" /> {sheet.director_phone}
-                                </a>
-                              )}
-                            </div>
-                          )}
-                          {sheet.producer && (
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2 opacity-50 mb-1">
-                                <User className="w-3.5 h-3.5" />
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em]">Producer</p>
-                              </div>
-                              <p className="text-xl font-black text-foreground tracking-tight">{sheet.producer}</p>
-                              {sheet.producer_phone && (
-                                <a href={`tel:${sheet.producer_phone}`} className="text-xs text-primary font-bold hover:underline flex items-center gap-2 group/phone">
-                                  <Phone className="w-3 h-3 group-hover/phone:rotate-12 transition-transform" /> {sheet.producer_phone}
-                                </a>
-                              )}
-                            </div>
-                          )}
+                  {/* body: the call time stands out, then where and who */}
+                  <div className="pl-6 pr-4 pb-4 pt-4 grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)]">
+                    {time ? (
+                      <div className="rounded-xl bg-primary/10 px-5 py-4 text-center sm:min-w-[132px] self-start">
+                        <p className="text-xs font-medium text-primary/80 flex items-center justify-center gap-1.5"><Clock className="h-3.5 w-3.5" /> General call</p>
+                        <p className="mt-1 text-3xl font-bold tabular-nums text-foreground leading-none">{time.clock}<span className="ml-1 text-sm font-semibold text-muted-foreground">{time.period}</span></p>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl bg-muted/50 px-5 py-4 text-center sm:min-w-[132px] self-start">
+                        <p className="text-xs font-medium text-muted-foreground">General call</p>
+                        <p className="mt-1 text-sm text-muted-foreground">Not set</p>
+                      </div>
+                    )}
+
+                    <div className="min-w-0 space-y-3">
+                      {sheet.location && (
+                        <div className="flex items-center gap-3 rounded-xl border border-border px-3.5 py-2.5">
+                          <MapPin className="h-4 w-4 text-primary shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-muted-foreground">Location</p>
+                            <p className="text-sm font-medium text-foreground break-words">{sheet.location}</p>
+                          </div>
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(sheet.location)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline shrink-0">
+                            Map <ExternalLink className="h-3 w-3" />
+                          </a>
                         </div>
                       )}
-                    </div>
-
-                    {/* Right — Notes / Download */}
-                    <div className="lg:col-span-12 xl:col-span-5 flex flex-col justify-center">
-                      {sheet.notes && (
-                        <div className="space-y-6">
-                          <div className="flex items-center gap-3">
-                            <FileText className="w-4 h-4 text-primary" />
-                            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Production Log</p>
-                          </div>
-                          {sheet.notes.startsWith('Uploaded file:') ? (
-                            <Button
-                              className="w-full bg-primary hover:bg-primary/90 text-white rounded-[24px] h-24 font-black transition-all flex flex-col items-center justify-center gap-1 shadow-2xl shadow-primary/30 active:scale-95 group/btn"
-                              onClick={() => handleDownload(sheet.notes!.replace('Uploaded file: ', ''), `CallSheet_${formatDate(sheet.date)}.pdf`)}
-                            >
-                              <Download className="h-8 w-8 mb-1 group-hover/btn:translate-y-1 transition-transform" />
-                              <span className="text-[10px] uppercase tracking-widest opacity-80">Download Digital Pack</span>
-                            </Button>
-                          ) : (
-                            <div className="bg-background/40 rounded-3xl p-8 border border-border/50 italic text-sm text-foreground/90 leading-relaxed shadow-inner max-h-[300px] overflow-y-auto no-scrollbar scroll-smooth">
-                              <span className="text-primary text-2xl font-serif mr-1">"</span>
-                              {sheet.notes}
-                              <span className="text-primary text-2xl font-serif ml-1">"</span>
+                      {(sheet.director || sheet.producer) && (
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {[
+                            sheet.director ? { role: 'Director', name: sheet.director, phone: sheet.director_phone } : null,
+                            sheet.producer ? { role: 'Producer', name: sheet.producer, phone: sheet.producer_phone } : null,
+                          ].filter(Boolean).map((p) => (
+                            <div key={p!.role} className="flex items-center gap-3 rounded-xl border border-border px-3.5 py-2.5">
+                              <span className="h-9 w-9 rounded-full bg-primary/10 text-primary grid place-items-center text-sm font-semibold shrink-0">{p!.name.charAt(0).toUpperCase()}</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium truncate">{p!.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">{p!.phone ? `${p!.role} · ${p!.phone}` : p!.role}</p>
+                              </div>
+                              {p!.phone && (
+                                <a href={`tel:${p!.phone}`} aria-label={`Call ${p!.name}`} className="h-8 w-8 rounded-full bg-primary text-primary-foreground grid place-items-center shrink-0 hover:bg-primary/90 transition-colors">
+                                  <Phone className="h-3.5 w-3.5" />
+                                </a>
+                              )}
                             </div>
-                          )}
+                          ))}
                         </div>
+                      )}
+                      {sheet.notes && (
+                        hasFile ? (
+                          <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3.5 py-2.5">
+                            <span className="flex items-center gap-2.5 text-sm font-medium"><FileText className="h-4 w-4 text-muted-foreground" /> Uploaded call sheet</span>
+                            <Button variant="outline" size="sm" className="h-8 rounded-lg gap-1.5" onClick={() => handleDownload(sheet.notes!.replace('Uploaded file: ', ''), `CallSheet_${formatDate(sheet.date)}.pdf`)}>
+                              <Download className="h-3.5 w-3.5" /> Download
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl bg-muted/50 px-3.5 py-3">
+                            <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> Notes</p>
+                            <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">{sheet.notes}</p>
+                          </div>
+                        )
                       )}
                     </div>
                   </div>
-                </div>
+                </section>
+              );
+            })}
+        </div>
+        <aside className="space-y-4 lg:sticky lg:top-0">
+          <div className="rounded-2xl border border-border bg-card p-5">
+            <h2 className="text-sm font-semibold flex items-center gap-2 mb-3"><CalendarDays className="h-4 w-4 text-primary" /> Next shoot</h2>
+            {nextSheet ? (
+              <div className="rounded-xl bg-primary/5 border border-primary/15 p-4">
+                <p className="text-3xl font-bold tabular-nums leading-none text-primary">{nextIn === 0 ? 'Today' : nextIn === 1 ? 'Tomorrow' : `${nextIn} days`}</p>
+                <p className="text-sm font-medium text-foreground mt-2">{formatDate(nextSheet.date)}</p>
+                {nextSheet.call_time && <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> Call at {nextSheet.call_time.split(':').slice(0, 2).join(':')}</p>}
+                {nextSheet.location && <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {nextSheet.location}</p>}
               </div>
-            ))}
+            ) : (
+              <p className="text-sm text-muted-foreground">No upcoming shoot day. Create a call sheet to plan the next one.</p>
+            )}
+          </div>
+          {(() => {
+            // the people for the shoot that matters now: the next one, or else the latest
+            const sheet = nextSheet || [...callSheets].sort((x, y) => new Date(y.date).getTime() - new Date(x.date).getTime())[0];
+            const people = [
+              sheet?.director ? { role: 'Director', name: sheet.director, phone: sheet.director_phone } : null,
+              sheet?.producer ? { role: 'Producer', name: sheet.producer, phone: sheet.producer_phone } : null,
+            ].filter(Boolean) as { role: string; name: string; phone?: string | null }[];
+            if (!sheet || people.length === 0) return null;
+            return (
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <h2 className="text-sm font-semibold">Who to call</h2>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-4">For {formatDate(sheet.date)}</p>
+                <ul className="space-y-4">
+                  {people.map((c) => (
+                    <li key={c.role} className="flex items-center gap-3">
+                      <span className="h-10 w-10 rounded-full bg-primary/10 text-primary grid place-items-center text-sm font-semibold shrink-0">{c.name.charAt(0).toUpperCase()}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{c.phone ? `${c.role} · ${c.phone}` : `${c.role} · no number added`}</p>
+                      </div>
+                      {c.phone && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            aria-label={`Copy ${c.name}'s number`}
+                            onClick={() => { navigator.clipboard?.writeText(c.phone!).then(() => toast({ title: 'Number copied' })).catch(() => {}); }}
+                            className="h-9 w-9 rounded-full bg-muted grid place-items-center hover:bg-muted/70 transition-colors"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                          <a href={`tel:${c.phone}`} aria-label={`Call ${c.name}`} className="h-9 w-9 rounded-full bg-primary text-primary-foreground grid place-items-center hover:bg-primary/90 transition-colors">
+                            <Phone className="h-4 w-4" />
+                          </a>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
+        </aside>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-20 h-20 bg-card border border-border shadow-sm rounded-full flex items-center justify-center mb-6">
-            <FileText className="w-10 h-10 text-muted-foreground" />
-          </div>
-          <h3 className="text-xl font-bold text-foreground mb-2">No Call Sheets</h3>
-          <p className="text-muted-foreground max-w-xs mb-8">
-            Maintain production momentum by creating specialized daily schedules.
-          </p>
-        </div>
+        <WorkspaceEmpty
+          icon={FileText}
+          title="No call sheets yet"
+          description="Create a call sheet for a shooting day, or upload one you already have."
+        />
       )}
+      </div>
     </div>
   );
 };

@@ -39,7 +39,7 @@ export const ChatListItem = ({ conversation: convo, isOnline, onDelete }: ChatLi
                     <AvatarFallback className="bg-chat-search-bg">{convo.partner.full_name?.charAt(0)?.toUpperCase() || 'U'}</AvatarFallback>
                 </Avatar>
                 {isOnline && (
-                    <div className="absolute bottom-0 right-0 h-4 w-4 bg-chat-status-online border-4 border-chat-surface rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" />
+                    <div className="absolute bottom-0 right-0 h-4 w-4 bg-chat-status-online border-4 border-chat-surface rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
                 )}
             </div>
             <div className="flex-1 overflow-hidden">
@@ -47,7 +47,7 @@ export const ChatListItem = ({ conversation: convo, isOnline, onDelete }: ChatLi
                     <div className="flex items-center gap-2 overflow-hidden">
                         <h3 className="font-semibold text-lg truncate text-chat-text-primary">{convo.partner.full_name}</h3>
                         {isOnline && (
-                             <span className="text-[10px] text-chat-status-online font-bold uppercase tracking-widest hidden sm:inline opacity-70">Online</span>
+                             <span className="text-[12px] text-chat-status-online font-bold uppercase tracking-widest hidden sm:inline opacity-70">Online</span>
                         )}
                     </div>
                     <p className="text-xs text-chat-text-muted flex-shrink-0">

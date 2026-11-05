@@ -13,12 +13,12 @@ const Feed = ({ openCreate = false }: { openCreate?: boolean }) => {
     };
 
     return (
-        <div className="min-h-screen bg-background pt-[68px] md:pt-20 relative">
+        <div className="min-h-dvh bg-background pt-[68px] md:pt-20 lg:pt-14 relative">
             <SEO 
                 title="Feed" 
                 description="Explore the latest updates from the entertainment world. Follow creators, filmmakers, and industry professionals in your CineCraft feed." 
             />
-            <div className="w-full md:container mx-auto px-0 md:px-8 pb-36 animate-fade-in">
+            <div className="w-full max-w-[1560px] mx-auto px-0 md:px-8 pb-36 animate-fade-in">
                 <div className="w-full">
                     <HomeTab postRatings={postRatings} onRate={handleRate} openCreate={openCreate} />
                 </div>

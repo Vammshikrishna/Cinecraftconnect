@@ -5,6 +5,9 @@ import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { pickAttachments, type PickedAttachment } from '../../services/attachmentPicker';
 import { uploadVendorDoc, RESUME_MAX_BYTES } from '../../services/resumeFiles';
+import { friendlyError } from '@cinecraft/core';
+import { useProductAccess } from '../../hooks/useBilling';
+import ProductNotice from '../billing/ProductNotice';
 
 const ORANGE = '#FF4B33';
 const db = () => getSupabaseClient() as any;
@@ -30,11 +33,11 @@ const Sheet = ({ visible, onClose, title, subtitle, children }: { visible: boole
           <View style={[s.sheet, { backgroundColor: T.bgCard, borderColor: T.border }]}>
             <View style={s.head}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '800' }}>{title}</Text>
+                <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700' }}>{title}</Text>
                 {subtitle ? <Text style={{ color: T.textSecondary, fontSize: 12 }} numberOfLines={1}>{subtitle}</Text> : null}
               </View>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Icon name="x" size={20} color={T.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon name="x" size={20} color={T.iconSecondary} />
               </TouchableOpacity>
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 30 }}>{children}</ScrollView>
@@ -66,6 +69,8 @@ export const QuoteRequestModal = ({
   const submit = async () => {
     if (!DATE_RE.test(f.start) || !DATE_RE.test(f.end) || f.end < f.start) return Alert.alert('Check your dates', 'Use the format 2026-11-05. The end date cannot be before the start date.');
     if (f.brief.trim().length < 10) return Alert.alert('Tell the vendor what you need', 'At least 10 characters.');
+    if (f.crew && !(Number.isInteger(Number(f.crew)) && Number(f.crew) >= 1 && Number(f.crew) <= 1000)) return Alert.alert('Check the crew size', 'Enter a whole number from 1 to 1000, or leave it empty.');
+    if (f.budget && !(Number(f.budget) > 0)) return Alert.alert('Check the budget', 'The budget must be more than 0, or leave it empty.');
     setBusy(true);
     try {
       const { data, error } = await db().rpc('request_vendor_quote', {
@@ -83,7 +88,7 @@ export const QuoteRequestModal = ({
       onClose();
       Alert.alert('Request sent', `${vendorName} will reply with a quote. You'll be notified.`, [{ text: 'OK', onPress: onRequested }]);
     } catch (e: any) {
-      Alert.alert('Could not send the request', e?.message || 'Please try again.');
+      Alert.alert('Could not send the request', friendlyError(e, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -122,6 +127,7 @@ export const VendorVerificationModal = ({
   const [website, setWebsite] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const product = useProductAccess('vendor_verification', vendorId, visible);
 
   useEffect(() => {
     if (visible) {
@@ -139,11 +145,12 @@ export const VendorVerificationModal = ({
       if (f.size && f.size > RESUME_MAX_BYTES) return Alert.alert('File too large', 'Please attach a file up to 10 MB.');
       setFile(f);
     } catch (e: any) {
-      Alert.alert('Could not attach the file', e?.message || 'Please try again.');
+      Alert.alert('Could not attach the file', friendlyError(e, 'Please try again.'));
     }
   };
 
   const submit = async () => {
+    if (product.needsPurchase) return Alert.alert('Purchase needed', 'Business verification is a paid review. Buy it above, then submit.');
     if (!file) return Alert.alert('Attach a document', 'A registration certificate, licence or tax document.');
     setBusy(true);
     try {
@@ -160,7 +167,7 @@ export const VendorVerificationModal = ({
       onClose();
       Alert.alert('Sent for review', "We'll notify you when your business is reviewed.", [{ text: 'OK', onPress: onSubmitted }]);
     } catch (e: any) {
-      Alert.alert('Could not submit', e?.message || 'Please try again.');
+      Alert.alert('Could not submit', friendlyError(e, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -169,6 +176,7 @@ export const VendorVerificationModal = ({
   const L = ({ t }: { t: string }) => <Text style={[s.label, { color: T.textMuted }]}>{t}</Text>;
   return (
     <Sheet visible={visible} onClose={onClose} title="Get verified" subtitle={`${vendorName} · your document is private`}>
+      <ProductNotice access={product.access} buying={product.buying} onBuy={product.buy} />
       <TouchableOpacity onPress={pick} style={[s.drop, { borderColor: T.border, backgroundColor: T.inputBg }]}>
         <Icon name={file ? 'file-text' : 'upload'} size={18} color={ORANGE} />
         <Text style={{ color: file ? T.textPrimary : T.textSecondary, fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>{file ? file.name : 'Attach a business document (PDF or photo, up to 10 MB)'}</Text>
@@ -179,7 +187,7 @@ export const VendorVerificationModal = ({
       <TextInput style={field} value={website} onChangeText={setWebsite} maxLength={200} autoCapitalize="none" placeholder="https://" placeholderTextColor={T.textMuted} />
       <L t="ANYTHING WE SHOULD KNOW? (OPTIONAL)" />
       <TextInput style={[...field, { height: 70, paddingTop: 10, textAlignVertical: 'top' }]} multiline maxLength={1000} value={notes} onChangeText={setNotes} />
-      <TouchableOpacity style={[s.submit, (busy || !file) && { opacity: 0.5 }]} disabled={busy || !file} onPress={submit}>
+      <TouchableOpacity style={[s.submit, (busy || !file || product.needsPurchase) && { opacity: 0.5 }]} disabled={busy || !file || product.needsPurchase} onPress={submit}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.submitText}>Submit for review</Text>}
       </TouchableOpacity>
     </Sheet>
@@ -213,6 +221,7 @@ export const GearAlertsModal = ({ visible, onClose }: { visible: boolean; onClos
   }, [visible]);
 
   const create = async () => {
+    if (f.max_price && !(Number(f.max_price) > 0)) return Alert.alert('Check the price', 'The maximum price must be more than 0, or leave it empty.');
     if (!f.keyword.trim() && !f.category && !f.max_price) return Alert.alert('Add something to match', 'Enter a keyword, a category or a maximum price.');
     setSaving(true);
     try {
@@ -229,7 +238,7 @@ export const GearAlertsModal = ({ visible, onClose }: { visible: boolean; onClos
       setF((p) => ({ ...p, keyword: '', category: '', max_price: '' }));
       load();
     } catch (e: any) {
-      Alert.alert('Could not save the alert', e?.message || 'Please try again.');
+      Alert.alert('Could not save the alert', friendlyError(e, 'Please try again.'));
     } finally {
       setSaving(false);
     }
@@ -254,7 +263,7 @@ export const GearAlertsModal = ({ visible, onClose }: { visible: boolean; onClos
         alerts.map((a) => (
           <View key={a.id} style={[s.alertRow, { borderColor: T.border }]}>
             <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '700', flex: 1 }} numberOfLines={2}>{describe(a)}</Text>
-            <TouchableOpacity onPress={() => remove(a)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" onPress={() => remove(a)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Icon name="trash-2" size={17} color="#EF4444" />
             </TouchableOpacity>
           </View>
@@ -266,7 +275,7 @@ export const GearAlertsModal = ({ visible, onClose }: { visible: boolean; onClos
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
           {(['gear', 'service'] as const).map((k) => (
             <TouchableOpacity key={k} onPress={() => setF({ ...f, kind: k, category: '' })} style={[s.chip, { flex: 1, alignItems: 'center', paddingVertical: 8, backgroundColor: f.kind === k ? ORANGE : T.inputBg, borderColor: f.kind === k ? ORANGE : T.border }]}>
-              <Text style={{ color: f.kind === k ? '#fff' : T.textPrimary, fontSize: 12, fontWeight: '800' }}>{k === 'gear' ? 'Gear & locations' : 'Vendor services'}</Text>
+              <Text style={{ color: f.kind === k ? '#fff' : T.textPrimary, fontSize: 12, fontWeight: '700' }}>{k === 'gear' ? 'Gear & locations' : 'Vendor services'}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -275,7 +284,7 @@ export const GearAlertsModal = ({ visible, onClose }: { visible: boolean; onClos
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {(f.kind === 'service' ? VENDOR_CATEGORIES : [...EQUIPMENT_CATEGORIES, ...LOCATION_CATEGORIES]).map((c) => (
               <TouchableOpacity key={c} onPress={() => setF({ ...f, category: f.category === c ? '' : c })} style={[s.chip, { backgroundColor: f.category === c ? ORANGE : T.inputBg, borderColor: f.category === c ? ORANGE : T.border }]}>
-                <Text style={{ color: f.category === c ? '#fff' : T.textPrimary, fontSize: 11.5, fontWeight: '700' }}>{c}</Text>
+                <Text style={{ color: f.category === c ? '#fff' : T.textPrimary, fontSize: 12, fontWeight: '700' }}>{c}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -290,12 +299,12 @@ export const GearAlertsModal = ({ visible, onClose }: { visible: boolean; onClos
 };
 
 const s = StyleSheet.create({
-  sheet: { maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
   head: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 8, gap: 10 },
-  label: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.7, marginBottom: 6, marginTop: 4 },
+  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.7, marginBottom: 6, marginTop: 4 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, height: 44, fontSize: 14, marginBottom: 10 },
   submit: { backgroundColor: ORANGE, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
-  submitText: { color: '#fff', fontWeight: '800', fontSize: 14.5 },
+  submitText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   drop: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderStyle: 'dashed', borderRadius: 14, padding: 14, marginBottom: 12 },
   alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 8 },
   newBox: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 16, padding: 12, marginTop: 10 },

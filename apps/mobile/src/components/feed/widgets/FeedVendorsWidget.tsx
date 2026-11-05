@@ -1,3 +1,4 @@
+import { WT } from './widgetScale';
 import React from 'react';
 import {
   View,
@@ -11,7 +12,7 @@ import { Icon } from '../../common/Icon';
 import { useUserSettings } from '../../../hooks/useUserSettings';
 
 const ORANGE = '#FF4B33';
-const MUTED = '#6B7280';
+const MUTED = '#64748B';
 const BORDER = '#E5E7EB';
 
 interface VendorItem {
@@ -43,7 +44,7 @@ export const FeedVendorsWidget: React.FC<FeedVendorsWidgetProps> = ({
       <View style={styles.sectionHeader}>
         <View style={styles.titleGroup}>
           <Icon name="briefcase" size={17} color={ORANGE} />
-          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Featured Vendors</Text>
+          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Trending Vendors</Text>
         </View>
         <TouchableOpacity onPress={onSeeAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={[styles.seeAllText, { color: themeColors.textSecondary }]}>Explore →</Text>
@@ -113,7 +114,7 @@ export const FeedVendorsWidget: React.FC<FeedVendorsWidgetProps> = ({
                   ]}
                 >
                   <Text style={styles.categoryText} numberOfLines={1}>
-                    CAT // {String(vendor.category).toUpperCase()}
+                    {String(vendor.category)}
                   </Text>
                 </View>
               )}
@@ -129,7 +130,7 @@ export const FeedVendorsWidget: React.FC<FeedVendorsWidgetProps> = ({
                   ]}
                 >
                   <Text style={[styles.locationText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                    LOC // {String(vendor.location).toUpperCase()}
+                    {String(vendor.location)}
                   </Text>
                 </View>
               )}
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   titleGroup: {
     flexDirection: 'row',
@@ -163,14 +164,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0D0D0D',
-    fontSize: 16,
+    fontSize: WT.sectionTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   seeAllText: {
     color: '#4B5563',
-    fontSize: 12,
+    fontSize: WT.seeAll,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -231,12 +232,12 @@ const styles = StyleSheet.create({
   },
   avatarFallbackText: {
     color: '#FF4B33',
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
   },
   businessName: {
     color: '#0D0D0D',
-    fontSize: 14,
+    fontSize: WT.cardTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     textAlign: 'center',
@@ -248,35 +249,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFE5DF',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
     marginBottom: 6,
   },
   categoryText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   locationPill: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
     maxWidth: '88%',
     marginBottom: 10,
   },
   locationText: {
     color: '#475569',
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   viewBtn: {
+    minHeight: WT.touch,
     backgroundColor: '#FF4B33',
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -286,7 +284,7 @@ const styles = StyleSheet.create({
   },
   viewBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: WT.button,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },

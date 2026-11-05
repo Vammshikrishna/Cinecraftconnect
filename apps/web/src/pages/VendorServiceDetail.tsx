@@ -7,21 +7,25 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { PageHeader } from '@/components/common/PageHeader';
-import { MapPin, Users, Calendar, CheckCircle2, MessageSquare, Briefcase } from 'lucide-react';
+import { MapPin, Users, Calendar, CheckCircle2, MessageSquare, Briefcase, Flag } from 'lucide-react';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAppRole } from '@/hooks/useAppRole';
 import { QuoteRequestDialog } from '@/components/vendors/QuoteRequestDialog';
+import ReportDialog from '@/components/common/ReportDialog';
 
 const VendorServiceDetail = () => {
     const { id } = useParams<{ id: string }>();
     const { push, goBack } = useAppNavigation();
     const { toast } = useToast();
     const { user } = useAuth();
+    const { isInternal } = useAppRole();
     
     const [service, setService] = useState<VendorService | null>(null);
     const [vendor, setVendor] = useState<Vendor | null>(null);
     const [loading, setLoading] = useState(true);
     const [quoteOpen, setQuoteOpen] = useState(false);
+    const [reportOpen, setReportOpen] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -45,6 +49,12 @@ const VendorServiceDetail = () => {
             if (!data) throw new Error('Service not found');
             
             const serviceData = data as unknown as VendorService;
+            // A hidden (inactive) package must not be reachable by guessing its URL; only the owner may still see it.
+            if ((serviceData as any).is_active === false) {
+                const { data: { user: viewer } } = await supabase.auth.getUser();
+                const { data: ownerRow } = await supabase.from('vendors').select('owner_id').eq('id', serviceData.vendor_id).maybeSingle();
+                if (!viewer || (ownerRow as any)?.owner_id !== viewer.id) throw new Error('Service not found');
+            }
             setService(serviceData);
 
             // Fetch vendor
@@ -75,7 +85,6 @@ const VendorServiceDetail = () => {
             toast({
                 title: 'Sign in required',
                 description: 'Redirecting to sign in page...',
-                variant: 'destructive'
             });
             push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
@@ -87,8 +96,8 @@ const VendorServiceDetail = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-background pt-24 px-4 flex justify-center">
-                <EnhancedSkeleton className="h-[400px] w-full max-w-4xl rounded-[2rem]" />
+            <div className="min-h-dvh bg-background pt-24 px-4 flex justify-center">
+                <EnhancedSkeleton className="h-[400px] w-full max-w-[1152px] rounded-[2rem]" />
             </div>
         );
     }
@@ -96,8 +105,8 @@ const VendorServiceDetail = () => {
     if (!service || !vendor) return null;
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-40">
-            <main className="max-w-6xl mx-auto px-4 md:px-8">
+        <div className="min-h-dvh bg-background pt-20 pb-40">
+            <main className="max-w-[1400px] mx-auto px-4 md:px-8">
                 <PageHeader
                     title={service.title}
                     subtitle={`Service Package by ${vendor.business_name}`}
@@ -109,16 +118,18 @@ const VendorServiceDetail = () => {
                     <div className="lg:col-span-2 space-y-8">
                         {/* Highlights */}
                         <div className="flex flex-wrap gap-4">
-                            <div className="flex items-center gap-2 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm">
+                            {service.coverage_area && (
+                            <div className="flex items-center gap-2 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm">
                                 <MapPin size={16} className="text-primary" />
                                 {service.coverage_area}
                             </div>
-                            <div className="flex items-center gap-2 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm">
+                            )}
+                            <div className="flex items-center gap-2 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm">
                                 <Calendar size={16} className="text-primary" />
                                 Min {service.min_booking_days} day(s)
                             </div>
                             {service.crew_capacity && (
-                                <div className="flex items-center gap-2 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm">
+                                <div className="flex items-center gap-2 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 px-4 py-2.5 rounded-2xl text-sm font-bold shadow-sm">
                                     <Users size={16} className="text-primary" />
                                     Up to {service.crew_capacity} crew
                                 </div>
@@ -126,7 +137,7 @@ const VendorServiceDetail = () => {
                         </div>
 
                         {/* Description */}
-                        <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
+                        <div className="p-8 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
                             <h3 className="text-xl font-black tracking-tight mb-4">Service Description</h3>
                             <p className="text-muted-foreground whitespace-pre-wrap leading-relaxed">
                                 {service.description}
@@ -135,7 +146,7 @@ const VendorServiceDetail = () => {
 
                         {/* Checklist */}
                         {service.service_checklist && service.service_checklist.length > 0 && (
-                            <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
+                            <div className="p-8 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
                                 <h3 className="text-xl font-black tracking-tight mb-4">What's Included</h3>
                                 <div className="space-y-3">
                                     {service.service_checklist.map((item, idx) => (
@@ -149,10 +160,10 @@ const VendorServiceDetail = () => {
                         )}
 
                         {/* Production Types */}
-                        <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
+                        <div className="p-8 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
                             <h3 className="text-xl font-black tracking-tight mb-4">Supported Productions</h3>
                             <div className="flex flex-wrap gap-2">
-                                {service.production_types.map(pt => (
+                                {(service.production_types ?? []).map(pt => (
                                     <Badge key={pt} variant="outline" className="text-sm py-1 px-3">
                                         {pt}
                                     </Badge>
@@ -166,10 +177,10 @@ const VendorServiceDetail = () => {
                         <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] sticky top-24 shadow-xl">
                             <div className="text-center mb-6">
                                 <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Day Rate</p>
-                                <div className="text-4xl font-black text-primary">₹{service.day_rate}</div>
+                                <div className="text-4xl font-black text-primary">₹{Number(service.day_rate).toLocaleString('en-IN')}</div>
                             </div>
 
-                            {!(user && vendor && user.id === vendor.owner_id) && (
+                            {!(user && vendor && user.id === vendor.owner_id) && !isInternal && (
                                 <Button className="w-full h-14 rounded-2xl text-base font-bold gap-2 mb-3 shadow-lg shadow-primary/25" onClick={() => {
                                     if (!user) { handleContactVendor(); return; }
                                     setQuoteOpen(true);
@@ -177,10 +188,22 @@ const VendorServiceDetail = () => {
                                     Request a quote
                                 </Button>
                             )}
-                            <Button variant="outline" className="w-full h-12 rounded-xl text-sm font-bold gap-2 mb-4" onClick={handleContactVendor}>
-                                <MessageSquare size={18} />
-                                Contact Vendor
-                            </Button>
+                            {!isInternal && !(user && vendor && user.id === vendor.owner_id) && (
+                                <Button variant="outline" className="w-full h-12 rounded-xl text-sm font-bold gap-2 mb-4" onClick={handleContactVendor}>
+                                    <MessageSquare size={18} />
+                                    Contact Vendor
+                                </Button>
+                            )}
+                            {vendor && !(user && user.id === vendor.owner_id) && (
+                                <>
+                                    <Button variant="ghost" className="w-full h-12 rounded-xl text-sm font-bold text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500 gap-2 mb-4" onClick={() => { if (!user) { handleContactVendor(); return; } setReportOpen(true); }}>
+                                        <Flag size={16} />
+                                        Report
+                                    </Button>
+                                    {/* the business owner is the reportable "user" (moderation can act on accounts) */}
+                                    <ReportDialog open={reportOpen} onOpenChange={setReportOpen} targetType="user" targetId={vendor.owner_id} />
+                                </>
+                            )}
                             {vendor && service && (
                                 <QuoteRequestDialog open={quoteOpen} onOpenChange={setQuoteOpen} vendorId={vendor.id} vendorName={vendor.business_name} serviceId={service.id} serviceTitle={service.title} onRequested={() => push('/marketplace/quotes')} />
                             )}
@@ -188,8 +211,12 @@ const VendorServiceDetail = () => {
                             <div className="pt-6 border-t border-border mt-6">
                                 <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-4">Provided By</p>
                                 <div 
-                                    className="flex items-center gap-3 cursor-pointer hover:bg-secondary/20 p-2 rounded-xl transition-colors -mx-2"
+                                    role="link"
+                                    tabIndex={0}
+                                    aria-label={`View ${vendor.business_name}`}
+                                    className="flex items-center gap-3 cursor-pointer hover:bg-secondary/20 p-2 rounded-xl transition-colors -mx-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                                     onClick={() => push(`/vendors/${vendor.id}`)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); push(`/vendors/${vendor.id}`); } }}
                                 >
                                     <div className="w-12 h-12 bg-secondary/50 rounded-lg flex items-center justify-center shrink-0 border border-border">
                                         {vendor.logo_url ? (

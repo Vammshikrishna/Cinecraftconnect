@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowRight, Menu, X, WifiOff } from 'lucide-react';
 import AppLogo from '@/components/common/AppLogo';
 import { useScroll } from 'framer-motion';
 
 const LandingNavbar = () => {
+  const INK = '#111111';
+  const SOFT = '#555555';
+  const RULE = '#E5E5E3';
+  // the home page's hero uses the full screen width, so its navbar does too; the other public pages keep their narrower column
+  const wide = useLocation().pathname === '/';
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { scrollY } = useScroll();
@@ -40,19 +45,19 @@ const LandingNavbar = () => {
         right: 0,
         zIndex: 50,
         transition: 'all 0.3s ease',
-        background: scrolled ? 'rgba(248,245,240,0.92)' : 'transparent',
+        background: scrolled ? 'rgba(255,255,255,0.88)' : 'transparent',
         backdropFilter: scrolled ? 'blur(12px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(13,13,13,0.08)' : '1px solid transparent',
+        borderBottom: scrolled ? `1px solid ${RULE}` : '1px solid transparent',
       }}
     >
       {!isOnline && (
-        <div style={{ background: '#f97316', color: '#fff', fontSize: 11, fontFamily: "'Inconsolata', monospace", letterSpacing: '0.15em', textTransform: 'uppercase', padding: '8px 16px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <div style={{ background: '#FF4B33', color: '#fff', fontSize: 13, fontFamily: "'Work Sans', sans-serif", fontWeight: 500, padding: '8px 16px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <WifiOff size={12} />
-          Offline — login paused
+          You are offline. Sign-in is paused.
         </div>
       )}
 
-      <div style={{ maxWidth: 1440, margin: '0 auto', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ maxWidth: wide ? 1760 : 1440, margin: '0 auto', padding: wide ? '16px clamp(24px, 4vw, 80px)' : '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <AppLogo size="sm" textColor="ink" />
 
         {/* Desktop links */}
@@ -63,16 +68,14 @@ const LandingNavbar = () => {
               to={link.href}
               style={{
                 fontFamily: "'Work Sans', sans-serif",
-                fontSize: 13,
-                fontWeight: 600,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                color: 'rgba(13,13,13,0.6)',
+                fontSize: 15,
+                fontWeight: 500,
+                color: SOFT,
                 textDecoration: 'none',
                 transition: 'color 0.2s',
               }}
-              onMouseEnter={e => (e.currentTarget.style.color = '#0D0D0D')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(13,13,13,0.6)')}
+              onMouseEnter={e => (e.currentTarget.style.color = INK)}
+              onMouseLeave={e => (e.currentTarget.style.color = SOFT)}
             >
               {link.name}
             </Link>
@@ -83,33 +86,31 @@ const LandingNavbar = () => {
         <div className="hidden md:flex items-center gap-5">
           <Link
             to="/auth"
-            style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.55)', textDecoration: 'none' }}
+            style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 15, fontWeight: 500, color: INK, textDecoration: 'none' }}
           >
-            [ Sign In ]
+            Sign in
           </Link>
           <Link to="/register">
             <button
               style={{
-                background: '#0D0D0D',
-                color: '#F8F5F0',
+                background: '#111111',
+                color: '#FFFFFF',
                 fontFamily: "'Work Sans', sans-serif",
-                fontSize: 12,
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
+                fontSize: 14,
+                fontWeight: 600,
                 border: 'none',
-                padding: '11px 22px',
+                padding: '10px 18px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
                 transition: 'background 0.2s',
-                borderRadius: 4,
+                borderRadius: 10,
               }}
-              onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = '#f97316')}
-              onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = '#0D0D0D')}
+              onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = '#C4301B')}
+              onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = '#111111')}
             >
-              Join Now <ArrowRight size={13} />
+              Join now <ArrowRight size={14} />
             </button>
           </Link>
         </div>
@@ -118,7 +119,7 @@ const LandingNavbar = () => {
         <button
           className="md:hidden"
           onClick={() => setIsOpen(!isOpen)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0D0D0D', padding: 4 }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: INK, padding: 4 }}
         >
           {isOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
@@ -126,24 +127,24 @@ const LandingNavbar = () => {
 
       {/* Mobile menu */}
       {isOpen && (
-        <div style={{ background: '#F8F5F0', borderTop: '1px solid rgba(13,13,13,0.08)', padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ background: '#FFFFFF', borderTop: `1px solid ${RULE}`, padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
           {navLinks.map((link) => (
             <Link
               key={link.name}
               to={link.href}
               onClick={() => setIsOpen(false)}
-              style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(13,13,13,0.7)', textDecoration: 'none' }}
+              style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 16, fontWeight: 500, color: SOFT, textDecoration: 'none' }}
             >
               {link.name}
             </Link>
           ))}
-          <div style={{ height: 1, background: 'rgba(13,13,13,0.08)' }} />
-          <Link to="/auth" onClick={() => setIsOpen(false)} style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(13,13,13,0.6)', textDecoration: 'none' }}>
-            [ Sign In ]
+          <div style={{ height: 1, background: RULE }} />
+          <Link to="/auth" onClick={() => setIsOpen(false)} style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 16, fontWeight: 500, color: SOFT, textDecoration: 'none' }}>
+            Sign in
           </Link>
           <Link to="/register" onClick={() => setIsOpen(false)}>
-            <button style={{ width: '100%', background: '#0D0D0D', color: '#F8F5F0', fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', padding: '14px 22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 4 }}>
-              Join Community <ArrowRight size={15} />
+            <button style={{ width: '100%', background: '#111111', color: '#FFFFFF', fontFamily: "'Work Sans', sans-serif", fontSize: 15, fontWeight: 600, border: 'none', padding: '14px 22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 4 }}>
+              Join now <ArrowRight size={15} />
             </button>
           </Link>
         </div>

@@ -1,4 +1,8 @@
 import { orTerm } from '@/lib/postgrest';
+import { closeExpiredPitchCalls, friendlyError, canSubmitPitch, PITCH_ROLE_CAN_SUBMIT, sortInboxSubmissions } from '@cinecraft/core';
+
+// One rule for web and mobile lives in packages/core/src/pitch.ts (F-03/F-04).
+export { canSubmitPitch, PITCH_ROLE_CAN_SUBMIT };
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -313,37 +317,42 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
     const { user } = useAuth();
     const [submissions, setSubmissions] = useState<PitchSubmission[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
     const { toast } = useToast();
 
     const fetchSubmissions = useCallback(async () => {
-        if (!user) return;
-        setLoading(true);
+        if (!user) { setLoading(false); return; }
+        setError(false);
         try {
-            let query = supabase
+            let callIds: string[];
+            if (pitchCallId) {
+                callIds = [pitchCallId];
+            } else {
+                const { data: calls, error: callsError } = await (supabase as any)
+                    .from('pitch_calls')
+                    .select('id')
+                    .or(`creator_id.eq.${user.id},attachments->>target_producer_id.eq.${user.id}`);
+                if (callsError) throw callsError;
+                callIds = (calls || []).map((pc: any) => pc.id);
+            }
+            if (callIds.length === 0) { setSubmissions([]); return; }
+
+            const { data, error: subsError } = await supabase
                 .from('pitch_submissions')
                 .select(`
                     *,
                     profiles:submitter_id(full_name, avatar_url, username, craft, is_verified),
                     pitch_calls:pitch_call_id(title, project_type, nda_required, attachments)
                 `)
-                .in(
-                    'pitch_call_id',
-                    pitchCallId
-                        ? [pitchCallId]
-                        : (await (supabase as any)
-                            .from('pitch_calls')
-                            .select('id')
-                            .or(`creator_id.eq.${user.id},attachments->>target_producer_id.eq.${user.id}`)
-                            .then((r: any) => (r.data || []).map((pc: any) => pc.id)))
-                )
+                .in('pitch_call_id', callIds)
                 .order('created_at', { ascending: false });
-
-            const { data, error } = await query;
-            if (error) throw error;
-            setSubmissions(data as any || []);
-        } catch (error) {
-            console.error('Error fetching submissions:', error);
+            if (subsError) throw subsError;
+            setSubmissions(sortInboxSubmissions((data as any) || []));
+        } catch (err) {
+            console.error('Error fetching submissions:', err);
+            setError(true);
         } finally {
+            // only the first load shows the loading skeleton; later refreshes (a new pitch came in) update the list quietly
             setLoading(false);
         }
     }, [user?.id, pitchCallId]);
@@ -403,7 +412,7 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
         }
     };
 
-    return { submissions, loading, refetch: fetchSubmissions, updateStatus };
+    return { submissions, loading, error, refetch: fetchSubmissions, updateStatus };
 };
 
 // ─── CREATE PITCH CALL HOOK ─────────────────────────────────────────────────
@@ -425,7 +434,7 @@ export const useCreatePitchCall = () => {
             toast({ title: 'Pitch Call Published!', description: 'Your pitch call is now live.' });
             return created;
         } catch (error: any) {
-            toast({ title: 'Error', description: error.message || 'Failed to create pitch call.', variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(error, 'Failed to create pitch call.'), variant: 'destructive' });
             return null;
         } finally {
             setLoading(false);
@@ -460,7 +469,7 @@ export const useCreatePitchCall = () => {
             toast({ title: 'Pitch Call Updated!', description: 'Your changes have been saved.' });
             return updated;
         } catch (error: any) {
-            toast({ title: 'Error', description: error.message || 'Failed to update pitch call.', variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(error, 'Failed to update pitch call.'), variant: 'destructive' });
             return null;
         } finally {
             setLoading(false);
@@ -492,7 +501,7 @@ export const useSubmitPitch = () => {
             if (error.code === '23505') {
                 toast({ title: 'Already submitted', description: 'You have already submitted a pitch to this call.', variant: 'destructive' });
             } else {
-                toast({ title: 'Error', description: error.message || 'Failed to submit pitch.', variant: 'destructive' });
+                toast({ title: 'Error', description: friendlyError(error, 'Failed to submit pitch.'), variant: 'destructive' });
             }
             return null;
         } finally {
@@ -505,18 +514,12 @@ export const useSubmitPitch = () => {
 
 // Constants
 export const PITCH_ROLE_CAN_CREATE = ['producer', 'studio', 'production house', 'executive producer', 'creative head', 'showrunner'];
-export const PITCH_ROLE_CAN_SUBMIT = ['writer', 'screenwriter', 'director', 'creator', 'story developer', 'filmmaker'];
 
 export const canCreatePitchCall = (_craft?: string, accountType?: string): boolean => {
     // Only Creator Pro (handled as 'creator' in DB) and Studio accounts can create pitch calls.
     return accountType === 'studio' || accountType === 'creator';
 };
 
-export const canSubmitPitch = (craft?: string, accountType?: string): boolean => {
-    if (accountType === 'creator') return true;
-    if (!craft) return false;
-    return PITCH_ROLE_CAN_SUBMIT.some(r => craft.toLowerCase().includes(r.toLowerCase()));
-};
 
 export const PITCH_STATUS_LABELS: Record<string, { label: string; color: string }> = {
     submitted: { label: 'Submitted', color: 'text-blue-500 bg-blue-500/10' },
@@ -528,5 +531,6 @@ export const PITCH_STATUS_LABELS: Record<string, { label: string; color: string 
     invite_to_discuss: { label: 'Invited to Discuss', color: 'text-primary bg-primary/10' },
     passed: { label: 'Passed', color: 'text-muted-foreground bg-muted' },
     closed: { label: 'Closed', color: 'text-muted-foreground bg-muted' },
+    withdrawn: { label: 'Withdrawn', color: 'text-muted-foreground bg-muted' },
     collaborating: { label: 'Collaborating', color: 'text-green-500 bg-green-500/10' },
 };

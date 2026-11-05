@@ -14,11 +14,11 @@ export const LoadingSpinner = ({ size = "md", className }: LoadingSpinnerProps) 
   };
 
   return (
-    <div className={cn("flex items-center justify-center", className)}>
+    <div className={cn("flex items-center justify-center", className)} role="status" aria-live="polite">
       <img loading="lazy" decoding="async" 
-        src="/logo.png" 
-        alt="Loading..." 
-        className={cn("animate-logo-motion object-contain rounded-full shadow-sm bg-white p-0.5", sizeClasses[size])}
+        src="/logo-192.png"
+        alt=""
+        className={cn("animate-logo-motion object-contain rounded-full", sizeClasses[size])}
       />
       <span className="sr-only">Loading...</span>
     </div>

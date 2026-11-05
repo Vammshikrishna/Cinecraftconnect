@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, Bell, Flag, ArrowLeft } from 'lucide-react';
+import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Bell, Flag } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
@@ -37,6 +37,11 @@ import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
 import { decryptWithPrivateKey, importSymmetricKey, decryptGroupMessage, generateGroupKey, exportSymmetricKey, importPublicKey, encryptWithPublicKey } from '@/lib/e2ee';
 import { syncGroupKeyToNative } from '@/lib/e2ee-bridge';
 import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
+import { friendlyError } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
+import { PrivateRoomAccessPanel } from '@/components/discussions/PrivateRoomAccessPanel';
+import { validateRoomForm, ROOM_TITLE_MAX, ROOM_DESCRIPTION_MAX } from '@/components/discussions/roomForm';
+import { LoadError } from '@/components/settings/LoadError';
 
 // --- DATA INTERFACES ---
 
@@ -362,10 +367,13 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     }
   }, [roomId]);
 
-  const { data: discussionData, isLoading: loading, refetch: fetchData } = useQuery({
-    queryKey: ['discussion-rooms', user?.id],
+  const { data: discussionData, isLoading: loading, isError: loadFailed, refetch: fetchData } = useQuery({
+    queryKey: ['discussion-rooms', user?.id, isInternal],
+    enabled: !roleLoading,
     queryFn: async () => {
       const [roomsRes, categoriesRes] = await Promise.all([
+        // staff get the room list without message text; everyone else also gets each room's latest message
+        ((q: any) => (isInternal ? q : q.order('created_at', { foreignTable: 'room_messages', ascending: false })))(
         supabase
           .from('discussion_rooms')
           .select(`
@@ -379,10 +387,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             member_count, 
             room_categories(name), 
             tags,
-            settings,
-            room_messages(content, created_at, profiles(id, full_name, username, is_verified))
-          `)
-          .order('created_at', { foreignTable: 'room_messages', ascending: false }),
+            settings${isInternal ? '' : ', room_messages(content, created_at, profiles(id, full_name, username, is_verified))'}
+          `)),
         supabase.from('room_categories').select('id, name')
       ]);
 
@@ -408,6 +414,17 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           } : null
         };
       });
+
+      // The card shows the live number of members, counted from room_members (the stored counter can drift)
+      try {
+        const { data: counts } = await (supabase as any).rpc('room_member_counts', { p_room_ids: formattedRooms.map((r: any) => r.id) });
+        if (Array.isArray(counts)) {
+          const live = new Map<string, number>(counts.map((c: any) => [c.room_id, Number(c.member_count)]));
+          formattedRooms.forEach((r: any) => { if (live.has(r.id)) r.member_count = live.get(r.id) as number; });
+        }
+      } catch {
+        // part BH is not installed yet: keep the stored count
+      }
 
       // Fetch active calls for discussion rooms
       const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
@@ -492,7 +509,11 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
     const channel = supabase.channel('discussion-rooms-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'discussion_rooms' }, debouncedRefresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, () => {
+        // someone joined or left: show the new number quickly
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => queryClient.invalidateQueries({ queryKey: ['discussion-rooms'] }), 600);
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_categories' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_messages' }, debouncedRefresh)
@@ -509,6 +530,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     const handleWindowMessage = async (e: any) => {
       const newMsg = e.detail;
       if (!newMsg || !newMsg.room_id) return;
+      if (isInternal) return; // staff see no message text in the list
 
       // 1. Get cached profile or use default immediately
       const cachedProfile = sidebarProfileCache.get(newMsg.user_id);
@@ -692,15 +714,31 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     return () => mql.removeEventListener('change', handler);
   }, []);
 
+  if ((isResolvingDeepLink || checkingAccess || roleLoading) && typeof window !== 'undefined' && window.location.pathname.endsWith('/chat')) {
+    return (
+      <div className="fixed inset-0 lg:left-[72px] bg-background flex flex-col z-30" role="status" aria-label="Opening chat">
+        <div className="h-16 border-b border-border/40 flex items-center gap-3 px-4">
+          <EnhancedSkeleton className="h-9 w-9 rounded-full" />
+          <EnhancedSkeleton className="h-5 w-40" />
+        </div>
+        <div className="flex-1 p-4 space-y-4">
+          <EnhancedSkeleton className="h-12 w-2/3 rounded-2xl" />
+          <EnhancedSkeleton className="h-12 w-1/2 rounded-2xl ml-auto" />
+          <EnhancedSkeleton className="h-16 w-3/5 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
   if (isResolvingDeepLink || checkingAccess || roleLoading) {
     return (
-      <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
-        <div className="container mx-auto pt-16 pb-24">
+      <div className="min-h-dvh bg-background text-foreground p-4 sm:p-6 lg:p-8">
+        <div className="w-full max-w-[1560px] mx-auto px-4 md:px-8 pt-16 pb-24">
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <EnhancedSkeleton className="h-10 w-64" />
             <EnhancedSkeleton className="h-10 w-32" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-6">
             {[...Array(8)].map((_, i) => <CardSkeleton key={i} />)}
           </div>
         </div>
@@ -717,17 +755,17 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   // --- Instagram-style Desktop Layout (Only when a room is selected) ---
   if (isDesktopLayout && activeRoom) {
     return (
-      <div className="h-screen w-full flex flex-col pt-16 bg-background overflow-hidden">
+      <div className="fixed inset-0 lg:left-[72px] z-30 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex overflow-hidden">
           {!(isInCall && !isCallMinimized) && (
-            <div className="w-[350px] lg:w-[400px] border-r border-border flex flex-col bg-card/40 backdrop-blur-xl shrink-0 animate-in slide-in-from-left duration-300">
+            <div className="w-[350px] lg:w-[400px] border-r border-border flex flex-col bg-card/40 shrink-0 animate-in slide-in-from-left duration-300">
               <div className="p-6 border-b border-border space-y-4">
                 <div className="flex items-center justify-between">
                   <BackButton label="DISCUSSIONS" to="/discussion-rooms" />
                   {!isFan && !isInternal && (
                     <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
                       <DialogTrigger asChild>
-                        <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
+                        <Button aria-label="Add" size="icon" variant="ghost" className="h-8 w-8 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
                           <PlusCircle size={18} />
                         </Button>
                       </DialogTrigger>
@@ -796,7 +834,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                         key={room.id}
                         onClick={() => handleRoomJoin(room)}
                         className={cn(
-                          "w-full text-left p-4 rounded-2xl transition-all duration-300 group relative border border-transparent",
+                          "w-full text-left p-4 rounded-2xl transition-colors duration-200 group relative border border-transparent",
                           activeRoom?.id === room.id
                             ? "bg-primary/10 border-primary/20 shadow-sm"
                             : "hover:bg-muted/50 hover:border-border/30"
@@ -812,18 +850,18 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                               <span className="truncate">{room.title}</span>
                             </h3>
                             {hasUnread && (
-                              <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+                              <span className="flex h-2 w-2 rounded-full bg-primary shrink-0" />
                             )}
                           </div>
                           <div className="flex items-center gap-1.5">
                             {Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(room.id) && (
-                              <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                              <div className="h-2 w-2 rounded-full bg-red-500" aria-label="Live call" />
                             )}
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
                           <p className="text-xs text-muted-foreground line-clamp-1 opacity-70 flex items-center gap-1 min-w-0">
-                            {room.last_message ? (
+                            {room.last_message && !isInternal ? (
                               <>
                                 <span className="font-bold shrink-0">{room.last_message.sender_name}</span>
                                 {room.last_message.is_verified && (
@@ -837,15 +875,17 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                           </p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                          {!isInternal && (
+                          <div className="flex items-center gap-1 text-[12px] font-bold text-muted-foreground">
                             <Users className="h-3 w-3" />
                             {room.member_count}
                           </div>
-                          <Badge variant="secondary" className="bg-muted text-[9px] px-1.5 py-0 rounded-md border-0 h-4">
+                          )}
+                          <Badge variant="secondary" className="bg-muted text-xs px-1.5 py-0 rounded-md border-0 h-5">
                             {room.room_categories?.name || 'General'}
                           </Badge>
                           {room.room_type === 'private' && (
-                            <Lock className="h-2.5 w-2.5 text-amber-500" />
+                            <Lock className="h-3 w-3 text-amber-500" />
                           )}
                         </div>
                         {activeRoom?.id === room.id && (
@@ -882,6 +922,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                 onRoomUpdated={handleRoomUpdated}
                 showBackButton={isInCall && !isCallMinimized}
                 initialGrantedAccess={isInternal && hasAccess}
+                onObserverEnded={() => setHasAccess(false)}
               />
             ) : isInternal ? (
               <SpaceEscalationPanel
@@ -924,7 +965,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     if (!hasAccess) {
       return (
         <div className={cn(
-          "fixed inset-0 pt-[env(safe-area-inset-top)] lg:pt-16 bg-background overflow-hidden flex flex-col z-40 pb-[env(safe-area-inset-bottom)]"
+          "fixed inset-0 lg:left-[72px] pt-[env(safe-area-inset-top)] bg-background overflow-hidden flex flex-col z-30 pb-[env(safe-area-inset-bottom)]"
         )}>
           {isInternal ? (
             <SpaceEscalationPanel
@@ -948,7 +989,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
     return (
       <div className={cn(
-        "fixed inset-0 pt-[env(safe-area-inset-top)] lg:pt-16 bg-background overflow-hidden flex flex-col z-40",
+        "fixed inset-0 lg:left-[72px] pt-[env(safe-area-inset-top)] bg-background overflow-hidden flex flex-col z-30 animate-in slide-in-from-right-8 fade-in duration-200 lg:animate-none",
         (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[env(safe-area-inset-bottom)]"
       )}>
         <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
@@ -965,6 +1006,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           onClose={() => push('/discussion-rooms', { noScroll: true })}
           onRoomUpdated={handleRoomUpdated}
           initialGrantedAccess={isInternal && hasAccess}
+                onObserverEnded={() => setHasAccess(false)}
         />
       </div>
     );
@@ -972,12 +1014,12 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
   // --- Mobile List View ---
   return (
-    <div className="min-h-screen bg-background text-foreground pt-20">
+    <div className="min-h-dvh bg-background text-foreground pt-20">
       <SEO
         title="Discussion Hub"
         description="Join real-time conversations with film crews and creators. Discuss projects, share techniques, and network with industry professionals."
       />
-      <div className="max-w-7xl mx-auto px-4 md:px-8 pb-36">
+      <div className="max-w-[1560px] mx-auto px-4 md:px-8 pb-36">
         {/* Header and Controls */}
         <PageHeader
           title="Discussion Rooms"
@@ -989,7 +1031,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             !isFan && !isInternal ? (
               <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
                 <DialogTrigger asChild>
-                  <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
+                  <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 active:scale-[0.97] transition-transform">
                     <PlusCircle size={20} />
                     <span>Create Room</span>
                   </Button>
@@ -1010,15 +1052,15 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         />
 
         {/* Featured Rooms */}
-        <section className="mb-12">
+        {rooms.length >= 7 && !searchQuery && <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-3 sm:gap-6">
             {featuredRooms
               // Hide private rooms from fans in the featured section
               .filter(room => !(isFan && room.room_type === 'private'))
-              .map(room => <RoomCard key={room.id} room={room} isActive={Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} onReport={(r) => { setReportData({ id: r.id, title: r.title }); setIsReportOpen(true); }} />)}
+              .map(room => <RoomCard key={room.id} room={room} isMember={joinedRoomIds.has(room.id)} isActive={Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} onReport={(r) => { setReportData({ id: r.id, title: r.title }); setIsReportOpen(true); }} />)}
           </div>
-        </section>
+        </section>}
 
         {/* All Rooms Section */}
         <section>
@@ -1069,16 +1111,20 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             }
           />
 
+          {loadFailed && rooms.length === 0 && !loading && (
+            <LoadError title="Could not load discussion rooms" onRetry={() => { fetchData(); }} className="mb-6" />
+          )}
+
           {/* Rooms Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-6">
             {filteredAndSortedRooms
               // Hide private rooms from fans in the listing
               .filter(room => !(isFan && room.room_type === 'private'))
               .map(room => <RoomCard key={room.id} room={room} isMember={joinedRoomIds.has(room.id)} isActive={Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} onReport={(r) => { setReportData({ id: r.id, title: r.title }); setIsReportOpen(true); }} />)}
           </div>
-          {filteredAndSortedRooms.length === 0 && !loading && (
+          {filteredAndSortedRooms.length === 0 && !loading && !loadFailed && (
             <div className="text-center col-span-full py-12">
-              <p className="text-muted-foreground text-lg">No rooms found matching your criteria.</p>
+              <p className="text-muted-foreground text-lg">{rooms.length === 0 ? 'No discussion rooms yet.' : 'No rooms match your search or filters.'}</p>
             </div>
           )}
         </section>
@@ -1106,7 +1152,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           <ReportDialog
             isOpen={isReportOpen}
             onOpenChange={setIsReportOpen}
-            targetType="discussion"
+            targetType="room"
             targetId={reportData.id}
             targetTitle={reportData.title}
           />
@@ -1121,6 +1167,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
   const { user } = useAuth();
   const { toast } = useToast();
   const { unreadDiscussionIds } = useUnreadMessages();
+  const { isInternal } = useAppRole();
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setDeleting] = useState(false);
   const [isRoomMember, setIsRoomMember] = useState(isMember || false);
@@ -1170,7 +1217,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
       onDelete(room.id);
       setDeleteDialogOpen(false);
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "Error", description: friendlyError(error), variant: "destructive" });
     } finally {
       setDeleting(false);
     }
@@ -1179,6 +1226,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
   const timeAgo = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
     if (mins < 60) return `${mins}m ago`;
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `${hrs}h ago`;
@@ -1194,9 +1242,9 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
       onClick={() => onJoin(room)}
     >
       <div className={cn(
-        "glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2 group-hover:border-primary/40",
+        "glass-card-premium h-full flex flex-col transition-transform duration-300 [@media(hover:hover)]:hover:-translate-y-1 group-hover:border-primary/40",
         hasUnread
-          ? "border-red-500/50 shadow-lg shadow-red-500/20"
+          ? "border-primary/50 shadow-lg shadow-primary/10"
           : ""
       )}>
 
@@ -1204,13 +1252,13 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
         <div className={cn(
           "absolute top-0 left-0 right-0 h-1 transition-opacity duration-500",
           hasUnread
-            ? "bg-gradient-to-r from-red-500 to-transparent opacity-100"
+            ? "bg-gradient-to-r from-primary to-transparent opacity-100"
             : "bg-gradient-to-r from-primary/60 via-primary/30 to-transparent opacity-0 group-hover:opacity-100"
         )} />
 
         {/* Unread Glow */}
         {hasUnread && (
-          <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/10 blur-2xl rounded-full -mr-12 -mt-12 animate-pulse" />
+          <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 blur-2xl rounded-full -mr-12 -mt-12" />
         )}
 
         <div className="p-5 flex flex-col flex-1">
@@ -1218,39 +1266,29 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
           <div className="flex justify-between items-start mb-3">
             <div className="flex items-center gap-2 pr-2 flex-1">
               <h3 className={cn(
-                "font-serif text-2xl font-bold tracking-tight line-clamp-2 break-all duration-300 flex items-center",
-                hasUnread ? "text-red-400" : "text-foreground group-hover:text-primary transition-colors"
+                "font-serif text-xl font-semibold tracking-tight line-clamp-2 break-words duration-300 flex items-center",
+                hasUnread ? "text-foreground font-bold" : "text-foreground group-hover:text-primary transition-colors"
               )}>
                 {room.settings?.roomEmoji && <span className="mr-2 text-2xl shrink-0">{room.settings.roomEmoji}</span>}
                 <span className="line-clamp-2">{room.title}</span>
               </h3>
               {hasUnread && (
-                <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse shrink-0" />
+                <span className="flex h-2.5 w-2.5 rounded-full bg-primary shrink-0" aria-label="Unread messages" />
               )}
             </div>
-            {isActive && (
-              <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0 animate-pulse">
-                <Radio className="h-3 w-3" />
-                ACTIVE
-              </span>
-            )}
             {canManage && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
+                  <Button aria-label="More options"
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0 -mt-0.5"
+                    className="h-11 w-11 -mt-2 -mr-2 text-muted-foreground hover:text-foreground shrink-0"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-popover border-border" onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenuItem onClick={() => { /* Edit logic if needed */ }} className="cursor-pointer">
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit Room
-                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => { setDeleteDialogOpen(true); }}
                     className="cursor-pointer text-destructive focus:text-destructive"
@@ -1259,7 +1297,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
                     Delete Room
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onShare?.(room)} className="cursor-pointer">
-                    <Share2 className="h-4 w-4 mr-2" />
+                    <ShareIcon className="h-4 w-4 mr-2" />
                     Share Room
                   </DropdownMenuItem>
                   <DropdownMenuItem
@@ -1273,61 +1311,75 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
               </DropdownMenu>
             )}
             {!canManage && (
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-primary shrink-0 -mt-0.5 relative z-10"
-                  onClick={(e) => { e.stopPropagation(); onShare?.(room); }}
-                >
-                  <Share2 className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-red-500 shrink-0 -mt-0.5 relative z-10"
-                  onClick={(e) => { e.stopPropagation(); onReport?.(room); }}
-                >
-                  <Flag className="h-4 w-4" />
-                </Button>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button aria-label="More options"
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 -mt-2 -mr-2 text-muted-foreground hover:text-foreground shrink-0 relative z-10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-popover border-border" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem onClick={() => onShare?.(room)} className="cursor-pointer min-h-[44px] md:min-h-0">
+                    <ShareIcon className="h-4 w-4 mr-2" />
+                    Share Room
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onReport?.(room)} className="cursor-pointer min-h-[44px] md:min-h-0 text-amber-600 focus:text-amber-600">
+                    <Flag className="h-4 w-4 mr-2" />
+                    Report Room
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
 
-          {/* Category & Time Row */}
+          {/* Category, privacy, age */}
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <div
+            <span
               className={cn(
-                "font-mono transition-all uppercase text-[10px] tracking-widest font-bold px-2 py-1 rounded border border-primary/20",
-                hasUnread ? "bg-red-500/10 text-red-400" : "bg-primary/5 text-primary"
+                "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                hasUnread ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-muted text-foreground/80"
               )}
             >
-              CATEGORY // {categoryName}
-            </div>
+              {categoryName}
+            </span>
             {room.room_type === 'private' && (
-              <div className="font-mono whitespace-nowrap text-[10px] tracking-widest font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded px-2 py-1">
-                TYPE // PRIVATE
-              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                <Lock className="h-3 w-3" aria-hidden="true" />
+                Private
+              </span>
             )}
-            <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1 ml-auto">
+            {isActive && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
+                <Radio className="h-3 w-3" aria-hidden="true" />
+                Active
+              </span>
+            )}
+            <span className="text-xs text-muted-foreground ml-auto">
               {timeAgo(room.created_at)}
             </span>
           </div>
 
           {/* Description */}
-          <p className="text-sm text-muted-foreground/80 line-clamp-2 leading-relaxed mb-4 flex-1">
+          <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed mb-4 flex-1">
             {room.description || 'No description available.'}
           </p>
 
-          {/* Members/Notification Row */}
+          {/* Members / unread */}
           <div className="flex items-center justify-between mt-auto mb-4">
-            <div className="font-mono text-[10px] font-bold uppercase tracking-widest bg-muted/10 border border-border/40 text-muted-foreground px-2 py-1 rounded">
-              MEMBERS // {room.member_count}
-            </div>
+            {isInternal ? <span /> : (
+            <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Users className="h-4 w-4" aria-hidden="true" />
+              {room.member_count} {room.member_count === 1 ? 'member' : 'members'}
+            </span>
+            )}
             {hasUnread && (
-              <span className="text-[10px] font-black text-red-500 animate-pulse flex items-center gap-1">
-                <Bell size={12} fill="currentColor" />
-                NEW MESSAGE
+              <span className="text-xs font-semibold text-primary flex items-center gap-1">
+                <Bell size={12} fill="currentColor" aria-hidden="true" />
+                New message
               </span>
             )}
           </div>
@@ -1337,13 +1389,13 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive, isMembe
             <div className="flex gap-2">
               <Button
                 className={cn(
-                  "flex-1 font-semibold rounded-xl h-10 transition-all active:scale-[0.98] group-hover:scale-[1.02]",
+                  "flex-1 font-semibold rounded-xl h-10 transition active:scale-[0.98]",
                   hasUnread
-                    ? "bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20"
-                    : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg"
+                    ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20"
+                    : "bg-primary/10 text-primary hover:bg-primary/15"
                 )}
               >
-                {hasUnread ? <Bell size={18} className="mr-2 animate-bounce" /> : <DiscussionRoomIcon size={22} className="mr-2" />}
+                {hasUnread ? <Bell size={18} className="mr-2" /> : <DiscussionRoomIcon size={22} className="mr-2" />}
                 {hasUnread ? "View Messages" : (user?.id && (room.creator_id === user.id || isRoomMember)) ? "Enter Room" : "Join Discussion Room"}
               </Button>
             </div>
@@ -1393,8 +1445,9 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !categoryId || !user) {
-      toast({ title: "Validation Error", description: "Please fill in all required fields.", variant: "destructive" });
+    const checked = validateRoomForm({ title, description, categoryId });
+    if (checked.ok === false || !user) {
+      toast({ title: "Validation Error", description: checked.ok === false ? checked.message : 'Please sign in.', variant: "destructive" });
       return;
     }
     setSubmitting(true);
@@ -1403,8 +1456,8 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
       const { data: newRoomId, error: rpcError } = await supabase.rpc('create_discussion_room_with_creator' as any, {
         c_id: user.id,
         cat_id: categoryId,
-        room_title: title,
-        room_description: description,
+        room_title: checked.title,
+        room_description: checked.description,
         type: isPrivate ? 'private' : 'public',
         room_tags: [] // Pass empty array for now
       });
@@ -1462,7 +1515,7 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
       onRoomCreated(finalRoomObject);
       closeModal();
     } catch (error: any) {
-      toast({ title: "Error creating room", description: error.message, variant: "destructive" });
+      toast({ title: "Error creating room", description: friendlyError(error), variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -1479,11 +1532,11 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="name" className="block text-sm font-medium mb-1 text-foreground">Room Name *</label>
-          <Input id="name" value={title} onChange={e => setTitle(e.target.value)} className="glass-input" />
+          <Input id="name" value={title} maxLength={ROOM_TITLE_MAX} onChange={e => setTitle(e.target.value)} className="glass-input" />
         </div>
         <div>
           <label htmlFor="description" className="block text-sm font-medium mb-1 text-foreground">Description</label>
-          <Input id="description" value={description} onChange={e => setDescription(e.target.value)} className="glass-input" />
+          <Input id="description" value={description} maxLength={ROOM_DESCRIPTION_MAX} onChange={e => setDescription(e.target.value)} className="glass-input" />
         </div>
         <div>
           <label htmlFor="category" className="block text-sm font-medium mb-1 text-foreground">Category *</label>
@@ -1513,6 +1566,7 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
             <Switch
               checked={isPrivate}
               onCheckedChange={setIsPrivate}
+              aria-label="Make this room private"
             />
           </div>
         </div>
@@ -1525,164 +1579,6 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
         </DialogFooter>
       </form>
     </DialogContent>
-  );
-};
-
-// --- PRIVATE ROOM ACCESS PANEL ---
-const PrivateRoomAccessPanel = ({
-  roomId,
-  roomTitle,
-  roomDescription,
-  onClose,
-  showBackButton = false
-}: {
-  roomId: string;
-  roomTitle: string;
-  roomDescription: string | null;
-  onClose: () => void;
-  showBackButton?: boolean;
-}) => {
-  const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'loading'>('loading');
-  const { user } = useAuth();
-  const { push } = useAppNavigation();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    const checkRequestStatus = async () => {
-      if (!user) {
-        setRequestStatus('none');
-        return;
-      }
-      if (!roomId) return;
-      try {
-        const { data, error } = await supabase
-          .from('room_join_requests')
-          .select('status')
-          .eq('room_id', roomId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (data) {
-          setRequestStatus('pending');
-        } else {
-          setRequestStatus('none');
-        }
-      } catch (err) {
-        console.error('Error checking join request status:', err);
-        setRequestStatus('none');
-      }
-    };
-    checkRequestStatus();
-  }, [user, roomId]);
-
-  const handleRequestAccess = async () => {
-    if (!user) {
-      toast({
-        title: 'Sign in required',
-        description: 'Redirecting to sign in page...',
-        variant: 'destructive'
-      });
-      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
-      return;
-    }
-    if (!roomId) return;
-    try {
-      setRequestStatus('loading');
-      const { error } = await supabase
-        .from('room_join_requests')
-        .insert({
-          room_id: roomId,
-          user_id: user.id,
-          status: 'pending'
-        });
-
-      if (error) throw error;
-
-      setRequestStatus('pending');
-      toast({
-        title: "Request Sent",
-        description: "Your request to join this private room has been sent to the admin.",
-      });
-    } catch (err: any) {
-      console.error('Error sending join request:', err);
-      toast({
-        title: "Request Failed",
-        description: err.message,
-        variant: "destructive",
-      });
-      setRequestStatus('none');
-    }
-  };
-
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background relative select-none animate-in fade-in duration-300">
-      {showBackButton && (
-        <div className="absolute top-4 left-4 z-10">
-          <Button
-            variant="ghost"
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground flex items-center gap-2 hover:bg-white/5 rounded-xl px-4 h-10"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="font-bold text-xs uppercase tracking-wider">Back</span>
-          </Button>
-        </div>
-      )}
-
-      <div className="w-full max-w-md p-8 rounded-3xl glass-card-premium border border-white/10 shadow-2xl relative overflow-hidden flex flex-col items-center text-center space-y-6">
-        {/* Glow Accent */}
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-3xl rounded-full -mr-16 -mt-16" />
-        <div className="absolute bottom-0 left-0 w-32 h-32 bg-primary/5 blur-3xl rounded-full -ml-16 -mb-16" />
-
-        {/* Animated Lock Icon */}
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 relative shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]">
-          <div className="absolute inset-0 rounded-full bg-primary/5 animate-ping duration-1000 opacity-60" />
-          <Lock className="w-10 h-10 text-primary" />
-        </div>
-
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black tracking-tight text-foreground">Private Room</h2>
-          <p className="text-sm font-bold text-primary uppercase tracking-widest">{roomTitle}</p>
-        </div>
-
-        {roomDescription && (
-          <p className="text-sm text-muted-foreground leading-relaxed px-2 bg-white/5 border border-white/5 rounded-2xl py-3 w-full">
-            "{roomDescription}"
-          </p>
-        )}
-
-        <div className="w-full pt-4 border-t border-border/40">
-          {requestStatus === 'loading' ? (
-            <Button disabled className="w-full h-12 rounded-xl flex items-center justify-center font-bold text-sm bg-primary/80">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Checking status...
-            </Button>
-          ) : requestStatus === 'pending' ? (
-            <div className="space-y-3 w-full">
-              <Button disabled className="w-full h-12 rounded-xl font-bold text-sm bg-muted text-muted-foreground border border-border/30 cursor-not-allowed">
-                Request Pending
-              </Button>
-              <p className="text-[11px] text-muted-foreground font-semibold">
-                Your request is awaiting admin approval. You will be notified once approved.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3 w-full">
-              <Button
-                onClick={handleRequestAccess}
-                className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all duration-300"
-              >
-                Request to Join
-              </Button>
-              <p className="text-[11px] text-muted-foreground">
-                This room requires admin permission to join.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
   );
 };
 

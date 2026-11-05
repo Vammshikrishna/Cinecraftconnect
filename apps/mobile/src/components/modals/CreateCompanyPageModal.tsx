@@ -12,9 +12,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { ImagePickerBox } from '../common/ImagePickerBox';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
+import { pageDetailsProblem } from '../../utils/pageDetails';
 
 const ORANGE = '#FF4B33';
 
@@ -65,6 +68,7 @@ export const CreateCompanyPageModal: React.FC<CreateCompanyPageModalProps> = ({
   onCreated,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [step, setStep] = useState<1 | 2>(1);
 
   // Step 1 state
@@ -128,6 +132,11 @@ export const CreateCompanyPageModal: React.FC<CreateCompanyPageModalProps> = ({
       Alert.alert('Missing Name', 'Please enter studio or company page name.');
       return;
     }
+    const problem = pageDetailsProblem({ foundedYear, website, email, phone });
+    if (problem) {
+      Alert.alert('Check the page details', problem);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -178,7 +187,7 @@ export const CreateCompanyPageModal: React.FC<CreateCompanyPageModalProps> = ({
         `"${name.trim()}" is now published and active.`
       );
     } catch (e: any) {
-      Alert.alert('Failed to Create Page', e.message || 'Could not create company page. Please try again.');
+      Alert.alert('Failed to Create Page', friendlyError(e, 'Could not create company page. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -189,7 +198,7 @@ export const CreateCompanyPageModal: React.FC<CreateCompanyPageModalProps> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}>
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
               
               {/* HEADER & STEP INDICATOR */}
@@ -202,8 +211,8 @@ export const CreateCompanyPageModal: React.FC<CreateCompanyPageModalProps> = ({
                     {step === 1 ? 'Basic identity, logo & industry sector' : 'Contact info, company size & specialties'}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -212,7 +221,7 @@ export const CreateCompanyPageModal: React.FC<CreateCompanyPageModalProps> = ({
                 <View style={[styles.progressBar, { width: step === 1 ? '50%' : '100%' }]} />
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad + 8 }}>
                 {step === 1 ? (
                   <>
                     {/* STEP 1 FIELDS */}
@@ -410,7 +419,7 @@ export const CreateCompanyPageModal: React.FC<CreateCompanyPageModalProps> = ({
                           <View key={index} style={[styles.tagBadge, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
                             <Text style={[styles.tagBadgeText, { color: themeColors.textPrimary }]}>{spec}</Text>
                             <TouchableOpacity onPress={() => removeSpecialty(index)}>
-                              <Text style={{ color: ORANGE, fontWeight: '900', marginLeft: 4 }}>×</Text>
+                              <Text style={{ color: ORANGE, fontWeight: '700', marginLeft: 4 }}>×</Text>
                             </TouchableOpacity>
                           </View>
                         ))}
@@ -460,6 +469,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     maxHeight: '90%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -475,11 +487,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   progressTrack: {
@@ -493,8 +505,8 @@ const styles = StyleSheet.create({
     backgroundColor: ORANGE,
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 4,
@@ -524,7 +536,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   rowTwoCol: {
@@ -545,7 +557,7 @@ const styles = StyleSheet.create({
   },
   addTagBtnText: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
     fontSize: 12,
   },
   tagsContainer: {
@@ -563,7 +575,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   tagBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   nextBtn: {
@@ -576,8 +588,8 @@ const styles = StyleSheet.create({
   },
   nextBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   stepActionsRow: {
     flexDirection: 'row',
@@ -606,8 +618,8 @@ const styles = StyleSheet.create({
   },
   postBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

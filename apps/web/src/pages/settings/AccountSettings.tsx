@@ -1,17 +1,21 @@
+import { confirmDialog } from '@/lib/confirmDialog';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppNavigation } from '@/contexts/NavigationContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from '@/contexts/AuthContext';
+import { SavedSessionExpiredError, savedSessionExpiredUrl } from '@/lib/auth/savedSessionExpired';
 import { useToast } from '@/hooks/use-toast';
-import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, Plus, Loader2 } from 'lucide-react';
+import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Check, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, Plus, Loader2, Sparkles, Wallet, ChevronRight } from 'lucide-react';
+import { useAppRole } from '@/hooks/useAppRole';
+import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAccountType } from '@/hooks/useAccountType';
-import { BackButton } from '@/components/common/BackButton';
+import { SettingsPageHeader, SettingsSection, SettingsNote } from '@/components/settings/SettingsUI';
 import { useScrollToHash } from '@/components/settings/SettingsUI';
 import {
     AlertDialog,
@@ -25,14 +29,17 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { friendlyError } from '@cinecraft/core';
 
 const AccountSettings = () => {
     useScrollToHash();
-    const { push } = useAppNavigation();
-    const { signOut, user, savedAccounts, switchAccount, addAccount, removeAccount } = useAuth();
+    const { push, replace } = useAppNavigation();
+    const queryClient = useQueryClient();
+    const { signOut, refreshProfile, user, savedAccounts, switchAccount, addAccount, removeAccount } = useAuth();
     const { toast } = useToast();
     const [isSigningOut, setIsSigningOut] = useState(false);
     const { accountType } = useAccountType();
+    const { isModerator, isAdmin, isSuperAdmin } = useAppRole();
     const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
     const [switchingAccId, setSwitchingAccId] = useState<string | null>(null);
 
@@ -50,6 +57,11 @@ const AccountSettings = () => {
                 description: `Now logged in as @${username}`,
             });
         } catch (e: any) {
+            if (e instanceof SavedSessionExpiredError) {
+                // show the message on the sign-in page, with the email filled in
+                window.location.href = savedSessionExpiredUrl(e.email);
+                return;
+            }
             toast({
                 title: "Switch Failed",
                 description: "Failed to switch account: " + (e?.message || 'Unknown error'),
@@ -61,14 +73,16 @@ const AccountSettings = () => {
     };
 
     // Verification state
-    const [verificationStatus, setVerificationStatus] = useState<'none' | 'pending' | 'verified' | 'rejected'>('none');
+    const [verificationStatus, setVerificationStatus] = useState<'none' | 'pending' | 'under_review' | 'approved' | 'verified' | 'rejected' | 'revoked'>('none');
+    // Verified badge: only Creator accounts can apply (Fan and Studio accounts have no badge).
+    const canApplyForBadge = accountType === 'creator';
     const [verifyForm, setVerifyForm] = useState({ full_legal_name: '', request_type: 'creator', reason: '' });
     const [isSubmittingVerification, setIsSubmittingVerification] = useState(false);
     const [rejectionReason, setRejectionReason] = useState<string | null>(null);
     const [verificationLoaded, setVerificationLoaded] = useState(false);
 
     useEffect(() => {
-        if (!user) return;
+        if (!user || !canApplyForBadge) return;
         const checkVerification = async () => {
             const { data: profile } = await (supabase as any).from('profiles').select('is_verified').eq('id', user.id).maybeSingle();
             if (profile?.is_verified) { setVerificationStatus('verified'); setVerificationLoaded(true); return; }
@@ -81,10 +95,11 @@ const AccountSettings = () => {
             setVerificationLoaded(true);
         };
         checkVerification();
-    }, [user]);
+    }, [user, canApplyForBadge]);
 
     const handleSubmitVerification = async () => {
-        if (!user || !verifyForm.full_legal_name.trim() || !verifyForm.reason.trim()) {
+        if (!canApplyForBadge) return;
+        if (!user ||!verifyForm.full_legal_name.trim() || !verifyForm.reason.trim()) {
             toast({ title: 'Fill all fields', variant: 'destructive' }); return;
         }
         setIsSubmittingVerification(true);
@@ -100,7 +115,7 @@ const AccountSettings = () => {
             setVerificationStatus('pending');
             toast({ title: '✅ Verification Request Submitted', description: 'Our team will review your application.' });
         } catch (e: any) {
-            toast({ title: 'Error', description: e.message, variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(e), variant: 'destructive' });
         } finally {
             setIsSubmittingVerification(false);
         }
@@ -108,7 +123,20 @@ const AccountSettings = () => {
 
     const handleSwitchAccountType = async (newType: 'fan' | 'creator' | 'studio') => {
         if (!user || newType === accountType) return;
-        
+
+        const label = newType === 'fan' ? 'Fan / Audience' : newType === 'creator' ? 'Creator Pro' : 'Studio / Company';
+        const effect = newType === 'fan'
+            ? 'You will lose posting, jobs, projects and marketplace access, and can only message fans who follow you back.'
+            : newType === 'creator'
+                ? 'You get creator tools (portfolio, jobs, projects, marketplace). Your profile will show as a creator.'
+                : 'You get studio tools (posting jobs, vendors, hiring). Your profile will show as a studio or company.';
+        const ok = await confirmDialog(`Switch your account to ${label}? ${effect} You can switch again later.`, {
+            title: `Switch to ${label}?`,
+            confirmLabel: `Switch to ${label}`,
+            destructive: false,
+        });
+        if (!ok) return;
+
         try {
             setIsUpdatingAccount(true);
             const { error } = await supabase
@@ -118,14 +146,14 @@ const AccountSettings = () => {
                 
             if (error) throw error;
             
+            // update in place: re-read the profile into the context, refresh cached data that depends on the account type, then go to the feed
+            await refreshProfile();
+            queryClient.invalidateQueries();
             toast({
-                title: "Account Updated",
-                description: `Your account is now set to ${newType.charAt(0).toUpperCase() + newType.slice(1)}. Reloading...`,
+                title: "Account updated",
+                description: `You are now on a ${label} account.`,
             });
-            
-            setTimeout(() => {
-                window.location.href = '/feed';
-            }, 1500);
+            replace('/feed');
         } catch (error: any) {
             console.error('Error updating account:', error);
             toast({
@@ -195,7 +223,7 @@ const AccountSettings = () => {
             console.error('Error deleting account:', error);
             toast({
                 title: 'Deletion failed',
-                description: error.message || 'Something went wrong. Please try again or contact support.',
+                description: friendlyError(error, 'Something went wrong. Please try again or contact support.'),
                 variant: 'destructive',
             });
         } finally {
@@ -230,336 +258,252 @@ const AccountSettings = () => {
 
             toast({
                 title: "History Cleared",
-                description: "All your direct messages and chat history have been erased locally.",
+                description: "All your direct messages were deleted from our servers, for you and for the people you chatted with, along with the group-chat messages you sent. This cannot be undone.",
             });
         } catch (error: any) {
             console.error('Error clearing messages:', error);
             toast({
                 title: "Error",
-                description: "Failed to clear message history: " + error.message,
+                description: friendlyError(error, "Failed to clear message history. Please try again."),
                 variant: "destructive"
             });
         }
     };
 
+    const roles = [
+        { id: 'fan', label: 'Fan / Audience', description: 'Follow creators, rate movies, and join discussions.', icon: User },
+        { id: 'creator', label: 'Creator Pro', description: 'Showcase your portfolio, apply for jobs, and access analytics.', icon: Zap },
+        { id: 'studio', label: 'Studio / Company', description: 'Post jobs, search for vendors, and hire talent.', icon: Building2 },
+    ] as const;
+
+    const statusRow = (icon: React.ReactNode, tone: string, title: string, text: string) => (
+        <div className="flex items-start gap-3.5 px-4 py-3.5">
+            <span className={cn('h-10 w-10 rounded-full grid place-items-center shrink-0', tone)}>{icon}</span>
+            <div className="min-w-0 pt-0.5">
+                <p className="text-base font-medium">{title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{text}</p>
+            </div>
+        </div>
+    );
+
     return (
-        <div className="pb-10">
-            <div className="w-full">
-                <div className="mb-6">
-                    <BackButton label="BACK TO SETTINGS" to="/settings" className="mb-4 lg:hidden" />
-                    <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
-                        <User className="h-8 w-8 text-primary" />
-                        Account
-                    </h1>
-                    <p className="text-muted-foreground mt-2">Manage your account settings</p>
-                </div>
+        <>
+            <SettingsPageHeader title="Account" description="Your role, your badge, the accounts on this device, and what happens when you leave." />
 
-                <div className="space-y-6">
-                    {/* Account Type Card */}
-                    <Card className="border-primary/20 bg-primary/5">
-                        <CardHeader>
-                            <CardTitle>Account Role</CardTitle>
-                            <CardDescription>Switch between your roles on CineCraft Connect.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            {[
-                                { 
-                                    id: 'fan', 
-                                    label: 'Fan / Audience', 
-                                    description: 'Follow creators, rate movies, and join discussions.',
-                                    icon: <User className="h-5 w-5" />
-                                },
-                                { 
-                                    id: 'creator', 
-                                    label: 'Creator Pro', 
-                                    description: 'Showcase your portfolio, apply for jobs, and access analytics.',
-                                    icon: <Zap className="h-5 w-5" />
-                                },
-                                { 
-                                    id: 'studio', 
-                                    label: 'Studio / Company', 
-                                    description: 'Post jobs, search for vendors, and hire talent.',
-                                    icon: <Building2 className="h-5 w-5" />
-                                }
-                            ].map((role) => (
-                                <div 
-                                    key={role.id}
-                                    className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${
-                                        accountType === role.id 
-                                        ? 'bg-background border-primary shadow-sm' 
-                                        : 'bg-background/50 border-border hover:border-primary/30 hover:bg-background/80'
-                                    }`}
-                                >
-                                    <div className="flex gap-4">
-                                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${accountType === role.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                                            {role.id === 'fan' ? <User className="h-5 w-5" /> : role.id === 'creator' ? <Zap className="h-5 w-5" /> : <Building2 className="h-5 w-5" />}
-                                        </div>
-                                        <div>
-                                            <Label className={`text-base font-bold ${accountType === role.id ? 'text-primary' : 'text-foreground'}`}>{role.label}</Label>
-                                            <p className="text-sm text-muted-foreground mt-0.5 max-w-sm">
-                                                {role.description}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        {accountType === role.id ? (
-                                            <div className="px-3 py-1 bg-primary text-primary-foreground text-xs font-bold rounded-full">
-                                                Active
-                                            </div>
-                                        ) : (
-                                            <Button 
-                                                variant="outline" 
-                                                size="sm" 
-                                                disabled={isUpdatingAccount}
-                                                onClick={() => handleSwitchAccountType(role.id as any)}
-                                            >
-                                                Switch
-                                            </Button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                            {(accountType === 'fan') && (
-                                <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-3">
-                                    <div className="h-5 w-5 text-amber-500 mt-0.5">⚠️</div>
-                                    <p className="text-xs text-amber-500 leading-relaxed">
-                                        Some Pro features require a subscription. Switching to Creator or Studio may prompt you to subscribe in the future.
-                                    </p>
-                                </div>
+            {/* ── Account type ── */}
+            <SettingsSection title="Account type" description="Switch between your roles on CineCraft Connect.">
+                {roles.map((role) => {
+                    const active = accountType === role.id;
+                    const Icon = role.icon;
+                    return (
+                        <button
+                            key={role.id}
+                            type="button"
+                            aria-pressed={active}
+                            disabled={active || isUpdatingAccount}
+                            onClick={() => { if (!active) handleSwitchAccountType(role.id); }}
+                            className={cn('w-full flex items-center gap-4 px-4 py-3.5 text-left transition-colors disabled:cursor-default', active ? 'bg-primary/5' : 'hover:bg-muted/40')}
+                        >
+                            <span className={cn('h-10 w-10 rounded-full grid place-items-center shrink-0', active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                                <Icon className="h-5 w-5" />
+                            </span>
+                            <span className="flex-1 min-w-0">
+                                <span className="block text-base font-medium">{role.label}</span>
+                                <span className="block text-xs text-muted-foreground mt-0.5">{role.description}</span>
+                            </span>
+                            {active ? (
+                                <span className="flex items-center gap-1.5 text-xs font-semibold text-primary shrink-0"><Check className="h-4 w-4" /> Current</span>
+                            ) : (
+                                <span className="text-xs font-semibold text-muted-foreground shrink-0">{isUpdatingAccount ? '…' : 'Switch'}</span>
                             )}
-                        </CardContent>
-                    </Card>
+                        </button>
+                    );
+                })}
+            </SettingsSection>
+            {accountType === 'fan' && (
+                <SettingsNote>Some Pro features may need a subscription in the future. Switching to Creator or Studio can ask you to subscribe then.</SettingsNote>
+            )}
 
-                    {/* ── Verification Card ── */}
-                    <Card className="border-primary/20">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <BadgeCheck className="h-5 w-5 text-primary" />
-                                Verified Badge
-                            </CardTitle>
-                            <CardDescription>Apply for the official CineCraft verified checkmark. Shown on your profile, posts, and network cards.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            {!verificationLoaded ? (
-                                <div className="text-sm text-muted-foreground">Checking status…</div>
-                            ) : verificationStatus === 'verified' ? (
-                                <div className="flex items-center gap-3 p-4 bg-green-500/5 border border-green-500/20 rounded-xl">
-                                    <CheckCircle className="w-6 h-6 text-green-500 shrink-0" />
-                                    <div>
-                                        <p className="text-sm font-bold text-green-600">You are verified!</p>
-                                        <p className="text-xs text-muted-foreground">Your badge is visible on your profile, posts and network.</p>
-                                    </div>
-                                </div>
-                            ) : verificationStatus === 'pending' ? (
-                                <div className="flex items-center gap-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
-                                    <Clock className="w-6 h-6 text-amber-500 shrink-0" />
-                                    <div>
-                                        <p className="text-sm font-bold text-amber-600">Application Under Review</p>
-                                        <p className="text-xs text-muted-foreground">Our moderation team will review your request. You'll be notified once a decision is made.</p>
-                                    </div>
-                                </div>
-                            ) : verificationStatus === 'rejected' ? (
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-3 p-4 bg-red-500/5 border border-red-500/20 rounded-xl">
-                                        <XCircle className="w-6 h-6 text-red-500 shrink-0" />
-                                        <div>
-                                            <p className="text-sm font-bold text-red-600">Previous Application Rejected</p>
-                                            {rejectionReason && (
-                                                <p className="text-[13px] font-bold text-red-500/80 mt-1 italic">" {rejectionReason} "</p>
-                                            )}
-                                            <p className="text-xs text-muted-foreground mt-1">You may reapply with updated information.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : null}
+            {/* ── Plans and payments (staff accounts do not buy plans) ── */}
+            {!(isModerator || isAdmin || isSuperAdmin) && (
+                <SettingsSection title="Plans and payments" description="See what each plan includes and what you have paid.">
+                    {[
+                        { to: '/settings/plans', icon: Sparkles, title: 'Plans', text: 'See what each plan includes' },
+                        { to: '/settings/payments', icon: Wallet, title: 'My payments', text: 'Your plan, gifts and receipts' },
+                    ].map(({ to, icon: RowIcon, title, text }) => (
+                        <Link key={to} to={to} className="w-full flex items-center gap-4 px-4 py-3.5 text-left hover:bg-muted/40 transition-colors">
+                            <span className="h-10 w-10 rounded-full grid place-items-center shrink-0 bg-muted text-muted-foreground"><RowIcon className="h-5 w-5" /></span>
+                            <span className="flex-1 min-w-0">
+                                <span className="block text-base font-medium">{title}</span>
+                                <span className="block text-xs text-muted-foreground mt-0.5">{text}</span>
+                            </span>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                        </Link>
+                    ))}
+                </SettingsSection>
+            )}
 
-                            {(verificationStatus === 'none' || verificationStatus === 'rejected') && (
-                                <div className="mt-4 space-y-4">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Full Legal Name</Label>
-                                            <Input
-                                                placeholder="Your real name"
-                                                value={verifyForm.full_legal_name}
-                                                onChange={e => setVerifyForm(f => ({ ...f, full_legal_name: e.target.value }))}
-                                                className="rounded-xl"
-                                            />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Account Type</Label>
-                                            <select
-                                                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
-                                                value={verifyForm.request_type}
-                                                onChange={e => setVerifyForm(f => ({ ...f, request_type: e.target.value }))}
-                                            >
-                                                <option value="creator">Individual Creator</option>
-                                                <option value="company">Studio / Company</option>
-                                                <option value="public_figure">Public Figure</option>
-                                                <option value="professional">Journalist / Press</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Why should you be verified?</Label>
-                                        <Textarea
-                                            placeholder="Tell us about your work, achievements, or why you need the verified badge…"
-                                            className="rounded-xl resize-none min-h-[80px]"
-                                            value={verifyForm.reason}
-                                            onChange={e => setVerifyForm(f => ({ ...f, reason: e.target.value }))}
-                                        />
-                                    </div>
+            {/* ── Verified badge ── */}
+            {canApplyForBadge && (
+            <SettingsSection title="Verified badge" description="Apply for the official CineCraft checkmark. It shows on your profile, posts and network cards.">
+                {!verificationLoaded ? (
+                    <p className="px-4 py-3.5 text-sm text-muted-foreground">Checking status…</p>
+                ) : verificationStatus === 'verified' ? (
+                    statusRow(<CheckCircle className="h-5 w-5" />, 'bg-green-500/15 text-green-600', 'You are verified', 'Your badge is visible on your profile, posts and network.')
+                ) : verificationStatus === 'pending' ? (
+                    statusRow(<Clock className="h-5 w-5" />, 'bg-amber-500/15 text-amber-600', 'Application received', "Our team will review your request. You'll be notified once a decision is made.")
+                ) : verificationStatus === 'under_review' ? (
+                    statusRow(<Clock className="h-5 w-5" />, 'bg-amber-500/15 text-amber-600', 'Application under review', "A reviewer is looking at your request now. You'll be notified once a decision is made.")
+                ) : verificationStatus === 'approved' ? (
+                    statusRow(<CheckCircle className="h-5 w-5" />, 'bg-green-500/15 text-green-600', 'Application approved', 'Your badge will appear on your profile shortly. Reopen this page if it does not show up.')
+                ) : verificationStatus === 'revoked' ? (
+                    statusRow(<XCircle className="h-5 w-5" />, 'bg-red-500/15 text-red-600', 'Your badge was removed', rejectionReason ? `${rejectionReason.replace(/[.\s]+$/, '')}. You may apply again with updated information.` : 'You may apply again with updated information.')
+                ) : verificationStatus === 'rejected' ? (
+                    statusRow(<XCircle className="h-5 w-5" />, 'bg-red-500/15 text-red-600', 'Your last application was not approved', rejectionReason ? `${rejectionReason.replace(/[.\s]+$/, '')}. You may apply again with updated information.` : 'You may apply again with updated information.')
+                ) : null}
+
+                {verificationLoaded && (verificationStatus === 'none' || verificationStatus === 'rejected' || verificationStatus === 'revoked') && (
+                    <div className="px-4 py-4 space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="verify-name" className="text-[13px] font-medium">Full legal name</Label>
+                                <Input
+                                    id="verify-name"
+                                    placeholder="Your real name"
+                                    value={verifyForm.full_legal_name}
+                                    onChange={e => setVerifyForm(f => ({ ...f, full_legal_name: e.target.value }))}
+                                    className="rounded-xl"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label htmlFor="verify-type" className="text-[13px] font-medium">Account type</Label>
+                                <select
+                                    id="verify-type"
+                                    className="w-full h-11 md:h-10 rounded-xl border border-input bg-background px-3 text-base md:text-sm"
+                                    value={verifyForm.request_type}
+                                    onChange={e => setVerifyForm(f => ({ ...f, request_type: e.target.value }))}
+                                >
+                                    <option value="creator">Individual Creator</option>
+                                    <option value="public_figure">Public Figure</option>
+                                    <option value="professional">Journalist / Press</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="verify-reason" className="text-[13px] font-medium">Why should you be verified?</Label>
+                            <Textarea
+                                id="verify-reason"
+                                placeholder="Tell us about your work, achievements, or why you need the verified badge…"
+                                className="rounded-xl resize-none min-h-[80px]"
+                                value={verifyForm.reason}
+                                onChange={e => setVerifyForm(f => ({ ...f, reason: e.target.value }))}
+                            />
+                        </div>
+                        <Button
+                            onClick={handleSubmitVerification}
+                            disabled={isSubmittingVerification || !verifyForm.full_legal_name.trim() || !verifyForm.reason.trim()}
+                            className="w-full rounded-xl font-semibold"
+                        >
+                            <BadgeCheck className="mr-2 h-4 w-4" />
+                            {isSubmittingVerification ? 'Submitting…' : 'Apply for verification'}
+                        </Button>
+                    </div>
+                )}
+            </SettingsSection>
+            )}
+
+            {/* ── Accounts on this device ── */}
+            <SettingsSection title="Accounts on this device" description="Switch between accounts you are signed in to here, or add another.">
+                {savedAccounts.length === 0 && (
+                    <p className="px-4 py-3.5 text-sm text-muted-foreground">No other accounts saved on this device.</p>
+                )}
+                {savedAccounts.map((acc) => {
+                    const isActive = acc.userId === user?.id;
+                    const initials = acc.username
+                        .split(' ')
+                        .map((n: string) => n[0])
+                        .join('')
+                        .toUpperCase()
+                        .slice(0, 2) || 'U';
+                    return (
+                        <div key={acc.userId} className={cn('flex items-center gap-3.5 px-4 py-3', isActive && 'bg-primary/5')}>
+                            <div className="relative shrink-0">
+                                <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs overflow-hidden">
+                                    {acc.avatarUrl ? (
+                                        <img loading="lazy" decoding="async" src={acc.avatarUrl} alt={acc.username} className="h-full w-full object-cover" />
+                                    ) : initials}
+                                </div>
+                                {isActive && <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-card" aria-label="Signed in" />}
+                            </div>
+                            <div className="flex flex-col min-w-0 flex-1">
+                                <span className="text-base font-medium truncate leading-tight">{acc.username}</span>
+                                <span className="text-xs text-muted-foreground truncate mt-0.5">{acc.email}</span>
+                            </div>
+                            {isActive ? (
+                                <span className="flex items-center gap-1.5 text-xs font-semibold text-primary shrink-0"><Check className="h-4 w-4" /> Current</span>
+                            ) : (
+                                <div className="flex items-center gap-1 shrink-0">
                                     <Button
-                                        onClick={handleSubmitVerification}
-                                        disabled={isSubmittingVerification || !verifyForm.full_legal_name.trim() || !verifyForm.reason.trim()}
-                                        className="w-full rounded-xl font-bold"
+                                        variant="outline"
+                                        size="sm"
+                                        className="rounded-lg font-medium text-xs"
+                                        disabled={switchingAccId !== null}
+                                        onClick={() => handleSwitchSavedAccount(acc.userId, acc.username)}
                                     >
-                                        <BadgeCheck className="mr-2 h-4 w-4" />
-                                        {isSubmittingVerification ? 'Submitting…' : 'Apply for Verification'}
+                                        {switchingAccId === acc.userId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Switch'}
+                                    </Button>
+                                    <Button
+                                        aria-label={`Remove ${acc.username} from this device`}
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                                        disabled={switchingAccId !== null}
+                                        onClick={() => removeAccount(acc.userId)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </div>
                             )}
-                        </CardContent>
-                    </Card>
+                        </div>
+                    );
+                })}
+                <button type="button" onClick={addAccount} className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left text-primary font-medium hover:bg-muted/40 transition-colors">
+                    <span className="h-10 w-10 rounded-full border border-dashed border-primary/50 grid place-items-center shrink-0"><Plus className="h-5 w-5" /></span>
+                    Add another account
+                </button>
+            </SettingsSection>
 
-                    {/* Saved Accounts Card */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <User className="h-5 w-5 text-primary" />
-                                Saved Accounts
-                            </CardTitle>
-                            <CardDescription>Switch between accounts logged in on this device, or link a new one.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            {savedAccounts.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">No other accounts saved on this device.</p>
-                            ) : (
-                                <div className="space-y-3">
-                                    {savedAccounts.map((acc) => {
-                                        const isActive = acc.userId === user?.id;
-                                        const initials = acc.username
-                                            .split(' ')
-                                            .map((n: string) => n[0])
-                                            .join('')
-                                            .toUpperCase()
-                                            .slice(0, 2) || 'U';
+            {/* ── Session ── */}
+            <SettingsSection id="signout" title="Session">
+                <button
+                    type="button"
+                    onClick={handleSignOut}
+                    disabled={isSigningOut}
+                    className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left hover:bg-muted/40 transition-colors disabled:opacity-60"
+                >
+                    <LogOut className="h-5 w-5 shrink-0" strokeWidth={1.7} />
+                    <span className="flex-1 min-w-0">
+                        <span className="block text-base">{isSigningOut ? 'Logging out…' : 'Log out'}</span>
+                        <span className="block text-xs text-muted-foreground mt-0.5">Sign out of your account on this device</span>
+                    </span>
+                </button>
+            </SettingsSection>
 
-                                        return (
-                                            <div
-                                                key={acc.userId}
-                                                className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${
-                                                    isActive
-                                                    ? 'bg-primary/5 border-primary shadow-sm'
-                                                    : 'bg-background border-border hover:border-primary/30 hover:bg-muted/30'
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="relative">
-                                                        <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs border border-border/50 overflow-hidden">
-                                                            {acc.avatarUrl ? (
-                                                                <img loading="lazy" decoding="async"
-                                                                    src={acc.avatarUrl}
-                                                                    alt={acc.username}
-                                                                    className="h-full w-full object-cover"
-                                                                />
-                                                            ) : initials}
-                                                        </div>
-                                                        {isActive && (
-                                                            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background" />
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-col min-w-0">
-                                                        <span className="text-sm font-semibold truncate leading-none text-foreground">{acc.username}</span>
-                                                        <span className="text-[11px] text-muted-foreground truncate mt-1">{acc.email}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    {isActive ? (
-                                                        <span className="text-xs font-bold text-primary px-2.5 py-1 bg-primary/10 rounded-full">
-                                                            Active
-                                                        </span>
-                                                    ) : (
-                                                        <>
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                className="h-8 rounded-lg font-medium text-xs"
-                                                                disabled={switchingAccId !== null}
-                                                                onClick={() => handleSwitchSavedAccount(acc.userId, acc.username)}
-                                                            >
-                                                                {switchingAccId === acc.userId ? (
-                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                                ) : (
-                                                                    'Switch'
-                                                                )}
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
-                                                                disabled={switchingAccId !== null}
-                                                                onClick={() => removeAccount(acc.userId)}
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-
-                            <Button
-                                variant="outline"
-                                className="w-full rounded-xl border-dashed border-primary/40 text-primary hover:bg-primary/5 hover:border-primary transition-all duration-200 mt-2 font-semibold"
-                                onClick={addAccount}
-                            >
-                                <Plus className="mr-2 h-4 w-4" />
-                                Link / Add Another Account
-                            </Button>
-                        </CardContent>
-                    </Card>
-
-                    <Card id="signout" className="scroll-mt-24">
-                        <CardHeader>
-                            <CardTitle>Session</CardTitle>
-                            <CardDescription>Manage your current session</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <Label className="text-base font-medium">Sign Out</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">Sign out of your account on this device</p>
-                                </div>
-                                <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
-                                    <LogOut className="mr-2 h-4 w-4" />
-                                    {isSigningOut ? 'Signing out...' : 'Sign Out'}
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="border-destructive/50 bg-destructive/5">
-                        <CardHeader>
-                            <CardTitle className="text-destructive">Danger Zone</CardTitle>
-                            <CardDescription>Irreversible and destructive actions</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="p-4 rounded-lg bg-background border border-destructive/20">
-                                <div className="mb-3">
-                                    <Label className="text-base font-medium text-destructive">Delete Account</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                        Permanently erase your account and all associated data. This action cannot be undone.
-                                    </p>
-                                </div>
-                                <Button variant="destructive" size="sm" onClick={openDeleteDialog}>
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete Account
-                                </Button>
-                            </div>
+            {/* ── Danger zone ── */}
+            <section className="mb-8">
+                <h3 className="text-base font-semibold text-destructive">Danger zone</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">These actions cannot be undone.</p>
+                <div className="mt-3 rounded-2xl border border-destructive/30 bg-card divide-y divide-destructive/15 overflow-hidden">
+                    <div className="flex items-center gap-4 px-4 py-4">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-base font-medium">Delete account</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Permanently erase your account and everything that belongs to it.</p>
+                        </div>
+                        <Button variant="destructive" size="sm" className="shrink-0" onClick={openDeleteDialog}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete account
+                        </Button>
+                    </div>
 
                             {/* ── 2-step deletion dialog ── */}
                             <Dialog
@@ -568,7 +512,7 @@ const AccountSettings = () => {
                                     if (!isDeleting) setDeleteDialogOpen(open);
                                 }}
                             >
-                                <DialogContent className="max-w-md w-[95vw] bg-card border border-destructive/30 rounded-[28px] p-0 overflow-hidden">
+                                <DialogContent className="max-w-md w-[95vw] bg-card border border-destructive/30 rounded-[28px] p-0 overflow-y-auto max-h-[90dvh]">
 
                                     {/* ── Step 1: What will be deleted ── */}
                                     {deleteStep === 1 && (
@@ -662,7 +606,7 @@ const AccountSettings = () => {
                                                     <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                                                         Your email address
                                                     </Label>
-                                                    <p className="text-xs font-mono text-primary bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-lg">
+                                                    <p className="text-xs text-primary bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-lg">
                                                         {user?.email}
                                                     </p>
                                                 </div>
@@ -712,41 +656,37 @@ const AccountSettings = () => {
                                 </DialogContent>
                             </Dialog>
 
-                            <div className="mt-4 p-4 rounded-lg bg-background border border-destructive/20">
-                                <div className="mb-3">
-                                    <Label className="text-base font-medium text-destructive">Clear All Message History</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">
-                                        Permanently delete all your direct messages. This action is irreversible.
-                                    </p>
-                                </div>
-                                <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                        <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors">
-                                            <Trash2 className="mr-2 h-4 w-4" />
-                                            Clear All Messages
-                                        </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                            <AlertDialogDescription>
-                                                This will permanently delete all your private conversations and data in direct messages. This cannot be undone.
-                                            </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction onClick={handleClearAllMessages} className="bg-destructive text-destructive-foreground">
-                                                Clear Everything
-                                            </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <div className="flex items-center gap-4 px-4 py-4">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-base font-medium">Clear all messages</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">Permanently delete all your direct messages.</p>
+                        </div>
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm" className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Clear messages
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete all your messages?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This permanently deletes every direct message you sent or received, so the other people lose those messages too, and the group-chat messages you sent. This cannot be undone.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleClearAllMessages} className="bg-destructive text-destructive-foreground">
+                                        Clear Everything
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    </div>
                 </div>
-            </div>
-        </div>
+            </section>
+        </>
     );
 };
 

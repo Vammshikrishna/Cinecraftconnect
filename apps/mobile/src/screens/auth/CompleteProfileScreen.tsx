@@ -15,6 +15,11 @@ import {
 import { getSupabaseClient } from '@cinecraft/api';
 import { Icon } from '../../components/common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useUsernameCheck } from '../../hooks/useUsernameCheck';
+import { sanitizeUsername, USERNAME_MAX, USERNAME_STATUS_TEXT, friendlyError } from '@cinecraft/core';
+import { TabletColumn } from '../../components/common/TabletContainer';
+import { saveCache, getCache } from '../../services/offlineCache';
+import { loadSavedAccounts, persistSavedAccounts } from '../../services/accountManager';
 
 const CRAFT_OPTIONS = [
   'Director', 'Producer', 'Actor', 'Cinematographer', 'Editor', 'Writer',
@@ -42,42 +47,21 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
   const [website, setWebsite] = useState('');
   const [phone, setPhone] = useState('');
 
-  // Username validation state
-  const [checkingUsername, setCheckingUsername] = useState(false);
-  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const usernameStatus = useUsernameCheck(username);
+  // same rule as Edit Profile / web: 2 to 50 characters
+  const trimmedName = fullName.trim();
+  const nameError = trimmedName.length > 50 ? 'Name is too long' : trimmedName.length > 0 && trimmedName.length < 2 ? 'Name is too short' : '';
+  const scrollRef = React.useRef<ScrollView>(null);
+  const scrollToEnd = () => { setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 250); };
 
-  // Debounced username checker
+  // sign-in with Google or Apple already gives us a name: start from it
   useEffect(() => {
-    if (username.length < 3) {
-      setUsernameAvailable(null);
-      return;
-    }
-    if (!/^[a-z0-9_]{3,20}$/.test(username)) {
-      setUsernameAvailable(false);
-      return;
-    }
-
-    setCheckingUsername(true);
-    const timer = setTimeout(async () => {
-      try {
-        const supabase = getSupabaseClient();
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('username', username.toLowerCase())
-          .maybeSingle();
-
-        if (error) throw error;
-        setUsernameAvailable(!data);
-      } catch (e) {
-        setUsernameAvailable(null);
-      } finally {
-        setCheckingUsername(false);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [username]);
+    getSupabaseClient().auth.getUser().then(({ data }) => {
+      const meta: any = data?.user?.user_metadata;
+      const known = meta?.full_name || meta?.name;
+      if (known) setFullName((prev) => prev || String(known));
+    }).catch(() => {});
+  }, []);
 
   const handleNextStep = () => {
     if (step === 0) {
@@ -87,12 +71,16 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
       }
       setStep(1);
     } else if (step === 1) {
-      if (!username || !fullName) {
-        Alert.alert('Required Fields', 'Please fill in all required fields.');
+      if (!username.trim() || !fullName.trim()) {
+        Alert.alert('Required Fields', 'Please fill in your username and full name.');
         return;
       }
-      if (usernameAvailable === false) {
-        Alert.alert('Unavailable Username', 'Please choose an available username.');
+      if (nameError) {
+        Alert.alert('Check your name', nameError);
+        return;
+      }
+      if (usernameStatus !== 'available') {
+        Alert.alert('Check your username', USERNAME_STATUS_TEXT[usernameStatus === 'idle' ? 'checking' : usernameStatus]);
         return;
       }
       setStep(2);
@@ -108,7 +96,7 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
 
       const updateData: any = {
         username: username.toLowerCase(),
-        full_name: fullName,
+        full_name: fullName.trim(),
         onboarding_completed: true,
         account_type: accountType || 'fan',
         updated_at: new Date().toISOString(),
@@ -117,14 +105,22 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
       if (bio) updateData.bio = bio;
       if (craft) updateData.craft = craft;
       if (location) updateData.location = location;
-      if (website) updateData.website = website;
+      if (website.trim()) updateData.website = /^https?:\/\//i.test(website.trim()) ? website.trim() : `https://${website.trim()}`;
 
       const { error } = await supabase
         .from('profiles')
         .update(updateData)
         .eq('id', user.id);
 
-      if (error) throw error;
+      if (error) {
+        // someone took the username while this form was open: send them back to pick another
+        if ((error as any).code === '23505' || /duplicate|unique/i.test(error.message)) {
+          setStep(1);
+          Alert.alert('Username just taken', 'Someone else claimed it a moment ago. Please choose another.');
+          return;
+        }
+        throw error;
+      }
 
       if (phone) {
         const { error: phoneError } = await (supabase as any).from('profile_private').upsert(
@@ -132,6 +128,28 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
           { onConflict: 'user_id' }
         );
         if (phoneError) console.warn('[CompleteProfile] phone save failed:', phoneError.message);
+      }
+
+      // Refresh the cached profile and the saved-account entry NOW, so closing the app right after this can never bring
+      // the old "onboarding unfinished" copy back (and a stale copy can never say finished before this point).
+      try {
+        const cacheKey = `profile_${user.id}`;
+        const existing = (await getCache<any>(cacheKey)) || { id: user.id };
+        await saveCache(cacheKey, {
+          ...existing,
+          username: updateData.username,
+          full_name: updateData.full_name,
+          account_type: updateData.account_type,
+          onboarding_completed: true,
+        });
+        const accounts = await loadSavedAccounts();
+        if (accounts.some((a) => a.userId === user.id)) {
+          await persistSavedAccounts(accounts.map((a) => a.userId === user.id
+            ? { ...a, username: updateData.username, fullName: updateData.full_name, accountType: updateData.account_type, onboardingCompleted: true }
+            : a));
+        }
+      } catch (cacheErr) {
+        console.warn('[CompleteProfile] cache refresh failed:', cacheErr);
       }
 
       Alert.alert('Success', 'Profile completed successfully!', [
@@ -146,7 +164,7 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
         },
       ]);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to complete profile onboarding.');
+      Alert.alert('Error', friendlyError(e, 'Failed to complete profile onboarding.'));
     } finally {
       setLoading(false);
     }
@@ -154,11 +172,12 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+      <TabletColumn maxWidth={560}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets showsVerticalScrollIndicator={false}>
           
           {/* Header */}
           <View style={styles.header}>
@@ -185,7 +204,7 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
             {step === 0 && (
               <View style={styles.stepContainer}>
                 <Text style={[styles.stepTitle, { color: themeColors.textPrimary }]}>How will you use CineCraft?</Text>
-                <Text style={[styles.stepSubtitle, { color: themeColors.textSecondary }]}>Choose your account type — you can't change this later.</Text>
+                <Text style={[styles.stepSubtitle, { color: themeColors.textSecondary }]}>Choose your account type — you can switch it later in Settings.</Text>
 
                 <View style={styles.typeOptions}>
                   {/* Fan Account */}
@@ -196,6 +215,9 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
                       accountType === 'fan' ? [styles.typeBtnActive, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1F0' }] : undefined,
                     ] as any}
                     onPress={() => setAccountType('fan')}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: accountType === 'fan' }}
+                    accessibilityLabel="Fan account"
                   >
                     <View style={[
                       styles.iconCircle,
@@ -216,6 +238,9 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
                       accountType === 'creator' ? [styles.typeBtnActive, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1F0' }] : undefined,
                     ] as any}
                     onPress={() => setAccountType('creator')}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: accountType === 'creator' }}
+                    accessibilityLabel="Creator account"
                   >
                     <View style={[
                       styles.iconCircle,
@@ -236,6 +261,9 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
                       accountType === 'studio' ? [styles.typeBtnActive, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1F0' }] : undefined,
                     ] as any}
                     onPress={() => setAccountType('studio')}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: accountType === 'studio' }}
+                    accessibilityLabel="Studio or team account"
                   >
                     <View style={[
                       styles.iconCircle,
@@ -253,7 +281,7 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
 
             {step === 1 && (
               <View style={styles.stepContainer}>
-                <Text style={[styles.stepTitle, { color: themeColors.textPrimary }]}>Basic Creator Details</Text>
+                <Text style={[styles.stepTitle, { color: themeColors.textPrimary }]}>{accountType === 'studio' ? 'Basic Studio Details' : accountType === 'fan' ? 'Basic Details' : 'Basic Creator Details'}</Text>
                 <Text style={[styles.stepSubtitle, { color: themeColors.textSecondary }]}>Set up your username and display name.</Text>
 
                 <View style={styles.formGroup}>
@@ -264,29 +292,40 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
                     placeholderTextColor={themeColors.textMuted}
                     value={fullName}
                     onChangeText={setFullName}
+                    maxLength={60}
+                    onFocus={scrollToEnd}
                   />
+                  {nameError ? <Text style={[styles.helperText, { color: '#DC2626' }]}>{nameError}</Text> : null}
                 </View>
 
                 <View style={styles.formGroup}>
                   <View style={styles.labelRow}>
                     <Text style={[styles.label, { color: themeColors.textPrimary }]}>Username *</Text>
-                    {checkingUsername && <ActivityIndicator size="small" color="#FF4B33" />}
-                    {usernameAvailable === true && (
-                      <Text style={styles.availText}>✓ Available</Text>
-                    )}
-                    {usernameAvailable === false && (
-                      <Text style={styles.errorText}>✗ Taken or invalid</Text>
-                    )}
+                    {usernameStatus === 'checking' && <ActivityIndicator size="small" color="#FF4B33" />}
                   </View>
                   <TextInput
                     style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
                     placeholder="johndoe"
                     placeholderTextColor={themeColors.textMuted}
                     value={username}
-                    onChangeText={(val) => setUsername(val.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                    onChangeText={(val) => setUsername(sanitizeUsername(val))}
+                    maxLength={USERNAME_MAX}
                     autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="username"
+                    textContentType="username"
                   />
-                  <Text style={[styles.helperText, { color: themeColors.textMuted }]}>3 to 20 lowercase letters, numbers, or underscores.</Text>
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    style={[
+                      styles.helperText,
+                      { color: usernameStatus === 'available' ? '#16A34A' : usernameStatus === 'taken' || usernameStatus === 'reserved' || usernameStatus === 'error' ? '#DC2626' : themeColors.textMuted },
+                      { minHeight: 18 },
+                    ]}
+                  >
+                    {usernameStatus === 'available' ? '✓ ' : usernameStatus === 'taken' || usernameStatus === 'reserved' ? '✗ ' : ''}
+                    {usernameStatus === 'idle' && username.length === 0 ? USERNAME_STATUS_TEXT.idle : usernameStatus === 'idle' ? '' : USERNAME_STATUS_TEXT[usernameStatus]}
+                  </Text>
                 </View>
               </View>
             )}
@@ -305,6 +344,7 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
                     multiline
                     numberOfLines={3}
                     value={bio}
+                    maxLength={300}
                     onChangeText={setBio}
                   />
                 </View>
@@ -389,7 +429,7 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
               <TouchableOpacity
                 style={[
                   styles.primaryBtn,
-                  ((step === 0 && !accountType) || (step === 1 && (!username || !fullName || !usernameAvailable))) && styles.primaryBtnDisabled,
+                  ((step === 0 && !accountType) || (step === 1 && (!username || !fullName.trim() || !!nameError || usernameStatus !== 'available'))) && styles.primaryBtnDisabled,
                 ]}
                 onPress={handleNextStep}
               >
@@ -412,6 +452,7 @@ export const CompleteProfileScreen = ({ navigation }: { navigation: any }) => {
 
         </ScrollView>
       </KeyboardAvoidingView>
+      </TabletColumn>
     </SafeAreaView>
   );
 };
@@ -423,7 +464,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 24,
-    paddingBottom: 48,
+    paddingBottom: 240,
   },
   header: {
     alignItems: 'center',
@@ -432,12 +473,12 @@ const styles = StyleSheet.create({
   title: {
     color: '#0D0D0D',
     fontSize: 24,
-    fontWeight: '900',
+    fontWeight: '700',
     marginBottom: 4,
     textAlign: 'center',
   },
   subtitle: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 16,
@@ -473,14 +514,14 @@ const styles = StyleSheet.create({
   },
   stepTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0D0D0D',
     marginBottom: 4,
     textAlign: 'center',
   },
   stepSubtitle: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#64748B',
     marginBottom: 24,
     textAlign: 'center',
   },
@@ -513,13 +554,13 @@ const styles = StyleSheet.create({
   },
   typeText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#0D0D0D',
     marginBottom: 4,
   },
   typeDesc: {
-    fontSize: 11,
-    color: '#6B7280',
+    fontSize: 12,
+    color: '#64748B',
     textAlign: 'center',
   },
   formGroup: {
@@ -563,7 +604,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   helperText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#9CA3AF',
     marginTop: 4,
   },
@@ -591,7 +632,7 @@ const styles = StyleSheet.create({
   },
   craftChipTextActive: {
     color: '#FF4B33',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   actions: {
     flexDirection: 'row',
@@ -612,7 +653,7 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   backBtn: {
     flex: 1,
@@ -627,7 +668,7 @@ const styles = StyleSheet.create({
   backBtnText: {
     color: '#4B5563',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

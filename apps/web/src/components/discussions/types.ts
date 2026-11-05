@@ -7,6 +7,7 @@ export interface Message {
   created_at: string;
   user_id: string;
   is_deleted?: boolean;
+  edited_at?: string | null;
   reply_to_id?: string | null;
   media_url?: string | null;
   media_type?: string | null;

@@ -91,7 +91,9 @@ export const forceSoftLogout = async (preventRedirect: boolean = false, localOnl
   try {
     // 4. Supabase Sign Out (Skip completely for localOnly logout to preserve session tokens on server)
     if (!localOnly) {
-      await supabase.auth.signOut();
+      // 'local': end only this device's session. The default ('global') also signs the person out of every other device,
+      // but the button says "Sign out of your account on this device" and Settings has its own "sign out other devices".
+      await supabase.auth.signOut({ scope: 'local' });
     }
   } catch (e) {
     console.error('Error during remote signOut:', e);
@@ -111,7 +113,27 @@ export const forceSoftLogout = async (preventRedirect: boolean = false, localOnl
     
     // 6. Clear persisted React Query cache
     clearPersistedCache();
-    
+
+    // 6b. Clear what the service worker kept for this person: cached API answers (messages, profiles, private rows)
+    //     and any signed/private file links, so the next person on this browser cannot read them offline.
+    try {
+      if (typeof caches !== 'undefined') {
+        const names = await caches.keys();
+        await Promise.all(names.filter((n) => n.startsWith('cinecraft-api')).map((n) => caches.delete(n)));
+        for (const n of names.filter((n) => n.startsWith('cinecraft-images'))) {
+          const cache = await caches.open(n);
+          const requests = await cache.keys();
+          await Promise.all(
+            requests
+              .filter((r) => /\/storage\/v1\/object\/(sign|authenticated)\//.test(r.url))
+              .map((r) => cache.delete(r)),
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('Could not clear the service worker caches on logout:', e);
+    }
+
     console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: sessionRecovery event: logout_complete generation: ${newGeneration}`);
     transitionTo('UNAUTHENTICATED', 'logout_complete');
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { showToast } from '../../contexts/ToastContext';
 import {
   View,
   Text,
@@ -15,6 +16,7 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useFocusEffect } from '@react-navigation/native';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
@@ -44,6 +46,7 @@ const FlashListAny = FlashList as any;
 
 import { useAccountType } from '../../hooks/useAccountType';
 import { useAppRole } from '../../hooks/useAppRole';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -121,7 +124,7 @@ const JobCardItem = React.memo(({
         )}
 
         <View style={{ flex: 1 }}>
-          <Text style={[styles.webJobTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>
+          <Text style={[styles.webJobTitle, { color: themeColors.textPrimary }]} numberOfLines={2}>
             {item.title}
           </Text>
           <Text style={[styles.webJobCompany, { color: themeColors.textSecondary }]} numberOfLines={1}>
@@ -144,21 +147,21 @@ const JobCardItem = React.memo(({
       {/* Mono Badges Tag Row */}
       <View style={styles.webMonoBadgeRow}>
         <View style={[styles.webMonoBadge, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-          <Text style={[styles.webMonoBadgeText, { color: themeColors.textSecondary }]}>LOC // {whereText.toUpperCase()}</Text>
+          <Text style={[styles.webMonoBadgeText, { color: themeColors.textSecondary }]}>{whereText}</Text>
         </View>
         <View style={[styles.webMonoBadge, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
           <Text style={[styles.webMonoBadgeText, { color: themeColors.textSecondary }]}>
-            TYPE // {(JOB_TYPE_LABELS[item.type as keyof typeof JOB_TYPE_LABELS] || item.type || 'Full-time').toUpperCase()}
+            {(JOB_TYPE_LABELS[item.type as keyof typeof JOB_TYPE_LABELS] || item.type || 'Full-time')}
           </Text>
         </View>
         {item.experience_level && (
           <View style={[styles.webMonoBadge, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-            <Text style={[styles.webMonoBadgeText, { color: themeColors.textSecondary }]}>EXP // {(EXPERIENCE_LABELS[item.experience_level as keyof typeof EXPERIENCE_LABELS] || item.experience_level).toUpperCase()}</Text>
+            <Text style={[styles.webMonoBadgeText, { color: themeColors.textSecondary }]}>{(EXPERIENCE_LABELS[item.experience_level as keyof typeof EXPERIENCE_LABELS] || item.experience_level)}</Text>
           </View>
         )}
         {item.department ? (
           <View style={[styles.webMonoBadge, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-            <Text style={[styles.webMonoBadgeText, { color: themeColors.textSecondary }]}>DEPT // {String(item.department).toUpperCase()}</Text>
+            <Text style={[styles.webMonoBadgeText, { color: themeColors.textSecondary }]}>{String(item.department)}</Text>
           </View>
         ) : null}
       </View>
@@ -169,7 +172,7 @@ const JobCardItem = React.memo(({
           <Text style={[styles.webSalaryLabel, { color: themeColors.textMuted }]}>PAY</Text>
           <Text style={styles.webSalaryText}>{salaryText}</Text>
           {deadline ? (
-            <Text style={{ marginTop: 4, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.5, color: deadline.urgent ? '#F59E0B' : themeColors.textMuted }}>
+            <Text style={{ marginTop: 4, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, color: deadline.urgent ? '#F59E0B' : themeColors.textMuted }}>
               {deadline.label.toUpperCase()}
             </Text>
           ) : null}
@@ -207,7 +210,9 @@ const JobCardItem = React.memo(({
             style={[styles.iconActionBtnBeside, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
             onPress={() => onToggleBookmark(item.id)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityLabel="Bookmark job"
+            accessibilityRole="button"
+            accessibilityLabel={isBookmarked ? 'Remove saved job' : 'Bookmark job'}
+            accessibilityState={{ selected: !!isBookmarked }}
           >
             <Icon
               name="bookmark"
@@ -257,6 +262,67 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
     }
   }, []);
 
+  const buildJobsQuery = useCallback(() => {
+      const supabase = getSupabaseClient();
+      let query = (supabase.from('jobs') as any)
+        .select(`
+          *,
+          profiles:posted_by (
+            full_name,
+            avatar_url,
+            username
+          ),
+          company_pages:page_id (
+            id,
+            name,
+            logo_url,
+            slug
+          )
+        `)
+        .eq('is_active', true)
+        .eq('is_draft', false);
+
+      if (filterWorkMode !== 'all') {
+        query = query.eq('work_mode', filterWorkMode);
+      }
+      if (filterType !== 'all') {
+        query = query.eq('type', filterType);
+      }
+      if (filterExperience !== 'all') {
+        query = query.eq('experience_level', filterExperience);
+      }
+
+      if (sortBy === 'salary_high') {
+        query = query.order('salary_max', { ascending: false });
+      } else if (sortBy === 'salary_low') {
+        query = query.order('salary_min', { ascending: true });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
+    return query;
+  }, [filterType, filterExperience, filterWorkMode, sortBy]);
+
+  const [hasMoreJobs, setHasMoreJobs] = useState(true);
+  const [loadingMoreJobs, setLoadingMoreJobs] = useState(false);
+  const loadMoreJobs = useCallback(async () => {
+    if (loadingMoreJobs || !hasMoreJobs || jobs.length === 0) return;
+    setLoadingMoreJobs(true);
+    try {
+      const { data, error } = await buildJobsQuery().range(jobs.length, jobs.length + 24);
+      if (error) throw error;
+      const rows = data || [];
+      setJobs((prev) => {
+        const seen = new Set(prev.map((j: any) => j.id));
+        return [...prev, ...rows.filter((j: any) => !seen.has(j.id))];
+      });
+      if (rows.length < 25) setHasMoreJobs(false);
+    } catch (e) {
+      console.warn('[Jobs] Error loading more jobs:', e);
+    } finally {
+      setLoadingMoreJobs(false);
+    }
+  }, [loadingMoreJobs, hasMoreJobs, jobs.length, buildJobsQuery]);
+
   const fetchJobs = useCallback(async () => {
     const cacheKey = `jobs_${filterType}_${filterExperience}_${filterWorkMode}_${sortBy}`;
     const cached = await getCache<any[]>(cacheKey);
@@ -269,45 +335,12 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
       await fetchWithCache(
         cacheKey,
         async () => {
-          const supabase = getSupabaseClient();
-          let query = (supabase.from('jobs') as any)
-            .select(`
-              *,
-              profiles:posted_by (
-                full_name,
-                avatar_url,
-                username
-              ),
-              company_pages:page_id (
-                id,
-                name,
-                logo_url,
-                slug
-              )
-            `)
-            .eq('is_active', true)
-            .eq('is_draft', false);
-
-          if (filterWorkMode !== 'all') {
-            query = query.eq('work_mode', filterWorkMode);
-          }
-          if (filterType !== 'all') {
-            query = query.eq('type', filterType);
-          }
-          if (filterExperience !== 'all') {
-            query = query.eq('experience_level', filterExperience);
-          }
-
-          if (sortBy === 'salary_high') {
-            query = query.order('salary_max', { ascending: false });
-          } else if (sortBy === 'salary_low') {
-            query = query.order('salary_min', { ascending: true });
-          } else {
-            query = query.order('created_at', { ascending: false });
-          }
-
+          const query = buildJobsQuery();
           const { data, error } = await query.limit(25);
-          return !error && data ? data : [];
+          if (!error && data) setHasMoreJobs(data.length >= 25);
+          // Throw so a failed query keeps the good cache instead of overwriting it with [].
+          if (error) throw error;
+          return data || [];
         },
         {
           timeoutMs: 2500,
@@ -315,7 +348,8 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
             if (data) setJobs(data);
           },
           onFreshData: (data) => {
-            if (data && data.length > 0) setJobs(data);
+            // An empty result is real data (a filter with no matches), so it replaces the previous list too.
+            if (data) setJobs(data);
           },
         }
       );
@@ -324,7 +358,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
     } finally {
       setLoading(false);
     }
-  }, [filterType, filterExperience, filterWorkMode, sortBy]);
+  }, [filterType, filterExperience, filterWorkMode, sortBy, buildJobsQuery]);
 
   const fetchUserApplications = useCallback(async () => {
     try {
@@ -459,6 +493,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
 
     // Emit event across screens
     DeviceEventEmitter.emit('jobBookmarkChanged', { jobId, isBookmarked: !isCurrentlyBookmarked });
+    showToast({ title: isCurrentlyBookmarked ? 'Removed from saved' : 'Job saved', type: 'success' });
 
     const supabase = getSupabaseClient();
     try {
@@ -481,46 +516,12 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
       setBookmarkedJobIds(bookmarkedJobIds);
       saveCache('jobs_user_info', { ...cached, bookmarkedJobIds });
       DeviceEventEmitter.emit('jobBookmarkChanged', { jobId, isBookmarked: isCurrentlyBookmarked });
+      Alert.alert('Could not update your saved jobs', 'Check your connection and try again.');
     }
   }, [currentUserId, bookmarkedJobIds]);
 
-  const sampleJobs = [
-    {
-      id: 'job-1',
-      title: 'Lead Focus Puller / 1st AC',
-      company: 'Geetha Arts Production',
-      location: 'Hyderabad & Ramoji Film City',
-      type: 'contract',
-      experience_level: 'Senior',
-      salary_min: 150000,
-      salary_max: 250000,
-      description: 'Seeking experienced 1st AC proficient with ARRI Alexa 35, Preston Wireless FIZ, and Cooke Anamorphics.',
-    },
-    {
-      id: 'job-2',
-      title: 'Senior Colorist (DaVinci Resolve HDR)',
-      company: 'Annapurna Studios',
-      location: 'Hyderabad, India',
-      type: 'full-time',
-      experience_level: 'Senior',
-      salary_min: 1200000,
-      salary_max: 1800000,
-      description: 'Grading feature films and high-end OTT series in Dolby Vision & HDR10+ workflows.',
-    },
-    {
-      id: 'job-3',
-      title: 'Production Sound Mixer / Boom Operator',
-      company: 'Mythri Movie Makers',
-      location: 'Bengaluru, India',
-      type: 'contract',
-      experience_level: 'Mid',
-      salary_min: 80000,
-      salary_max: 120000,
-      description: 'Location audio recording with Sound Devices Scorpio / 833 and Wisycom wireless systems.',
-    },
-  ];
-
-  const displayList = jobs.length > 0 ? jobs : sampleJobs;
+  // Only real postings are shown. An empty jobs table shows the normal empty state, never invented jobs.
+  const displayList = jobs;
 
   const filteredJobs = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -597,7 +598,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.pageHeaderSection}>
             <View style={styles.pageTitleGroup}>
               <Icon name="briefcase" size={20} color={ORANGE} strokeWidth={2.2} />
-              <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Production Jobs</Text>
+              <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Production Jobs</Text>
             </View>
           </View>
           <View style={isTablet ? { flexDirection: 'row', paddingHorizontal: 16, gap: 16 } : { paddingHorizontal: 14, gap: 14 }}>
@@ -610,12 +611,17 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
         </ScrollView>
       ) : (
         <FlashListAny
+          keyboardShouldPersistTaps="handled"
+          {...scrollChrome}
           key={`jobs-grid-${numColumns}`}
           data={filteredJobs}
           renderItem={renderJobCard}
           keyExtractor={(item: any) => String(item.id)}
           numColumns={numColumns}
           estimatedItemSize={260}
+          onEndReached={loadMoreJobs}
+          onEndReachedThreshold={0.6}
+          ListFooterComponent={loadingMoreJobs ? <ActivityIndicator style={{ marginVertical: 16 }} color={ORANGE} /> : null}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <View style={styles.pageHeaderSection}>
@@ -623,11 +629,11 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
               <View style={styles.pageHeaderRow}>
                 <View style={styles.pageTitleGroup}>
                   <Icon name="briefcase" size={20} color={ORANGE} strokeWidth={2.2} />
-                  <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Production Jobs</Text>
+                  <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Production Jobs</Text>
                 </View>
 
                 {!isFan && !isInternal && (
-                  <TouchableOpacity
+                  <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.postJobBtn}
                     onPress={() => setCreateJobModalVisible(true)}
                     accessibilityLabel="Post a Job"
@@ -637,7 +643,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
                 )}
               </View>
 
-              <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+              <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                 Find your next production role or hire top film crew & studio talent.
               </Text>
 
@@ -645,26 +651,29 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
               {!isFan && !isInternal && (
                 <View style={styles.navPillRow}>
                   <TouchableOpacity
+                    hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                     style={[styles.navPillBtn, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
                     onPress={() => navigation.navigate('MyApplications')}
                   >
-                    <Icon name="file-text" size={13} color={themeColors.textSecondary} />
+                    <Icon name="file-text" size={13} color={themeColors.iconSecondary} />
                     <Text style={[styles.navPillText, { color: themeColors.textSecondary }]}>My Applications</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
+                    hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                     style={[styles.navPillBtn, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
                     onPress={() => navigation.navigate('ManagePostings')}
                   >
-                    <Icon name="settings" size={13} color={themeColors.textSecondary} />
+                    <Icon name="settings" size={13} color={themeColors.iconSecondary} />
                     <Text style={[styles.navPillText, { color: themeColors.textSecondary }]}>Manage Postings</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
+                    hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                     style={[styles.navPillBtn, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
                     onPress={() => setAlertsOpen(true)}
                   >
-                    <Icon name="bell" size={13} color={themeColors.textSecondary} />
+                    <Icon name="bell" size={13} color={themeColors.iconSecondary} />
                     <Text style={[styles.navPillText, { color: themeColors.textSecondary }]}>Job alerts</Text>
                   </TouchableOpacity>
                 </View>
@@ -673,17 +682,27 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
               {/* Search Bar + Filter Toggle */}
               <View style={styles.searchRow}>
                 <View style={[styles.searchBox, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                  <Icon name="search" size={16} color={themeColors.textMuted} />
-                  <TextInput
+                  <Icon name="search" size={16} color={themeColors.iconMuted} />
+                  <TextInput returnKeyType="search" accessibilityLabel="Search roles, crafts, studios"
                     style={[styles.searchInput, { color: themeColors.textPrimary }]}
                     placeholder="Search roles, crafts, studios..."
                     placeholderTextColor={themeColors.textMuted}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                   />
+                  {searchQuery ? (
+                    <TouchableOpacity
+                      onPress={() => setSearchQuery('')}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear search"
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Icon name="x" size={16} color={themeColors.iconMuted} />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
 
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Filters" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={[styles.filterToggleBtn, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }, (filterType !== 'all' || filterExperience !== 'all' || filterWorkMode !== 'all' || closingSoonOnly || savedOnly) && styles.filterToggleActive]}
                   onPress={() => setShowFilterBar(!showFilterBar)}
                 >
@@ -699,6 +718,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
                     {['all', ...JOB_TYPES].map((t) => (
                       <TouchableOpacity
                         key={t}
+                        hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                         style={[styles.filterChip, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, filterType === t && styles.filterChipActive]}
                         onPress={() => setFilterType(t)}
                       >
@@ -714,6 +734,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
                     {['all', ...EXPERIENCE_LEVELS].map((l) => (
                       <TouchableOpacity
                         key={l}
+                        hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                         style={[styles.filterChip, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, filterExperience === l && styles.filterChipActive]}
                         onPress={() => setFilterExperience(l)}
                       >
@@ -729,6 +750,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
                     {['all', ...WORK_MODES].map((m) => (
                       <TouchableOpacity
                         key={m}
+                        hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                         style={[styles.filterChip, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, filterWorkMode === m && styles.filterChipActive]}
                         onPress={() => setFilterWorkMode(m)}
                       >
@@ -742,12 +764,14 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
                   <Text style={[styles.filterGroupHeader, { color: themeColors.textMuted }]}>QUICK</Text>
                   <View style={styles.chipRow}>
                     <TouchableOpacity
+                      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                       style={[styles.filterChip, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, closingSoonOnly && styles.filterChipActive]}
                       onPress={() => setClosingSoonOnly((v) => !v)}
                     >
                       <Text style={[styles.filterChipText, { color: themeColors.textSecondary }, closingSoonOnly && styles.filterChipTextActive]}>Closing soon</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
+                      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                       style={[styles.filterChip, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, savedOnly && styles.filterChipActive]}
                       onPress={() => setSavedOnly((v) => !v)}
                     >
@@ -766,7 +790,7 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
                         setSavedOnly(false);
                       }}
                     >
-                      <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '800' }}>CLEAR ALL FILTERS</Text>
+                      <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>CLEAR ALL FILTERS</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -778,8 +802,8 @@ export const JobsScreen = ({ navigation }: { navigation: any }) => {
               <OfflineEmptyState />
             ) : (
               <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 }}>
-                <Icon name="briefcase" size={36} color={themeColors.textMuted} />
-                <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '800' }}>No Jobs Found</Text>
+                <Icon name="briefcase" size={36} color={themeColors.iconMuted} />
+                <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '700' }}>No Jobs Found</Text>
                 <Text style={{ color: themeColors.textSecondary, fontSize: 13, textAlign: 'center' }}>Try adjusting your filters to see more results.</Text>
               </View>
             )
@@ -842,13 +866,13 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 18.5,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   postJobBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -859,12 +883,13 @@ const styles = StyleSheet.create({
   },
   pageSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 12,
   },
   navPillRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap', // Work Sans is wider than the system font: wrap instead of cutting the last pill off
     gap: 8,
     marginBottom: 12,
   },
@@ -896,7 +921,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 8,
@@ -904,11 +929,11 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: INK,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   filterToggleBtn: {
     width: 42,
-    height: 42,
+    height: 44,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -929,8 +954,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   filterGroupHeader: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.8,
     marginBottom: 6,
@@ -955,14 +980,14 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   filterChipText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     color: '#64748B',
     textTransform: 'capitalize',
   },
   filterChipTextActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   webJobCard: {
     backgroundColor: '#FFFFFF',
@@ -980,12 +1005,10 @@ const styles = StyleSheet.create({
   },
   webJobCardTablet: {
     flex: 1,
-    marginHorizontal: 0,
+    marginHorizontal: 8,
     marginBottom: 16,
-    maxWidth: '48.8%',
   },
   webJobCardTablet3Col: {
-    maxWidth: '32.2%',
   },
   columnWrapper: {
     paddingHorizontal: 16,
@@ -1017,16 +1040,16 @@ const styles = StyleSheet.create({
   webCompanyLogoText: {
     color: ORANGE,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   webJobTitle: {
     color: INK,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   webJobCompany: {
     color: '#64748B',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
   },
@@ -1040,8 +1063,8 @@ const styles = StyleSheet.create({
   },
   webHiringBadgeText: {
     color: '#059669',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.6,
   },
   appliedBadge: {
@@ -1057,12 +1080,12 @@ const styles = StyleSheet.create({
   },
   appliedBadgeText: {
     color: '#16A34A',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   webJobDesc: {
     color: '#475569',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 10,
   },
@@ -1082,9 +1105,9 @@ const styles = StyleSheet.create({
   },
   webMonoBadgeText: {
     color: '#64748B',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
   webSalaryCtaFooter: {
     borderTopWidth: 1,
@@ -1093,14 +1116,14 @@ const styles = StyleSheet.create({
   },
   webSalaryLabel: {
     color: '#94A3B8',
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.6,
   },
   webSalaryText: {
     color: ORANGE,
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     marginTop: 1,
   },
   webJobCtaBtn: {
@@ -1108,7 +1131,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ORANGE,
-    height: 40,
+    height: 44,
     borderRadius: 12,
     gap: 8,
     marginTop: 6,
@@ -1126,7 +1149,7 @@ const styles = StyleSheet.create({
   webJobCtaBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   webJobCtaBtnTextApplied: {
     color: '#16A34A',
@@ -1134,7 +1157,7 @@ const styles = StyleSheet.create({
   webJobCtaBtnTextOwner: {
     color: '#0D0D0D',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   iconActionBtnBeside: {

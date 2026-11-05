@@ -77,7 +77,7 @@ const NotificationsDropdown = () => {
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
-        .neq('type', 'new_message')
+        .not('type', 'in', '(new_message,call_started,incoming_call,call,call_answered,call_event,call_invite,call_missed,call_ended,call_declined,space_started)')
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -89,8 +89,7 @@ const NotificationsDropdown = () => {
             n.type === 'call_started' || 
             n.type === 'incoming_call' || 
             n.type === 'call' ||
-            (n.title && n.title.toLowerCase().includes('call')) ||
-            (n.message && n.message.toLowerCase().includes('call'));
+            (n.type !== 'missed_call' && /(incoming|missed|declined) .*call|started an? (voice |video |group |audio )?(call|space)/i.test(`${n.title || ''} ${n.message || ''}`));
           return !isCall;
         })
         .map((n: any) => ({
@@ -107,7 +106,8 @@ const NotificationsDropdown = () => {
         }));
 
       setNotifications(formatted);
-      setUnreadCount(formatted.filter((n: any) => !n.is_read).length);
+      const { count: totalUnread } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('is_read', false).not('type', 'in', '(new_message,call_started,incoming_call,call,call_answered,call_event,call_invite,call_missed,call_ended,call_declined,space_started)');
+      setUnreadCount(totalUnread ?? formatted.filter((n: any) => !n.is_read).length);
     } catch (err) {
       console.error('Error fetching notifications:', err);
     } finally {
@@ -212,10 +212,10 @@ const NotificationsDropdown = () => {
   return (
     <DropdownMenu onOpenChange={(open) => { if (open) fetchNotifications(); }}>
       <DropdownMenuTrigger asChild>
-        <Button 
+        <Button aria-label="Notifications" 
           variant={isNotificationsActive ? "default" : "ghost"} 
           size="icon" 
-          className={`h-8 w-8 sm:h-9 sm:w-9 lg:h-10 lg:w-10 p-0 relative transition-all duration-300 ${isNotificationsActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+          className={`h-11 w-11 sm:h-10 sm:w-10 p-0 relative transition-[color,background-color,box-shadow,transform] duration-200 ${isNotificationsActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
         >
           <Bell className={`h-4 w-4 sm:h-5 sm:w-5 ${isNotificationsActive ? "text-primary-foreground" : ""}`} />
           {unreadCount > 0 && (
@@ -230,7 +230,7 @@ const NotificationsDropdown = () => {
         alignOffset={0}
         sideOffset={12}
         collisionPadding={16}
-        className="w-[320px] max-w-[calc(100vw-32px)] p-0 border border-white/10 bg-background/95 backdrop-blur-xl shadow-2xl shadow-black/60 rounded-2xl overflow-hidden animate-in fade-in zoom-in duration-200 z-[60] flex flex-col"
+        className="w-[320px] max-w-[calc(100vw-32px)] p-0 border border-white/10 bg-background/95 backdrop-blur-xl shadow-2xl shadow-black/60 rounded-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-[60] flex flex-col"
       >
         <div className="flex items-center justify-between p-3 flex-shrink-0">
           <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>

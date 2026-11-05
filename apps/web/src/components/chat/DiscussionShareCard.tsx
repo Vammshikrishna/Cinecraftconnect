@@ -60,47 +60,47 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
     return (
         <Link
             to={`/discussion-rooms/${roomId}`}
-            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition duration-500 hover:-translate-y-1 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
             <CornerBrackets />
             {/* Compact Header */}
-            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-black/10 dark:border-white/10 flex items-center justify-between">
+            <div className="p-4 bg-black/60 border-b border-black/10 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 p-1">
                         <DiscussionRoomIcon className="w-full h-full text-primary" color="currentColor" />
                     </div>
                     <div className="flex flex-col">
-                        <span className="text-[11px] font-black text-white uppercase tracking-wider">
+                        <span className="text-[12px] font-black text-white uppercase tracking-wider">
                             Discussion
                         </span>
-                        <span className="text-[8px] text-primary font-black uppercase tracking-[0.2em] leading-tight">
+                        <span className="text-[12px] text-primary font-black uppercase tracking-[0.2em] leading-tight">
                             Room
                         </span>
                     </div>
                 </div>
 
                 {isActive && (
-                    <div className="px-2 py-0.5 bg-red-600 text-white text-[7px] font-black uppercase tracking-widest rounded shadow-lg animate-pulse flex items-center gap-1">
+                    <div className="px-2 py-0.5 bg-red-600 text-white text-xs font-black uppercase tracking-widest rounded shadow-lg flex items-center gap-1">
                         <div className="w-1 h-1 rounded-full bg-white" /> LIVE
                     </div>
                 )}
             </div>
 
             {/* Content */}
-            <div className="p-5 space-y-4 bg-white dark:bg-black/60 backdrop-blur-md">
+            <div className="p-5 space-y-4 bg-white dark:bg-black/60">
                 <div className="space-y-1">
-                    <h4 className="font-serif text-[13px] font-bold text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors tracking-tight uppercase">
+                    <h4 className="font-serif text-sm font-bold text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors tracking-tight uppercase">
                         {title}
                     </h4>
                     {category && (
-                        <div className="font-mono inline-block px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary text-[7.5px] font-bold uppercase tracking-widest mt-1">
-                            CAT // {category}
+                        <div className="inline-block px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary text-xs font-medium mt-1">
+                            {category}
                         </div>
                     )}
                 </div>
 
                 {description && (
-                    <p className="text-[11px] text-foreground/70 font-medium leading-relaxed line-clamp-6 italic opacity-80 border-l-2 border-primary/30 pl-3">
+                    <p className="text-[12px] text-foreground/70 font-medium leading-relaxed line-clamp-6 italic opacity-80 border-l-2 border-primary/30 pl-3">
                         {description}
                     </p>
                 )}
@@ -108,14 +108,14 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
                 <div className="flex flex-col gap-2 pt-1">
                     <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-primary/60" />
-                        <span className="text-[8px] font-black text-foreground/70 uppercase tracking-widest">
+                        <span className="text-[12px] font-black text-foreground/70 uppercase tracking-widest">
                             {memberCount || 0} Members
                         </span>
                     </div>
                     {createdAt && (
                         <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4 text-primary/60" />
-                            <span className="text-[8px] font-black text-foreground/50 uppercase tracking-widest">
+                            <span className="text-[12px] font-black text-foreground/50 uppercase tracking-widest">
                                 {formatDistanceToNow(new Date(createdAt), { addSuffix: true })}
                             </span>
                         </div>
@@ -123,12 +123,12 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
                     {roomType === 'private' && (
                         <div className="flex items-center gap-2">
                             <Lock size={12} className="text-muted-foreground" />
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Private Space</span>
+                            <span className="text-[12px] font-bold text-muted-foreground uppercase tracking-widest">Private Space</span>
                         </div>
                     )}
                 </div>
 
-                <div className="w-full py-2.5 bg-primary text-black text-center rounded-xl group-hover:bg-primary/90 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/10">
+                <div className="w-full py-2.5 bg-primary text-black text-center rounded-xl group-hover:bg-primary/90 transition text-[12px] font-black uppercase tracking-widest shadow-lg shadow-primary/10">
                     Join Conversation
                 </div>
             </div>

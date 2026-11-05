@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 const Tile = ({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string | number; sub?: string }) => (
   <div className="rounded-2xl border border-border/60 bg-card/40 p-5">
-    <div className="flex items-center gap-2 text-muted-foreground text-[10px] font-black uppercase tracking-widest"><Icon size={14} /> {label}</div>
+    <div className="flex items-center gap-2 text-muted-foreground text-[12px] font-black uppercase tracking-widest"><Icon size={14} /> {label}</div>
     <p className="text-3xl font-black mt-1">{value}</p>
     {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
   </div>
@@ -38,7 +38,7 @@ export const PageInsights = ({ pageId }: { pageId: string }) => {
 
       <div className="rounded-2xl border border-border/60 bg-card/40 p-5">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><TrendingUp size={14} /> Last 14 days</p>
+          <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><TrendingUp size={14} /> Last 14 days</p>
           <p className="text-xs text-muted-foreground">{data.unique_viewers} different people have viewed this page</p>
         </div>
         <div className="flex items-end gap-1.5 h-32">
@@ -49,7 +49,7 @@ export const PageInsights = ({ pageId }: { pageId: string }) => {
             </div>
           ))}
         </div>
-        <p className="text-[11px] text-muted-foreground mt-3">Bars are page views per day. A green icon marks days with new followers. Visits by your own team are not counted.</p>
+        <p className="text-[12px] text-muted-foreground mt-3">Bars are page views per day. A green icon marks days with new followers. Visits by your own team are not counted.</p>
       </div>
     </div>
   );

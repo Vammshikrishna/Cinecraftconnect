@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { friendlyError } from '@cinecraft/core';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
@@ -61,7 +62,7 @@ export const PageVerificationDialog = ({
       onOpenChange(false);
       onSubmitted();
     } catch (e: any) {
-      toast({ title: 'Could not submit', description: e?.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: 'Could not submit', description: friendlyError(e, 'Please try again.'), variant: 'destructive' });
     } finally {
       setBusy(false);
     }

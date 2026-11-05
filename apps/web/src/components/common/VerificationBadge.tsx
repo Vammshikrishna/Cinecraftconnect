@@ -2,7 +2,7 @@ import { BadgeCheck } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface VerificationBadgeProps {
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }
 
@@ -11,6 +11,7 @@ const SIZE_MAP = {
   sm: 'w-3.5 h-3.5',
   md: 'w-4 h-4',
   lg: 'w-5 h-5',
+  xl: 'w-7 h-7',
 };
 
 const VerificationBadge = ({ size = 'md', className = '' }: VerificationBadgeProps) => {

@@ -34,21 +34,19 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
         <div className="flex items-start gap-4 flex-1 min-w-0">
           {onBack && (
             <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.95 }}
               onClick={onBack}
-              className="h-10 w-10 shrink-0 flex items-center justify-center rounded-xl bg-muted/30 border border-border/50 hover:bg-muted/50 transition-all shadow-sm mt-0.5"
+              aria-label="Back"
+              className="h-11 w-11 shrink-0 flex items-center justify-center rounded-xl bg-muted/30 border border-border/50 hover:bg-muted/50 transition shadow-sm mt-0.5"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             </motion.button>
           )}
 
           <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15 }}
             className="flex-1 min-w-0 flex flex-col"
           >
             <h1 className={`text-xl md:text-2xl font-black tracking-tight flex items-center gap-3 md:gap-4 ${titleClassName} leading-tight`}>
@@ -58,9 +56,9 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
 
             {!actionsAtTop && subtitle && (
               <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.15 }}
                 className="text-xs md:text-sm text-muted-foreground font-medium leading-relaxed max-w-3xl mt-0 md:mt-0.5"
               >
                 {subtitle}
@@ -71,15 +69,15 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
         
         {actions && (
           <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15 }}
             className={cn(
               "flex shrink-0 justify-end items-center gap-2 md:gap-3 flex-wrap",
               // Universal responsive button sizing for all header actions
-              "[&_button]:h-9 md:[&_button]:h-11",
+              "[&_button]:h-11 md:[&_button]:h-11",
               "[&_button]:px-3 md:[&_button]:px-5",
-              "[&_button]:text-[10px] md:[&_button]:text-sm",
+              "[&_button]:text-xs md:[&_button]:text-sm",
               "[&_button]:rounded-xl",
               actionsAtTop && "lg:order-last"
             )}
@@ -91,9 +89,9 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
 
       {actionsAtTop && subtitle && (
         <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.15 }}
           className="text-xs md:text-sm text-muted-foreground font-medium leading-relaxed max-w-4xl"
         >
           {subtitle}

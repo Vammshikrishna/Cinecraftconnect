@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { friendlyError } from '@cinecraft/core';
 
 interface Props {
   open: boolean;
@@ -34,6 +35,8 @@ export const QuoteRequestDialog = ({ open, onOpenChange, vendorId, vendorName, s
   const submit = async () => {
     if (form.brief.trim().length < 10) return toast({ title: 'Tell the vendor what you need', description: 'At least 10 characters.', variant: 'destructive' });
     if (form.end < form.start) return toast({ title: 'Check your dates', description: 'The end date cannot be before the start date.', variant: 'destructive' });
+    if (form.crew && !(Number.isInteger(Number(form.crew)) && Number(form.crew) >= 1 && Number(form.crew) <= 1000)) return toast({ title: 'Check the crew size', description: 'Enter a whole number from 1 to 1000, or leave it empty.', variant: 'destructive' });
+    if (form.budget && !(Number(form.budget) > 0)) return toast({ title: 'Check the budget', description: 'The budget must be more than 0, or leave it empty.', variant: 'destructive' });
     setBusy(true);
     const { data, error } = await (supabase as any).rpc('request_vendor_quote', {
       p_vendor_id: vendorId,
@@ -47,7 +50,7 @@ export const QuoteRequestDialog = ({ open, onOpenChange, vendorId, vendorName, s
     });
     setBusy(false);
     if (error || data?.success === false) {
-      toast({ title: 'Could not send the request', description: error?.message || data?.message, variant: 'destructive' });
+      toast({ title: 'Could not send the request', description: error ? friendlyError(error, 'Please try again in a moment.') : data?.message, variant: 'destructive' });
       return;
     }
     toast({ title: 'Request sent', description: `${vendorName} will reply with a quote. You'll be notified.` });

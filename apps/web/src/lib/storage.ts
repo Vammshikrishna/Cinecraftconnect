@@ -26,7 +26,9 @@ export const STORAGE_BUCKETS = {
   /** User avatar and cover images */
   AVATARS: 'avatars',
   /** Portfolio media (images, videos, reels) */
-  PORTFOLIO_MEDIA: 'portfolio-media',
+  // The live project has no 'portfolio-media' bucket (uploads failed with "Bucket not found"); portfolio pieces live in the same
+  // 'portfolios' bucket as post media, under their own portfolio/<userId>/ folder.
+  PORTFOLIO_MEDIA: 'portfolios',
 } as const;
 
 export type StorageBucket = (typeof STORAGE_BUCKETS)[keyof typeof STORAGE_BUCKETS];

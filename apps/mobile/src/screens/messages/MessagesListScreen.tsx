@@ -10,7 +10,15 @@ import {
   ActivityIndicator,
   Modal,
   InteractionManager,
+  Alert,
+  Dimensions,
+  GestureResponderEvent,
 } from 'react-native';
+import { useDropdownMenu, DropdownItem } from '../../components/common/DropdownMenu';
+import { useMessageRequests } from '../../hooks/useMessageRequests';
+import { useConversationPrefs, pinnedFirst } from '../../hooks/useConversationPrefs';
+import { MessageRequestsEntry, MessageRequestsModal } from '../../components/chat/MessageRequestsParts';
+import type { MessageRequestRow } from '../../utils/messageRequests';
 import { Header } from '../../components/Header';
 import { useFocusEffect } from '@react-navigation/native';
 import { useIsOffline } from '../../hooks/useIsOffline';
@@ -20,6 +28,7 @@ import { TabletContainer } from '../../components/common/TabletContainer';
 import { getSupabaseClient } from '@cinecraft/api';
 import { decryptDirectMessage } from '@cinecraft/e2ee';
 import { useE2EEChatKeys } from '../../hooks/useE2EEChatKeys';
+import { confirmAndDeleteConversation } from '../../utils/deleteConversation';
 import { fetchWithCache, getCache, saveCache, getCacheSync, getCurrentUserIdSync, resolveCurrentUserId, setCachedCurrentUserId } from '../../services/offlineCache';
 import { useAutoRefreshOnReconnect } from '../../hooks/useAutoRefreshOnReconnect';
 import { ConversationListSkeleton } from '../../components/common/Skeleton';
@@ -27,6 +36,10 @@ import { CachedImage } from '../../components/common/CachedImage';
 import { FlashList } from '@shopify/flash-list';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { usePresence } from '../../hooks/usePresence';
+import { requestE2EEPrompt } from '../../services/e2eeState';
+import { E2EEOfferCard } from '../../components/security/E2EEOfferCard';
+import { resolveChatParams, blockedBothWays } from '../../utils/chatParams';
+import { getChatClearedAt, isAfterChatClear } from '../../utils/chatClearMarker';
 
 const FlashListAny = FlashList as any;
 
@@ -80,12 +93,17 @@ const generateDirectRoomId = (userId1: string, userId2: string): string => {
   return `${id1}-${id2}`.slice(0, 36);
 };
 
-export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
+export const MessagesListScreen = ({ navigation, route }: { navigation: any; route?: any }) => {
   const isOffline = useIsOffline();
+  const { requests, hiddenRequests, deletedRequests, hasV2, requestPartnerIds, refresh: refreshRequests } = useMessageRequests();
+  const { prefs: convoPrefs, toggleMute, togglePin, migrateLegacyMutes } = useConversationPrefs();
+  const [showRequests, setShowRequests] = useState(false);
   const { settings, themeColors, isDark } = useUserSettings();
   const { isUserOnline } = usePresence();
   const initialCached = getCacheSync<ConversationItem[]>('user_conversations');
   const [conversations, setConversations] = useState<ConversationItem[]>(() => initialCached || []);
+  // "Clear chat" markers (this device only) per partner, so a cleared chat shows no old preview
+  const [clearedMap, setClearedMap] = useState<Record<string, number>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState<boolean>(() => !initialCached || initialCached.length === 0);
@@ -95,6 +113,8 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
 
   // E2EE Keys
   const { privateKey } = useE2EEChatKeys();
+  // ask for the PIN (only for people who turned encrypted messages on and need to unlock or set up)
+  useEffect(() => { requestE2EEPrompt(); }, []);
   const privateKeyRef = useRef<string | null>(privateKey);
   useEffect(() => {
     privateKeyRef.current = privateKey;
@@ -317,6 +337,17 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
     }
   }, [privateKey, fetchConversations]);
 
+  // callers such as Network / PitchDetail open Messages with recipientId / recipientName (or partnerId, userId):
+  // forward to the chat so the "Message" buttons keep working whichever key names they use
+  const incomingRef = useRef<string | null>(null);
+  useEffect(() => {
+    const inc = resolveChatParams(route?.params);
+    const key = inc.partnerId || inc.conversationId;
+    if (!key || incomingRef.current === key) return;
+    incomingRef.current = key;
+    navigation.navigate('Conversation', inc);
+  }, [route?.params, navigation]);
+
   const searchCrewMembers = async (q: string) => {
     setCrewSearch(q);
     if (!q.trim()) {
@@ -327,14 +358,30 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
     try {
       const supabase = getSupabaseClient();
       const user = (await supabase.auth.getSession()).data.session?.user ?? null; // local session: getUser() is a network call
+      // hide people I blocked and people who blocked me
+      let hidden = new Set<string>();
+      if (user?.id) {
+        try {
+          const rpc = await (supabase as any).rpc('blocked_user_ids_both_ways');
+          if (!rpc.error && Array.isArray(rpc.data)) {
+            hidden = new Set<string>(rpc.data.map((r: any) => (typeof r === 'string' ? r : r?.blocked_user_ids_both_ways)).filter(Boolean));
+          } else {
+            const { data: rows } = await (supabase as any)
+              .from('blocked_users')
+              .select('user_id, blocked_user_id')
+              .or(`user_id.eq.${user.id},blocked_user_id.eq.${user.id}`);
+            hidden = blockedBothWays(user.id, rows);
+          }
+        } catch { /* keep searching even if the block list cannot be read */ }
+      }
       const { data } = await supabase
         .from('profiles')
         .select('id, full_name, username, avatar_url, craft')
         .ilike('full_name', `%${q}%`)
         .neq('id', user?.id || '')
-        .limit(10);
+        .limit(20);
 
-      setCrewResults(data || []);
+      setCrewResults((data || []).filter((p: any) => !hidden.has(p.id)).slice(0, 10));
     } catch (err) {
       console.warn('[MessagesList] Search error:', err);
     } finally {
@@ -361,17 +408,90 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return conversations.filter((c) => {
+    const list = conversations.filter((c) => {
+      if (requestPartnerIds.has(c.partner?.id)) return false; // shown under Requests instead
       const name = (c.partner?.full_name || c.partner?.username || '').toLowerCase();
       const craft = (c.partner?.craft || '').toLowerCase();
       return name.includes(q) || craft.includes(q);
     });
-  }, [conversations, searchQuery]);
+    return pinnedFirst(list, convoPrefs);
+  }, [conversations, searchQuery, requestPartnerIds, convoPrefs]);
+
+  // one time: copy old per-phone mute choices into the synced table
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (migratedRef.current || conversations.length === 0) return;
+    migratedRef.current = true;
+    migrateLegacyMutes(conversations.map((c) => c.partner?.id).filter(Boolean));
+  }, [conversations, migrateLegacyMutes]);
+
+  const openRequest = useCallback((req: MessageRequestRow) => {
+    setShowRequests(false);
+    const userId = currentUserIdRef.current || getCurrentUserIdSync();
+    navigation.navigate('Conversation', {
+      conversationId: userId ? generateDirectRoomId(userId, req.partner_id) : undefined,
+      partnerId: req.partner_id,
+      partnerName: req.full_name || 'Member',
+      partnerAvatar: req.avatar_url,
+    });
+  }, [navigation]);
+
+  // long-press on a conversation: a dropdown next to the finger
+  const chatMenu = useDropdownMenu();
+  const [chatMenuItems, setChatMenuItems] = useState<DropdownItem[]>([]);
+  const showChatMenu = useCallback((item: ConversationItem, e?: GestureResponderEvent) => {
+    const pid = item.partner?.id;
+    if (!pid) return;
+    const p = convoPrefs[pid];
+    const report = (r: { ok: boolean; message?: string }) => { if (!r.ok && r.message) Alert.alert('Chat', r.message); };
+    setChatMenuItems([
+      { label: p?.pinned ? 'Unpin' : 'Pin', icon: 'pin', onPress: async () => report(await togglePin(pid)) },
+      { label: p?.muted ? 'Unmute' : 'Mute', icon: 'volume-x', onPress: async () => report(await toggleMute(pid)) },
+      {
+        label: 'Delete conversation',
+        icon: 'trash-2',
+        destructive: true,
+        onPress: () => {
+          const uid = currentUserIdRef.current || getCurrentUserIdSync();
+          if (!uid) return;
+          confirmAndDeleteConversation(uid, pid, item.partner?.full_name || item.partner?.username || '', () => {
+            setConversations((prev) => prev.filter((c) => c.partner?.id !== pid));
+            fetchConversations(false, true);
+          });
+        },
+      },
+    ]);
+    const ne = e?.nativeEvent;
+    if (ne && typeof ne.pageX === 'number') chatMenu.openAt(ne.pageX, ne.pageY);
+    else chatMenu.openAt(Dimensions.get('window').width / 2, Dimensions.get('window').height / 2);
+  }, [convoPrefs, togglePin, toggleMute, fetchConversations, chatMenu.openAt]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      (async () => {
+        const uid = currentUserIdRef.current || getCurrentUserIdSync();
+        if (!uid) return;
+        const next: Record<string, number> = {};
+        for (const c of conversations) {
+          const pid = c.partner?.id;
+          if (!pid) continue;
+          const at = await getChatClearedAt(uid, pid);
+          if (at != null) next[pid] = at;
+        }
+        if (alive) setClearedMap((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      })();
+      return () => { alive = false; };
+    }, [conversations])
+  );
 
   const renderItem = useCallback(({ item }: { item: ConversationItem }) => {
     const partnerName = item.partner?.full_name || item.partner?.username || 'Member';
-    const initials = (partnerName[0] || 'M').toUpperCase();
+    const initials = (Array.from(partnerName.trim())[0] || 'M').toUpperCase();
     const hasUnread = (item.unreadCount || 0) > 0;
+    const clearedAt = item.partner?.id ? clearedMap[item.partner.id] ?? null : null;
+    const previewCleared = clearedAt != null && !isAfterChatClear(item.lastMessageTime || item.updated_at, clearedAt);
+    const pref = item.partner?.id ? convoPrefs[item.partner.id] : undefined;
 
     return (
       <TouchableOpacity
@@ -380,6 +500,8 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
           { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.divider },
           hasUnread && [styles.convCardUnread, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.12)' : '#FFF7F5' }],
         ]}
+        onLongPress={(e) => showChatMenu(item, e)}
+        delayLongPress={350}
         onPress={() => {
           const userId = currentUserIdRef.current || getCurrentUserIdSync();
           const directRoomId = userId && item.partner?.id
@@ -409,23 +531,27 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
 
         <View style={styles.convBody}>
           <View style={styles.convTop}>
-            <Text style={[styles.partnerName, { color: themeColors.textPrimary }, hasUnread && styles.partnerNameBold]}>
+            <Text numberOfLines={1} style={[styles.partnerName, { color: themeColors.textPrimary, flexShrink: 1 }, hasUnread && styles.partnerNameBold]}>
               {partnerName}
             </Text>
-            <Text style={[styles.timeText, { color: themeColors.textMuted }]}>
-              {formatTime(item.lastMessageTime || item.updated_at)}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {pref?.pinned ? <Icon name="pin" size={12} color={themeColors.textMuted} /> : null}
+              {pref?.muted ? <Icon name="volume-x" size={12} color={themeColors.textMuted} /> : null}
+              <Text style={[styles.timeText, { color: themeColors.textMuted }]}>
+                {formatTime(item.lastMessageTime || item.updated_at)}
+              </Text>
+            </View>
           </View>
           <View style={styles.convBottom}>
             <Text
               style={[styles.lastMsg, { color: themeColors.textSecondary }, hasUnread && [styles.lastMsgBold, { color: themeColors.textPrimary }]]}
               numberOfLines={1}
             >
-              {item.lastMessage || 'Start a conversation'}
+              {previewCleared ? '' : (item.lastMessage || 'Start a conversation')}
             </Text>
             {hasUnread && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadCount}>{item.unreadCount}</Text>
+              <View style={[styles.unreadBadge, pref?.muted && { backgroundColor: themeColors.textMuted, opacity: 0.7 }]}>
+                <Text style={styles.unreadCount}>{(item.unreadCount || 0) > 99 ? '99+' : item.unreadCount}</Text>
               </View>
             )}
           </View>
@@ -435,19 +561,19 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
         </View>
       </TouchableOpacity>
     );
-  }, [themeColors, isDark, navigation, settings.show_online_status, isUserOnline]);
+  }, [themeColors, isDark, navigation, settings.show_online_status, isUserOnline, clearedMap, convoPrefs, showChatMenu]);
 
   return (
     <TabletContainer
       backgroundColor={themeColors.bgScreen}
-      maxWidth={768}
+      maxWidth="content"
       header={
         <Header
           title="Messages"
           showLogo={false}
           onBack={() => navigation.goBack()}
           rightAction={
-            <TouchableOpacity onPress={() => setShowNewChatModal(true)} style={styles.newChatBtn}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="New message" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setShowNewChatModal(true)} style={styles.newChatBtn}>
               <Icon name="edit" size={18} color={ORANGE} />
             </TouchableOpacity>
           }
@@ -456,20 +582,27 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
     >
 
       <View style={[styles.searchBar, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-        <Icon name="search" size={16} color="#9CA3AF" />
-        <TextInput
+        <Icon name="search" size={16} color={themeColors.iconMuted} />
+        <TextInput returnKeyType="search" accessibilityLabel="Search conversations"
           style={[styles.searchInput, { color: themeColors.textPrimary }]}
           placeholder="Search conversations..."
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor={themeColors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Icon name="x" size={16} color="#9CA3AF" />
+          <TouchableOpacity
+            onPress={() => setSearchQuery('')}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Icon name="x" size={16} color={themeColors.iconMuted} />
           </TouchableOpacity>
         ) : null}
       </View>
+
+      <E2EEOfferCard />
 
       {loading ? (
         <ConversationListSkeleton count={7} />
@@ -480,6 +613,17 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
           keyExtractor={(item: any) => item.id}
           contentContainerStyle={styles.list}
           estimatedItemSize={76}
+          extraData={convoPrefs}
+          ListHeaderComponent={
+            !searchQuery ? (
+              <MessageRequestsEntry
+                main={requests}
+                hiddenCount={hasV2 ? hiddenRequests.length : 0}
+                themeColors={themeColors}
+                onPress={() => { refreshRequests(); setShowRequests(true); }}
+              />
+            ) : null
+          }
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ORANGE} colors={[ORANGE]} />
           }
@@ -488,9 +632,9 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
               <OfflineEmptyState />
             ) : (
               <View style={styles.emptyState}>
-                <Icon name="message-circle" size={44} color="#D1D5DB" />
-                <Text style={styles.emptyTitle}>No Conversations Yet</Text>
-                <Text style={styles.emptySub}>
+                <Icon name="message-circle" size={44} color={themeColors.iconMuted} />
+                <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Conversations Yet</Text>
+                <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
                   Tap the edit button above to start a chat with any crew member.
                 </Text>
                 <TouchableOpacity
@@ -505,6 +649,19 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
         />
       )}
 
+      {/* Message requests */}
+      <MessageRequestsModal
+        visible={showRequests}
+        onClose={() => setShowRequests(false)}
+        main={requests}
+        hidden={hiddenRequests}
+        deleted={deletedRequests}
+        hasV2={hasV2}
+        privateKey={privateKey}
+        themeColors={themeColors}
+        onOpen={openRequest}
+      />
+
       {/* New Conversation Search Modal */}
       <Modal
         visible={showNewChatModal}
@@ -514,7 +671,7 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
       >
         <View style={[styles.modalContainer, { backgroundColor: themeColors.bgScreen }]}>
           <View style={[styles.modalHeader, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               onPress={() => setShowNewChatModal(false)}
               style={styles.modalCloseBtn}
             >
@@ -525,8 +682,8 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
           </View>
 
           <View style={[styles.modalSearchRow, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-            <Icon name="search" size={16} color={themeColors.textMuted} />
-            <TextInput
+            <Icon name="search" size={16} color={themeColors.iconMuted} />
+            <TextInput returnKeyType="search" accessibilityLabel="Search people by name"
               style={[styles.modalSearchInput, { color: themeColors.textPrimary }]}
               placeholder="Search people by name..."
               placeholderTextColor={themeColors.textMuted}
@@ -535,8 +692,8 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
               autoFocus
             />
             {crewSearch ? (
-              <TouchableOpacity onPress={() => searchCrewMembers('')}>
-                <Icon name="x" size={16} color={themeColors.textMuted} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => searchCrewMembers('')}>
+                <Icon name="x" size={16} color={themeColors.iconMuted} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -581,7 +738,7 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={[styles.crewName, { color: themeColors.textPrimary }]}>{item.full_name}</Text>
                     <Text style={[styles.crewCraft, { color: themeColors.textSecondary }]}>{item.craft || 'Film Professional'}</Text>
                   </View>
-                  <Icon name="chevron-right" size={18} color={themeColors.textMuted} />
+                  <Icon name="chevron-right" size={18} color={themeColors.iconMuted} />
                 </TouchableOpacity>
               )}
               ListEmptyComponent={
@@ -599,6 +756,7 @@ export const MessagesListScreen = ({ navigation }: { navigation: any }) => {
           )}
         </View>
       </Modal>
+      {chatMenu.render(chatMenuItems)}
     </TabletContainer>
   );
 };
@@ -608,7 +766,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   newChatBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     backgroundColor: '#FFF1F0',
     alignItems: 'center',
@@ -618,11 +776,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#FFFFFF', borderRadius: 10,
     marginHorizontal: 14, marginTop: 10, marginBottom: 6,
-    paddingHorizontal: 12, height: 42,
+    paddingHorizontal: 12, height: 44,
     borderWidth: 1, borderColor: '#E5E7EB', gap: 8,
   },
   searchInput: { flex: 1, fontSize: 13, color: INK },
-  list: { paddingBottom: 40 },
+  list: { paddingBottom: 100 },
   convCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 12,
@@ -646,12 +804,12 @@ const styles = StyleSheet.create({
     width: 48, height: 48, borderRadius: 24, overflow: 'hidden',
     backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center',
   },
-  avatarInitial: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+  avatarInitial: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
   convBody: { flex: 1 },
   convTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 },
   partnerName: { color: INK, fontSize: 14, fontWeight: '600' },
-  partnerNameBold: { fontWeight: '800' },
-  timeText: { color: '#9CA3AF', fontSize: 10.5 },
+  partnerNameBold: { fontWeight: '700' },
+  timeText: { color: '#9CA3AF', fontSize: 12 },
   convBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   lastMsg: { color: '#9CA3AF', fontSize: 12, flex: 1 },
   lastMsgBold: { color: '#1F2937', fontWeight: '600' },
@@ -660,11 +818,11 @@ const styles = StyleSheet.create({
     minWidth: 18, height: 18, paddingHorizontal: 5,
     alignItems: 'center', justifyContent: 'center',
   },
-  unreadCount: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
-  craftText: { color: ORANGE, fontSize: 9.5, fontWeight: '800', marginTop: 2, textTransform: 'uppercase' },
+  unreadCount: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  craftText: { color: ORANGE, fontSize: 12, fontWeight: '700', marginTop: 2, textTransform: 'uppercase' },
   emptyState: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
-  emptyTitle: { color: INK, fontSize: 16, fontWeight: '800', marginTop: 14, marginBottom: 6 },
-  emptySub: { color: '#6B7280', fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  emptyTitle: { color: INK, fontSize: 16, fontWeight: '700', marginTop: 14, marginBottom: 6 },
+  emptySub: { color: '#64748B', fontSize: 13, textAlign: 'center', lineHeight: 18 },
   startChatBtn: {
     marginTop: 18,
     backgroundColor: ORANGE,
@@ -688,7 +846,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB',
   },
   modalCloseBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  modalTitle: { fontSize: 16, fontWeight: '800', color: INK },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: INK },
   modalSearchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -701,7 +859,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     gap: 8,
   },
-  modalSearchInput: { flex: 1, fontSize: 13.5, color: INK },
+  modalSearchInput: { flex: 1, fontSize: 14, color: INK },
   crewCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -713,7 +871,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   crewName: { fontSize: 14, fontWeight: '700', color: INK },
-  crewCraft: { fontSize: 11, color: '#6B7280', marginTop: 2, textTransform: 'uppercase' },
+  crewCraft: { fontSize: 12, color: '#64748B', marginTop: 2, textTransform: 'uppercase' },
 });
 
 export default MessagesListScreen;

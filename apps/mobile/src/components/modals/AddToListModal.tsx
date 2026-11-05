@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, ActivityInd
 import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 
@@ -59,7 +60,7 @@ export const AddToListModal = ({ visible, onClose, userId, titleId, mediaType, t
     const { error } = on ? await add(listId) : await db.from('film_list_items').delete().eq('list_id', listId).eq(col, val);
     if (error && error.code !== '23505') {
       setMember((m) => ({ ...m, [listId]: !on }));
-      Alert.alert('Could not update the list', error.message);
+      Alert.alert('Could not update the list', friendlyError(error));
     }
   };
 
@@ -69,7 +70,7 @@ export const AddToListModal = ({ visible, onClose, userId, titleId, mediaType, t
     const { data, error } = await (getSupabaseClient() as any).from('film_lists').insert({ user_id: userId, name: name.trim() }).select('id').single();
     if (error) {
       setBusy(false);
-      return Alert.alert('Could not create the list', error.message);
+      return Alert.alert('Could not create the list', friendlyError(error));
     }
     await add(data.id);
     setName('');
@@ -83,9 +84,9 @@ export const AddToListModal = ({ visible, onClose, userId, titleId, mediaType, t
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <View style={[s.sheet, { backgroundColor: T.bgCard }]}>
           <View style={s.header}>
-            <Text style={{ color: T.textPrimary, fontSize: 17, fontWeight: '900', flex: 1 }}>Add to list</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Icon name="x" size={20} color={T.textSecondary} />
+            <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700', flex: 1 }}>Add to list</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="x" size={20} color={T.iconSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -121,7 +122,7 @@ export const AddToListModal = ({ visible, onClose, userId, titleId, mediaType, t
               maxLength={80}
               onSubmitEditing={create}
             />
-            <TouchableOpacity onPress={create} disabled={busy || !name.trim()} style={[s.addBtn, (busy || !name.trim()) && { opacity: 0.5 }]}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={create} disabled={busy || !name.trim()} style={[s.addBtn, (busy || !name.trim()) && { opacity: 0.5 }]}>
               <Icon name="plus" size={18} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -133,7 +134,7 @@ export const AddToListModal = ({ visible, onClose, userId, titleId, mediaType, t
 
 const s = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 28 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 28 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   row: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, marginBottom: 6 },
   createRow: { flexDirection: 'row', gap: 8, borderTopWidth: 1, paddingTop: 12, marginTop: 8 },

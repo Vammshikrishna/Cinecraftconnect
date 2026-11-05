@@ -7,10 +7,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Label } from '@/components/ui/label';
 import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { WorkspaceHero } from './WorkspaceUI';
 import { useAppRole } from '@/hooks/useAppRole';
 import { copyToClipboard, getAppOrigin } from '@/lib/utils/share';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface TeamMember {
+    /** the project owner: always shown as Owner, their role can never be changed or removed */
+    is_owner?: boolean;
     user_id: string;
     role: string;
     profiles: {
@@ -31,9 +36,11 @@ interface SearchResult {
 interface TeamProps {
     project_id: string; // This is actually the space ID
     real_project_id?: string; // This is the actual project ID
+    /** true only for the space / project creator: add, invite, remove, change roles */
+    canManage?: boolean;
 }
 
-const Team = ({ project_id, real_project_id }: TeamProps) => {
+const Team = ({ project_id, real_project_id, canManage = false }: TeamProps) => {
     const { user } = useAuth();
     const { isInternal } = useAppRole();
     const { toast } = useToast();
@@ -109,10 +116,7 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
             let staffUserIds = new Set<string>();
             
             if (userIds.length > 0) {
-                const { data: rolesData } = await supabase
-                    .from('user_roles')
-                    .select('user_id, role')
-                    .in('user_id', userIds);
+                const { data: rolesData } = await (supabase as any).rpc('staff_roles_for', { p_ids: userIds });
                 
                 rolesData?.forEach((r: any) => {
                     if (r.role === 'admin' || r.role === 'super_admin' || r.role === 'moderator') {
@@ -125,6 +129,7 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
                 const isInternalRole = staffUserIds.has(member.user_id) || member.profiles?.is_internal;
                 return {
                     user_id: member.user_id,
+                    is_owner: !!creatorId && member.user_id === creatorId,
                     role: member.user_id === creatorId ? 'admin' : member.role, // Creator is always an admin
                     profiles: {
                         full_name: member.profiles?.full_name || null,
@@ -165,7 +170,10 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
 
     const generateInviteLink = async () => {
         try {
-            const code = Math.random().toString(36).substring(2, 15);
+            // an invite code is a secret: use the browser's secure random numbers, not Math.random
+            const bytes = new Uint8Array(12);
+            crypto.getRandomValues(bytes);
+            const code = Array.from(bytes, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 18);
 
             const { error } = await supabase
                 .from('project_invites' as any)
@@ -211,10 +219,7 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
             const userIds = data?.map((u: any) => u.id) || [];
             let staffUserIds = new Set<string>();
             if (userIds.length > 0) {
-                const { data: rolesData } = await supabase
-                    .from('user_roles')
-                    .select('user_id, role')
-                    .in('user_id', userIds);
+                const { data: rolesData } = await (supabase as any).rpc('staff_roles_for', { p_ids: userIds });
                 
                 rolesData?.forEach((r: any) => {
                     if (r.role === 'admin' || r.role === 'super_admin' || r.role === 'moderator') {
@@ -267,16 +272,21 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
     };
 
     const removeMember = async (userId: string) => {
-        if (!confirm('Remove this member from the project?')) return;
+        if (!await confirmDialog('Remove this member from the project?')) return;
 
         try {
-            const { error } = await supabase
+            const { data: removed, error } = await supabase
                 .from('project_space_members' as any)
                 .delete()
                 .eq('project_space_id', resolvedSpaceId)
-                .eq('user_id', userId);
+                .eq('user_id', userId)
+                .select('user_id');
 
             if (error) throw error;
+            if (!removed || removed.length === 0) {
+                toast({ title: "Not removed", description: "You are not allowed to remove this member.", variant: "destructive" });
+                return;
+            }
 
             toast({ title: "Success", description: "Member removed" });
             fetchMembers();
@@ -303,8 +313,62 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
             setEditingRole(null);
             toast({ title: 'Success', description: 'Role updated successfully.' });
         } catch (error: any) {
-            toast({ title: 'Error', description: error.message, variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
         }
+    };
+
+    // who may change roles: the owner, and members whose role is Admin. An admin cannot touch another admin (only the owner can),
+    // and nobody can change the owner. The database enforces the same rules (SQL part FT); this only decides what to show.
+    const me = members.find((m) => m.user_id === user?.id);
+    const meIsAdmin = me?.role === 'admin';
+    const canEditRoles = (canManage || meIsAdmin) && !isInternal;
+    const crewRoles = Array.from(new Set(members.map((m) => (m.role || '').trim()).filter((r) => r && r.toLowerCase() !== 'admin' && r.toLowerCase() !== 'member')));
+    const OTHER = '__other__';
+
+    const applyRole = async (userId: string, role: string) => {
+        try {
+            const { error } = await supabase
+                .from('project_space_members' as any)
+                .update({ role })
+                .eq('project_space_id', resolvedSpaceId)
+                .eq('user_id', userId);
+            if (error) throw error;
+            toast({ title: 'Role updated', description: 'They have been told, and the change applies to them right away.' });
+            fetchMembers();
+        } catch (error: any) {
+            toast({ title: 'Could not change the role', description: friendlyError(error), variant: 'destructive' });
+            fetchMembers();
+        }
+    };
+
+    const handleRoleChoice = async (member: TeamMember, choice: string) => {
+        if (choice === OTHER) { setEditingRole(member.user_id); setTempRoleName(''); return; }
+        const next = choice === 'admin' ? 'admin' : choice === 'member' ? 'member' : choice;
+        if (next === (member.role || 'member')) return;
+        if (member.role === 'admin' && next !== 'admin') {
+            if (!await confirmDialog('They keep their place in the team but can no longer add people, remove members or change roles.', { title: 'Remove admin rights?', confirmLabel: 'Remove admin rights', destructive: true })) { fetchMembers(); return; }
+        }
+        if (next === 'admin') {
+            if (!await confirmDialog('Admins can add people, remove members and change crew roles.', { title: 'Make this person an admin?', confirmLabel: 'Make admin', destructive: false })) { fetchMembers(); return; }
+        }
+        await applyRole(member.user_id, next);
+    };
+
+    const renderRoleSelect = (member: TeamMember) => {
+        const current = (member.role || 'member').trim() || 'member';
+        const known = ['admin', 'member', ...crewRoles];
+        const options = known.includes(current) ? known : [...known, current];
+        return (
+            <select
+                aria-label={`Role for ${member.profiles.full_name || 'member'}`}
+                value={current}
+                onChange={(e) => handleRoleChoice(member, e.target.value)}
+                className="mt-0.5 h-7 max-w-[11rem] rounded-md border border-border bg-background px-1.5 text-xs font-medium capitalize text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+                {options.map((r) => (<option key={r} value={r}>{r === 'admin' ? 'Admin' : r === 'member' ? 'Member' : r}</option>))}
+                <option value={OTHER}>Other role…</option>
+            </select>
+        );
     };
 
     if (loading) {
@@ -313,16 +377,28 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
 
     return (
         <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar pb-24">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-                <div className="flex flex-col gap-1">
-                    <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Crew</h1>
-                    <p className="text-3xl font-extrabold text-foreground">Team Management</p>
-                </div>
-                {!isInternal ? (
+            <div className="mb-6">
+                <WorkspaceHero
+                    icon={Users}
+                    title="Team"
+                    description="The people working on this production."
+                    stats={[
+                        { label: 'Members', value: members.length },
+                        { label: 'Admins', value: members.filter((m) => m.role === 'admin').length, tone: 'primary' },
+                        { label: 'Crew', value: members.filter((m) => m.role !== 'admin').length, tone: 'success' },
+                    ]}
+                />
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
+                {isInternal ? (
+                    <div className="bg-muted/30 border border-border/50 px-6 py-2 rounded-2xl text-xs text-muted-foreground font-bold flex items-center gap-2">
+                        <Users className="w-4 h-4" /> Observation Mode
+                    </div>
+                ) : canManage ? (
                     <div className="flex gap-3 w-full sm:w-auto">
                         <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
                             <DialogTrigger asChild>
-                                <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent rounded-2xl px-6 h-12 font-bold transition-all">
+                                <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent rounded-2xl px-6 h-12 font-bold transition">
                                     <LinkIcon className="h-4 w-4 mr-2" />Invite Link
                                 </Button>
                             </DialogTrigger>
@@ -362,7 +438,7 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
 
                         <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
                             <DialogTrigger asChild>
-                                <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-primary-foreground rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                                <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-primary-foreground rounded-2xl px-6 h-12 font-bold shadow-sm transition">
                                     <UserPlus className="h-4 w-4 mr-2" />Add Member
                                 </Button>
                             </DialogTrigger>
@@ -380,7 +456,7 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
                                             className="bg-background border-border"
                                             onKeyPress={(e) => e.key === 'Enter' && searchUsers()}
                                         />
-                                        <Button onClick={searchUsers} disabled={searching} className="bg-primary text-primary-foreground">
+                                        <Button aria-label="Search" onClick={searchUsers} disabled={searching} className="bg-primary text-primary-foreground">
                                             <Search className="h-4 w-4" />
                                         </Button>
                                     </div>
@@ -417,20 +493,16 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
                             </DialogContent>
                         </Dialog>
                     </div>
-                ) : (
-                    <div className="bg-muted/30 border border-border/50 px-6 py-2 rounded-2xl text-xs text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-2">
-                        <Users className="w-4 h-4" /> Observation Mode
-                    </div>
-                )}
+                ) : null}
             </div>
 
             {/* Admins Section */}
             {members.filter(m => m.role === 'admin').length > 0 && (
                 <div className="mb-8">
-                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4 px-1">Project Admins</h3>
+                    <h3 className="text-xs font-bold text-muted-foreground mb-4 px-1">Project Admins</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {members.filter(m => m.role === 'admin').map(member => (
-                            <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm group relative overflow-hidden">
+                            <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition duration-300 shadow-sm group relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-16 h-16 bg-primary/5 -rotate-45 translate-x-8 -translate-y-8" />
                                 <div className="flex items-center justify-between relative z-10">
                                     <div className="flex items-center gap-3">
@@ -443,13 +515,17 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
                                         )}
                                         <div>
                                             <p className="font-bold text-foreground">{member.profiles.full_name || 'Unknown User'}</p>
-                                            <p className="text-xs font-bold uppercase tracking-wider text-primary mt-0.5">
-                                                Admin
-                                            </p>
+                                            {member.is_owner ? (
+                                                <p className="text-xs font-bold text-primary mt-0.5">Owner</p>
+                                            ) : canManage && !isInternal ? (
+                                                renderRoleSelect(member)
+                                            ) : (
+                                                <p className="text-xs font-bold text-primary mt-0.5">Admin</p>
+                                            )}
                                         </div>
                                     </div>
-                                    {member.user_id !== user?.id && !isInternal && (
-                                        <Button size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
+                                    {canManage && !isInternal && !member.is_owner && member.user_id !== user?.id && (
+                                        <Button aria-label="Delete" size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
                                     )}
@@ -463,10 +539,10 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
             {/* Regular Members Section */}
             {members.filter(m => m.role !== 'admin').length > 0 && (
                 <div>
-                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4 px-1">Team Members</h3>
+                    <h3 className="text-xs font-bold text-muted-foreground mb-4 px-1">Team Members</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {members.filter(m => m.role !== 'admin').map(member => (
-                            <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm group">
+                            <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition duration-300 shadow-sm group">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         {member.profiles.avatar_url ? (
@@ -478,7 +554,9 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
                                         )}
                                         <div>
                                             <p className="font-bold text-foreground">{member.profiles.full_name || 'Unknown User'}</p>
-                                            {editingRole === member.user_id ? (
+                                            {!canEditRoles ? (
+                                                <p className="text-xs font-medium capitalize text-muted-foreground mt-0.5">{member.role || 'Member'}</p>
+                                            ) : editingRole === member.user_id ? (
                                                 <div className="flex items-center gap-2 mt-0.5">
                                                     <Input 
                                                         value={tempRoleName} 
@@ -490,16 +568,12 @@ const Team = ({ project_id, real_project_id }: TeamProps) => {
                                                     />
                                                 </div>
                                             ) : (
-                                                <div className="flex items-center gap-1 group/role mt-0.5 cursor-pointer" onClick={() => { setEditingRole(member.user_id); setTempRoleName(member.role || ''); }} title="Click to edit role">
-                                                    <p className="text-xs font-medium capitalize text-muted-foreground group-hover/role:text-primary transition-colors">
-                                                        {member.role || 'Member'}
-                                                    </p>
-                                                </div>
+                                                renderRoleSelect(member)
                                             )}
                                         </div>
                                     </div>
-                                    {member.user_id !== user?.id && !isInternal && (
-                                        <Button size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
+                                    {canEditRoles && !member.is_owner && member.user_id !== user?.id && (
+                                        <Button aria-label="Delete" size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
                                     )}

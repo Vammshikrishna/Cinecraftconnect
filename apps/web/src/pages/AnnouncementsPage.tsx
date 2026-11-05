@@ -12,7 +12,6 @@ import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/common/PageHeader';
-import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
 import { cn } from '@/lib/utils';
 
 const PAGE = 18;
@@ -33,6 +32,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
     const [filter, setFilter] = useState('all');
     const [category, setCategory] = useState<string | null>(null);
     const [search, setSearch] = useState('');
+    const [loadError, setLoadError] = useState(false);
     const [term, setTerm] = useState('');
     const { toast } = useToast();
     const { user } = useAuth();
@@ -66,6 +66,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
     const reload = useCallback(async () => {
         const id = ++reqId.current;
         setLoading(true);
+        setLoadError(false);
         try {
             const rows = await fetchPage(null);
             if (id !== reqId.current) return;
@@ -73,6 +74,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
             setHasMore(rows.filter((r) => !r.is_pinned).length >= PAGE - 3);
         } catch (e: any) {
             console.error('Error fetching announcements:', e);
+            if (id === reqId.current) setLoadError(true);
             toast({ title: 'Error', description: 'Failed to load announcements', variant: 'destructive' });
         } finally {
             if (id === reqId.current) setLoading(false);
@@ -119,8 +121,8 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
     };
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-36">
-            <div className="max-w-7xl mx-auto px-4 md:px-8">
+        <div className="min-h-dvh bg-background pt-20 pb-36">
+            <div className="max-w-[1560px] mx-auto px-4 md:px-8">
                 <PageHeader
                     title="Announcements"
                     subtitle="News and updates from the platform, the companies you follow and the people you follow"
@@ -128,7 +130,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                     actionsAtTop={true}
                     actions={
                         user && !isFan && !isInternal ? (
-                            <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-10 px-4 font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform text-sm">
+                            <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-10 px-4 font-bold shadow-lg shadow-primary/20 [@media(hover:hover)]:hover:scale-105 active:scale-[0.97] transition-transform text-sm">
                                 <Plus className="mr-2 h-4 w-4" />
                                 New Announcement
                             </Button>
@@ -150,12 +152,13 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search announcements…" className="pl-11 h-12 rounded-2xl bg-card/60" />
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-nowrap items-center gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
                         {FILTERS.filter((f) => !f.needsUser || user).map((f) => (
                             <button
                                 key={f.key}
                                 onClick={() => setFilter(f.key)}
-                                className={cn('h-9 px-4 rounded-full text-xs font-black uppercase tracking-widest border transition-all', filter === f.key ? 'bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20' : 'border-border/60 text-muted-foreground hover:text-foreground')}
+                                aria-pressed={filter === f.key}
+                                className={cn('shrink-0 min-h-11 md:min-h-9 px-4 rounded-full text-xs font-bold tracking-wide border transition-colors', filter === f.key ? 'bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20' : 'border-border/60 text-muted-foreground hover:text-foreground')}
                             >
                                 {f.label}
                             </button>
@@ -165,7 +168,8 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                             <button
                                 key={c.value}
                                 onClick={() => setCategory(category === c.value ? null : c.value)}
-                                className={cn('h-9 px-3 rounded-full text-[11px] font-black uppercase tracking-widest border transition-all', category === c.value ? 'text-white border-transparent' : 'border-border/60 text-muted-foreground hover:text-foreground')}
+                                aria-pressed={category === c.value}
+                                className={cn('shrink-0 min-h-11 md:min-h-9 px-3 rounded-full text-xs font-bold tracking-wide border transition-colors', category === c.value ? 'text-white border-transparent' : 'border-border/60 text-muted-foreground hover:text-foreground')}
                                 style={category === c.value ? { backgroundColor: c.color } : undefined}
                             >
                                 {c.label}
@@ -180,6 +184,12 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                             <CardSkeleton key={i} className="h-48" />
                         ))}
                     </div>
+                ) : loadError && items.length === 0 ? (
+                    <div role="alert" className="text-center py-16">
+                        <h3 className="text-xl font-semibold text-foreground mb-2">Could not load announcements</h3>
+                        <p className="text-muted-foreground mb-4">Check your connection and try again.</p>
+                        <Button variant="outline" onClick={reload}>Try again</Button>
+                    </div>
                 ) : items.length === 0 ? (
                     <div className="text-center py-16">
                         <Megaphone className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
@@ -188,15 +198,18 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                     </div>
                 ) : (
                     <>
-                        <ResponsiveGrid cols={{ sm: 1, md: 1, lg: 2, xl: 3 }} gap={6} className="items-start">
+                        {/* masonry: cards of different heights (with or without a picture) pack into columns with no big gaps */}
+                        <div className="columns-1 lg:columns-2 xl:columns-3 gap-6">
                             {items.map((row) => (
-                                <AnnouncementItem key={row.id} row={row} onChanged={reload} onEdit={isInternal ? undefined : setEditing} />
+                                <div key={row.id} className="break-inside-avoid mb-6">
+                                    <AnnouncementItem row={row} onChanged={reload} onEdit={isInternal ? undefined : setEditing} />
+                                </div>
                             ))}
-                        </ResponsiveGrid>
+                        </div>
                         {hasMore && (
                             <div className="flex justify-center mt-10">
                                 <Button variant="outline" className="rounded-full px-8 font-bold" onClick={loadMore} disabled={loadingMore}>
-                                    {loadingMore ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Load more'}
+                                    {loadingMore && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Load more
                                 </Button>
                             </div>
                         )}

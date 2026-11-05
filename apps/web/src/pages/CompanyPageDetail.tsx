@@ -3,35 +3,14 @@ import { useParams } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { 
-  Building2, 
-  MapPin, 
-  Globe, 
-  Users, 
-  FileText, 
-  Briefcase, 
-  Settings, 
-  Edit,
-  Share2, 
-  CheckCircle2, 
-  Calendar,
-  IndianRupee,
-  Plus,
-  Mail,
-  Trash2,
-  Flag,
-  BadgeCheck,
-  Image as ImageIcon,
-  BarChart3,
-  Megaphone
-} from 'lucide-react';
+import { Building2, MapPin, Globe, Users, FileText, Briefcase, Settings, Edit, CheckCircle2, Calendar, IndianRupee, Plus, Mail, Trash2, Flag, BadgeCheck, Image as ImageIcon, BarChart3, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 import { EditPageModal } from '@/components/pages/EditPageModal';
+import { useLikedPostIds } from '@/hooks/useLikedPostIds';
 import { ManageMembersModal } from '@/components/pages/ManageMembersModal';
 import { CreatePostWidget } from '@/components/feed/CreatePostWidget';
 import PostCard from '@/components/feed/PostCard';
@@ -50,6 +29,10 @@ import { PageVerificationDialog } from '@/components/pages/PageVerificationDialo
 import { PageInsights } from '@/components/pages/PageInsights';
 import { PageShowcase } from '@/components/pages/PageShowcase';
 import { PageAnnouncements } from '@/components/pages/PageAnnouncements';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const getInitials = (name: string) => {
   return name
@@ -75,7 +58,7 @@ const CompanyPageDetail = () => {
   const { isFan } = useAccountType();
 
   // 1. Fetch Page Details
-  const { data: page, isLoading: pageLoading } = useQuery({
+  const { data: page, isLoading: pageLoading, isError: pageError, refetch: refetchPage } = useQuery({
     queryKey: ['company-page', slug],
     queryFn: async () => {
       if (!slug || slug === 'undefined') return null;
@@ -138,6 +121,7 @@ const CompanyPageDetail = () => {
       return data;
     },
   });
+  const { ids: likedPostIds, setLiked: setPostLiked } = useLikedPostIds((posts as any[]).map((p: any) => p.id));
 
   // 3. Fetch Memberships & Own Status
   const { data: members = [], isLoading: membersLoading } = useQuery({
@@ -193,7 +177,7 @@ const CompanyPageDetail = () => {
       }
     },
     onSuccess: (result: any) => {
-      if (result?.error) toast({ title: 'Could not update', description: result.error.message, variant: 'destructive' });
+      if (result?.error) toast({ title: 'Could not update', description: friendlyError(result.error), variant: 'destructive' });
       queryClient.invalidateQueries({ queryKey: ['page-follow', page?.id] });
       queryClient.invalidateQueries({ queryKey: ['company-page', slug] });
     },
@@ -224,7 +208,8 @@ const CompanyPageDetail = () => {
     },
   });
   const isPageAdmin = pageRole === 'super_admin' || pageRole === 'content_admin';
-  const canManage = isOwner || isPageAdmin || isInternal;
+  // staff view and report only; page controls belong to the real owner / page admins
+  const canManage = isOwner || isPageAdmin;
   const canSeeInsights = isOwner || !!pageRole;
 
   // count a view (the database ignores the team's own visits and repeats within 12 hours)
@@ -232,37 +217,37 @@ const CompanyPageDetail = () => {
     if (page?.id && user?.id) (supabase as any).rpc('record_page_view', { p_page_id: page.id }).then(() => {}, () => {});
   }, [page?.id, user?.id]);
 
-  if (pageLoading) return <div className="flex h-screen items-center justify-center bg-background"><LoadingSpinner /></div>;
-  if (!page) return (
-    <div className="flex h-screen items-center justify-center text-foreground p-8 text-center bg-background">
+  if (pageLoading) return <ScreenSkeleton variant="detail" />;if (!page) return (
+    <div className="flex h-dvh items-center justify-center text-foreground p-8 text-center bg-background">
       <div className="flex flex-col items-center gap-6">
-        <h2 className="text-2xl font-bold">Organization not found</h2>
+        <h2 className="text-2xl font-bold">{pageError ? 'Could not load this page' : 'Organization not found'}</h2>
+        {pageError && <Button variant="outline" onClick={() => refetchPage()}>Try again</Button>}
         <BackButton label="GO BACK" to="/pages" />
       </div>
     </div>
   );
 
   const handleDeletePage = async () => {
-    if (!confirm(`Delete "${page.name}"? Its posts, team list and followers are removed. This cannot be undone.`)) return;
+    if (!await confirmDialog(`Delete "${page.name}"? Its posts, team list and followers are removed. This cannot be undone.`)) return;
     try {
       const { error } = await (supabase as any).from('company_pages').delete().eq('id', page.id);
       if (error) throw error;
       toast({ title: "Page deleted", description: "The company page has been removed successfully." });
       push('/pages', { noScroll: true });
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "Error", description: friendlyError(error), variant: "destructive" });
     }
   };
 
   return (
-    <div className="min-h-screen bg-background pt-20 pb-36">
+    <div className="min-h-dvh bg-background pt-20 pb-36">
       {/* 1. Header & Cover Section */}
       <div className="relative h-[220px] md:h-[350px] w-full bg-muted/40 group overflow-hidden">
         {page.cover_image_url ? (
           <img loading="lazy" decoding="async" 
             src={page.cover_image_url} 
             alt="Cover" 
-            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" 
+            className="h-full w-full object-cover transition-transform duration-300 ease-out [@media(hover:hover)]:group-hover:scale-105" 
           />
         ) : (
           <div className="h-full w-full bg-gradient-to-br from-primary/10 via-background to-muted/30" />
@@ -272,21 +257,22 @@ const CompanyPageDetail = () => {
         <div className="absolute top-0 left-0 right-0 p-4 md:p-8 flex justify-between items-start z-30">
           <BackButton label="BACK" />
           <div className="flex gap-2">
-            <Button 
+            <Button aria-label="Share" 
               variant="ghost" 
               size="icon" 
               onClick={handleShare}
-              className="h-10 w-10 rounded-full bg-background/50 backdrop-blur-md border border-white/10 hover:bg-background transition-all shadow-xl"
+              className="h-11 w-11 rounded-full bg-background/50 border border-white/10 hover:bg-background transition shadow-xl"
             >
-              <Share2 className="h-4 w-4" />
+              <ShareIcon className="h-4 w-4" />
             </Button>
             {user && !canManage && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => setReportOpen(true)}
-                title="Report this page"
-                className="h-10 w-10 rounded-full bg-background/50 backdrop-blur-md border border-white/10 hover:bg-rose-500/20 hover:text-rose-500 transition-all shadow-xl"
+                title="Report"
+                aria-label="Report"
+                className="h-11 w-11 rounded-full bg-background/50 border border-white/10 hover:bg-rose-500/20 hover:text-rose-500 transition shadow-xl"
               >
                 <Flag className="h-4 w-4" />
               </Button>
@@ -297,35 +283,35 @@ const CompanyPageDetail = () => {
                 size="icon"
                 onClick={() => setVerifyOpen(true)}
                 title="Get this page verified"
-                className="h-10 w-10 rounded-full bg-background/50 backdrop-blur-md border border-white/10 hover:bg-background transition-all shadow-xl"
+                className="h-11 w-11 rounded-full bg-background/50 border border-white/10 hover:bg-background transition shadow-xl"
               >
                 <BadgeCheck className="h-4 w-4" />
               </Button>
             )}
             {canManage && (
               <div className="flex gap-2">
-                <Button 
+                <Button aria-label="Edit" 
                   variant="ghost" 
                   size="icon" 
                   onClick={() => setIsEditModalOpen(true)}
-                  className="h-10 w-10 rounded-full bg-background/50 backdrop-blur-md border border-white/10 hover:bg-background transition-all shadow-xl"
+                  className="h-11 w-11 rounded-full bg-background/50 border border-white/10 hover:bg-background transition shadow-xl"
                 >
                   <Edit className="h-4 w-4" />
                 </Button>
-                <Button 
+                <Button aria-label="Settings" 
                   variant="ghost" 
                   size="icon" 
                   onClick={() => setIsManageMembersOpen(true)}
-                  className="h-10 w-10 rounded-full bg-background/50 backdrop-blur-md border border-white/10 hover:bg-background transition-all shadow-xl"
+                  className="h-11 w-11 rounded-full bg-background/50 border border-white/10 hover:bg-background transition shadow-xl"
                 >
                   <Settings className="h-4 w-4" />
                 </Button>
-                {(isOwner || isInternal) && (
-                  <Button 
+                {isOwner && (
+                  <Button aria-label="Delete" 
                     variant="ghost" 
                     size="icon" 
                     onClick={handleDeletePage}
-                    className="h-10 w-10 rounded-full bg-red-500/50 backdrop-blur-md border border-red-500/10 hover:bg-red-500 transition-all shadow-xl text-white"
+                    className="h-11 w-11 rounded-full bg-red-500/50 border border-red-500/10 hover:bg-red-500 transition shadow-xl text-white"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -340,7 +326,7 @@ const CompanyPageDetail = () => {
       </div>
 
       {/* 2. Brand Identity Section */}
-      <div className="max-w-6xl mx-auto px-4 md:px-8 -mt-16 md:-mt-24 relative z-20">
+      <div className="max-w-[1400px] mx-auto px-4 md:px-8 -mt-16 md:-mt-24 relative z-20">
         <div className="flex flex-col md:flex-row items-start md:items-end gap-6 md:gap-8 pb-6 border-b border-border/40">
           {/* Logo */}
           <motion.div 
@@ -359,10 +345,10 @@ const CompanyPageDetail = () => {
           {/* Core Info */}
           <div className="flex-1 min-w-0 md:pb-2">
             <div className="flex items-center gap-2 mb-1.5">
-              <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase truncate">{page.name}</h1>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase line-clamp-2 break-words">{page.name}</h1>
               {page.is_verified && <CheckCircle2 className="h-6 w-6 md:h-8 md:w-8 text-primary fill-primary/10" />}
               {isInternal && (
-                <Badge variant="outline" className="ml-2 border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[10px] py-0.5 px-2 bg-orange-500/5">
+                <Badge variant="outline" className="ml-2 border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[12px] py-0.5 px-2 bg-orange-500/5">
                   Staff Observer
                 </Badge>
               )}
@@ -378,11 +364,6 @@ const CompanyPageDetail = () => {
                 <Button
                   onClick={() => {
                     if (!user) {
-                      toast({
-                        title: 'Sign in required',
-                        description: 'Redirecting to sign in page...',
-                        variant: 'destructive'
-                      });
                       push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
                       return;
                     }
@@ -390,8 +371,8 @@ const CompanyPageDetail = () => {
                   }}
                   disabled={toggleFollow.isPending}
                   variant={isFollowing ? 'outline' : 'default'}
-                  className={`h-11 px-8 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all ${
-                    !isFollowing ? 'bg-primary shadow-lg shadow-primary/20 hover:scale-105 active:scale-95' : 'border-primary/30 text-primary hover:bg-primary/5'
+                  className={`h-11 px-8 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-[transform,background-color,box-shadow] ${
+                    !isFollowing ? 'bg-primary shadow-lg shadow-primary/20 [@media(hover:hover)]:hover:scale-105 active:scale-[0.97]' : 'border-primary/30 text-primary hover:bg-primary/5'
                   }`}
                 >
                   {isFollowing ? 'Following' : 'Follow Page'}
@@ -401,7 +382,7 @@ const CompanyPageDetail = () => {
               <div className="flex flex-wrap items-center gap-y-2 gap-x-6 text-sm text-muted-foreground font-semibold">
                 <div className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-default">
                   <Users className="h-4 w-4 text-primary" />
-                  <span>{page.follower_count.toLocaleString()} Followers</span>
+                  <span>{page.follower_count.toLocaleString()} {page.follower_count === 1 ? "Follower" : "Followers"}</span>
                 </div>
                 {page.headquarters && (
                   <div className="flex items-center gap-1.5">
@@ -420,7 +401,8 @@ const CompanyPageDetail = () => {
           </div>
         </div>
 
-        {/* 3. Main Navigation Content */}          {user && (
+        {/* 3. Main Navigation Content */}
+          {user && (
             <div className="mb-6">
               <PageInviteBanner page={page} userId={user.id} isMember={members.some((m: any) => m.user_id === user.id)} />
             </div>
@@ -440,13 +422,13 @@ const CompanyPageDetail = () => {
               <TabsTrigger
                 key={tab.value}
                 value={tab.value}
-                className="relative py-4 rounded-none border-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none px-0 text-sm md:text-base font-bold text-muted-foreground data-[state=active]:text-primary transition-all group"
+                className="relative py-4 rounded-none border-none bg-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none px-0 text-sm md:text-base font-bold text-muted-foreground data-[state=active]:text-primary transition group"
               >
                 <div className="flex items-center gap-2">
                   <tab.icon className="h-4 w-4 md:h-5 md:w-5" />
                   {tab.label}
                   {tab.count !== undefined && tab.count > 0 && (
-                    <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] h-4 min-w-[18px] px-1 group-data-[state=active]:bg-primary group-data-[state=active]:text-white">
+                    <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-xs h-5 min-w-[18px] px-1 group-data-[state=active]:bg-primary group-data-[state=active]:text-white">
                       {tab.count}
                     </Badge>
                   )}
@@ -474,7 +456,7 @@ const CompanyPageDetail = () => {
                   )}
 
                   {postsLoading ? (
-                    <div className="flex justify-center py-20"><LoadingSpinner /></div>
+                    <ScreenSkeleton variant="list" />
                   ) : posts.length === 0 ? (
                     <div className="text-center py-24 bg-card/10 border border-border/40 rounded-[3rem]">
                       <div className="w-20 h-20 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -490,10 +472,18 @@ const CompanyPageDetail = () => {
                           key={post.id}
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: idx * 0.1 }}
+                          transition={{ delay: Math.min(idx, 6) * 0.04 }}
                         >
                           <PostCard
                             id={post.id}
+                            currentUserLiked={likedPostIds.has(post.id)}
+                            onLikeToggle={setPostLiked}
+                            has_poll={!!(post as any).has_poll}
+                            scheduled_at={(post as any).scheduled_at}
+                            has_collabs={!!(post as any).has_collabs}
+                            link_preview={(post as any).link_preview}
+                            audience={(post as any).audience}
+                            edited_at={(post as any).edited_at}
                             author={{
                               id: post.author_id,
                               name: page.name,
@@ -589,7 +579,7 @@ const CompanyPageDetail = () => {
                         <h3 className="text-xl font-black uppercase tracking-tighter mb-6">Specialties</h3>
                         <div className="flex flex-wrap gap-2.5">
                           {page.specialties.map((s: string, i: number) => (
-                            <Badge key={i} variant="secondary" className="px-5 py-2.5 rounded-2xl bg-muted/40 text-foreground font-bold hover:bg-primary hover:text-white transition-all cursor-default">
+                            <Badge key={i} variant="secondary" className="px-5 py-2.5 rounded-2xl bg-muted/40 text-foreground font-bold hover:bg-primary hover:text-white transition cursor-default">
                               {s}
                             </Badge>
                           ))}
@@ -611,7 +601,7 @@ const CompanyPageDetail = () => {
                         { icon: Calendar, label: 'Founded', value: page.founded_year },
                       ].filter(i => i.value).map((item, idx) => (
                         <div key={idx} className="flex flex-col gap-1.5 group">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 flex items-center gap-2">
+                          <span className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/50 flex items-center gap-2">
                              <item.icon className="h-3 w-3" /> {item.label}
                           </span>
                           {item.isLink ? (
@@ -642,7 +632,7 @@ const CompanyPageDetail = () => {
                </div>
 
                {jobsLoading ? (
-                 <div className="flex justify-center py-20"><LoadingSpinner /></div>
+                 <ScreenSkeleton variant="list" />
                ) : jobs.length === 0 ? (
                  <div className="text-center py-24 bg-card/10 border border-border/40 rounded-[3rem]">
                    <Briefcase className="h-16 w-16 text-muted-foreground/20 mx-auto mb-6" />
@@ -655,13 +645,13 @@ const CompanyPageDetail = () => {
                       <div 
                         key={job.id} 
                         onClick={() => push('/jobs')} 
-                        className="group block bg-card/40 border border-border/60 hover:border-primary/40 rounded-[2.5rem] p-8 transition-all hover:shadow-2xl hover:shadow-primary/5 cursor-pointer"
+                        className="group block bg-card/40 border border-border/60 hover:border-primary/40 rounded-[2.5rem] p-8 transition hover:shadow-2xl hover:shadow-primary/5 cursor-pointer"
                       >
                         <div className="flex flex-col h-full justify-between">
                           <div>
                             <div className="flex justify-between items-start mb-4">
                               <h4 className="text-2xl font-black tracking-tight group-hover:text-primary transition-colors leading-none">{job.title}</h4>
-                              <Badge variant="secondary" className="rounded-xl px-3 bg-primary/5 text-primary border-none text-[10px] uppercase font-black">{job.job_type || 'Full Time'}</Badge>
+                              <Badge variant="secondary" className="rounded-xl px-3 bg-primary/5 text-primary border-none text-[12px] uppercase font-black">{job.job_type || 'Full Time'}</Badge>
                             </div>
                             <div className="flex items-center gap-3 text-sm text-muted-foreground font-bold uppercase tracking-widest mb-6">
                                <MapPin className="h-3.5 w-3.5 text-primary" /> {job.location || 'Remote'}
@@ -677,7 +667,7 @@ const CompanyPageDetail = () => {
                                   {!job.salary_min && !job.salary_max && 'Competitive'}
                                 </span>
                              </div>
-                             <span className="text-[10px] text-muted-foreground/60 font-black uppercase tracking-widest">
+                             <span className="text-[12px] text-muted-foreground/60 font-black uppercase tracking-widest">
                                 {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
                              </span>
                           </div>
@@ -700,7 +690,7 @@ const CompanyPageDetail = () => {
               </div>
 
               {membersLoading ? (
-                <div className="flex justify-center py-20"><LoadingSpinner /></div>
+                <ScreenSkeleton variant="list" />
               ) : members.length === 0 ? (
                 <div className="text-center py-24 bg-card/10 border border-border/40 rounded-[3rem]">
                   <Users className="h-16 w-16 text-muted-foreground/20 mx-auto mb-6" />
@@ -708,12 +698,12 @@ const CompanyPageDetail = () => {
                   <p className="text-muted-foreground max-w-xs mx-auto font-medium">Add team members to showcase the talent behind {page.name}.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-6">
                   {members.map((member) => (
                     <div 
                       key={member.id} 
                       onClick={() => push(`/profile/${member.user_id}`)} 
-                      className="group bg-card/40 border border-border/60 hover:border-primary/30 rounded-[2.5rem] p-6 text-center transition-all hover:shadow-2xl cursor-pointer"
+                      className="group bg-card/40 border border-border/60 hover:border-primary/30 rounded-[2.5rem] p-6 text-center transition hover:shadow-2xl cursor-pointer"
                     >
                       <div className="relative mx-auto mb-6 inline-block">
                         <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/20 rounded-[2rem] blur-xl opacity-0 group-hover:opacity-30 transition-opacity" />

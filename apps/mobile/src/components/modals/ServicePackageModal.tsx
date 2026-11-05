@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 
@@ -22,6 +24,8 @@ interface ServicePackageModalProps {
   onClose: () => void;
   vendorId: string;
   onSuccess?: () => void;
+  /** When given, the modal edits this package instead of creating a new one. */
+  service?: any | null;
 }
 
 export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
@@ -29,8 +33,10 @@ export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
   onClose,
   vendorId,
   onSuccess,
+  service,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dayRate, setDayRate] = useState('');
@@ -61,16 +67,43 @@ export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
     setChecklist((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const isEdit = !!service?.id;
+
+  // Prefill when editing; blank the form when creating.
+  useEffect(() => {
+    if (!visible) return;
+    if (service?.id) {
+      setTitle(service.title || '');
+      setDescription(service.description || '');
+      setDayRate(service.day_rate != null ? String(service.day_rate) : '');
+      setCoverageArea(service.coverage_area || 'Pan-India');
+      setMinBookingDays(service.min_booking_days != null ? String(service.min_booking_days) : '1');
+      setCrewCapacity(service.crew_capacity != null ? String(service.crew_capacity) : '');
+      setSelectedProdTypes(Array.isArray(service.production_types) ? service.production_types : []);
+      setChecklist(Array.isArray(service.service_checklist) ? service.service_checklist : []);
+    } else {
+      setTitle(''); setDescription(''); setDayRate(''); setCoverageArea('Pan-India'); setMinBookingDays('1');
+      setCrewCapacity(''); setSelectedProdTypes(['Feature Film']); setChecklist([]);
+    }
+    setNewCheckItem('');
+  }, [visible, service]);
+
   const handleCreatePackage = async () => {
     if (!title.trim() || !dayRate.trim()) {
       Alert.alert('Missing Info', 'Please enter package title and daily rental rate.');
       return;
     }
+    const rate = parseFloat(dayRate);
+    const minDays = parseInt(minBookingDays, 10);
+    const crew = crewCapacity.trim() ? parseInt(crewCapacity, 10) : null;
+    if (!(rate > 0)) { Alert.alert('Check the day rate', 'The day rate must be more than 0.'); return; }
+    if (minBookingDays.trim() && !(minDays >= 1)) { Alert.alert('Check the minimum days', 'The minimum booking is at least 1 day.'); return; }
+    if (crew !== null && !(crew >= 1)) { Alert.alert('Check the crew capacity', 'Crew capacity must be at least 1, or leave it empty.'); return; }
 
     setLoading(true);
     try {
       const supabase = getSupabaseClient();
-      const numericRate = parseFloat(dayRate.replace(/[^0-9.]/g, '')) || 0;
+      const numericRate = rate;
 
       const newPackage = {
         vendor_id: vendorId,
@@ -85,22 +118,22 @@ export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
         is_active: true,
       };
 
-      const { error } = await ((supabase as any).from('vendor_services') as any).insert(
-        newPackage
-      );
+      const { error } = isEdit
+        ? await ((supabase as any).from('vendor_services') as any).update(newPackage).eq('id', service.id)
+        : await ((supabase as any).from('vendor_services') as any).insert(newPackage);
 
       if (error) throw error;
 
       if (onSuccess) onSuccess();
       onClose();
-      Alert.alert('Package Active! 📦', 'Your vendor service package has been published.');
+      Alert.alert(isEdit ? 'Package Updated' : 'Package Active! 📦', isEdit ? 'Your service package has been updated.' : 'Your vendor service package has been published.');
       // Reset form
       setTitle('');
       setDescription('');
       setDayRate('');
       setChecklist([]);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to create service package.');
+      Alert.alert('Error', friendlyError(e, 'Failed to create service package.'));
     } finally {
       setLoading(false);
     }
@@ -111,16 +144,16 @@ export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}>
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
               <View style={styles.headerRow}>
-                <Text style={[styles.modalTitle, { color: themeColors.textPrimary }]}>Add Service Package</Text>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <Text style={[styles.modalTitle, { color: themeColors.textPrimary }]}>{isEdit ? 'Edit Service Package' : 'Add Service Package'}</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad + 8 }}>
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>SERVICE PACKAGE TITLE *</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
@@ -209,7 +242,7 @@ export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
                     value={newCheckItem}
                     onChangeText={setNewCheckItem}
                   />
-                  <TouchableOpacity style={styles.addCheckBtn} onPress={addCheckItem}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.addCheckBtn} onPress={addCheckItem}>
                     <Icon name="plus" size={16} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
@@ -218,8 +251,8 @@ export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
                   <View key={idx} style={[styles.checkItemChip, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
                     <Icon name="check-circle" size={12} color={ORANGE} />
                     <Text style={[styles.checkItemText, { color: themeColors.textPrimary }]}>{item}</Text>
-                    <TouchableOpacity onPress={() => removeCheckItem(idx)}>
-                      <Icon name="x" size={12} color={themeColors.textSecondary} />
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => removeCheckItem(idx)}>
+                      <Icon name="x" size={12} color={themeColors.iconSecondary} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -242,7 +275,7 @@ export const ServicePackageModal: React.FC<ServicePackageModalProps> = ({
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.publishBtnText}>Publish Service Package →</Text>
+                    <Text style={styles.publishBtnText}>{isEdit ? 'Save Changes' : 'Publish Service Package →'}</Text>
                   )}
                 </TouchableOpacity>
               </ScrollView>
@@ -266,6 +299,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     maxHeight: '90%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -281,12 +317,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 4,
@@ -314,7 +350,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   prodChipText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   addCheckRow: {
@@ -325,7 +361,7 @@ const styles = StyleSheet.create({
   },
   addCheckBtn: {
     width: 40,
-    height: 40,
+    height: 44,
     borderRadius: 8,
     backgroundColor: ORANGE,
     alignItems: 'center',
@@ -360,8 +396,8 @@ const styles = StyleSheet.create({
   },
   publishBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

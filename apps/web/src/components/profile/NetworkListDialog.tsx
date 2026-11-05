@@ -135,7 +135,7 @@ export function NetworkListDialog({ isOpen, onClose, userId, initialTab = 'follo
             <Button
               variant={activeTab === 'followers' ? 'default' : 'secondary'}
               size="sm"
-              className={`h-8 rounded-lg px-4 text-[11px] font-bold tracking-wide ${activeTab === 'followers' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}`}
+              className={`h-8 rounded-lg px-4 text-[12px] font-bold tracking-wide ${activeTab === 'followers' ? 'bg-primary text-primary-foreground hover:bg-primary/90' : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 handleUserClick(u.id);

@@ -38,8 +38,12 @@ export const PageAnnouncements = ({ pageId, canManage }: { pageId: string; canMa
           <p className="text-sm text-muted-foreground">{canManage ? 'Share news, events and openings with your followers.' : 'This company has not announced anything yet.'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {items.map((row) => <AnnouncementItem key={row.id} row={row} onChanged={load} onEdit={setEditing} />)}
+        <div className="columns-1 lg:columns-2 gap-6">
+          {items.map((row) => (
+            <div key={row.id} className="break-inside-avoid mb-6">
+              <AnnouncementItem row={row} onChanged={load} onEdit={setEditing} />
+            </div>
+          ))}
         </div>
       )}
       {canManage && (

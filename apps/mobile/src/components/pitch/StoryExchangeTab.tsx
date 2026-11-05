@@ -14,15 +14,19 @@ import {
 } from 'react-native';
 import { Icon } from '../common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useResponsive } from '../../hooks/useResponsive';
 import { getSupabaseClient } from '@cinecraft/api';
 import { StoryListingModal } from './StoryListingModal';
 import { NDAContractsModal } from './NDAContractsModal';
+import { STORY_LISTING_COLUMNS, fetchStoryFullSynopsis, friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 
-export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const StoryExchangeTab: React.FC<{ navigation: any; openListSignal?: number }> = ({ navigation, openListSignal = 0 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isTablet, isLandscape } = useResponsive();
+  const storyCols = isTablet ? (isLandscape ? 3 : 2) : 1;
   const [listings, setListings] = useState<any[]>([]);
   const [myInterests, setMyInterests] = useState<any[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
@@ -37,6 +41,10 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  // the Pitch Portal's shared "+" button asks this tab to open the list-a-concept form (the signal counts up on every press)
+  useEffect(() => {
+    if (openListSignal > 0) setCreateModalOpen(true);
+  }, [openListSignal]);
   const [selectedListing, setSelectedListing] = useState<any | null>(null);
   const [ndaModalOpen, setNdaModalOpen] = useState(false);
 
@@ -50,7 +58,7 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
       let query = (supabase as any)
         .from('story_listings')
         .select(`
-          *,
+          ${STORY_LISTING_COLUMNS},
           profiles:creator_id (id, full_name, avatar_url, username, craft, is_verified)
         `)
         .order('created_at', { ascending: false });
@@ -77,8 +85,9 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
 
         const { data: incoming } = await (supabase as any)
           .from('story_interests')
-          .select('*, story:story_id(*), profiles:interested_by(full_name, avatar_url, craft, is_verified)')
-          .eq('story.creator_id', user.id);
+          .select('*, story:story_id!inner(id, title, creator_id), profiles:interested_by(full_name, avatar_url, craft, is_verified)')
+          .eq('story.creator_id', user.id)
+          .order('created_at', { ascending: false });
         setIncomingRequests(incoming || []);
       }
     } catch (e) {
@@ -137,17 +146,20 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
       const payload = {
         story_id: storyId,
         interested_by: currentUserId,
-        status: 'pending',
-        nda_signed_at: ndaSig !== 'unsigned' ? new Date().toISOString() : null,
+        // the status and the signing time are set by the database
+        nda_signature: ndaSig !== 'unsigned' ? ndaSig : null,
       };
 
       const { error } = await (supabase as any).from('story_interests').insert(payload);
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') { Alert.alert('Already requested', 'You have already asked for access to this story.'); return; }
+        throw error;
+      }
 
       Alert.alert('Request Sent 📨', 'Your interest has been submitted to the writer for approval.');
       fetchListings();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not express interest.');
+      Alert.alert('Error', friendlyError(err, 'Could not express interest.'));
     }
   };
 
@@ -163,7 +175,7 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
       Alert.alert('Approved! ✅', 'Full concept synopsis is now visible to the producer.');
       fetchListings();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to approve request.');
+      Alert.alert('Error', friendlyError(err, 'Failed to approve request.'));
     }
   };
 
@@ -179,11 +191,17 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
       Alert.alert('Declined', 'Access request declined.');
       fetchListings();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to decline request.');
+      Alert.alert('Error', friendlyError(err, 'Failed to decline request.'));
     }
   };
 
   const renderStoryCard = ({ item }: { item: any }) => {
+    const card = renderStoryCardInner(item);
+    if (storyCols === 1) return card;
+    return <View style={{ flex: 1, maxWidth: `${100 / storyCols}%`, paddingHorizontal: 6 }}>{card}</View>;
+  };
+
+  const renderStoryCardInner = (item: any) => {
     const isOwner = currentUserId === item.creator_id;
     const interest = myInterests.find((i) => i.story_id === item.id);
     const accessApproved = interest?.status === 'approved';
@@ -261,7 +279,7 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
               <Text style={styles.unlockedHeaderText}>Full Synopsis Unlocked</Text>
             </View>
             <Text style={styles.fullSynopsisText}>
-              {item.synopsis_full || 'No full synopsis provided.'}
+              <FullSynopsisText storyId={item.id} />
             </Text>
 
             <TouchableOpacity
@@ -331,17 +349,9 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
             <Text style={[styles.bannerTitle, { color: themeColors.textPrimary }]}>Story Exchange</Text>
           </View>
           <Text style={[styles.bannerSub, { color: themeColors.textSecondary }]}>
-            Browse original story concepts listed by verified writers, or publish ideas to connect with producers.
+            Browse original story concepts listed by verified writers, or tap + to list your own idea and connect with producers.
           </Text>
         </View>
-
-        <TouchableOpacity
-          style={styles.listConceptBtn}
-          onPress={() => setCreateModalOpen(true)}
-        >
-          <Icon name="plus" size={14} color="#FFFFFF" strokeWidth={2.5} />
-          <Text style={styles.listConceptBtnText}>List Concept</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Incoming Requests for Writers */}
@@ -400,14 +410,24 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
             { backgroundColor: themeColors.inputBg, borderColor: themeColors.border },
           ]}
         >
-          <Icon name="search" size={16} color={themeColors.textMuted} />
-          <TextInput
+          <Icon name="search" size={16} color={themeColors.iconMuted} />
+          <TextInput returnKeyType="search" accessibilityLabel="Search story concepts, loglines"
             style={[styles.searchInput, { color: themeColors.textPrimary }]}
             placeholder="Search story concepts, loglines..."
             placeholderTextColor={themeColors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery ? (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Icon name="x" size={16} color={themeColors.iconMuted} />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterPills}>
@@ -442,13 +462,16 @@ export const StoryExchangeTab: React.FC<{ navigation: any }> = ({ navigation }) 
         </View>
       ) : (
         <FlatList
+          key={`story-grid-${storyCols}`}
+          numColumns={storyCols}
+          showsVerticalScrollIndicator={false}
           data={filteredListings}
           renderItem={renderStoryCard}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Icon name="book-open" size={40} color={themeColors.textMuted} />
+              <Icon name="book-open" size={40} color={themeColors.iconMuted} />
               <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Story Concepts Found</Text>
               <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
                 Be the first writer to publish an original concept in the Story Exchange.
@@ -510,8 +533,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   bannerTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     color: INK,
   },
   bannerSub: {
@@ -530,16 +553,16 @@ const styles = StyleSheet.create({
   },
   listConceptBtnText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   requestsSection: {
     marginHorizontal: 14,
     marginBottom: 12,
   },
   requestsHeader: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
     letterSpacing: 0.6,
     marginBottom: 6,
@@ -554,11 +577,11 @@ const styles = StyleSheet.create({
   },
   reqProducerName: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   reqStoryTitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     marginVertical: 4,
   },
@@ -576,8 +599,8 @@ const styles = StyleSheet.create({
   },
   approveBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   declineBtn: {
     flex: 1,
@@ -588,12 +611,12 @@ const styles = StyleSheet.create({
   },
   declineBtnText: {
     color: '#EF4444',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   reqStatusDone: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     marginTop: 4,
   },
@@ -609,7 +632,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 40,
+    height: 44,
     gap: 8,
     marginBottom: 8,
   },
@@ -634,7 +657,7 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   filterPillText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -643,7 +666,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 14,
-    paddingBottom: 24,
+    paddingBottom: 40,
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -675,7 +698,7 @@ const styles = StyleSheet.create({
   avatarText: {
     color: ORANGE,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   nameRow: {
     flexDirection: 'row',
@@ -684,7 +707,7 @@ const styles = StyleSheet.create({
   },
   writerName: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   writerCraft: {
@@ -705,8 +728,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   formatBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   ndaBadge: {
@@ -721,13 +744,13 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   ndaBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
   },
   storyTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     color: INK,
     marginBottom: 4,
   },
@@ -747,14 +770,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   teaserLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   teaserText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#475569',
     lineHeight: 18,
   },
@@ -774,7 +797,7 @@ const styles = StyleSheet.create({
   },
   unlockedHeaderText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#15803D',
   },
   fullSynopsisText: {
@@ -788,14 +811,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#16A34A',
-    height: 38,
+    height: 44,
     borderRadius: 8,
     gap: 6,
   },
   chatBtnText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardFooter: {
     flexDirection: 'row',
@@ -809,11 +832,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   metaText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
   },
   metaBold: {
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     textTransform: 'capitalize',
   },
@@ -826,8 +849,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   ownerBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   pendingBadge: {
@@ -840,8 +863,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   pendingText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
   },
   declinedBadge: {
@@ -851,8 +874,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   declinedText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#EF4444',
   },
   requestAccessBtn: {
@@ -867,7 +890,7 @@ const styles = StyleSheet.create({
   requestAccessText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',
@@ -876,7 +899,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   emptySub: {
@@ -888,3 +911,15 @@ const styles = StyleSheet.create({
 });
 
 export default StoryExchangeTab;
+
+/** The writer's full synopsis, fetched on demand (the database only returns it to the writer or an approved reader). */
+const FullSynopsisText: React.FC<{ storyId: string }> = ({ storyId }) => {
+  const [text, setText] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    fetchStoryFullSynopsis(getSupabaseClient(), storyId).then((t) => { if (alive) setText(t); }).catch(() => { if (alive) setText(null); });
+    return () => { alive = false; };
+  }, [storyId]);
+  if (text === undefined) return <Text>Loading…</Text>;
+  return <Text>{text || 'No full synopsis provided.'}</Text>;
+};

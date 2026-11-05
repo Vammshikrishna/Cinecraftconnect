@@ -1,5 +1,5 @@
 import { useAppNavigation } from '@/contexts/NavigationContext';
-import { Share2, Users, Hash, Bell, X } from 'lucide-react';
+import { Users, Hash, Bell, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
@@ -9,6 +9,8 @@ import { copyToClipboard } from '@/lib/utils/share';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useState, useEffect } from 'react';
+import { ShareIcon } from '@/components/icons/ShareIcon';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface FeedDiscussionCardProps {
     discussion: {
@@ -30,6 +32,7 @@ interface FeedDiscussionCardProps {
 
 const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) => {
     const { push } = useAppNavigation();
+    const { isInternal } = useAppRole();
     const { unreadDiscussionIds } = useUnreadMessages();
     const { toast } = useToast();
     const { user } = useAuth();
@@ -45,7 +48,7 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
                 }
                 try {
                     const { data } = await (supabase.from('room_members' as any) as any)
-                        .select('id')
+                        .select('user_id')
                         .eq('room_id', discussion.id)
                         .eq('user_id', user.id)
                         .maybeSingle();
@@ -109,11 +112,11 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
     return (
         <div
             onClick={handleCardClick}
-            className={`h-full bg-card border ${hasUnread ? 'border-red-500/50 shadow-red-500/10' : 'border-border/50'} rounded-[28px] p-6 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-300 flex flex-col relative overflow-hidden cursor-pointer group`}
+            className={`h-full bg-card border ${hasUnread ? 'border-red-500/50 shadow-red-500/10' : 'border-border/50'} rounded-[28px] p-6 shadow-sm hover:shadow-md hover:border-primary/30 transition duration-300 flex flex-col relative overflow-hidden cursor-pointer group`}
         >
             {/* Unread Glow Effect */}
             {hasUnread && (
-                <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full -mr-16 -mt-16 animate-pulse" />
+                <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full -mr-16 -mt-16" />
             )}
 
             {/* Header */}
@@ -123,15 +126,15 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
                         {discussion.title}
                     </h3>
                     {hasUnread && (
-                        <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-sm shadow-red-500/50 mt-1 animate-bounce" />
+                        <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-sm shadow-red-500/50 mt-1" />
                     )}
                 </div>
                 <div className="flex items-center gap-1">
-                    <button
+                    <button aria-label="Share"
                         onClick={handleShare}
                         className="text-muted-foreground hover:text-foreground transition-colors p-1 relative z-10"
                     >
-                        <Share2 className="h-5 w-5" />
+                        <ShareIcon className="h-5 w-5" />
                     </button>
                     {onDismiss && (
                         <button
@@ -150,10 +153,10 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
 
             {/* Category & Time */}
             <div className="flex items-center justify-between mb-5">
-                <div className="font-mono bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 px-1.5 py-0.5 font-bold text-[9px] uppercase tracking-widest gap-1 rounded inline-flex items-center">
-                    CAT // {categoryName}
+                <div className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 px-1.5 py-0.5 font-medium text-[12px] gap-1 rounded inline-flex items-center">
+                    {categoryName}
                 </div>
-                <span className="text-[10px] text-muted-foreground/70 font-medium">
+                <span className="text-[12px] text-muted-foreground/70 font-medium">
                     {timeAgo(discussion.created_at)}
                 </span>
             </div>
@@ -164,19 +167,19 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
             </p>
 
             {/* Members */}
-            <div className="flex items-center gap-2 mb-6">
+            {!isInternal && <div className="flex items-center gap-2 mb-6">
                 <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
                     <Users className="h-4 w-4 text-primary" />
                 </div>
-                <span className="font-mono text-[9px] font-bold tracking-widest uppercase text-foreground/70 bg-muted/10 border border-border/40 px-1.5 py-0.5 rounded">MEMBERS // {memberCount}</span>
-            </div>
+                <span className="text-xs text-muted-foreground">{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
+            </div>}
 
             {/* Divider */}
             <div className="h-px bg-border/40 w-full mb-6" />
 
             {/* Primary Action */}
             <Button
-                className={`w-full ${hasUnread ? 'bg-red-500 hover:bg-red-600 shadow-red-500/10' : 'bg-primary hover:bg-primary/90'} text-primary-foreground font-bold rounded-[18px] h-11 text-sm sm:text-base shadow-lg transition-all active:scale-[0.98] relative px-3 sm:px-4 group-hover:scale-[1.02]`}
+                className={`w-full ${hasUnread ? 'bg-red-500 hover:bg-red-600 shadow-red-500/10' : 'bg-primary hover:bg-primary/90'} text-primary-foreground font-bold rounded-[18px] h-11 text-sm sm:text-base shadow-lg transition active:scale-[0.98] relative px-3 sm:px-4 group-hover:scale-[1.02]`}
             >
                 <div className="flex items-center justify-center w-full min-w-0 gap-2">
                     {hasUnread ? (
@@ -190,7 +193,7 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
                 </div>
                 {hasUnread && (
                     <span className="absolute top-2 right-4 flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
                     </span>
                 )}

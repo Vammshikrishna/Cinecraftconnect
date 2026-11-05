@@ -7,16 +7,21 @@ import com.facebook.react.ReactNativeHost;
 import com.facebook.react.ReactPackage;
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
 import com.facebook.react.defaults.DefaultReactNativeHost;
+import com.facebook.react.soloader.OpenSourceMergedSoMapping;
 import com.facebook.soloader.SoLoader;
 import com.facebook.drawee.backends.pipeline.Fresco;
 import com.facebook.imagepipeline.core.ImagePipelineConfig;
 import com.facebook.cache.disk.DiskCacheConfig;
+import com.livekit.reactnative.LiveKitReactNative;
+import expo.modules.ApplicationLifecycleDispatcher;
+import expo.modules.ReactNativeHostWrapper;
+import android.content.res.Configuration;
 import java.util.List;
 
 public class MainApplication extends Application implements ReactApplication {
 
   private final ReactNativeHost mReactNativeHost =
-      new DefaultReactNativeHost(this) {
+      new ReactNativeHostWrapper(this, new DefaultReactNativeHost(this) {
         @Override
         public boolean getUseDeveloperSupport() {
           return BuildConfig.DEBUG;
@@ -30,6 +35,7 @@ public class MainApplication extends Application implements ReactApplication {
           packages.add(new PipBridgePackage());
           packages.add(new CallServicePackage());
           packages.add(new ImageCompressorPackage());
+          packages.add(new PhotoRenderPackage());
           return packages;
         }
 
@@ -47,7 +53,7 @@ public class MainApplication extends Application implements ReactApplication {
         protected Boolean isHermesEnabled() {
           return true;
         }
-      };
+      });
 
   @Override
   public ReactNativeHost getReactNativeHost() {
@@ -57,7 +63,21 @@ public class MainApplication extends Application implements ReactApplication {
   @Override
   public void onCreate() {
     super.onCreate();
-    SoLoader.init(this, /* native exopackage */ false);
+
+    // LiveKit (voice and video calls, audio spaces) needs its audio engine created here, before React Native starts.
+    // Without it the app crashed the moment a call or audio space started ("Audio device module is not initialized").
+    try {
+      LiveKitReactNative.setup(this);
+    } catch (Throwable t) {
+      android.util.Log.e("MainApplication", "LiveKit setup failed", t);
+    }
+
+    try {
+      SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);
+    } catch (java.io.IOException e) {
+      throw new RuntimeException(e);
+    }
+    ApplicationLifecycleDispatcher.onApplicationCreate(this);
 
     // Initialize Fresco with high-capacity 300MB persistent disk cache for offline image support
     try {
@@ -101,5 +121,11 @@ public class MainApplication extends Application implements ReactApplication {
         manager.createNotificationChannel(channel);
       }
     }
+  }
+
+  @Override
+  public void onConfigurationChanged(Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+    ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig);
   }
 }

@@ -11,6 +11,10 @@ interface ImageLightboxModalProps {
   images: string[];
   initialIndex?: number;
   senderName?: string;
+  /** show the download button (default true). Posts turn it off so the viewer never offers the raw storage address. */
+  allowDownload?: boolean;
+  /** block right-click and dragging on the pictures (default false) */
+  protectImages?: boolean;
 }
 
 // Global cache for decrypted image URLs in lightbox
@@ -47,6 +51,8 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
   images,
   initialIndex = 0,
   senderName,
+  allowDownload = true,
+  protectImages = false,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [showControls, setShowControls] = useState(true);
@@ -132,12 +138,15 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
   if (!open || images.length === 0) return null;
 
   const hasMultiple = images.length > 1;
+  const guard = protectImages
+    ? { draggable: false as const, onContextMenu: (e: React.MouseEvent) => e.preventDefault(), onDragStart: (e: React.DragEvent) => e.preventDefault() }
+    : {};
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="!fixed !inset-0 !w-screen !h-screen !left-0 !top-0 !translate-x-0 !translate-y-0 !p-0 !border-none !bg-black backdrop-blur-2xl !shadow-none !max-w-none outline-none !z-[1001] !flex !flex-col overflow-hidden select-none"
+        className="!fixed !inset-0 !w-screen !h-dvh !left-0 !top-0 !translate-x-0 !translate-y-0 !p-0 !border-none !bg-black backdrop-blur-2xl !shadow-none !max-w-none outline-none !z-[1001] !flex !flex-col overflow-hidden select-none"
       >
         <DialogHeader className="sr-only flex-none">
           <DialogTitle>Image Viewer</DialogTitle>
@@ -155,7 +164,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
               type="button"
               onClick={handlePrev}
               className={cn(
-                "absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 z-40 p-2.5 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/15 transition-all shadow-2xl hover:scale-110 active:scale-95 cursor-pointer",
+                "absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 z-40 p-2.5 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/15 transition shadow-2xl hover:scale-110 active:scale-95 cursor-pointer",
                 !showControls && "opacity-0 pointer-events-none"
               )}
               title="Previous photo"
@@ -180,7 +189,8 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
               key={activeSrc}
               src={activeSrc}
               alt={`Preview ${currentIndex + 1}`}
-              className="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-200 pointer-events-auto"
+              {...guard}
+              className={cn("max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-200 pointer-events-auto", protectImages && "select-none [-webkit-user-drag:none] [-webkit-touch-callout:none]")}
               onClick={(e) => {
                 e.stopPropagation();
                 setShowControls((prev) => !prev);
@@ -194,7 +204,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
               type="button"
               onClick={handleNext}
               className={cn(
-                "absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 z-40 p-2.5 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/15 transition-all shadow-2xl hover:scale-110 active:scale-95 cursor-pointer",
+                "absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 z-40 p-2.5 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/15 transition shadow-2xl hover:scale-110 active:scale-95 cursor-pointer",
                 !showControls && "opacity-0 pointer-events-none"
               )}
               title="Next photo"
@@ -217,12 +227,12 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
                 {senderName}
               </span>
             )}
-            <span className="text-white/60 text-[10px] font-medium tracking-wider">
+            <span className="text-white/60 text-[12px] font-medium tracking-wider">
               {hasMultiple ? `${currentIndex + 1} of ${images.length}` : 'Photo'}
             </span>
           </div>
           <div className="flex items-center gap-1.5 pointer-events-auto">
-            {activeSrc && (
+            {activeSrc && allowDownload && (
               <a
                 href={activeSrc}
                 download={`image_${currentIndex + 1}`}
@@ -235,7 +245,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
                 <Download className="h-4 w-4" />
               </a>
             )}
-            <Button
+            <Button aria-label="Close"
               variant="ghost"
               size="icon"
               className="text-white/80 hover:text-white hover:bg-white/10 rounded-full h-8 w-8"
@@ -266,13 +276,13 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
                   setCurrentIndex(idx);
                 }}
                 className={cn(
-                  "w-12 h-12 rounded-lg overflow-hidden border-2 transition-all shrink-0 cursor-pointer shadow-lg",
+                  "w-12 h-12 rounded-lg overflow-hidden border-2 transition shrink-0 cursor-pointer shadow-lg",
                   idx === currentIndex
                     ? "border-primary scale-110 ring-2 ring-primary/50"
                     : "border-transparent opacity-60 hover:opacity-100"
                 )}
               >
-                <img loading="lazy" decoding="async" src={imgSrc} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                <img loading="lazy" decoding="async" src={imgSrc} alt={`Thumb ${idx + 1}`} {...guard} className="w-full h-full object-cover" />
               </button>
             ))}
           </div>

@@ -13,17 +13,21 @@ import {
 } from 'react-native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
 import { getSupabaseClient } from '@cinecraft/api';
 import { EditPageModal, ManageMembersModal } from '../../components/modals';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { CachedImage } from '../../components/common/CachedImage';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
+import { useAppRole } from '../../hooks/useAppRole';
 import { ReportModal } from '../../components/modals/ReportModal';
 import { CreateJobModal } from '../../components/modals/CreateJobModal';
 import { useAccountType } from '../../hooks/useAccountType';
 import { PageInsightsPanel, PageShowcasePanel, PageVerificationModal } from '../../components/pages/PageGrowth';
 import { PageAnnouncementsPanel } from '../../components/announcements/PageAnnouncementsPanel';
+import { friendlyError } from '@cinecraft/core';
+import { isTabletDevice } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -31,9 +35,12 @@ const INK = '#0D0D0D';
 export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { pageId, pageSlug } = route.params || {};
   const { themeColors, isDark } = useUserSettings();
+  const { isInternal } = useAppRole(); // staff: view + report only, no follow
 
   const [page, setPage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const hasPageRef = React.useRef(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -55,7 +62,9 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
 
   const fetchPageDetails = useCallback(async () => {
     try {
-      setLoading(true);
+      // Full-screen spinner only before the first paint; later refetches update in place.
+      if (!hasPageRef.current) setLoading(true);
+      setLoadError(false);
       const supabase = getSupabaseClient();
 
       const user = (await supabase.auth.getSession()).data.session?.user ?? null; // local session: getUser() is a network call
@@ -69,8 +78,12 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
       }
       const { data, error } = await query.single();
 
+      if (error && error.code !== 'PGRST116') throw error;
       if (!error && data) {
         setPage(data);
+        hasPageRef.current = true;
+        // Paint the hero as soon as the page row is here; the rest streams in below.
+        setLoading(false);
         setFollowerCount(data.follower_count || 0);
         // count a view (the database ignores the team's own visits and repeats within 12 hours)
         if (user) (supabase as any).rpc('record_page_view', { p_page_id: data.id }).then(() => {}, () => {});
@@ -154,6 +167,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
       }
     } catch (e) {
       console.warn('[CompanyPageDetail] Error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -213,7 +227,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
               if (error) throw error;
               navigation.goBack();
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to delete page.');
+              Alert.alert('Error', friendlyError(e, 'Failed to delete page.'));
             }
           },
         },
@@ -232,12 +246,21 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
     );
   }
 
+  if (!page && loadError) {
+    return (
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+        <Header showLogo={false} onBack={() => navigation.goBack()} />
+        <LoadErrorState onRetry={fetchPageDetails} />
+      </View>
+    );
+  }
+
   if (!page) {
     return (
       <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
         <Header showLogo={false} onBack={() => navigation.goBack()} />
         <View style={styles.loadingCenter}>
-          <Icon name="company" size={48} color={themeColors.textMuted} />
+          <Icon name="company" size={48} color={themeColors.iconMuted} />
           <Text style={[styles.notFoundTitle, { color: themeColors.textPrimary }]}>Page Not Found</Text>
           <Text style={[styles.notFoundSub, { color: themeColors.textSecondary }]}>The requested company page does not exist.</Text>
         </View>
@@ -261,7 +284,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
       setInvite(null);
       fetchPageDetails();
     } catch (e: any) {
-      Alert.alert('Could not answer', e?.message || 'Please try again.');
+      Alert.alert('Could not answer', friendlyError(e, 'Please try again.'));
     } finally {
       setTeamBusy(false);
     }
@@ -281,7 +304,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
             if (data?.success === false) throw new Error(data.message);
             fetchPageDetails();
           } catch (e: any) {
-            Alert.alert('Could not leave', e?.message || 'Please try again.');
+            Alert.alert('Could not leave', friendlyError(e, 'Please try again.'));
           } finally {
             setTeamBusy(false);
           }
@@ -306,11 +329,11 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
         rightAction={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {!!currentUserId && !isManager && (
-              <TouchableOpacity onPress={() => setReportOpen(true)} style={{ padding: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Icon name="flag" size={18} color={themeColors.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Report" onPress={() => setReportOpen(true)} style={{ padding: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Icon name="flag" size={18} color={themeColors.iconSecondary} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share"
               onPress={() => setShowShareSheet(true)}
               style={{ padding: 6 }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -321,7 +344,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
         }
       />
 
-      <TabletContainer maxWidth={720} backgroundColor={themeColors.bgScreen}>
+      <TabletContainer maxWidth="content" backgroundColor={themeColors.bgScreen}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Cover Hero Banner */}
           <View style={styles.heroContainer}>
@@ -372,7 +395,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
 
               <View style={[styles.metaPill, { backgroundColor: isDark ? 'rgba(255,75,51,0.12)' : '#FFF7F5', borderColor: isDark ? 'rgba(255,75,51,0.25)' : '#FFE5DF' }]}>
                 <Icon name="users" size={11} color={ORANGE} />
-                <Text style={styles.metaPillText}>{followerCount.toLocaleString()} followers</Text>
+                <Text style={styles.metaPillText}>{followerCount.toLocaleString()} {followerCount === 1 ? 'follower' : 'followers'}</Text>
               </View>
             </View>
 
@@ -381,7 +404,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
               <View style={styles.industriesRow}>
                 {industries.map((ind, idx) => (
                   <View key={idx} style={[styles.indPill, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
-                    <Text style={[styles.indPillText, { color: themeColors.textSecondary }]}>IND // {String(ind).trim().toUpperCase()}</Text>
+                    <Text style={[styles.indPillText, { color: themeColors.textSecondary }]}>{String(ind).trim()}</Text>
                   </View>
                 ))}
               </View>
@@ -417,12 +440,12 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
                     </TouchableOpacity>
                   )}
                   {isOwner && (
-                    <TouchableOpacity style={styles.deleteBtn} onPress={handleDeletePage}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.deleteBtn} onPress={handleDeletePage}>
                       <Icon name="trash-2" size={14} color="#DC2626" />
                     </TouchableOpacity>
                   )}
                 </>
-              ) : (
+              ) : isInternal ? null : (
                 <TouchableOpacity
                   style={[
                     styles.followBtn,
@@ -440,21 +463,21 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
 
           {invite ? (
             <View style={[styles.inviteBox, { backgroundColor: 'rgba(255,75,51,0.08)', borderColor: 'rgba(255,75,51,0.3)' }]}>
-              <Text style={{ color: themeColors.textPrimary, fontSize: 13.5, fontWeight: '800' }}>{page.name} invited you to join their team</Text>
+              <Text style={{ color: themeColors.textPrimary, fontSize: 14, fontWeight: '700' }}>{page.name} invited you to join their team</Text>
               <Text style={{ color: themeColors.textSecondary, fontSize: 12, marginTop: 2 }}>
                 {[invite.title, invite.department].filter(Boolean).join(' · ') || 'Team member'} · you are listed on the page once you accept.
               </Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                 <TouchableOpacity disabled={teamBusy} onPress={() => answerInvite(true)} style={[styles.inviteBtn, { backgroundColor: ORANGE, opacity: teamBusy ? 0.6 : 1 }]}>
-                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12.5 }}>Accept</Text>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Accept</Text>
                 </TouchableOpacity>
                 <TouchableOpacity disabled={teamBusy} onPress={() => answerInvite(false)} style={[styles.inviteBtn, { borderWidth: 1, borderColor: themeColors.border }]}>
-                  <Text style={{ color: themeColors.textPrimary, fontWeight: '800', fontSize: 12.5 }}>Decline</Text>
+                  <Text style={{ color: themeColors.textPrimary, fontWeight: '700', fontSize: 12 }}>Decline</Text>
                 </TouchableOpacity>
               </View>
             </View>
           ) : isMember && !isOwner ? (
-            <TouchableOpacity disabled={teamBusy} onPress={leaveTeam} style={{ alignSelf: 'flex-end', paddingHorizontal: 16, paddingVertical: 6 }}>
+            <TouchableOpacity disabled={teamBusy} onPress={leaveTeam} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ alignSelf: 'flex-end', paddingHorizontal: 16, paddingVertical: 6 }}>
               <Text style={{ color: themeColors.textMuted, fontSize: 12, fontWeight: '700' }}>Leave team</Text>
             </TouchableOpacity>
           ) : null}
@@ -462,6 +485,8 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
           {/* Tab Switcher: About | Posts | Jobs | Team */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.tabUnderlineRow, { borderBottomColor: themeColors.divider }]} contentContainerStyle={{ gap: 20, paddingRight: 8 }}>
             <TouchableOpacity
+              accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'about' }}
+              hitSlop={{ top: 10, bottom: 10 }}
               style={[styles.tabUnderlineBtn, activeTab === 'about' && styles.tabUnderlineBtnActive]}
               onPress={() => setActiveTab('about')}
             >
@@ -471,6 +496,8 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
             </TouchableOpacity>
 
             <TouchableOpacity
+              accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'posts' }}
+              hitSlop={{ top: 10, bottom: 10 }}
               style={[styles.tabUnderlineBtn, activeTab === 'posts' && styles.tabUnderlineBtnActive]}
               onPress={() => setActiveTab('posts')}
             >
@@ -480,6 +507,8 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
             </TouchableOpacity>
 
             <TouchableOpacity
+              accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'announcements' }}
+              hitSlop={{ top: 10, bottom: 10 }}
               style={[styles.tabUnderlineBtn, activeTab === 'announcements' && styles.tabUnderlineBtnActive]}
               onPress={() => setActiveTab('announcements')}
             >
@@ -490,6 +519,8 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
 
             {!isFan && (
               <TouchableOpacity
+                accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'jobs' }}
+                hitSlop={{ top: 10, bottom: 10 }}
                 style={[styles.tabUnderlineBtn, activeTab === 'jobs' && styles.tabUnderlineBtnActive]}
                 onPress={() => setActiveTab('jobs')}
               >
@@ -500,6 +531,8 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
             )}
 
             <TouchableOpacity
+              accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'showcase' }}
+              hitSlop={{ top: 10, bottom: 10 }}
               style={[styles.tabUnderlineBtn, activeTab === 'showcase' && styles.tabUnderlineBtnActive]}
               onPress={() => setActiveTab('showcase')}
             >
@@ -509,6 +542,8 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
             </TouchableOpacity>
 
             <TouchableOpacity
+              accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'team' }}
+              hitSlop={{ top: 10, bottom: 10 }}
               style={[styles.tabUnderlineBtn, activeTab === 'team' && styles.tabUnderlineBtnActive]}
               onPress={() => setActiveTab('team')}
             >
@@ -519,6 +554,8 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
 
             {canSeeInsights && (
               <TouchableOpacity
+                accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'insights' }}
+                hitSlop={{ top: 10, bottom: 10 }}
                 style={[styles.tabUnderlineBtn, activeTab === 'insights' && styles.tabUnderlineBtnActive]}
                 onPress={() => setActiveTab('insights')}
               >
@@ -569,19 +606,19 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
           )}
 
           {activeTab === 'announcements' && (
-            <View style={{ marginHorizontal: 16 }}>
+            <View style={{ marginHorizontal: isTabletDevice ? 28 : 16 }}>
               <PageAnnouncementsPanel pageId={page.id} canManage={isManager} userId={currentUserId} />
             </View>
           )}
 
           {activeTab === 'showcase' && (
-            <View style={{ marginHorizontal: 16 }}>
+            <View style={{ marginHorizontal: isTabletDevice ? 28 : 16 }}>
               <PageShowcasePanel pageId={page.id} canManage={isManager} />
             </View>
           )}
 
           {activeTab === 'insights' && canSeeInsights && (
-            <View style={{ marginHorizontal: 16 }}>
+            <View style={{ marginHorizontal: isTabletDevice ? 28 : 16 }}>
               <PageInsightsPanel pageId={page.id} />
             </View>
           )}
@@ -592,7 +629,7 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
                 <Text style={[styles.sectionTitle, { color: themeColors.textPrimary, marginBottom: 0 }]}>Open positions</Text>
                 {isManager && (
                   <TouchableOpacity onPress={() => setJobModalVisible(true)} style={[styles.inviteBtn, { backgroundColor: ORANGE, paddingHorizontal: 12 }]}>
-                    <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>+ Post a job</Text>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>+ Post a job</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -696,14 +733,14 @@ export const CompanyPageDetailScreen = ({ route, navigation }: { route: any; nav
 };
 
 const styles = StyleSheet.create({
-  inviteBox: { marginHorizontal: 16, marginBottom: 12, borderWidth: 1, borderRadius: 16, padding: 14 },
+  inviteBox: { marginHorizontal: isTabletDevice ? 28 : 16, marginBottom: 12, borderWidth: 1, borderRadius: 16, padding: 14 },
   inviteBtn: { height: 36, paddingHorizontal: 18, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
   },
   content: {
-    paddingBottom: 40,
+    paddingBottom: isTabletDevice ? 72 : 40,
   },
   loadingCenter: {
     flex: 1,
@@ -713,7 +750,7 @@ const styles = StyleSheet.create({
   },
   notFoundTitle: {
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     marginTop: 12,
   },
@@ -724,7 +761,7 @@ const styles = StyleSheet.create({
   },
   heroContainer: {
     width: '100%',
-    height: 120,
+    height: isTabletDevice ? 280 : 120,
     backgroundColor: '#E2E8F0',
     position: 'relative',
   },
@@ -739,11 +776,11 @@ const styles = StyleSheet.create({
   },
   heroLogoOverlapped: {
     position: 'absolute',
-    bottom: -30,
-    left: 16,
-    width: 68,
-    height: 68,
-    borderRadius: 20,
+    bottom: isTabletDevice ? -52 : -30,
+    left: isTabletDevice ? 28 : 16,
+    width: isTabletDevice ? 108 : 68,
+    height: isTabletDevice ? 108 : 68,
+    borderRadius: isTabletDevice ? 28 : 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 3,
     borderColor: '#FFFFFF',
@@ -767,12 +804,12 @@ const styles = StyleSheet.create({
   },
   heroLogoFallbackText: {
     color: ORANGE,
-    fontSize: 28,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 42 : 28,
+    fontWeight: '700',
   },
   profileHeaderSection: {
-    paddingTop: 36,
-    paddingHorizontal: 16,
+    paddingTop: isTabletDevice ? 66 : 36,
+    paddingHorizontal: isTabletDevice ? 28 : 16,
     paddingBottom: 14,
   },
   titleRow: {
@@ -782,15 +819,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   nameText: {
-    fontSize: 24,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 30 : 24,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
   taglineText: {
-    fontSize: 13,
+    fontSize: isTabletDevice ? 15 : 13,
     color: '#64748B',
-    lineHeight: 18,
+    lineHeight: isTabletDevice ? 22 : 18,
     marginBottom: 10,
   },
   metaPillsRow: {
@@ -811,7 +848,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: ORANGE,
   },
@@ -830,19 +867,20 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   indPillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   actionBtnRow: {
     flexDirection: 'row',
     gap: 10,
+    ...(isTabletDevice ? { maxWidth: 560 } : null),
   },
   followBtn: {
     flex: 1,
     backgroundColor: ORANGE,
     borderRadius: 12,
-    height: 42,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -853,8 +891,8 @@ const styles = StyleSheet.create({
   },
   followBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   followBtnTextActive: {
     color: '#64748B',
@@ -868,13 +906,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
-    height: 42,
+    height: 44,
     gap: 6,
   },
   editBtnText: {
     color: INK,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   membersBtn: {
     flex: 1,
@@ -885,17 +923,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
-    height: 42,
+    height: 44,
     gap: 6,
   },
   membersBtnText: {
     color: INK,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   deleteBtn: {
     width: 42,
-    height: 42,
+    height: 44,
     borderRadius: 12,
     backgroundColor: '#FEE2E2',
     alignItems: 'center',
@@ -904,7 +942,7 @@ const styles = StyleSheet.create({
   tabUnderlineRow: {
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    marginHorizontal: 16,
+    marginHorizontal: isTabletDevice ? 28 : 16,
     marginBottom: 14,
     flexGrow: 0,
   },
@@ -917,8 +955,8 @@ const styles = StyleSheet.create({
     borderBottomColor: ORANGE,
   },
   tabUnderlineText: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 13 : 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.5,
   },
@@ -928,22 +966,22 @@ const styles = StyleSheet.create({
   sectionBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    marginHorizontal: 16,
-    padding: 16,
+    marginHorizontal: isTabletDevice ? 28 : 16,
+    padding: isTabletDevice ? 24 : 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 18 : 16,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginBottom: 8,
   },
   bodyText: {
-    fontSize: 13,
+    fontSize: isTabletDevice ? 15 : 13,
     color: '#475569',
-    lineHeight: 20,
+    lineHeight: isTabletDevice ? 24 : 20,
   },
   websiteRow: {
     flexDirection: 'row',
@@ -952,12 +990,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   websiteText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: ORANGE,
     fontWeight: '700',
   },
   emptyText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#9CA3AF',
     fontStyle: 'italic',
   },
@@ -967,18 +1005,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   postTitle: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 16 : 14,
+    fontWeight: '700',
     color: INK,
     marginBottom: 4,
   },
   postContent: {
-    fontSize: 12.5,
+    fontSize: isTabletDevice ? 14 : 12,
     color: '#64748B',
-    lineHeight: 18,
+    lineHeight: isTabletDevice ? 21 : 18,
   },
   postDate: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#9CA3AF',
     marginTop: 4,
   },
@@ -1006,17 +1044,18 @@ const styles = StyleSheet.create({
   memberAvatarText: {
     color: ORANGE,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   memberName: {
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: INK,
   },
   memberRole: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
   },
 });
+
 
 export default CompanyPageDetailScreen;

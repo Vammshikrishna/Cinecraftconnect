@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Megaphone, Clock, Share2, MoreVertical, Edit, Trash2, Loader2, X, Youtube, Play, Pin, PinOff, History, Eye, Flag } from 'lucide-react';
+import { Megaphone, Clock, MoreVertical, Edit, Trash2, Loader2, X, Youtube, Play, Pin, PinOff, History, Eye, Flag } from 'lucide-react';
 import { SiSpotify } from 'react-icons/si';
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { getOptimizedImage } from '@/utils/image-optimization';
 import { LazyImage } from '@/components/performance/LazyImage';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from "@/lib/utils";
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const getYouTubeId = (url: string): string | null => {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -75,7 +76,7 @@ const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
 
     return (
         <div
-            className="relative h-40 w-full rounded-2xl overflow-hidden mb-4 shadow-xl border border-white/5 shrink-0 group/video cursor-pointer flex items-center p-4 gap-4"
+            className="relative h-40 w-full rounded-2xl overflow-hidden mb-4 shadow-xl border border-foreground/5 shrink-0 group/video cursor-pointer flex items-center p-4 gap-4"
             onClick={() => window.open(originalUrl, '_blank')}
         >
             <div className="absolute inset-0 z-0">
@@ -88,7 +89,7 @@ const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
 
             <div className="absolute inset-0 bg-white/0 z-10 transition-colors duration-300 group-hover/video:bg-white/5" />
 
-            <div className="relative z-20 h-24 w-24 sm:h-28 sm:w-28 shrink-0 rounded-md overflow-hidden shadow-2xl border border-white/10">
+            <div className="relative z-20 h-24 w-24 sm:h-28 sm:w-28 shrink-0 rounded-md overflow-hidden shadow-2xl border border-foreground/10">
                 <img loading="lazy" decoding="async"
                     src={data.thumbnail_url}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover/video:scale-105"
@@ -99,7 +100,7 @@ const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
             <div className="relative z-20 flex flex-col justify-center h-full flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-1 opacity-90">
                     <SiSpotify className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#1DB954]" />
-                    <span className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-white">
+                    <span className="text-[12px] sm:text-xs font-bold uppercase tracking-widest text-white">
                         Spotify
                     </span>
                 </div>
@@ -113,7 +114,7 @@ const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
                 )}
             </div>
 
-            <div className="absolute right-6 z-20 opacity-0 transform translate-x-4 transition-all duration-300 group-hover/video:opacity-100 group-hover/video:translate-x-0 hidden sm:flex">
+            <div className="absolute right-6 z-20 opacity-0 transform translate-x-4 transition duration-300 group-hover/video:opacity-100 group-hover/video:translate-x-0 hidden sm:flex">
                 <div className="w-12 h-12 rounded-full bg-[#1DB954] flex items-center justify-center shadow-lg hover:scale-105 transition-transform">
                     <Play className="w-5 h-5 text-black ml-1 fill-black" />
                 </div>
@@ -123,6 +124,12 @@ const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
 };
 
 interface FeedAnnouncementCardProps {
+    /** the announcement's cover picture, drawn inside the card under the title (the card grows to fit it) */
+    coverUrl?: string | null;
+    /** small status chips (category, pinned, "until ...") shown at the top inside the card */
+    badges?: React.ReactNode;
+    /** let the card be as tall as its content (the announcements page); the feed widget keeps a fixed height */
+    autoHeight?: boolean;
     announcement: {
         id: string;
         title: string;
@@ -157,7 +164,7 @@ interface FeedAnnouncementCardProps {
     };
 }
 
-const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = null, onReport, manage }: FeedAnnouncementCardProps) => {
+const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = null, onReport, manage, coverUrl = null, badges = null, autoHeight = false }: FeedAnnouncementCardProps) => {
     const { push } = useAppNavigation();
     const [isShareOpen, setIsShareOpen] = useState(false);
     const { user } = useAuth();
@@ -261,10 +268,11 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
                 }}
             />
 
-            <div className="glass-card-premium h-[420px] flex flex-col transition-transform duration-500 hover:-translate-y-2">
+            <div className={`glass-card-premium ${coverUrl || badges || autoHeight ? '' : 'h-[420px]'} flex flex-col transition-transform duration-500 hover:-translate-y-1`}>
                 <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-red-500/5 opacity-40 transition-opacity duration-500 pointer-events-none" />
 
-                <div className="relative p-6 flex flex-col h-full z-10">
+                <div className={`relative p-6 flex flex-col ${coverUrl || badges || autoHeight ? '' : 'h-full'} z-10`}>
+                    {badges && <div className="flex flex-wrap items-center gap-2 mb-3 pr-12 min-h-[22px]">{badges}</div>}
                     <div className="flex items-start gap-4 mb-4">
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg ring-1 ring-white/20 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
                             {announcement.company_pages?.logo_url ? (
@@ -293,6 +301,10 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
                             </div>
                         </div>
                     </div>
+
+                    {coverUrl && (
+                        <img loading="lazy" decoding="async" src={coverUrl} alt="" className="w-full aspect-video object-cover rounded-2xl mb-4 border border-black/5 dark:border-white/10" />
+                    )}
 
                     {announcement.content.includes('JOB_SHARE::') ? (
                         (() => {
@@ -390,7 +402,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
                             {canManage && (
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                        <Button aria-label="More options" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
                                             <MoreVertical className="h-4 w-4" />
                                         </Button>
                                     </DropdownMenuTrigger>
@@ -425,8 +437,9 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
                                         e.stopPropagation();
                                         onDismiss(announcement.id);
                                     }}
-                                    className="h-8 w-8 rounded-full hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all"
+                                    className="h-8 w-8 rounded-full hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition"
                                     title="Dismiss suggestion"
+                                    aria-label="Dismiss suggestion"
                                 >
                                     <X size={14} strokeWidth={2.5} />
                                 </button>
@@ -435,8 +448,8 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
                     )}
 
                     <div className="flex items-center justify-between pt-4 border-t border-black/5 dark:border-white/5 mt-auto">
-                        <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded">
-                            FROM // {announcement.company_pages?.name || (announcement.profiles?.full_name || announcement.profiles?.username) || 'Official Announcement'}
+                        <div className="text-[12px] font-medium text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded">
+                            From {announcement.company_pages?.name || (announcement.profiles?.full_name || announcement.profiles?.username) || 'Official Announcement'}
                         </div>
 
                         <div className="flex items-center gap-1">
@@ -453,17 +466,18 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
                                     className="h-8 w-8 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 rounded-full transition-colors"
                                     onClick={(e) => { e.stopPropagation(); onReport(); }}
                                     title="Report"
+                                    aria-label="Report announcement"
                                 >
                                     <Flag className="h-4 w-4" />
                                 </Button>
                             )}
-                            <Button
+                            <Button aria-label="Share"
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
                                 onClick={handleShare}
                             >
-                                <Share2 className="h-4 w-4" />
+                                <ShareIcon className="h-4 w-4" />
                             </Button>
                         </div>
                     </div>
@@ -472,7 +486,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
 
             {/* Edit Drawer */}
             <Drawer open={isEditOpen} onOpenChange={setIsEditOpen}>
-                <DrawerContent className="bg-background/95 backdrop-blur-3xl border-none rounded-t-[32px] max-h-[90vh]">
+                <DrawerContent className="bg-background/95 border-none rounded-t-[32px] max-h-[90vh]">
                     <DrawerHeader>
                         <DrawerTitle className="text-xl font-black text-center">Edit Announcement</DrawerTitle>
                     </DrawerHeader>
@@ -530,7 +544,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
             </Drawer>
             {/* Details Drawer */}
             <Drawer open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-                <DrawerContent className="bg-background/95 backdrop-blur-3xl border border-border/10 dark:border-white/5 rounded-t-[32px] max-h-[90vh] max-w-3xl mx-auto left-0 right-0">
+                <DrawerContent className="bg-background/95 border border-border/10 dark:border-white/5 rounded-t-[32px] max-h-[90vh] max-w-3xl mx-auto left-0 right-0">
                     <div className="mx-auto w-full max-w-3xl flex flex-col h-full">
                         <DrawerHeader className="px-6 flex items-start gap-4 text-left">
                             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg ring-1 ring-white/20 overflow-hidden">
@@ -542,7 +556,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget, viewCount = n
                             </div>
                             <div className="flex-1 min-w-0">
                                 <DrawerTitle className="text-xl font-black text-foreground leading-tight">{announcement.title}</DrawerTitle>
-                                <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest bg-orange-500/10 px-2 py-0.5 rounded-md mt-1.5 inline-block">
+                                <span className="text-[12px] font-bold text-orange-500 uppercase tracking-widest bg-orange-500/10 px-2 py-0.5 rounded-md mt-1.5 inline-block">
                                     {announcement.company_pages?.name || (announcement.profiles?.full_name || announcement.profiles?.username) || 'Official Announcement'}
                                 </span>
                             </div>

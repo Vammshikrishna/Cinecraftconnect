@@ -13,23 +13,15 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { friendlyError } from '@cinecraft/core';
+import { REPORT_REASONS, buildReportRow } from '@/lib/reportReasons';
 
-const REPORT_REASONS = [
-  { id: 'spam', label: 'Spam' },
-  { id: 'harassment', label: 'Harassment' },
-  { id: 'hate_speech', label: 'Hate Speech' },
-  { id: 'misinformation', label: 'Misinformation' },
-  { id: 'explicit_content', label: 'Explicit Content' },
-  { id: 'impersonation', label: 'Impersonation' },
-  { id: 'fraud', label: 'Fraud / Scam' },
-  { id: 'other', label: 'Other' },
-];
 
 interface ReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   targetId: string;
-  targetType: 'post' | 'comment' | 'user' | 'job' | 'listing' | 'room' | 'message' | 'announcement' | 'review' | 'cinema';
+  targetType: 'post' | 'comment' | 'user' | 'job' | 'listing' | 'room' | 'message' | 'announcement' | 'review' | 'cinema' | 'pitch_call' | 'pitch_submission';
 }
 
 const ReportDialog = ({ open, onOpenChange, targetId, targetType }: ReportDialogProps) => {
@@ -53,16 +45,8 @@ const ReportDialog = ({ open, onOpenChange, targetId, targetType }: ReportDialog
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
-        .from('content_reports')
-        .insert({
-          reported_by: user.id,
-          target_type: targetType,
-          target_id: targetId,
-          reason,
-          details: details.trim() || null,
-          status: 'pending'
-        });
+      const row = buildReportRow({ reporterId: user.id, targetType, targetId, reasonId: reason, details });
+      const { error } = await (supabase as any).from('content_reports').insert(row);
 
       if (error) throw error;
 
@@ -80,7 +64,7 @@ const ReportDialog = ({ open, onOpenChange, targetId, targetType }: ReportDialog
         }, 300);
       }, 2000);
     } catch (err: any) {
-      toast({ title: "Submission Failed", description: err.message, variant: "destructive" });
+      toast({ title: "Submission Failed", description: friendlyError(err), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -88,30 +72,32 @@ const ReportDialog = ({ open, onOpenChange, targetId, targetType }: ReportDialog
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px] glass-card border border-white/10 rounded-[32px] overflow-hidden p-0">
+      <DialogContent className="sm:max-w-[425px] glass-card border border-foreground/10 rounded-[32px] overflow-hidden p-0">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle className="flex items-center gap-2 text-xl font-bold">
             <Flag className="w-5 h-5 text-rose-500" />
             Report Content
           </DialogTitle>
           <DialogDescription className="text-muted-foreground text-xs uppercase tracking-widest font-black mt-2">
-            Layer 5 — Community Safety
+            Community safety
           </DialogDescription>
         </DialogHeader>
 
         {!success ? (
           <div className="p-6 pt-4 space-y-4">
             <div>
-              <p className="text-sm font-bold text-foreground mb-3">Why are you reporting this {targetType}?</p>
+              <p className="text-sm font-bold text-foreground mb-3">Why are you reporting this {targetType.replace('_', ' ')}?</p>
               <div className="grid grid-cols-2 gap-2">
                 {REPORT_REASONS.map((r) => (
                   <button
                     key={r.id}
+                    type="button"
+                    aria-pressed={reason === r.id}
                     onClick={() => setReason(r.id)}
-                    className={`text-left px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                    className={`text-left px-3 py-2 rounded-xl text-xs font-bold transition-[color,background-color,border-color] border ${
                       reason === r.id
                         ? 'bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-500/20'
-                        : 'bg-muted/50 text-muted-foreground border-transparent hover:border-white/10'
+                        : 'bg-muted/50 text-muted-foreground border-transparent hover:border-foreground/10'
                     }`}
                   >
                     {r.label}
@@ -124,7 +110,7 @@ const ReportDialog = ({ open, onOpenChange, targetId, targetType }: ReportDialog
               <p className="text-sm font-bold text-foreground mb-2">Additional Details (optional)</p>
               <Textarea
                 placeholder="Tell us more about the issue..."
-                className="bg-background/50 border-white/10 rounded-2xl resize-none min-h-[80px] focus:ring-rose-500/30"
+                className="bg-background/50 border-foreground/10 rounded-2xl resize-none min-h-[80px] focus:ring-rose-500/30"
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
               />
@@ -132,7 +118,7 @@ const ReportDialog = ({ open, onOpenChange, targetId, targetType }: ReportDialog
 
             <div className="bg-amber-500/5 border border-amber-500/10 p-3 rounded-2xl flex gap-3">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-amber-700 leading-tight">
+              <p className="text-[12px] text-amber-700 leading-tight">
                 <strong>Note:</strong> Abusing the reporting system or submitting false reports may result in account suspension.
               </p>
             </div>

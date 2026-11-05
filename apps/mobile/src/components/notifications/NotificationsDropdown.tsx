@@ -14,6 +14,10 @@ import {
 import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { handleNotificationNavigation } from '../../services/mobilePush';
+import { useUserSettings } from '../../hooks/useUserSettings';
+import { showToast } from '../../contexts/ToastContext';
+import { undoable } from '../../utils/undoable';
+import { deleteNotificationRow, isCallNotification } from '../../utils/notificationActions';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -39,6 +43,12 @@ const TYPE_ICONS: Record<string, { icon: string; color: string }> = {
   new_follower: { icon: 'user-plus', color: '#10B981' },
   follow: { icon: 'user-plus', color: '#10B981' },
   connection: { icon: 'users', color: '#8B5CF6' },
+  connection_accepted: { icon: 'users', color: '#8B5CF6' },
+  comment_reply: { icon: 'message-circle', color: '#3B82F6' },
+  introduction: { icon: 'user-plus', color: '#10B981' },
+  introduction_request: { icon: 'user-plus', color: '#10B981' },
+  introduction_accepted: { icon: 'user-plus', color: '#10B981' },
+  recommendation: { icon: 'award', color: '#F59E0B' },
   job: { icon: 'briefcase', color: '#F59E0B' },
   job_application: { icon: 'briefcase', color: '#10B981' },
   job_alert: { icon: 'briefcase', color: '#F59E0B' },
@@ -47,7 +57,7 @@ const TYPE_ICONS: Record<string, { icon: string; color: string }> = {
   pitch_status_shortlisted: { icon: 'star', color: '#F59E0B' },
   pitch_status_interested: { icon: 'award', color: '#10B981' },
   pitch_status_invite_to_discuss: { icon: 'message-circle', color: '#8B5CF6' },
-  pitch_status_passed: { icon: 'thumbs-up', color: '#6B7280' },
+  pitch_status_passed: { icon: 'thumbs-up', color: '#64748B' },
   project: { icon: 'film', color: '#06B6D4' },
   project_application: { icon: 'film', color: '#06B6D4' },
   project_invite: { icon: 'mail', color: '#06B6D4' },
@@ -56,7 +66,7 @@ const TYPE_ICONS: Record<string, { icon: string; color: string }> = {
   call_sheet: { icon: 'calendar', color: '#6366F1' },
   rating: { icon: 'star', color: '#FBBF24' },
   mention: { icon: 'at-sign', color: '#EC4899' },
-  default: { icon: 'bell', color: '#6B7280' },
+  default: { icon: 'bell', color: '#64748B' },
 };
 
 interface NotificationsDropdownProps {
@@ -72,6 +82,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
   navigation,
   onNotificationsUpdated,
 }) => {
+  const { themeColors } = useUserSettings();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -88,7 +99,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
-        .neq('type', 'new_message')
+        .not('type', 'in', '(new_message,call_started,incoming_call,call,call_answered,call_event,call_invite,missed_call,call_missed,call_ended,call_declined,space_started)')
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -125,7 +136,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
           })
         );
 
-        setNotifications(processed);
+        setNotifications(processed.filter((n: any) => !isCallNotification(n)));
       }
     } catch (e) {
       console.warn('[NotificationsDropdown] Error fetching notifications:', e);
@@ -214,6 +225,29 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
     }
   };
 
+  const dismissNotification = (item: NotificationItem) => {
+    const putBack = () =>
+      setNotifications((prev) =>
+        prev.some((n) => n.id === item.id)
+          ? prev
+          : [...prev, item].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      );
+    undoable({
+      title: 'Notification dismissed',
+      apply: () => setNotifications((prev) => prev.filter((n) => n.id !== item.id)),
+      revert: putBack,
+      commit: async () => {
+        try {
+          await deleteNotificationRow(item.id);
+          if (onNotificationsUpdated) onNotificationsUpdated();
+        } catch {
+          putBack();
+          showToast({ title: 'Could not dismiss the notification', type: 'error' });
+        }
+      },
+    });
+  };
+
   const handleNotificationPress = async (item: NotificationItem) => {
     markAsRead(item.id);
     onClose();
@@ -255,7 +289,7 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
 
     return (
       <TouchableOpacity
-        style={[styles.itemRow, isUnread && styles.itemRowUnread]}
+        style={[styles.itemRow, { borderBottomColor: themeColors.divider }, isUnread && { backgroundColor: themeColors.primarySoft }]}
         activeOpacity={0.8}
         onPress={() => handleNotificationPress(item)}
       >
@@ -269,16 +303,25 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
         </View>
 
         <View style={styles.itemBody}>
-          <Text style={[styles.itemTitle, isUnread && styles.itemTitleUnread]} numberOfLines={1}>
+          <Text style={[styles.itemTitle, { color: themeColors.textSecondary }, isUnread && [styles.itemTitleUnread, { color: themeColors.textPrimary }]]} numberOfLines={1}>
             {item.title || 'Notification'}
           </Text>
-          <Text style={[styles.itemMessage, isUnread && styles.itemMessageUnread]} numberOfLines={2}>
+          <Text style={[styles.itemMessage, { color: themeColors.textMuted }, isUnread && [styles.itemMessageUnread, { color: themeColors.textSecondary }]]} numberOfLines={2}>
             {item.message}
           </Text>
-          <Text style={styles.itemTime}>{timeAgo(item.created_at)}</Text>
+          <Text style={[styles.itemTime, { color: themeColors.textMuted }]}>{timeAgo(item.created_at)}</Text>
         </View>
 
-        {isUnread && <View style={styles.unreadIndicator} />}
+        {isUnread && <View style={[styles.unreadIndicator, { backgroundColor: themeColors.primary }]} />}
+        <TouchableOpacity
+          onPress={() => dismissNotification(item)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss notification"
+          style={{ padding: 4 }}
+        >
+          <Icon name="x" size={14} color={themeColors.iconMuted} />
+        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
@@ -293,16 +336,16 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop}>
+        <View style={[styles.backdrop, { backgroundColor: themeColors.overlay }]}>
           <TouchableWithoutFeedback>
-            <View style={styles.dropdownCard}>
+            <View style={[styles.dropdownCard, { backgroundColor: themeColors.bgElevated, borderColor: themeColors.border }]}>
               {/* Header */}
-              <View style={styles.header}>
+              <View style={[styles.header, { borderBottomColor: themeColors.divider }]}>
                 <View style={styles.headerTitleRow}>
-                  <Text style={styles.headerTitle}>Notifications</Text>
+                  <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>Notifications</Text>
                   {unreadCount > 0 && (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{unreadCount}</Text>
+                    <View style={[styles.badge, { backgroundColor: themeColors.primary }]}>
+                      <Text style={[styles.badgeText, { color: themeColors.onPrimary }]}>{unreadCount}</Text>
                     </View>
                   )}
                 </View>
@@ -313,8 +356,8 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
                     onPress={markAllAsRead}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Icon name="check-check" size={14} color={ORANGE} />
-                    <Text style={styles.markAllText}>Mark all as read</Text>
+                    <Icon name="check-check" size={14} color={themeColors.primary} />
+                    <Text style={[styles.markAllText, { color: themeColors.primary }]}>Mark all as read</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -322,12 +365,12 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
               {/* Body */}
               {loading ? (
                 <View style={styles.loadingBox}>
-                  <ActivityIndicator size="small" color={ORANGE} />
+                  <ActivityIndicator size="small" color={themeColors.primary} />
                 </View>
               ) : notifications.length === 0 ? (
                 <View style={styles.emptyBox}>
-                  <Icon name="bell" size={28} color="#D1D5DB" />
-                  <Text style={styles.emptyText}>You're all caught up!</Text>
+                  <Icon name="bell" size={28} color={themeColors.iconMuted} />
+                  <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>You're all caught up!</Text>
                 </View>
               ) : (
                 <FlatList
@@ -341,15 +384,15 @@ export const NotificationsDropdown: React.FC<NotificationsDropdownProps> = ({
 
               {/* Footer */}
               <TouchableOpacity
-                style={styles.footer}
+                style={[styles.footer, { borderTopColor: themeColors.divider, backgroundColor: themeColors.bgCard }]}
                 activeOpacity={0.8}
                 onPress={() => {
                   onClose();
                   if (navigation) navigation.navigate('Notifications');
                 }}
               >
-                <Text style={styles.footerText}>View all notifications</Text>
-                <Icon name="chevron-right" size={14} color={ORANGE} />
+                <Text style={[styles.footerText, { color: themeColors.primary }]}>View all notifications</Text>
+                <Icon name="chevron-right" size={14} color={themeColors.primary} />
               </TouchableOpacity>
             </View>
           </TouchableWithoutFeedback>
@@ -398,8 +441,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerTitle: {
-    fontSize: 14.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: INK,
   },
   badge: {
@@ -410,8 +453,8 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   markAllBtn: {
     flexDirection: 'row',
@@ -420,7 +463,7 @@ const styles = StyleSheet.create({
   },
   markAllText: {
     color: ORANGE,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   list: {
@@ -439,7 +482,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#64748B',
     fontWeight: '500',
   },
   itemRow: {
@@ -466,26 +509,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemTitle: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '600',
     color: '#374151',
     marginBottom: 2,
   },
   itemTitleUnread: {
-    fontWeight: '800',
-    color: INK,
+    fontWeight: '700',
   },
   itemMessage: {
-    fontSize: 11.5,
-    color: '#6B7280',
+    fontSize: 12,
+    color: '#64748B',
     lineHeight: 16,
   },
   itemMessageUnread: {
-    color: '#1F2937',
     fontWeight: '500',
   },
   itemTime: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#9CA3AF',
     marginTop: 3,
   },
@@ -507,7 +548,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   footerText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: ORANGE,
   },

@@ -109,7 +109,7 @@ export const UserAnnouncements = ({ userId }: UserAnnouncementsProps) => {
       <div className="flex items-center justify-between mb-4 border-b border-border/50 pb-4">
         <div className="flex items-center gap-2">
            <h2 className="text-xl font-bold tracking-tight">Recent Updates</h2>
-           <span className="bg-primary/10 text-primary text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full font-bold">
+           <span className="bg-primary/10 text-primary text-[12px] uppercase tracking-widest px-2 py-0.5 rounded-full font-bold">
               {announcements.length}
            </span>
         </div>

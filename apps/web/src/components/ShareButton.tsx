@@ -1,6 +1,6 @@
-import { Share2 } from 'lucide-react';
 import { useState } from 'react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const ShareButton = ({ 
   postId, 
@@ -26,13 +26,14 @@ const ShareButton = ({
     <>
     <div className="flex items-center">
       <button
-        className="flex items-center gap-1.5 transition-all duration-300 group/share text-foreground/80 hover:text-primary"
+        aria-label="Share post"
+        className="flex items-center gap-1.5 transition duration-300 group/share text-foreground/80 hover:text-primary"
         onClick={() => setShowShareSheet(true)}
       >
-        <div className="p-2 -m-2 rounded-full group-hover/share:bg-primary/10 transition-colors">
-          <Share2 className="h-6 w-6" />
+        <div className="p-2 -m-2 rounded-full flex items-center justify-center group-hover/share:bg-primary/10 transition-colors">
+          <ShareIcon className="h-5 w-5" />
         </div>
-        <span className="text-[13px] font-semibold">{currentShareCount}</span>
+        <span className="text-sm font-semibold">{currentShareCount}</span>
       </button>
     </div>
 

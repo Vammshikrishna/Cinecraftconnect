@@ -7,6 +7,7 @@ import { useUserSettings } from '../../hooks/useUserSettings';
 import { pickAttachments } from '../../services/attachmentPicker';
 import { uploadResume, openResume } from '../../services/resumeFiles';
 import { toSafeUrl } from '../../utils/safeUrl';
+import { friendlyError } from '@cinecraft/core';
 
 const openSafe = (u?: string | null) => {
   const safe = toSafeUrl(u);
@@ -59,7 +60,7 @@ export const useSkillEndorsements = (userId?: string | null) => {
   }, [load]);
   const toggle = async (skillId: number) => {
     const { error } = await db().rpc('toggle_skill_endorsement', { p_skill_id: skillId });
-    if (error) return Alert.alert('Could not endorse', error.message);
+    if (error) return Alert.alert('Could not endorse', friendlyError(error));
     load();
   };
   return { info, toggle };
@@ -76,8 +77,8 @@ export const ProfileHighlightsView = ({ highlights: h, isOwn, onEdit }: { highli
   if (!hasAny) {
     return isOwn ? (
       <TouchableOpacity onPress={onEdit} activeOpacity={0.8} style={[s.empty, { borderColor: ORANGE + '66', backgroundColor: 'rgba(255,75,51,0.06)' }]}>
-        <Text style={{ color: T.textPrimary, fontWeight: '900' }}>✨ Add your highlights</Text>
-        <Text style={{ color: T.textSecondary, fontSize: 12.5, marginTop: 2 }}>Pin a showreel, list your gear and languages, and share a CV.</Text>
+        <Text style={{ color: T.textPrimary, fontWeight: '700' }}>✨ Add your highlights</Text>
+        <Text style={{ color: T.textSecondary, fontSize: 12, marginTop: 2 }}>Pin a showreel, list your gear and languages, and share a CV.</Text>
       </TouchableOpacity>
     ) : null;
   }
@@ -96,13 +97,13 @@ export const ProfileHighlightsView = ({ highlights: h, isOwn, onEdit }: { highli
       )}
       <View style={{ padding: 12, gap: 8 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={{ color: T.textMuted, fontSize: 11, fontWeight: '900', letterSpacing: 1, flex: 1 }}>HIGHLIGHTS</Text>
-          {isOwn && <TouchableOpacity onPress={onEdit}><Text style={{ color: ORANGE, fontWeight: '800', fontSize: 12.5 }}>Edit</Text></TouchableOpacity>}
+          <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 1, flex: 1 }}>HIGHLIGHTS</Text>
+          {isOwn && <TouchableOpacity onPress={onEdit}><Text style={{ color: ORANGE, fontWeight: '700', fontSize: 12 }}>Edit</Text></TouchableOpacity>}
         </View>
         {h.languages.length > 0 && (
           <View style={s.chips}>
             <Text style={{ color: T.textMuted, fontSize: 12 }}>🗣</Text>
-            {h.languages.map((l) => <View key={l} style={[s.chip, { backgroundColor: 'rgba(255,75,51,0.12)' }]}><Text style={{ color: ORANGE, fontSize: 12, fontWeight: '800' }}>{l}</Text></View>)}
+            {h.languages.map((l) => <View key={l} style={[s.chip, { backgroundColor: 'rgba(255,75,51,0.12)' }]}><Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>{l}</Text></View>)}
           </View>
         )}
         {h.gear.length > 0 && (
@@ -112,9 +113,9 @@ export const ProfileHighlightsView = ({ highlights: h, isOwn, onEdit }: { highli
           </View>
         )}
         {hasCv && (
-          <TouchableOpacity style={[s.cvBtn, { borderColor: T.border }]} onPress={() => openResume(h.cv_path!).catch((e) => Alert.alert('Could not open the file', e.message))}>
+          <TouchableOpacity style={[s.cvBtn, { borderColor: T.border }]} onPress={() => openResume(h.cv_path!).catch((e) => Alert.alert('Could not open the file', friendlyError(e)))}>
             <Icon name="file-text" size={14} color={T.textPrimary} />
-            <Text style={{ color: T.textPrimary, fontWeight: '800', fontSize: 13 }}>{isOwn && !h.cv_public ? 'My CV (private)' : 'Download CV'}</Text>
+            <Text style={{ color: T.textPrimary, fontWeight: '700', fontSize: 13 }}>{isOwn && !h.cv_public ? 'My CV (private)' : 'Download CV'}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -160,7 +161,7 @@ export const ProfileContextStrip = ({ userId, showContext, onOpenProfile, onOpen
     <View style={[s.card, { backgroundColor: T.bgCard, borderColor: T.border, padding: 12, gap: 8 }]}>
       {hasContext && (
         <View style={{ gap: 6 }}>
-          <Text style={{ color: T.textMuted, fontSize: 10.5, fontWeight: '900', letterSpacing: 1 }}>HOW YOU'RE CONNECTED</Text>
+          <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 1 }}>HOW YOU'RE CONNECTED</Text>
           {mutuals.length > 0 && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={{ flexDirection: 'row' }}>
@@ -170,7 +171,7 @@ export const ProfileContextStrip = ({ userId, showContext, onOpenProfile, onOpen
                       <CachedImage uri={m.avatar_url} style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: T.bgCard }} />
                     ) : (
                       <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: T.bgCard, backgroundColor: T.chipBg, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ color: ORANGE, fontSize: 10, fontWeight: '900' }}>{(m.full_name || '?').charAt(0).toUpperCase()}</Text>
+                        <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>{(m.full_name || '?').charAt(0).toUpperCase()}</Text>
                       </View>
                     )}
                   </TouchableOpacity>
@@ -199,7 +200,7 @@ export const ProfileContextStrip = ({ userId, showContext, onOpenProfile, onOpen
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {chips.map((c) => (
             <View key={c.key} style={[s.chip, { borderWidth: 1, borderColor: c.key === 'active' ? '#05966955' : T.border, backgroundColor: c.key === 'active' ? 'rgba(5,150,105,0.12)' : 'transparent' }]}>
-              <Text style={{ color: c.key === 'active' ? '#059669' : T.textSecondary, fontSize: 11.5, fontWeight: c.key === 'active' ? '800' : '500' }}>{c.text}</Text>
+              <Text style={{ color: c.key === 'active' ? '#059669' : T.textSecondary, fontSize: 12, fontWeight: c.key === 'active' ? '800' : '500' }}>{c.text}</Text>
             </View>
           ))}
         </View>
@@ -227,13 +228,13 @@ export const RecommendationsPanel = ({ userId, isOwner, refreshKey = 0 }: { user
 
   const respond = async (id: string, approve: boolean) => {
     const { error } = await db().rpc('respond_recommendation', { p_id: id, p_approve: approve });
-    if (error) return Alert.alert('Could not update', error.message);
+    if (error) return Alert.alert('Could not update', friendlyError(error));
     load();
   };
   const remove = (r: any) =>
     Alert.alert('Remove recommendation', 'Remove this recommendation?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => { const { error } = await db().from('profile_recommendations').delete().eq('id', r.id); if (error) return Alert.alert('Could not remove', error.message); load(); } },
+      { text: 'Remove', style: 'destructive', onPress: async () => { const { error } = await db().from('profile_recommendations').delete().eq('id', r.id); if (error) return Alert.alert('Could not remove', friendlyError(error)); load(); } },
     ]);
 
   if (!loaded) return <ActivityIndicator color={ORANGE} style={{ marginVertical: 24 }} />;
@@ -244,15 +245,15 @@ export const RecommendationsPanel = ({ userId, isOwner, refreshKey = 0 }: { user
     <View>
       {rows.map((r) => (
         <View key={r.id} style={[s.card, { backgroundColor: T.bgCard, borderColor: r.status === 'pending' ? ORANGE : T.border, padding: 12, marginBottom: 8, gap: 8 }]}>
-          {r.status === 'pending' && <Text style={{ color: ORANGE, fontSize: 10.5, fontWeight: '900', letterSpacing: 0.8 }}>{isOwner ? 'WAITING FOR YOUR APPROVAL' : 'WAITING FOR APPROVAL'}</Text>}
-          <Text style={{ color: T.textPrimary, fontSize: 13.5, lineHeight: 19 }}>“{r.body}”</Text>
+          {r.status === 'pending' && <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700', letterSpacing: 0.8 }}>{isOwner ? 'WAITING FOR YOUR APPROVAL' : 'WAITING FOR APPROVAL'}</Text>}
+          <Text style={{ color: T.textPrimary, fontSize: 14, lineHeight: 19 }}>“{r.body}”</Text>
           <Text style={{ color: T.textMuted, fontSize: 12 }}>
-            <Text style={{ color: T.textPrimary, fontWeight: '800' }}>{r.author_name}</Text> · {REL[r.relationship]}{r.project_title ? ` · ${r.project_title}` : ''} · {agoText(r.created_at)}
+            <Text style={{ color: T.textPrimary, fontWeight: '700' }}>{r.author_name}</Text> · {REL[r.relationship]}{r.project_title ? ` · ${r.project_title}` : ''} · {agoText(r.created_at)}
           </Text>
           <View style={{ flexDirection: 'row', gap: 14 }}>
             {isOwner && r.status === 'pending' && (
               <>
-                <TouchableOpacity onPress={() => respond(r.id, true)}><Text style={{ color: ORANGE, fontWeight: '800' }}>Approve</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => respond(r.id, true)}><Text style={{ color: ORANGE, fontWeight: '700' }}>Approve</Text></TouchableOpacity>
                 <TouchableOpacity onPress={() => respond(r.id, false)}><Text style={{ color: T.textSecondary, fontWeight: '700' }}>Decline</Text></TouchableOpacity>
               </>
             )}
@@ -305,7 +306,7 @@ export const ProfileHighlightsModal = ({ visible, onClose, userId, current, onSa
       setUploading(true);
       setCvPath(await uploadResume(f));
     } catch (e: any) {
-      Alert.alert('Could not upload the file', e?.message || 'Please try again.');
+      Alert.alert('Could not upload the file', friendlyError(e, 'Please try again.'));
     } finally {
       setUploading(false);
     }
@@ -326,7 +327,7 @@ export const ProfileHighlightsModal = ({ visible, onClose, userId, current, onSa
       hidden_sections: hidden,
     }, { onConflict: 'user_id' });
     setSaving(false);
-    if (error) return Alert.alert('Could not save', error.message);
+    if (error) return Alert.alert('Could not save', friendlyError(error));
     onSaved();
     onClose();
   };
@@ -337,8 +338,8 @@ export const ProfileHighlightsModal = ({ visible, onClose, userId, current, onSa
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <View style={[s.sheet, { backgroundColor: T.bgCard }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ color: T.textPrimary, fontSize: 17, fontWeight: '900', flex: 1 }}>Your highlights</Text>
-            <TouchableOpacity onPress={onClose}><Icon name="x" size={20} color={T.textSecondary} /></TouchableOpacity>
+            <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700', flex: 1 }}>Your highlights</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={onClose}><Icon name="x" size={20} color={T.iconSecondary} /></TouchableOpacity>
           </View>
           <ScrollView style={{ maxHeight: 480, marginTop: 10 }} keyboardShouldPersistTaps="handled">
             <Text style={[s.label, { color: T.textMuted }]}>SHOWREEL LINK (HTTPS)</Text>
@@ -352,7 +353,7 @@ export const ProfileHighlightsModal = ({ visible, onClose, userId, current, onSa
             {cvPath ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Text style={{ color: T.textPrimary, flex: 1 }}>CV uploaded</Text>
-                <TouchableOpacity onPress={() => { setCvPath(null); setCvPublic(false); }}><Text style={{ color: '#DC2626', fontWeight: '800' }}>Remove</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => { setCvPath(null); setCvPublic(false); }}><Text style={{ color: '#DC2626', fontWeight: '700' }}>Remove</Text></TouchableOpacity>
               </View>
             ) : (
               <TouchableOpacity style={[s.upload, { borderColor: T.border }]} onPress={pickCv} disabled={uploading}>
@@ -372,15 +373,15 @@ export const ProfileHighlightsModal = ({ visible, onClose, userId, current, onSa
                 return (
                   <TouchableOpacity key={k} onPress={() => setHidden(shown ? [...hidden, k] : hidden.filter((x) => x !== k))}
                     style={[s.chip, { borderWidth: 1, borderColor: shown ? ORANGE : T.border, backgroundColor: shown ? ORANGE : 'transparent' }]}>
-                    <Text style={{ color: shown ? '#fff' : T.textMuted, fontSize: 12, fontWeight: '800', textDecorationLine: shown ? 'none' : 'line-through' }}>{l}</Text>
+                    <Text style={{ color: shown ? '#fff' : T.textMuted, fontSize: 12, fontWeight: '700', textDecorationLine: shown ? 'none' : 'line-through' }}>{l}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <Text style={{ color: T.textMuted, fontSize: 11.5, marginTop: 6 }}>You always see everything on your own profile.</Text>
+            <Text style={{ color: T.textMuted, fontSize: 12, marginTop: 6 }}>You always see everything on your own profile.</Text>
           </ScrollView>
           <TouchableOpacity style={[s.primary, (saving || uploading) && { opacity: 0.6 }]} onPress={save} disabled={saving || uploading}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Save</Text>}
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -414,7 +415,7 @@ export const AwardsPanel = ({ userId, isOwner }: { userId: string; isOwner: bool
     const { error } = await db().from('profile_awards').insert({
       user_id: userId, kind, title: title.trim(), org: org.trim() || null, year: year ? parseInt(year, 10) : null, url: url.trim() || null,
     });
-    if (error) return Alert.alert('Could not add', error.message);
+    if (error) return Alert.alert('Could not add', friendlyError(error));
     setTitle(''); setOrg(''); setYear(''); setUrl(''); setAdding(false);
     load();
   };
@@ -426,7 +427,7 @@ export const AwardsPanel = ({ userId, isOwner }: { userId: string; isOwner: bool
         text: 'Remove', style: 'destructive',
         onPress: async () => {
           const { error } = await db().from('profile_awards').delete().eq('id', r.id);
-          if (error) return Alert.alert('Could not remove', error.message);
+          if (error) return Alert.alert('Could not remove', friendlyError(error));
           setRows((prev) => prev.filter((x) => x.id !== r.id));
         },
       },
@@ -439,7 +440,7 @@ export const AwardsPanel = ({ userId, isOwner }: { userId: string; isOwner: bool
           <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
             {(Object.keys(KINDS) as (keyof typeof KINDS)[]).map((k) => (
               <TouchableOpacity key={k} onPress={() => setKind(k)} style={[s.chip, { borderWidth: 1, borderColor: kind === k ? ORANGE : T.border, backgroundColor: kind === k ? 'rgba(255,75,51,0.12)' : 'transparent' }]}>
-                <Text style={{ color: kind === k ? ORANGE : T.textSecondary, fontWeight: '800', fontSize: 12 }}>{KINDS[k]}</Text>
+                <Text style={{ color: kind === k ? ORANGE : T.textSecondary, fontWeight: '700', fontSize: 12 }}>{KINDS[k]}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -450,14 +451,14 @@ export const AwardsPanel = ({ userId, isOwner }: { userId: string; isOwner: bool
           </View>
           <TextInput style={[s.input, input, { marginTop: 0 }]} placeholder="Link (https://...), optional" placeholderTextColor={T.textMuted} value={url} onChangeText={setUrl} autoCapitalize="none" maxLength={300} />
           <View style={{ flexDirection: 'row', gap: 16 }}>
-            <TouchableOpacity onPress={add} disabled={!title.trim()}><Text style={{ color: ORANGE, fontWeight: '800', opacity: title.trim() ? 1 : 0.5 }}>Add</Text></TouchableOpacity>
+            <TouchableOpacity onPress={add} disabled={!title.trim()}><Text style={{ color: ORANGE, fontWeight: '700', opacity: title.trim() ? 1 : 0.5 }}>Add</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => setAdding(false)}><Text style={{ color: T.textSecondary, fontWeight: '700' }}>Cancel</Text></TouchableOpacity>
           </View>
         </View>
       ) : (
         <TouchableOpacity onPress={() => setAdding(true)} style={[s.cvBtn, { borderColor: ORANGE, alignSelf: 'flex-start', marginBottom: 10 }]}>
           <Icon name="plus" size={14} color={ORANGE} />
-          <Text style={{ color: ORANGE, fontWeight: '800' }}>Add award, festival or press</Text>
+          <Text style={{ color: ORANGE, fontWeight: '700' }}>Add award, festival or press</Text>
         </TouchableOpacity>
       ))}
 
@@ -469,14 +470,14 @@ export const AwardsPanel = ({ userId, isOwner }: { userId: string; isOwner: bool
         rows.map((r) => (
           <TouchableOpacity key={r.id} activeOpacity={0.85} onPress={() => r.url && openSafe(r.url)} onLongPress={isOwner ? () => remove(r) : undefined}
             style={[s.card, { backgroundColor: T.bgCard, borderColor: T.border, padding: 12, marginBottom: 8 }]}>
-            <Text style={{ color: T.textMuted, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8 }}>{KINDS[r.kind as keyof typeof KINDS]?.toUpperCase()}{r.year ? ` · ${r.year}` : ''}</Text>
-            <Text style={{ color: T.textPrimary, fontWeight: '800', fontSize: 14.5, marginTop: 2 }}>{r.title}</Text>
+            <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 0.8 }}>{KINDS[r.kind as keyof typeof KINDS]?.toUpperCase()}{r.year ? ` · ${r.year}` : ''}</Text>
+            <Text style={{ color: T.textPrimary, fontWeight: '700', fontSize: 14, marginTop: 2 }}>{r.title}</Text>
             {!!r.org && <Text style={{ color: T.textSecondary, fontSize: 13 }}>{r.org}</Text>}
             {!!r.url && <Text style={{ color: ORANGE, fontSize: 12, marginTop: 4 }}>Open link ↗</Text>}
           </TouchableOpacity>
         ))
       )}
-      {isOwner && rows.length > 0 && <Text style={{ color: T.textMuted, fontSize: 11, textAlign: 'center' }}>Long-press an item to remove it</Text>}
+      {isOwner && rows.length > 0 && <Text style={{ color: T.textMuted, fontSize: 12, textAlign: 'center' }}>Long-press an item to remove it</Text>}
     </View>
   );
 };
@@ -489,7 +490,13 @@ export const ProfileCompletenessCard = ({ refreshKey = 0, onAction }: { refreshK
   const [hint, setHint] = useState<string | null>(null);
 
   useEffect(() => {
-    db().rpc('my_profile_completeness').then(({ data }: any) => setD(data || null));
+    db().rpc('my_profile_completeness').then(({ data }: any) => {
+      if (!data) { setD(null); return; }
+      // there is no cover photo any more: it is not asked for, and the other 95 points count as the whole
+      const coverDone = !(data.missing || []).some((m: any) => m.key === 'cover');
+      const score = Math.min(100, Math.round(((data.score - (coverDone ? 5 : 0)) / 95) * 100));
+      setD({ score, missing: (data.missing || []).filter((m: any) => m.key !== 'cover') });
+    });
     db().rpc('profile_hint').then(({ data }: any) => setHint(data || null));
   }, [refreshKey]);
 
@@ -498,7 +505,7 @@ export const ProfileCompletenessCard = ({ refreshKey = 0, onAction }: { refreshK
   return (
     <View style={[s.card, { backgroundColor: T.bgCard, borderColor: T.border, padding: 12 }]}>
       <TouchableOpacity onPress={() => setOpen((o) => !o)} activeOpacity={0.8}>
-        <Text style={{ color: T.textPrimary, fontWeight: '900', fontSize: 14 }}>Your profile is {d.score}% complete</Text>
+        <Text style={{ color: T.textPrimary, fontWeight: '700', fontSize: 14 }}>Your profile is {d.score}% complete</Text>
         <Text style={{ color: T.textMuted, fontSize: 12 }}>Complete profiles get noticed more.</Text>
       </TouchableOpacity>
       <View style={{ height: 7, borderRadius: 4, backgroundColor: T.chipBg, overflow: 'hidden', marginTop: 8 }}>
@@ -509,8 +516,8 @@ export const ProfileCompletenessCard = ({ refreshKey = 0, onAction }: { refreshK
       )}
       {open && d.missing.slice(0, 4).map((m) => (
         <TouchableOpacity key={m.key} onPress={() => onAction(m.key)} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
-          <Text style={{ color: T.textPrimary, flex: 1, fontSize: 13.5 }}>○  {m.label}</Text>
-          <Text style={{ color: ORANGE, fontWeight: '800', fontSize: 12 }}>+{m.points}%</Text>
+          <Text style={{ color: T.textPrimary, flex: 1, fontSize: 14 }}>○  {m.label}</Text>
+          <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 12 }}>+{m.points}%</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -523,13 +530,13 @@ const s = StyleSheet.create({
   reel: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#111' },
   reelOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center' },
   playBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
-  reelTitle: { position: 'absolute', left: 12, right: 12, bottom: 8, color: '#fff', fontWeight: '800', fontSize: 14 },
+  reelTitle: { position: 'absolute', left: 12, right: 12, bottom: 8, color: '#fff', fontWeight: '700', fontSize: 14 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
   chip: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
   cvBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, alignSelf: 'flex-start' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
-  label: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginTop: 14 },
+  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28, width: '100%', maxWidth: 600, alignSelf: 'center' },
+  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 14 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 },
   upload: { borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   check: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },

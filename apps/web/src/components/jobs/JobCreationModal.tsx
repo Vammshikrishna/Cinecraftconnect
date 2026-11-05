@@ -18,7 +18,8 @@ import {
   JOB_TYPES, EXPERIENCE_LEVELS, WORK_MODES, PAY_PERIODS, JOB_TYPE_LABELS, EXPERIENCE_LABELS, WORK_MODE_LABELS,
   PAY_PERIOD_LABELS, DEPARTMENTS, CURRENCIES,
 } from '@/types/jobs';
-import { validateJobForm, normalizeScreeningQuestions, MAX_SCREENING_QUESTIONS } from '@cinecraft/core';
+import { validateJobForm, normalizeScreeningQuestions, MAX_SCREENING_QUESTIONS, friendlyError } from '@cinecraft/core';
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
 
 interface JobCreationModalProps {
   onJobCreated?: () => void;
@@ -93,6 +94,7 @@ export const JobCreationModal = ({
   onJobCreated, defaultOpen = false, defaultPageId = 'user', triggerButton, jobToEdit, duplicateFrom,
 }: JobCreationModalProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const guardDiscard = useDiscardGuard(isOpen, setIsOpen);
   const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -233,7 +235,7 @@ export const JobCreationModal = ({
       onJobCreated?.();
     } catch (error: any) {
       console.error('Error saving job:', error);
-      toast({ title: 'Could not save the job', description: error?.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: 'Could not save the job', description: friendlyError(error, 'Please try again.'), variant: 'destructive' });
     } finally {
       setSaving(null);
     }
@@ -244,10 +246,10 @@ export const JobCreationModal = ({
   const invalid = (key: string) => (previewErrors[key] ? 'border-red-500/60 focus-visible:ring-red-500/30' : '');
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={guardDiscard}>
       <DialogTrigger asChild>
         {triggerButton || (
-          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
+          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition shrink-0 text-sm">
             <Plus className="mr-2 h-4 w-4" />
             <span>{isEditing ? 'Edit Job' : 'Post a Job'}</span>
           </Button>
@@ -353,7 +355,7 @@ export const JobCreationModal = ({
             <div className="space-y-1.5">
               <Label htmlFor="requirements">Requirements &amp; qualifications</Label>
               <Textarea id="requirements" className="min-h-[90px]" placeholder="Skills, equipment, licences, portfolio expectations…" value={form.requirements} onChange={(e) => set('requirements', e.target.value)} />
-              <p className="text-[11px] text-muted-foreground">Skills named here are used to rank applicants by match.</p>
+              <p className="text-[12px] text-muted-foreground">Skills named here are used to rank applicants by match.</p>
             </div>
           </section>
 
@@ -399,7 +401,7 @@ export const JobCreationModal = ({
               <div className="space-y-1.5">
                 <Label htmlFor="deadline">Apply by</Label>
                 <Input id="deadline" type="datetime-local" className={invalid('deadline')} value={form.deadline} onChange={(e) => set('deadline', e.target.value)} />
-                {fieldError('deadline') || <p className="text-[11px] text-muted-foreground">The posting closes automatically at this time.</p>}
+                {fieldError('deadline') || <p className="text-[12px] text-muted-foreground">The posting closes automatically at this time.</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="openings">Openings</Label>
@@ -422,7 +424,7 @@ export const JobCreationModal = ({
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2"><ListChecks className="w-3.5 h-3.5" /> Screening questions <span className="font-medium normal-case tracking-normal">(optional, up to {MAX_SCREENING_QUESTIONS})</span></h3>
-              <Button type="button" variant="outline" size="sm" className="rounded-full h-8" onClick={addQuestion} disabled={form.screening_questions.length >= MAX_SCREENING_QUESTIONS}>
+              <Button type="button" variant="outline" size="sm" className="rounded-full h-10 md:h-8" onClick={addQuestion} disabled={form.screening_questions.length >= MAX_SCREENING_QUESTIONS}>
                 <Plus className="w-3.5 h-3.5 mr-1" /> Add question
               </Button>
             </div>
@@ -431,13 +433,13 @@ export const JobCreationModal = ({
                 <div className="flex items-start gap-2">
                   <GripVertical className="w-4 h-4 mt-2.5 text-muted-foreground/40 shrink-0" />
                   <Input value={q.label} placeholder={`Question ${i + 1}, e.g. Do you own an Alexa Mini?`} onChange={(e) => updateQuestion(q.id, { label: e.target.value })} />
-                  <Button type="button" variant="ghost" size="icon" className="shrink-0 text-red-500 hover:bg-red-500/10" onClick={() => removeQuestion(q.id)}>
+                  <Button aria-label="Delete" type="button" variant="ghost" size="icon" className="shrink-0 text-red-500 hover:bg-red-500/10" onClick={() => removeQuestion(q.id)}>
                     <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 pl-6">
                   <Select value={q.type} onValueChange={(v) => updateQuestion(q.id, { type: v as ScreeningQuestion['type'], options: v === 'choice' ? q.options || ['', ''] : undefined })}>
-                    <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectTrigger aria-label="Question type" className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="text">Short answer</SelectItem>
                       <SelectItem value="yesno">Yes / No</SelectItem>

@@ -29,7 +29,7 @@ export const BackButton = ({ to, label = "BACK", className, onClick }: BackButto
       size="sm"
       onClick={handleClick}
       className={cn(
-        "rounded-full bg-muted/50 hover:bg-muted border border-border/50 text-foreground font-black uppercase tracking-widest px-6 h-10 transition-all hover:scale-105 active:scale-95",
+        "rounded-full bg-muted/50 hover:bg-muted border border-border/50 text-foreground font-black uppercase tracking-widest px-6 h-10 transition-[transform,background-color] duration-150 hover:scale-105 active:scale-[0.97]",
         className
       )}
     >

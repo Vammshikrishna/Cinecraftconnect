@@ -22,8 +22,11 @@ import {
   InteractionManager,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
+import { easeLayout } from '../../utils/motion';
 const FlashListAny = FlashList as any;
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useFocusEffect } from '@react-navigation/native';
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
@@ -38,6 +41,7 @@ import { CreateAnnouncementModal } from '../../components/modals/CreateAnnouncem
 import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
 import { ReportModal } from '../../components/modals/ReportModal';
 import { ANNOUNCEMENT_CATEGORIES, AnnouncementBadges, AnnouncementCover, AnnouncementActions, AnnouncementMenuButton, PlatformCard } from '../../components/announcements/AnnouncementParts';
+import { useAnnouncementViews } from '../../hooks/useAnnouncementViews';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
 import {
@@ -46,6 +50,7 @@ import {
   saveCache,
   resolveCurrentUserId,
 } from '../../services/offlineCache';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -186,6 +191,7 @@ const AnnouncementCardItem = React.memo<{
   themeColors: any;
   isTablet: boolean;
   isLandscape: boolean;
+  isMultiCol: boolean;
   isOwn: boolean;
   isExpanded: boolean;
   timeAgo: string;
@@ -204,6 +210,7 @@ const AnnouncementCardItem = React.memo<{
   themeColors,
   isTablet,
   isLandscape,
+  isMultiCol,
   isOwn,
   isExpanded,
   timeAgo,
@@ -248,8 +255,7 @@ const AnnouncementCardItem = React.memo<{
       style={[
         styles.webAnnouncementCard,
         { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
-        isTablet && styles.webAnnouncementCardTablet,
-        isTablet && isLandscape && styles.webAnnouncementCardTablet3Col,
+        isTablet && (isMultiCol ? styles.webAnnouncementCardTablet : styles.webAnnouncementCardTabletOne),
       ]}
     >
       <AnnouncementBadges item={item} />
@@ -269,7 +275,7 @@ const AnnouncementCardItem = React.memo<{
             {item.title}
           </Text>
           <View style={styles.timeRow}>
-            <Icon name="clock" size={11} color={themeColors.textSecondary} />
+            <Icon name="clock" size={11} color={themeColors.iconSecondary} />
             <Text style={[styles.timeText, { color: themeColors.textSecondary }]}>{timeAgo}</Text>
           </View>
         </View>
@@ -277,7 +283,7 @@ const AnnouncementCardItem = React.memo<{
         <AnnouncementMenuButton item={item} onEdit={onEdit as any} onChanged={onChanged || (() => {})} />
       </View>
 
-      <AnnouncementCover uri={item.image_url} />
+      <AnnouncementCover uri={item.image_url} height={isTablet ? 180 : undefined} />
 
       {/* Content Body Text */}
       {cleanDisplayText ? (
@@ -314,7 +320,7 @@ const AnnouncementCardItem = React.memo<{
       {/* YOUTUBE EMBED BANNER */}
       {youtubeId && !spotifyInfo && (
         <TouchableOpacity
-          style={styles.youtubeEmbedCard}
+          style={[styles.youtubeEmbedCard, isTablet && { height: 180 }]}
           onPress={() => Linking.openURL(`https://www.youtube.com/watch?v=${youtubeId}`)}
           activeOpacity={0.9}
         >
@@ -331,13 +337,13 @@ const AnnouncementCardItem = React.memo<{
       <AnnouncementActions item={item} userId={userId} onReport={onReport} />
 
       {/* Card Footer Row */}
-      <View style={[styles.cardFooterRow, { borderTopColor: themeColors.divider }]}>
+      <View style={[styles.cardFooterRow, { marginTop: 'auto' }, { borderTopColor: themeColors.divider }]}>
         <View style={[styles.fromTagBox, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
-          <Text style={[styles.fromTagText, { color: themeColors.textSecondary }]}>FROM // {publisherName.toUpperCase()}</Text>
+          <Text style={[styles.fromTagText, { color: themeColors.textSecondary }]}>From {publisherName}</Text>
         </View>
 
-        <TouchableOpacity style={styles.shareBtn} onPress={() => onShare(item)}>
-          <Icon name="share" size={15} color={themeColors.textSecondary} />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.shareBtn} onPress={() => onShare(item)}>
+          <Icon name="share" size={15} color={themeColors.iconSecondary} />
         </TouchableOpacity>
       </View>
     </View>
@@ -350,17 +356,17 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
-  const numColumns = isTablet ? (isLandscape ? 3 : 2) : 1;
+  const { width: winWidth } = useResponsive();
+  // Web grid: 1 column below 1024px, 2 at 1024-1279px, 3 from 1280px
+  const numColumns = isTablet ? (winWidth >= 1280 ? 3 : winWidth >= 1024 ? 2 : 1) : 1;
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const viewTracking = useAnnouncementViews(currentUserId);
 
   // Creation State
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newContent, setNewContent] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [myPages, setMyPages] = useState<any[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string>('personal');
 
@@ -528,44 +534,6 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
     setRefreshing(false);
   };
 
-  const handleCreateAnnouncement = async () => {
-    if (!newTitle.trim() || !newContent.trim()) {
-      Alert.alert('Validation Error', 'Both title and content are required.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      const supabase = getSupabaseClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        Alert.alert('Sign In Required', 'Please sign in to post announcements.');
-        return;
-      }
-
-      const { error } = await (supabase.from('announcements') as any).insert({
-        title: newTitle.trim(),
-        content: newContent.trim(),
-        author_id: user.id,
-        publisher_page_id: selectedPageId === 'personal' ? null : selectedPageId,
-        posted_at: new Date().toISOString(),
-      });
-
-      if (error) throw error;
-
-      setNewTitle('');
-      setNewContent('');
-      setSelectedPageId('personal');
-      setShowCreateModal(false);
-      Alert.alert('Success!', 'Announcement broadcasted successfully.');
-      fetchAnnouncements();
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not post announcement.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const handleDeleteAnnouncement = (id: string, authorId?: string | null) => {
     Alert.alert('Delete Announcement', 'Are you sure you want to delete this announcement?', [
       { text: 'Cancel', style: 'cancel' },
@@ -582,7 +550,7 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
             if (error) throw error;
             setAnnouncements((prev) => prev.filter((a) => a.id !== id));
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Could not delete announcement.');
+            Alert.alert('Error', friendlyError(e, 'Could not delete announcement.'));
           }
         },
       },
@@ -599,11 +567,12 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
     try {
       const diffMs = Date.now() - new Date(dateStr).getTime();
       const diffMins = Math.floor(diffMs / (1000 * 60));
-      if (diffMins < 60) return `${diffMins} mins ago`;
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins} ${diffMins === 1 ? 'min' : 'mins'} ago`;
       const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `${diffHours} hours ago`;
+      if (diffHours < 24) return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
       const diffDays = Math.floor(diffHours / 24);
-      if (diffDays < 30) return `${diffDays} days ago`;
+      if (diffDays < 30) return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
       const diffMonths = Math.floor(diffDays / 30);
       return `about ${diffMonths} ${diffMonths === 1 ? 'month' : 'months'} ago`;
     } catch {
@@ -612,15 +581,28 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const toggleExpand = (id: string) => {
+    easeLayout();
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const renderAnnouncementCard = useCallback(({ item }: { item: Announcement }) => (
+  // Pad the last row so a lone card keeps the same width as the others
+  const gridData = useMemo(() => {
+    if (numColumns <= 1) return announcements;
+    const rem = announcements.length % numColumns;
+    if (rem === 0) return announcements;
+    const pads = Array.from({ length: numColumns - rem }, (_, i) => ({ id: `__pad${i}`, __pad: true } as any));
+    return [...announcements, ...pads];
+  }, [announcements, numColumns]);
+
+  const renderAnnouncementCard = useCallback(({ item }: { item: Announcement }) => (item as any).__pad ? (
+    <View style={{ flex: 1, marginHorizontal: 12 }} />
+  ) : (
     <AnnouncementCardItem
       item={item}
       themeColors={themeColors}
       isTablet={isTablet}
       isLandscape={isLandscape}
+      isMultiCol={numColumns > 1}
       isOwn={item.author_id === currentUserId}
       isExpanded={!!expandedIds[item.id]}
       timeAgo={getTimeAgo(item.posted_at || item.created_at)}
@@ -635,7 +617,7 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
       onEdit={isInternal ? undefined : setEditingAnn}
       onChanged={fetchAnnouncements}
     />
-  ), [themeColors, isTablet, isLandscape, currentUserId, expandedIds, navigation, handleDeleteAnnouncement, handleShare]);
+  ), [themeColors, isTablet, isLandscape, numColumns, currentUserId, expandedIds, navigation, handleDeleteAnnouncement, handleShare]);
 
   return (
     <TabletContainer
@@ -656,7 +638,7 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.pageHeaderSection}>
             <View style={styles.pageTitleGroup}>
               <Icon name="megaphone" size={22} color={ORANGE} strokeWidth={2.2} />
-              <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Announcements</Text>
+              <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Announcements</Text>
             </View>
           </View>
           <View style={isTablet ? styles.skeletonTabletRow : { paddingHorizontal: 16, gap: 14 }}>
@@ -668,24 +650,33 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
           </View>
         </ScrollView>
       ) : (
-        <FlashListAny
+        <FlatList
+          keyboardShouldPersistTaps="handled"
+          {...scrollChrome}
           key={`announcements-grid-${numColumns}`}
-          data={announcements}
+          data={gridData}
           renderItem={renderAnnouncementCard}
           keyExtractor={(item: any) => item.id}
-          estimatedItemSize={260}
           numColumns={numColumns}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={7}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews={Platform.OS === 'android'}
+          onViewableItemsChanged={viewTracking.onViewableItemsChanged}
+          viewabilityConfig={viewTracking.viewabilityConfig}
+          columnWrapperStyle={numColumns > 1 ? { paddingHorizontal: 4 } : undefined}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <View style={styles.pageHeaderSection}>
               <View style={styles.pageHeaderRow}>
                 <View style={styles.pageTitleGroup}>
                   <Icon name="megaphone" size={22} color={ORANGE} strokeWidth={2.2} />
-                  <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Announcements</Text>
+                  <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Announcements</Text>
                 </View>
 
                 {!isFan && !isInternal && (
-                  <TouchableOpacity
+                  <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.newAnnouncementBtn}
                     onPress={() => setShowCreateModal(true)}
                     accessibilityLabel="New Announcement"
@@ -695,16 +686,18 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
                 )}
               </View>
 
-              <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+              <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                 News and updates from the platform, the companies you follow and the people you follow.
               </Text>
 
               <TextInput
                 value={searchText}
                 onChangeText={setSearchText}
+                returnKeyType="search"
+                accessibilityLabel="Search announcements"
                 placeholder="Search announcements…"
                 placeholderTextColor={themeColors.textMuted}
-                style={{ borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.inputBg, color: themeColors.textPrimary, borderRadius: 12, paddingHorizontal: 12, height: 42, fontSize: 13.5, marginBottom: 10 }}
+                style={{ borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.inputBg, color: themeColors.textPrimary, borderRadius: 12, paddingHorizontal: 12, height: 42, fontSize: 14, marginBottom: 10 }}
               />
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -714,7 +707,7 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
                       onPress={() => setFilter(f.key)}
                       style={{ paddingHorizontal: 14, height: 32, borderRadius: 999, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: filter === f.key ? ORANGE : themeColors.bgCard, borderColor: filter === f.key ? ORANGE : themeColors.border }}
                     >
-                      <Text style={{ color: filter === f.key ? '#fff' : themeColors.textSecondary, fontSize: 11.5, fontWeight: '800' }}>{f.label.toUpperCase()}</Text>
+                      <Text style={{ color: filter === f.key ? '#fff' : themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>{f.label.toUpperCase()}</Text>
                     </TouchableOpacity>
                   ))}
                   {ANNOUNCEMENT_CATEGORIES.filter((x) => x.value !== 'general').map((x) => (
@@ -723,7 +716,7 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
                       onPress={() => setCategory(category === x.value ? null : x.value)}
                       style={{ paddingHorizontal: 12, height: 32, borderRadius: 999, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: category === x.value ? x.color : themeColors.bgCard, borderColor: category === x.value ? x.color : themeColors.border }}
                     >
-                      <Text style={{ color: category === x.value ? '#fff' : themeColors.textSecondary, fontSize: 11, fontWeight: '800' }}>{x.label.toUpperCase()}</Text>
+                      <Text style={{ color: category === x.value ? '#fff' : themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>{x.label.toUpperCase()}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -746,9 +739,13 @@ export const AnnouncementsScreen = ({ navigation }: { navigation: any }) => {
               <OfflineEmptyState />
             ) : (
               <View style={styles.emptyState}>
-                <Icon name="megaphone" size={36} color={themeColors.textMuted} />
-                <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Announcements Yet</Text>
-                <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>Check back later for updates and platform news.</Text>
+                <Icon name="megaphone" size={36} color={themeColors.iconMuted} />
+                <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>
+                  {term || category || filter !== 'all' ? 'Nothing matches' : 'No announcements yet'}
+                </Text>
+                <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
+                  {term || category || filter !== 'all' ? 'Try a different filter or search.' : 'Check back later for updates and platform news.'}
+                </Text>
               </View>
             )
           }
@@ -812,19 +809,19 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 18.5,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   pageSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 10,
   },
   newAnnouncementBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -847,14 +844,17 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  // Web grid gap is 24px; the row wrapper adds 4px each side so the cards line up with the 16px page header
   webAnnouncementCardTablet: {
     flex: 1,
-    marginHorizontal: 0,
-    marginBottom: 16,
-    maxWidth: '48.8%',
+    minWidth: 0,
+    marginHorizontal: 12,
+    marginBottom: 24,
+    padding: 20,
   },
-  webAnnouncementCardTablet3Col: {
-    maxWidth: '32.2%',
+  webAnnouncementCardTabletOne: {
+    marginBottom: 24,
+    padding: 20,
   },
   columnWrapper: {
     paddingHorizontal: 16,
@@ -888,8 +888,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   cardTitleText: {
-    fontSize: 14.5,
-    fontWeight: '900',
+    fontSize: 14,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     lineHeight: 18,
@@ -901,7 +901,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   timeText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '600',
   },
@@ -909,7 +909,7 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   contentBodyText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#475569',
     lineHeight: 16,
     marginBottom: 8,
@@ -920,7 +920,7 @@ const styles = StyleSheet.create({
   readMoreText: {
     color: ORANGE,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   spotifyBannerContainer: {
     height: 110,
@@ -974,20 +974,20 @@ const styles = StyleSheet.create({
   },
   spotifyBrandText: {
     color: '#1DB954',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   spotifyTitleText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
     marginBottom: 2,
   },
   spotifyAuthorText: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   spotifyPlayCircle: {
@@ -1048,9 +1048,9 @@ const styles = StyleSheet.create({
   },
   fromTagText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   shareBtn: {
     padding: 6,
@@ -1064,7 +1064,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: INK,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptySub: {
     color: '#64748B',
@@ -1090,12 +1090,12 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   inputLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 8,
@@ -1131,7 +1131,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
     marginBottom: 10,
   },
@@ -1155,7 +1155,7 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     color: '#64748B',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   submitBtn: {
     flex: 1,
@@ -1168,7 +1168,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

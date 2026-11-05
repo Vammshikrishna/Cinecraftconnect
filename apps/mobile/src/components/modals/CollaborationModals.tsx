@@ -4,6 +4,7 @@ import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { Sheet, useInput } from './NetworkModals';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const db = () => getSupabaseClient() as any;
@@ -14,7 +15,7 @@ interface Base { visible: boolean; onClose: () => void; targetId: string; target
 
 const Primary = ({ label, onPress, disabled, busy }: { label: string; onPress: () => void; disabled?: boolean; busy?: boolean }) => (
   <TouchableOpacity style={[s.primary, (disabled || busy) && { opacity: 0.5 }]} onPress={onPress} disabled={disabled || busy}>
-    {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>{label}</Text>}
+    {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>{label}</Text>}
   </TouchableOpacity>
 );
 
@@ -43,7 +44,7 @@ export const RequestDatesModal = ({ visible, onClose, targetId, targetName }: Ba
       p_currency: currency || 'INR', p_note: note.trim() || null, p_project_title: project.trim() || null,
     });
     setSending(false);
-    if (error) return Alert.alert('Could not send the request', error.message);
+    if (error) return Alert.alert('Could not send the request', friendlyError(error));
     Alert.alert('Request sent', `${targetName} will be notified.`);
     onClose();
   };
@@ -88,7 +89,7 @@ export const InviteToProjectModal = ({ visible, onClose, targetId, targetName }:
     setSending(true);
     const { error } = await db().rpc('invite_to_project', { p_space: space, p_invitee: targetId, p_crew_role: role.trim() || null, p_message: message.trim() || null });
     setSending(false);
-    if (error) return Alert.alert('Could not send the invitation', error.message);
+    if (error) return Alert.alert('Could not send the invitation', friendlyError(error));
     Alert.alert('Invitation sent', `${targetName} will be notified.`);
     onClose();
   };
@@ -101,7 +102,7 @@ export const InviteToProjectModal = ({ visible, onClose, targetId, targetName }:
         <>
           {projects.map((p) => (
             <TouchableOpacity key={p.id} onPress={() => setSpace(p.id)} style={[s.option, { borderColor: space === p.id ? ORANGE : T.border, backgroundColor: space === p.id ? 'rgba(255,75,51,0.1)' : 'transparent' }]}>
-              <Text style={{ color: T.textPrimary, fontWeight: '800', flex: 1 }} numberOfLines={1}>{p.name}</Text>
+              <Text style={{ color: T.textPrimary, fontWeight: '700', flex: 1 }} numberOfLines={1}>{p.name}</Text>
               {space === p.id && <Icon name="check" size={16} color={ORANGE} />}
             </TouchableOpacity>
           ))}
@@ -133,7 +134,7 @@ export const RecommendModal = ({ visible, onClose, targetId, targetName, onDone 
     setSending(true);
     const { error } = await db().rpc('write_recommendation', { p_subject: targetId, p_relationship: relationship, p_body: body.trim(), p_project_title: project.trim() || null });
     setSending(false);
-    if (error) return Alert.alert('Could not send the recommendation', error.message);
+    if (error) return Alert.alert('Could not send the recommendation', friendlyError(error));
     Alert.alert('Recommendation sent', `${targetName} will approve it before it shows on their profile.`);
     onClose();
     onDone?.();
@@ -144,13 +145,13 @@ export const RecommendModal = ({ visible, onClose, targetId, targetName, onDone 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {RELATIONS.map(([k, l]) => (
           <TouchableOpacity key={k} onPress={() => setRelationship(k)} style={[s.chip, { borderWidth: 1, borderColor: relationship === k ? ORANGE : T.border, backgroundColor: relationship === k ? ORANGE : 'transparent' }]}>
-            <Text style={{ color: relationship === k ? '#fff' : T.textSecondary, fontSize: 12, fontWeight: '800' }}>{l}</Text>
+            <Text style={{ color: relationship === k ? '#fff' : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{l}</Text>
           </TouchableOpacity>
         ))}
       </View>
       <TextInput style={[s.input, input]} placeholder="Project (optional)" placeholderTextColor={T.textMuted} value={project} onChangeText={setProject} maxLength={120} />
       <TextInput style={[s.input, input, { minHeight: 110, textAlignVertical: 'top' }]} placeholder="What was it like working with them? (20 to 600 characters)" placeholderTextColor={T.textMuted} value={body} onChangeText={setBody} maxLength={600} multiline />
-      <Text style={{ color: T.textMuted, fontSize: 11, alignSelf: 'flex-end', marginTop: 4 }}>{body.length}/600</Text>
+      <Text style={{ color: T.textMuted, fontSize: 12, alignSelf: 'flex-end', marginTop: 4 }}>{body.length}/600</Text>
       <Primary label="Send" onPress={send} disabled={body.trim().length < 20} busy={sending} />
     </Sheet>
   );
@@ -189,7 +190,7 @@ export const AddToShortlistModal = ({ visible, onClose, targetId, targetName }: 
       : await db().from('crew_shortlist_members').delete().eq('shortlist_id', listId).eq('person_id', targetId);
     if (error && error.code !== '23505') {
       setMember((m) => ({ ...m, [listId]: !on }));
-      Alert.alert('Could not update the shortlist', error.message);
+      Alert.alert('Could not update the shortlist', friendlyError(error));
     }
   };
 
@@ -197,7 +198,7 @@ export const AddToShortlistModal = ({ visible, onClose, targetId, targetName }: 
     const { data: { user } } = await db().auth.getUser();
     if (!user || !name.trim()) return;
     const { data, error } = await db().from('crew_shortlists').insert({ owner_id: user.id, name: name.trim() }).select('id').single();
-    if (error) return Alert.alert('Could not create the shortlist', error.message);
+    if (error) return Alert.alert('Could not create the shortlist', friendlyError(error));
     await db().from('crew_shortlist_members').insert({ shortlist_id: data.id, person_id: targetId, note: note.trim() || null });
     setName('');
     load();
@@ -211,7 +212,7 @@ export const AddToShortlistModal = ({ visible, onClose, targetId, targetName }: 
           {lists.length === 0 && <Text style={{ color: T.textMuted, textAlign: 'center', paddingVertical: 10 }}>No shortlists yet. Create one below.</Text>}
           {lists.map((l) => (
             <TouchableOpacity key={l.id} onPress={() => toggle(l.id)} style={[s.option, { borderColor: member[l.id] ? ORANGE : T.border, backgroundColor: member[l.id] ? 'rgba(255,75,51,0.1)' : 'transparent' }]}>
-              <Text style={{ color: T.textPrimary, fontWeight: '800', flex: 1 }} numberOfLines={1}>{l.name} <Text style={{ color: T.textMuted, fontWeight: '400' }}>· {(l.members || []).length}</Text></Text>
+              <Text style={{ color: T.textPrimary, fontWeight: '700', flex: 1 }} numberOfLines={1}>{l.name} <Text style={{ color: T.textMuted, fontWeight: '400' }}>· {(l.members || []).length}</Text></Text>
               {member[l.id] && <Icon name="check" size={16} color={ORANGE} />}
             </TouchableOpacity>
           ))}
@@ -219,7 +220,7 @@ export const AddToShortlistModal = ({ visible, onClose, targetId, targetName }: 
       )}
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
         <TextInput style={[s.input, input, { flex: 1, marginTop: 0 }]} placeholder="New shortlist" placeholderTextColor={T.textMuted} value={name} onChangeText={setName} maxLength={80} onSubmitEditing={create} />
-        <TouchableOpacity onPress={create} disabled={!name.trim()} style={[s.addBtn, !name.trim() && { opacity: 0.5 }]}><Icon name="plus" size={18} color="#fff" /></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={create} disabled={!name.trim()} style={[s.addBtn, !name.trim() && { opacity: 0.5 }]}><Icon name="plus" size={18} color="#fff" /></TouchableOpacity>
       </View>
     </Sheet>
   );

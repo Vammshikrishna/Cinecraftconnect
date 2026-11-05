@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Film, Video, Plus, Trash2, Image as ImageIcon, Layout, GalleryHorizontal } from "lucide-react";
 import { EnhancedFileUpload } from "@/components/ui/enhanced-file-upload";
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
 
 interface SubmitCinemaModalProps {
     isOpen: boolean;
@@ -18,6 +19,7 @@ interface SubmitCinemaModalProps {
 }
 
 export const SubmitCinemaModal = ({ isOpen, onClose, onSuccess }: SubmitCinemaModalProps) => {
+    const guardDiscard = useDiscardGuard(isOpen, onClose as (open: boolean) => void);
     const { user } = useAuth();
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
@@ -127,7 +129,7 @@ export const SubmitCinemaModal = ({ isOpen, onClose, onSuccess }: SubmitCinemaMo
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+        <Dialog open={isOpen} onOpenChange={guardDiscard}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle className="text-2xl font-bold flex items-center gap-2">
@@ -244,7 +246,7 @@ export const SubmitCinemaModal = ({ isOpen, onClose, onSuccess }: SubmitCinemaMo
                             <label className="text-sm font-bold flex items-center gap-2">
                                 <GalleryHorizontal className="h-4 w-4 text-primary" /> Gallery & Screenshots (Up to 5)
                             </label>
-                            <span className="text-[10px] uppercase tracking-wider font-black text-muted-foreground">Optional Showcase</span>
+                            <span className="text-[12px] uppercase tracking-wider font-black text-muted-foreground">Optional Showcase</span>
                         </div>
                         
                         <EnhancedFileUpload 
@@ -265,7 +267,7 @@ export const SubmitCinemaModal = ({ isOpen, onClose, onSuccess }: SubmitCinemaMo
                                 {formData.gallery.map((url, i) => (
                                     <div key={i} className="relative group aspect-square">
                                         <img loading="lazy" decoding="async" src={url} className="w-full h-full object-cover rounded-md" />
-                                        <button 
+                                        <button aria-label="Delete" 
                                             type="button"
                                             onClick={() => setFormData(prev => ({ ...prev, gallery: prev.gallery.filter((_, idx) => idx !== i) }))}
                                             className="absolute -top-2 -right-2 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"

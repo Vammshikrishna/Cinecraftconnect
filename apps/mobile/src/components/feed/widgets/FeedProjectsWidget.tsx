@@ -1,3 +1,4 @@
+import { WT } from './widgetScale';
 import { CachedImage } from '../../common/CachedImage';
 import React, { useState } from 'react';
 import {
@@ -11,6 +12,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { Icon } from '../../common/Icon';
+import { DropdownTrigger } from '../../common/DropdownMenu';
 import { useUserSettings } from '../../../hooks/useUserSettings';
 import { UniversalShareSheet } from '../../common/UniversalShareSheet';
 
@@ -63,7 +65,7 @@ export const FeedProjectsWidget: React.FC<FeedProjectsWidgetProps> = ({
       <View style={styles.sectionHeader}>
         <View style={styles.titleGroup}>
           <Icon name="film" size={17} color={ORANGE} />
-          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Trending ProjectSpaces</Text>
+          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Trending Projects</Text>
         </View>
         <TouchableOpacity onPress={onSeeAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={[styles.seeAllText, { color: themeColors.textSecondary }]}>View All →</Text>
@@ -158,7 +160,7 @@ export const FeedProjectsWidget: React.FC<FeedProjectsWidgetProps> = ({
                     </View>
 
                     <View style={styles.topActionsGroup}>
-                      <TouchableOpacity
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save"
                         onPress={() => onToggleBookmark?.(proj.id)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         style={styles.actionIconTouch}
@@ -172,16 +174,13 @@ export const FeedProjectsWidget: React.FC<FeedProjectsWidgetProps> = ({
                         />
                       </TouchableOpacity>
 
-                      <TouchableOpacity
+                      <DropdownTrigger accessibilityLabel="More options"
                         style={styles.actionIconTouch}
-                        onPress={() => {
-                          setSelectedProj(proj);
-                          setShareSheetVisible(true);
-                        }}
+                        items={[{ label: 'Share project', icon: 'share', onPress: () => { setSelectedProj(proj); setShareSheetVisible(true); } }]}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <Icon name="more-vertical" size={15} color={isDark ? '#9CA3AF' : '#64748B'} />
-                      </TouchableOpacity>
+                      </DropdownTrigger>
                     </View>
                   </View>
 
@@ -209,7 +208,7 @@ export const FeedProjectsWidget: React.FC<FeedProjectsWidgetProps> = ({
               >
                 <Icon name="map-pin" size={10.5} color={isDark ? '#94A3B8' : '#64748B'} />
                 <Text style={[styles.slugTagGrayText, { color: isDark ? '#CBD5E1' : '#475569' }]} numberOfLines={1}>
-                  LOC // {locStr.toUpperCase()}
+                  {locStr}
                 </Text>
               </View>
 
@@ -228,7 +227,7 @@ export const FeedProjectsWidget: React.FC<FeedProjectsWidgetProps> = ({
                   activeOpacity={0.8}
                 >
                   <Icon name="users" size={10} color="#EF4444" />
-                  <Text style={styles.slugTagRedText}>ROLES // {rolesCount} OPEN</Text>
+                  <Text style={styles.slugTagRedText}>{rolesCount} open roles</Text>
                 </TouchableOpacity>
 
                 {/* Genre */}
@@ -243,7 +242,7 @@ export const FeedProjectsWidget: React.FC<FeedProjectsWidgetProps> = ({
                 >
                   <Icon name="film" size={10} color={isDark ? '#94A3B8' : '#64748B'} />
                   <Text style={[styles.slugTagGrayText, { color: isDark ? '#CBD5E1' : '#475569' }]} numberOfLines={1}>
-                    GENRE // {genreStr}
+                    {genreStr}
                   </Text>
                 </View>
               </View>
@@ -322,13 +321,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0D0D0D',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: WT.sectionTitle,
+    fontWeight: '700',
     letterSpacing: -0.2,
   },
   seeAllText: {
     color: '#4B5563',
-    fontSize: 12.5,
+    fontSize: WT.seeAll,
     fontWeight: '700',
   },
   scrollContent: {
@@ -339,7 +338,7 @@ const styles = StyleSheet.create({
     width: 310,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 14,
+    padding: WT.cardPad,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.08)',
     shadowColor: '#000',
@@ -403,12 +402,9 @@ const styles = StyleSheet.create({
   },
   sceneBadgeText: {
     color: '#059669',
-    fontSize: 8.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   topActionsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -419,15 +415,15 @@ const styles = StyleSheet.create({
   },
   projectTitle: {
     color: '#0F172A',
-    fontSize: 15.5,
+    fontSize: WT.cardTitle,
     fontFamily: Platform.OS === 'ios' ? 'Lora-Bold' : 'serif',
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.2,
     marginTop: 2,
   },
   projectLogline: {
     color: '#64748B',
-    fontSize: 11,
+    fontSize: WT.body,
     lineHeight: 14,
     fontWeight: '400',
     marginTop: 1,
@@ -440,7 +436,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 7.5,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 5,
     alignSelf: 'flex-start',
     marginTop: 8,
@@ -461,17 +457,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 7.5,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 5,
   },
   slugTagGrayText: {
     color: '#475569',
-    fontSize: 8.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   slugTagRed: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -480,17 +473,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.2)',
     paddingHorizontal: 7.5,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 5,
   },
   slugTagRedText: {
     color: '#EF4444',
-    fontSize: 8.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   cardFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -503,7 +493,7 @@ const styles = StyleSheet.create({
   },
   timeAgoText: {
     color: '#94A3B8',
-    fontSize: 10,
+    fontSize: WT.meta,
     fontWeight: '500',
   },
   footerActionsGroup: {
@@ -512,6 +502,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rolesActionBtn: {
+    minHeight: WT.touch,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3.5,
@@ -524,10 +515,11 @@ const styles = StyleSheet.create({
   },
   rolesActionBtnText: {
     color: '#EF4444',
-    fontSize: 10,
+    fontSize: WT.button,
     fontWeight: '700',
   },
   viewSpaceBtn: {
+    minHeight: WT.touch,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2.5,
@@ -543,7 +535,7 @@ const styles = StyleSheet.create({
   },
   viewSpaceBtnText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: WT.button,
     fontWeight: '700',
   },
 });

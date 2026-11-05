@@ -40,7 +40,7 @@ export const PremiumNotificationCard = React.forwardRef<HTMLDivElement, PremiumN
         }
       }}
       onTap={handleTap}
-      className="w-[92vw] max-w-[420px] bg-background/90 backdrop-blur-xl border border-border/40 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.25)] p-3.5 flex items-center gap-3.5 cursor-pointer select-none active:scale-[0.98] transition-transform duration-100 relative overflow-hidden pointer-events-auto"
+      className="w-[92vw] max-w-[420px] bg-background/90 border border-border/40 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.25)] p-3.5 flex items-center gap-3.5 cursor-pointer select-none active:scale-[0.98] transition-transform duration-100 relative overflow-hidden pointer-events-auto"
       style={{
         touchAction: 'none',
       }}
@@ -69,7 +69,7 @@ export const PremiumNotificationCard = React.forwardRef<HTMLDivElement, PremiumN
         </div>
         
         {/* Badge in corner of avatar */}
-        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-background border border-border/40 rounded-full flex items-center justify-center text-[10px] shadow-sm">
+        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-background border border-border/40 rounded-full flex items-center justify-center text-[12px] shadow-sm">
           {iconEmoji}
         </div>
       </div>
@@ -80,7 +80,7 @@ export const PremiumNotificationCard = React.forwardRef<HTMLDivElement, PremiumN
           <span className="font-bold text-sm text-foreground truncate">
             {notification.title}
           </span>
-          <span className="text-[10px] text-muted-foreground flex-shrink-0">
+          <span className="text-[12px] text-muted-foreground flex-shrink-0">
             Just now
           </span>
         </div>

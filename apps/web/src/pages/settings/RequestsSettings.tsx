@@ -1,8 +1,9 @@
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { SettingsPageHeader, SettingsRadioRows, SettingsSection } from '@/components/settings/SettingsUI';
+import { SettingsPageHeader, SettingsRadioRows, SettingsSection, SettingsLoading } from '@/components/settings/SettingsUI';
 
 const RequestsSettings = () => {
-  const { settings, updateSetting } = useUserSettings();
+  const { settings, updateSetting, loading } = useUserSettings();
+  if (loading) return <SettingsLoading />;
   return (
     <>
       <SettingsPageHeader title="Connection requests" description="Who can send you a connection request." />

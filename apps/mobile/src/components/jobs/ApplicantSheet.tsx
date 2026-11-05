@@ -27,6 +27,7 @@ import {
 } from '../../services/jobsApi';
 import { openResume } from '../../services/resumeFiles';
 import { StarRating, StageBadge, MatchBadge, RejectModal, addInterviewToCalendar, ORANGE } from './JobsShared';
+import { friendlyError } from '@cinecraft/core';
 
 interface Props {
   applicant: HiringApplicant | null;
@@ -84,7 +85,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
         await fn();
         onChanged();
       } catch (e: any) {
-        Alert.alert('Something went wrong', e?.message || 'Please try again.');
+        Alert.alert('Something went wrong', friendlyError(e, 'Please try again.'));
       } finally {
         setBusy(false);
       }
@@ -153,7 +154,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                   <CachedImage uri={p.avatar_url} style={styles.avatar} />
                 ) : (
                   <View style={[styles.avatar, styles.avatarFallback]}>
-                    <Text style={{ color: ORANGE, fontWeight: '800', fontSize: 22 }}>{name.charAt(0).toUpperCase()}</Text>
+                    <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 24 }}>{name.charAt(0).toUpperCase()}</Text>
                   </View>
                 )}
                 <View style={{ flex: 1 }}>
@@ -161,12 +162,12 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                   <Text style={{ color: themeColors.textSecondary, fontSize: 12 }} numberOfLines={2}>
                     {[p?.craft, p?.location].filter(Boolean).join(' · ') || 'No craft or location added'}
                   </Text>
-                  <Text style={{ color: themeColors.textMuted, fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                  <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
                     Applied for {job.title}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Icon name="x" size={22} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Icon name="x" size={22} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
@@ -174,7 +175,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                 <MatchBadge match={a.match} />
                 {a.is_shortlisted && (
                   <View style={[styles.chip, { backgroundColor: '#F59E0B' }]}>
-                    <Text style={{ color: '#000', fontSize: 10, fontWeight: '800', letterSpacing: 0.6 }}>SHORTLISTED</Text>
+                    <Text style={{ color: '#000', fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>SHORTLISTED</Text>
                   </View>
                 )}
               </View>
@@ -191,7 +192,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                         onPress={() => moveTo(st.key)}
                         style={[styles.stageBtn, { borderColor: on ? st.color : themeColors.border, backgroundColor: on ? st.tint : 'transparent' }]}
                       >
-                        <Text style={{ color: on ? st.color : themeColors.textSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>{st.label.toUpperCase()}</Text>
+                        <Text style={{ color: on ? st.color : themeColors.textSecondary, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{st.label.toUpperCase()}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -199,7 +200,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                 {a.status === 'rejected' && a.rejection_reason ? (
                   <Text style={{ color: themeColors.textSecondary, fontSize: 12, marginTop: 8 }}>Reason shared with the candidate: {a.rejection_reason}</Text>
                 ) : null}
-                <Text style={{ color: themeColors.textMuted, fontSize: 11, marginTop: 8 }}>The candidate gets a notification whenever you move them.</Text>
+                <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 8 }}>The candidate gets a notification whenever you move them.</Text>
               </Section>
 
               {/* Rating + shortlist */}
@@ -224,7 +225,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
               <Section title="WHY THIS SCORE">
                 <View style={[styles.card, { borderColor: `${mc}44`, backgroundColor: themeColors.bgCard }]}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ color: mc, fontSize: 26, fontWeight: '800' }}>{a.match.score}%</Text>
+                    <Text style={{ color: mc, fontSize: 24, fontWeight: '700' }}>{a.match.score}%</Text>
                     <Text style={{ color: themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>{a.match.label}</Text>
                   </View>
                   {a.match.reasons.length ? (
@@ -241,7 +242,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
                       {p!.skills.slice(0, 12).map((sk) => (
                         <View key={sk} style={[styles.chip, { backgroundColor: themeColors.chipBg }]}>
-                          <Text style={{ color: themeColors.textSecondary, fontSize: 11, fontWeight: '600' }}>{sk}</Text>
+                          <Text style={{ color: themeColors.textSecondary, fontSize: 12, fontWeight: '600' }}>{sk}</Text>
                         </View>
                       ))}
                     </View>
@@ -311,7 +312,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                           onPress={() => setIv((v) => ({ ...v, date: dayString(off as number) }))}
                           style={[styles.chip, { backgroundColor: iv.date === dayString(off as number) ? ORANGE : themeColors.chipBg }]}
                         >
-                          <Text style={{ color: iv.date === dayString(off as number) ? '#fff' : themeColors.textSecondary, fontSize: 11, fontWeight: '700' }}>{lbl as string}</Text>
+                          <Text style={{ color: iv.date === dayString(off as number) ? '#fff' : themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>{lbl as string}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -336,7 +337,7 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                           onPress={() => setIv({ ...iv, mode: m })}
                           style={[styles.stageBtn, { flex: 1, borderColor: iv.mode === m ? ORANGE : themeColors.border, backgroundColor: iv.mode === m ? 'rgba(255,75,51,0.1)' : 'transparent' }]}
                         >
-                          <Text style={{ color: iv.mode === m ? ORANGE : themeColors.textSecondary, fontSize: 11, fontWeight: '800' }}>{INTERVIEW_MODE_LABELS[m]}</Text>
+                          <Text style={{ color: iv.mode === m ? ORANGE : themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>{INTERVIEW_MODE_LABELS[m]}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>
@@ -371,21 +372,21 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: themeColors.textPrimary, fontSize: 13, fontWeight: '700' }}>{fmtWhen(i.scheduled_at)} · {i.duration_minutes} min</Text>
-                      <Text style={{ color: themeColors.textSecondary, fontSize: 11.5 }} numberOfLines={1}>
+                      <Text style={{ color: themeColors.textSecondary, fontSize: 12 }} numberOfLines={1}>
                         {INTERVIEW_MODE_LABELS[i.mode]}{i.location ? ` · ${i.location}` : ''}
                       </Text>
-                      <Text style={{ fontSize: 10.5, fontWeight: '800', marginTop: 3, letterSpacing: 0.5, color: i.status === 'confirmed' ? '#10B981' : i.status === 'declined' || i.status === 'cancelled' ? '#EF4444' : '#F59E0B' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', marginTop: 3, letterSpacing: 0.5, color: i.status === 'confirmed' ? '#10B981' : i.status === 'declined' || i.status === 'cancelled' ? '#EF4444' : '#F59E0B' }}>
                         {INTERVIEW_STATUS_LABELS[i.status].toUpperCase()}
                       </Text>
                     </View>
-                    <TouchableOpacity
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Calendar"
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       onPress={() => addInterviewToCalendar({ title: `Interview: ${name} – ${job.title}`, startsAt: i.scheduled_at, durationMinutes: i.duration_minutes, location: i.location, notes: i.notes })}
                     >
-                      <Icon name="calendar" size={18} color={themeColors.textSecondary} />
+                      <Icon name="calendar" size={18} color={themeColors.iconSecondary} />
                     </TouchableOpacity>
                     {(i.status === 'proposed' || i.status === 'confirmed') && (
-                      <TouchableOpacity
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete"
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         onPress={() => Alert.alert('Cancel this interview?', undefined, [{ text: 'Keep' }, { text: 'Cancel interview', style: 'destructive', onPress: () => run(() => updateInterview(i.id, { status: 'cancelled' })) }])}
                       >
@@ -406,8 +407,8 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
                         <Text style={{ color: themeColors.textMuted, fontWeight: '400' }}>· {new Date(n.created_at).toLocaleDateString()}</Text>
                       </Text>
                       {n.author_id === userId && (
-                        <TouchableOpacity onPress={() => run(async () => { await deleteNote(n.id); setNotes(await fetchNotes(a.id)); })}>
-                          <Icon name="trash-2" size={14} color={themeColors.textMuted} />
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => run(async () => { await deleteNote(n.id); setNotes(await fetchNotes(a.id)); })}>
+                          <Icon name="trash-2" size={14} color={themeColors.iconMuted} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -449,22 +450,22 @@ export const ApplicantSheet = ({ applicant: a, job, userId, onClose, onChanged, 
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0, overflow: 'hidden' },
+  sheet: { width: '100%', maxWidth: 720, alignSelf: 'center', maxHeight: '92%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0, overflow: 'hidden' },
   grabber: { width: 42, height: 4, borderRadius: 2, backgroundColor: 'rgba(148,163,184,0.5)', alignSelf: 'center', marginTop: 8 },
   avatar: { width: 56, height: 56, borderRadius: 28 },
   avatarFallback: { backgroundColor: 'rgba(255,75,51,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,75,51,0.25)' },
-  name: { fontSize: 18, fontWeight: '800' },
+  name: { fontSize: 18, fontWeight: '700' },
   chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  sectionTitle: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.9 },
+  sectionTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 0.9 },
   stageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   stageBtn: { width: '31.5%', borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
   pillBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
-  pillBtnText: { color: ORANGE, fontSize: 12, fontWeight: '800' },
+  pillBtnText: { color: ORANGE, fontSize: 12, fontWeight: '700' },
   card: { borderWidth: 1, borderRadius: 16, padding: 12 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, height: 42, fontSize: 13 },
-  miniLabel: { fontSize: 10.5, fontWeight: '700', marginBottom: 4 },
+  miniLabel: { fontSize: 12, fontWeight: '700', marginBottom: 4 },
   primaryBtn: { backgroundColor: ORANGE, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 },
+  primaryBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
   ivIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(59,130,246,0.12)', alignItems: 'center', justifyContent: 'center' },
 });

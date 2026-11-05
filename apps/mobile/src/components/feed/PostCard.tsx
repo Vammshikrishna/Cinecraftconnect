@@ -1,11 +1,11 @@
 import { ReportModal } from '../modals/ReportModal';
+import { useDropdownMenu } from '../common/DropdownMenu';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Dimensions,
   ScrollView,
   Animated,
@@ -21,14 +21,23 @@ import { Icon } from '../common/Icon';
 import { VerificationBadge } from '../common/VerificationBadge';
 import { FormattedText } from '../common/FormattedText';
 import { CachedImage } from '../common/CachedImage';
+import { VideoPlayer } from '../common/VideoPlayer';
+import { videoPlayback } from '../common/videoPlaybackStore';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useResponsive } from '../../hooks/useResponsive';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useAppRole } from '../../hooks/useAppRole';
 import { JobShareCard } from '../chat/JobShareCard';
+import { PostPoll } from './PostPoll';
+import { ScheduledBanner, CollaboratorsLine, LinkPreviewCard } from './PostExtras';
+import { isVideoMedia, hidePost, unhidePost, muteAuthor, unmuteAuthor, removeMutedWord, blockUser, fetchPostInsights, addMutedWord, feedReasonText, type LinkPreview, friendlyError, checkPost, extractHashtags, POST_CAPTION_MAX, mediaItemRatio, clampFeedRatio } from '@cinecraft/core';
+import { cachedRatio, measureRatio } from '../../utils/mediaRatio';
+import { showToast } from '../../contexts/ToastContext';
+import { easeLayout, MOTION, prefersReducedMotion } from '../../utils/motion';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
-const MUTED = '#6B7280';
+const MUTED = '#64748B';
 const BORDER = '#E5E7EB';
 
 export interface PostAuthor {
@@ -46,6 +55,9 @@ export interface MediaItem {
   url: string;
   type?: 'image' | 'video';
   aspectRatio?: string;
+  width?: number;
+  height?: number;
+  aspect_ratio?: number;
   zoom?: number;
   pan?: { x: number; y: number };
   crop?: { top: number; right: number; bottom: number; left: number };
@@ -74,6 +86,18 @@ export interface PostCardProps {
   id: string;
   author: PostAuthor;
   timeAgo?: string;
+  /** public (default), connections or private */
+  audience?: string | null;
+  /** this post has a poll: it is loaded and shown under the caption */
+  hasPoll?: boolean;
+  /** when the post goes live (only the author sees a post before that) */
+  scheduledAt?: string | null;
+  /** the post credits collaborators */
+  hasCollabs?: boolean;
+  /** title, description and picture of the first link */
+  linkPreview?: LinkPreview | null;
+  /** set when the caption or media was changed after posting */
+  editedAt?: string | null;
   content: string;
   mediaUrl?: string;
   mediaItems?: MediaItem[] | string;
@@ -108,20 +132,35 @@ export interface PostCardProps {
   onHashtagPress?: (tag: string) => void;
   onMentionPress?: (username: string) => void;
   onDeletePost?: (postId: string) => void;
+  /** the post (or everything by its author) was hidden from my feed */
+  onHidden?: (postId: string, authorId: string | null, scope: 'post' | 'author') => void;
+  /** why this post is in my feed (sent by the database) */
+  feedReason?: string | null;
   onTogglePin?: (postId: string) => void;
   navigation?: any;
   initialShowComments?: boolean;
   isDetailView?: boolean;
 }
 
-// Global in-memory cache for dynamic image aspect ratios to prevent re-measurement churn on re-renders
-const aspectRatioCache = new Map<string, number>();
+/** a still to show before a video plays, when the post carries one (the video file itself cannot be drawn as an image) */
+const videoPoster = (m: MediaItem): string | null => {
+  const x = m as any;
+  return x.thumbnail || x.thumbnail_url || x.poster || x.poster_url || null;
+};
+
+const RATIO_PRESETS: Record<string, number> = { '16:9': 16 / 9, '4:5': 4 / 5, '1:1': 1, '9:16': 9 / 16 };
 
 const PostCardComponent: React.FC<PostCardProps> = ({
   id,
   author,
   timeAgo = 'RECENT',
-  content,
+  audience,
+  editedAt,
+  hasPoll,
+  scheduledAt,
+  hasCollabs,
+  linkPreview,
+  content: contentProp,
   mediaUrl,
   mediaItems: initialMediaItems,
   mediaUrls: propMediaUrls,
@@ -149,12 +188,24 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   onHashtagPress,
   onMentionPress,
   onDeletePost,
+  onHidden,
+  feedReason,
   onTogglePin,
   navigation,
   initialShowComments = false,
   isDetailView = false,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isInternal } = useAppRole(); // staff accounts read posts but do not react, share, save or follow
+
+  // Editing my own post: the new text shows here at once and "Edited" appears on the card
+  const [editedContent, setEditedContent] = useState<string | null>(null);
+  const [wasEdited, setWasEdited] = useState(false);
+  const content = editedContent ?? contentProp;
+  useEffect(() => { setEditedContent(null); }, [contentProp]);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editDraft, setEditDraft] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   // ── Likes & Bookmarks State ──────────────────────────────────────────────────
   const [liked, setLiked] = useState(initialIsLiked);
@@ -241,15 +292,11 @@ const PostCardComponent: React.FC<PostCardProps> = ({
     const normalized: MediaItem[] = items
       .map((item: any) => {
         if (typeof item === 'string') {
-          const isVid = item.toLowerCase().includes('.mp4') || item.toLowerCase().includes('video');
-          return { url: item, type: isVid ? 'video' : 'image' };
+          return { url: item, type: isVideoMedia(item) ? 'video' : 'image' };
         }
         if (item && typeof item === 'object') {
           const url = item.url || item.media_url || item.uri || '';
-          const isVid =
-            item.type === 'video' ||
-            url.toLowerCase().includes('.mp4') ||
-            url.toLowerCase().includes('video');
+          const isVid = item.type === 'video' || item.type === 'image' ? item.type === 'video' : isVideoMedia(url);
           return {
             ...item,
             url,
@@ -268,81 +315,38 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   const isHideLikes = propHideLikes || !!(firstMedia as any)?.hide_likes;
   const isCommentsDisabled = propCommentsDisabled || !!(firstMedia as any)?.comments_disabled;
   const location = propLocation || (firstMedia as any)?.location || null;
-  const cachedRatio = firstMedia?.url ? aspectRatioCache.get(firstMedia.url) ?? null : null;
-  const [measuredRatio, setMeasuredRatio] = useState<number | null>(cachedRatio);
-
-  // Synchronously update measured ratio when media URL changes
-  const activeRatioFromCache = firstMedia?.url ? aspectRatioCache.get(firstMedia.url) || null : null;
-  const currentRatio = measuredRatio || activeRatioFromCache;
+  // the card is the real shape of the first picture/video: saved size (new posts) -> remembered/measured size (old posts) -> preset -> 16:9
+  const savedRatio = mediaItemRatio(firstMedia);
+  const presetRatio = firstMedia?.aspectRatio ? RATIO_PRESETS[firstMedia.aspectRatio] ?? null : null;
+  const [measuredRatio, setMeasuredRatio] = useState<number | null>(() => (firstMedia?.url ? cachedRatio(firstMedia.url) : null));
+  const firstUrl = firstMedia?.url;
+  const firstIsVideo = firstMedia?.type === 'video';
+  const firstPoster = firstMedia ? videoPoster(firstMedia) : null;
 
   useEffect(() => {
-    let isMounted = true;
-    if (firstMedia?.url) {
-      if (aspectRatioCache.has(firstMedia.url)) {
-        const r = aspectRatioCache.get(firstMedia.url)!;
-        if (isMounted) setMeasuredRatio(r);
-        return;
-      }
-
-      // If aspectRatio is a known preset, use preset immediately
-      const knownPresets: Record<string, number> = {
-        '16:9': 16 / 9,
-        '4:5': 4 / 5,
-        '1:1': 1,
-        '9:16': 9 / 16,
-      };
-
-      if (firstMedia?.aspectRatio && knownPresets[firstMedia.aspectRatio]) {
-        const preset = knownPresets[firstMedia.aspectRatio];
-        aspectRatioCache.set(firstMedia.url, preset);
-        if (isMounted) setMeasuredRatio(preset);
-        return;
-      }
-
-      Image.getSize(
-        firstMedia.url,
-        (width, height) => {
-          if (isMounted && width > 0 && height > 0) {
-            const rawRatio = width / height;
-            // Clamp ratio between 0.75 (portrait) and 1.85 (landscape) for consistent card heights
-            const clampedRatio = Math.max(0.75, Math.min(1.85, rawRatio));
-            aspectRatioCache.set(firstMedia.url, clampedRatio);
-            setMeasuredRatio(clampedRatio);
-          }
-        },
-        () => {
-          if (isMounted) {
-            const fallback = 16 / 10;
-            aspectRatioCache.set(firstMedia.url, fallback);
-            setMeasuredRatio(fallback);
-          }
-        }
-      );
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [firstMedia?.url, firstMedia?.aspectRatio]);
+    if (!firstUrl || savedRatio || presetRatio) return;
+    let alive = true;
+    setMeasuredRatio(cachedRatio(firstUrl));
+    measureRatio(firstUrl, firstIsVideo ? 'video' : 'image', firstPoster).then((r) => {
+      if (alive && r) setMeasuredRatio(r);
+    });
+    return () => { alive = false; };
+  }, [firstUrl, firstIsVideo, firstPoster, savedRatio, presetRatio]);
 
   const effectiveRatio = React.useMemo(() => {
-    if (currentRatio && currentRatio > 0) {
-      return currentRatio;
-    }
-    if (firstMedia?.aspectRatio === '16:9') return 16 / 9;
-    if (firstMedia?.aspectRatio === '4:5') return 4 / 5;
-    if (firstMedia?.aspectRatio === '1:1') return 1;
-    if (firstMedia?.aspectRatio === '9:16') return 9 / 16;
-    return 16 / 10;
-  }, [currentRatio, firstMedia?.aspectRatio]);
+    const raw = savedRatio || measuredRatio || presetRatio || (firstIsVideo ? 16 / 9 : 16 / 10);
+    // feed: 4:5 at the tallest, 1.91:1 at the widest (cropped, like Instagram); detail keeps the real shape (the height cap below still applies)
+    return isDetailView ? Math.min(2.4, Math.max(0.4, raw)) : clampFeedRatio(raw);
+  }, [savedRatio, measuredRatio, presetRatio, firstIsVideo, isDetailView]);
 
   const { isTablet, width: windowWidth } = useResponsive();
-  const cardWidth = isTablet ? Math.min(windowWidth, 620) : windowWidth;
+  const cardWidth = isTablet ? Math.min(windowWidth, isDetailView ? 860 : 620) : windowWidth;
 
   const mediaHeight = React.useMemo(() => {
     const calculated = Math.round(cardWidth / effectiveRatio);
     // In detail view or standard mobile view, allow up to 640px so portrait/square images fit without cropping
-    const maxAllowedHeight = isDetailView ? 640 : (isTablet ? 820 : 540);
-    return Math.min(Math.max(calculated, 220), maxAllowedHeight);
+    const maxAllowedHeight = isDetailView ? (isTablet ? 760 : 640) : (isTablet ? 820 : 540);
+    return Math.min(calculated, maxAllowedHeight);
   }, [cardWidth, effectiveRatio, isTablet, isDetailView]);
 
   // ── Double Tap & Floating Heart Animation ───────────────────────────────────
@@ -375,6 +379,23 @@ const PostCardComponent: React.FC<PostCardProps> = ({
     });
   };
 
+  const likeFromDoubleTap = () => {
+    const nextState = !liked;
+    setLiked(nextState);
+    setLikesCount((prev) => (nextState ? prev + 1 : Math.max(0, prev - 1)));
+    if (nextState) triggerHeartAnimation();
+    onLikeToggle?.(id, nextState);
+  };
+
+  // videos in the feed: register this post so the list's visibility decides which one plays
+  const hasVideo = mediaList.some((m) => m.type === 'video');
+  useEffect(() => {
+    if (!hasVideo || isDetailView) return;
+    videoPlayback.registerVideoPost(id);
+    return () => videoPlayback.unregisterVideoPost(id);
+  }, [hasVideo, isDetailView, id]);
+  const videoFit: 'contain' | 'cover' = isDetailView ? 'contain' : 'cover';
+
   const handleMediaPress = () => {
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
@@ -406,6 +427,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
     const nextState = !bookmarked;
     setBookmarked(nextState);
     onBookmarkToggle?.(id, nextState);
+    showToast({ title: nextState ? 'Post saved' : 'Removed from saved', type: 'success' });
   };
 
   // ── Carousel Scroll Handler ─────────────────────────────────────────────────
@@ -419,6 +441,100 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
   // ── Follow / Connect Inline Action ──────────────────────────────────────────
   const isMe = !!currentUserId && currentUserId === author.id;
+
+  const saveEdit = async () => {
+    const check = checkPost({ caption: editDraft, mediaCount: mediaList.length });
+    if (!check.ok) { Alert.alert('Check your post', check.message); return; }
+    setEditSaving(true);
+    try {
+      let finalContent = editDraft.trim();
+      // keep the shared-job data that rides on the end of the text, like web
+      if (content && content.includes('JOB_SHARE::')) {
+        const parts = content.split('JOB_SHARE::');
+        const jsonPart = parts[parts.length - 1];
+        finalContent = finalContent ? `${finalContent}
+
+JOB_SHARE::${jsonPart}` : `JOB_SHARE::${jsonPart}`;
+      }
+      const { error } = await (getSupabaseClient().from('posts') as any)
+        .update({ content: finalContent, tags: extractHashtags(finalContent), updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+      setEditedContent(finalContent);
+      setWasEdited(true);
+      setEditOpen(false);
+      showToast({ title: 'Post updated', type: 'success' });
+    } catch (e: any) {
+      Alert.alert('Could not update the post', friendlyError(e, 'Please try again.'));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // The card goes away at once. The list forgets it a few seconds later, so Undo can still bring it back.
+  const [hiddenLocal, setHiddenLocal] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (hideTimer.current) clearTimeout(hideTimer.current); }, []);
+  const hideWithUndo = (scope: 'post' | 'author', title: string, message: string, undo: () => Promise<void>) => {
+    setHiddenLocal(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => onHidden?.(id, author.id || null, scope), 8000);
+    showToast({
+      title,
+      message,
+      type: 'info',
+      action: {
+        label: 'Undo',
+        onPress: async () => {
+          if (hideTimer.current) clearTimeout(hideTimer.current);
+          try {
+            await undo();
+            setHiddenLocal(false);
+          } catch (e: any) {
+            onHidden?.(id, author.id || null, scope);
+            Alert.alert('Could not undo that', friendlyError(e, 'Please try again.'));
+          }
+        },
+      },
+    });
+  };
+
+  const feedAction = async (kind: 'hide' | 'mute' | 'block') => {
+    if (!currentUserId || !author.id) return;
+    try {
+      const db = getSupabaseClient();
+      if (kind === 'hide') {
+        await hidePost(db, currentUserId, id);
+        hideWithUndo('post', 'Post hidden', "We'll show fewer posts like this.", () => unhidePost(db, currentUserId, id));
+      } else if (kind === 'mute') {
+        await muteAuthor(db, currentUserId, author.id);
+        hideWithUndo('author', `Muted ${author.name}`, 'Their posts will not show in your feed.', () => unmuteAuthor(db, currentUserId, author.id as string));
+      } else {
+        await blockUser(db, currentUserId, author.id);
+        onHidden?.(id, author.id, 'author');
+        Alert.alert(`Blocked ${author.name}`);
+      }
+    } catch (e: any) {
+      Alert.alert('Could not do that', friendlyError(e, 'Please try again.'));
+    }
+  };
+  const muteTopic = async (tag: string) => {
+    if (!currentUserId) return;
+    try {
+      const db = getSupabaseClient();
+      const word = await addMutedWord(db, currentUserId, tag);
+      hideWithUndo('post', `Muted "${word}"`, 'Posts with it will not show in your feed.', () => removeMutedWord(db, currentUserId, word));
+    } catch (e: any) {
+      Alert.alert('Could not mute', friendlyError(e, 'Please try again.'));
+    }
+  };
+  const showInsights = async () => {
+    try {
+      const d = await fetchPostInsights(getSupabaseClient(), id);
+      if (!d) { Alert.alert('Insights are not available for this post'); return; }
+      Alert.alert('Post insights', `People reached: ${d.people_reached}\nViews: ${d.views}\nLikes: ${d.likes}\nComments: ${d.comments}\nShares: ${d.shares}\nSaves: ${d.saves}`);
+    } catch { Alert.alert('Could not load insights'); }
+  };
   const isFanRelationship =
     currentUserAccountType === 'fan' || author.account_type === 'fan';
 
@@ -440,6 +556,20 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       setFollowState(isConnectedAuthor ? 'connected' : 'none');
     }
   }, [isFollowingAuthor, isConnectedAuthor, isFanRelationship]);
+
+  // the avatar eases in when pressed; the Follow/Connect label fades when its state changes
+  const avatarScale = useRef(new Animated.Value(1)).current;
+  const pressAvatar = (down: boolean) => {
+    if (prefersReducedMotion()) return;
+    Animated.spring(avatarScale, { toValue: down ? 0.94 : 1, useNativeDriver: true, speed: 40, bounciness: down ? 0 : 6 }).start();
+  };
+  const actionFade = useRef(new Animated.Value(1)).current;
+  const actionKey = `${followState}|${isActionLoading ? 1 : 0}`;
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
+    actionFade.setValue(0);
+    Animated.timing(actionFade, { toValue: 1, duration: MOTION.base, useNativeDriver: true }).start();
+  }, [actionKey, actionFade]);
 
   const handleFollowConnect = async () => {
     if (!currentUserId || !author.id || isActionLoading) return;
@@ -485,7 +615,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
   }, [propTaggedUsers, firstMedia]);
 
   const [taggedSheetVisible, setTaggedSheetVisible] = useState(false);
-  const [moreMenuVisible, setMoreMenuVisible] = useState(false);
+  const moreMenu = useDropdownMenu();
   const [reportOpen, setReportOpen] = useState(false);
 
   // ── Caption & Hashtag Deduplication ─────────────────────────────────────────
@@ -649,7 +779,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       setReplyTarget(null);
       fetchComments();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not post comment.');
+      Alert.alert('Error', friendlyError(e, 'Could not post comment.'));
       setCommentInputText(draft);
     } finally {
       setSubmittingComment(false);
@@ -658,8 +788,10 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
   const totalCommentCount = Math.max(initialCommentCount || 0, comments.length);
 
+  if (hiddenLocal) return null;
+
   return (
-    <View style={[styles.card, isTablet && styles.cardTablet, { backgroundColor: themeColors.bgCard }]}>
+    <View style={[styles.card, isTablet && styles.cardTablet, isTablet && isDetailView && { maxWidth: 860 }, { backgroundColor: themeColors.bgCard }]}>
       {/* ── 0. Pinned Header Banner ───────────────────────────────────────────── */}
       {isPinned && (
         <View style={styles.pinnedBar}>
@@ -671,38 +803,51 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       {/* ── 1. Author Header ─────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`${author.name} profile`}
           style={styles.authorGroup}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
+          onPressIn={() => pressAvatar(true)}
+          onPressOut={() => pressAvatar(false)}
           onPress={() => onAuthorPress?.(author.id, author.name)}
         >
-          {author.avatar ? (
-            <CachedImage
-              uri={author.avatar}
-              style={styles.avatar}
-            />
-          ) : (
-            <View style={[styles.avatar, styles.avatarFallback]}>
-              <Text style={styles.avatarFallbackText}>
-                {(author.name || 'C').charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
+          <Animated.View style={[styles.avatarRing, { transform: [{ scale: avatarScale }] }]}>
+            {author.avatar ? (
+              <CachedImage
+                uri={author.avatar}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarFallback]}>
+                <Text style={styles.avatarFallbackText}>
+                  {(author.name || 'C').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </Animated.View>
           <View style={styles.authorTextContainer}>
             <View style={styles.authorNameRow}>
               <Text style={[styles.authorName, { color: themeColors.textPrimary }]} numberOfLines={1}>
                 {author.name}
               </Text>
               {!!author.isVerified && <VerificationBadge size="sm" />}
+              {!!timeAgo && (
+                <Text style={[styles.authorTime, { color: themeColors.textSecondary }]} numberOfLines={1}>
+                  {'• '}{timeAgo}{editedAt || wasEdited ? ' · Edited' : ''}
+                </Text>
+              )}
 
-              {/* Inline Connect / Follow Button */}
-              {!isMe && !!currentUserId && (
+              {/* Inline Connect / Follow Button (nothing is shown once you are already connected, as on web) */}
+              {!isMe && !!currentUserId && !isInternal && !(followState === 'connected' && !isFanRelationship) && (
                 <>
                   <Text style={styles.dotSeparator}>•</Text>
                   <TouchableOpacity
                     onPress={handleFollowConnect}
                     disabled={isActionLoading || followState === 'connected'}
-                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                    hitSlop={{ top: 12, bottom: 12, left: 6, right: 10 }}
+                    activeOpacity={0.6}
                   >
+                    <Animated.View style={{ opacity: actionFade }}>
                     {isActionLoading ? (
                       <ActivityIndicator size="small" color={ORANGE} />
                     ) : (
@@ -726,6 +871,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                           : 'Connect'}
                       </Text>
                     )}
+                    </Animated.View>
                   </TouchableOpacity>
                 </>
               )}
@@ -734,7 +880,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             <View style={styles.authorSubRow}>
               <Text style={[styles.authorSub, { color: themeColors.textSecondary }]} numberOfLines={1}>
                 {author.craft || author.role || 'Creator'}
-                {timeAgo ? ` · ${timeAgo}` : ''}
+                {audience === 'connections' ? ' · Connections' : audience === 'private' ? ' · Only me' : ''}
               </Text>
               {!!location && (
                 <TouchableOpacity
@@ -754,12 +900,13 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="More options"
+          ref={moreMenu.ref}
           style={styles.moreButton}
-          onPress={() => setMoreMenuVisible(true)}
+          onPress={moreMenu.open}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Icon name="more-vertical" size={18} color={themeColors.textSecondary} />
+          <Icon name="more-vertical" size={18} color={themeColors.iconSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -778,7 +925,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
           {isLongContent && (
             <TouchableOpacity
-              onPress={() => setExpanded(!expanded)}
+              onPress={() => { easeLayout(); setExpanded(!expanded); }}
               style={styles.moreToggle}
             >
               <Text style={styles.moreToggleText}>
@@ -788,6 +935,11 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           )}
         </View>
       )}
+
+      {isMe && !!scheduledAt && <ScheduledBanner postId={id} scheduledAt={scheduledAt} />}
+      {hasCollabs && <CollaboratorsLine postId={id} currentUserId={currentUserId} onOpenProfile={(uid) => navigation?.navigate?.('PublicProfile', { userId: uid })} />}
+      {hasPoll && <PostPoll postId={id} />}
+      {!!linkPreview?.url && !!linkPreview?.title && mediaList.length === 0 && <LinkPreviewCard preview={linkPreview} />}
 
       {/* ── 2b. Embedded Job Share Card if applicable ──────────────────────── */}
       {!!jobShareData && (
@@ -824,25 +976,32 @@ const PostCardComponent: React.FC<PostCardProps> = ({
 
       {/* ── 4. Media Gallery (Dynamic Aspect Ratio, Never Overly Zoomed) ────── */}
       {mediaList.length > 0 && (
-        <View style={[styles.mediaContainer, { width: cardWidth, height: mediaHeight }]}>
+        <View accessibilityLabel="Post media" style={[styles.mediaContainer, { width: cardWidth, height: mediaHeight }]}>
           {mediaList.length === 1 ? (
-            <TouchableWithoutFeedback onPress={handleMediaPress}>
+            mediaList[0].type === 'video' ? (
+              <View style={[styles.mediaSlide, { width: cardWidth, height: mediaHeight }]}>
+                <VideoPlayer
+                  uri={mediaList[0].url}
+                  poster={videoPoster(mediaList[0])}
+                  postId={id}
+                  isDetail={isDetailView}
+                  contentFit={videoFit}
+                  chipLeft={allTaggedUsers.length > 0 ? 60 : 12}
+                  onDoubleTap={likeFromDoubleTap}
+                  style={{ width: cardWidth, height: mediaHeight }}
+                />
+              </View>
+            ) : (
+            <TouchableWithoutFeedback onPress={handleMediaPress} accessible accessibilityRole="imagebutton" accessibilityLabel="Open post image">
               <View style={[styles.mediaSlide, { width: cardWidth, height: mediaHeight }]}>
                 <CachedImage
                   uri={mediaList[0].url}
                   style={styles.mediaImage}
-                  resizeMode={isDetailView ? 'contain' : (effectiveRatio < 0.95 ? 'contain' : 'cover')}
+                  resizeMode={isDetailView ? 'contain' : 'cover'}
                 />
-
-                {mediaList[0].type === 'video' && (
-                  <View style={styles.videoPlayOverlay}>
-                    <View style={styles.videoPlayCircle}>
-                      <Icon name="play" size={22} color="#FFFFFF" />
-                    </View>
-                  </View>
-                )}
               </View>
             </TouchableWithoutFeedback>
+            )
           ) : (
             <ScrollView
               ref={scrollViewRef}
@@ -850,7 +1009,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
               pagingEnabled={true}
               showsHorizontalScrollIndicator={false}
               onScroll={handleScroll}
-              scrollEventThrottle={16}
+              scrollEventThrottle={48}
               snapToInterval={cardWidth}
               decelerationRate="fast"
               snapToAlignment="center"
@@ -858,30 +1017,39 @@ const PostCardComponent: React.FC<PostCardProps> = ({
               style={StyleSheet.absoluteFill}
             >
               {mediaList.map((item, idx) => (
-                <TouchableWithoutFeedback key={idx} onPress={handleMediaPress}>
+                item.type === 'video' ? (
+                  <View key={idx} style={[styles.mediaSlide, { width: cardWidth, height: mediaHeight }]}>
+                    <VideoPlayer
+                      uri={item.url}
+                      poster={videoPoster(item)}
+                      postId={id}
+                      isDetail={isDetailView}
+                      slideActive={idx === activeMediaIndex}
+                      contentFit={videoFit}
+                      expandTop={46}
+                      chipLeft={allTaggedUsers.length > 0 ? 60 : 12}
+                      onDoubleTap={likeFromDoubleTap}
+                      style={{ width: cardWidth, height: mediaHeight }}
+                    />
+                  </View>
+                ) : (
+                <TouchableWithoutFeedback key={idx} onPress={handleMediaPress} accessible accessibilityRole="imagebutton" accessibilityLabel={`Open post image ${idx + 1} of ${mediaList.length}`}>
                   <View style={[styles.mediaSlide, { width: cardWidth, height: mediaHeight }]}>
                     <CachedImage
                       uri={item.url}
                       style={styles.mediaImage}
-                      resizeMode={isDetailView ? 'contain' : (effectiveRatio < 0.95 ? 'contain' : 'cover')}
+                      resizeMode={isDetailView ? 'contain' : 'cover'}
                     />
-
-                    {item.type === 'video' && (
-                      <View style={styles.videoPlayOverlay}>
-                        <View style={styles.videoPlayCircle}>
-                          <Icon name="play" size={22} color="#FFFFFF" />
-                        </View>
-                      </View>
-                    )}
                   </View>
                 </TouchableWithoutFeedback>
+                )
               ))}
             </ScrollView>
           )}
 
           {/* Carousel Left & Right Arrow Buttons for smooth tap swiping */}
           {mediaList.length > 1 && activeMediaIndex > 0 && (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.carouselNavLeft}
               onPress={() => {
                 const prevIdx = activeMediaIndex - 1;
@@ -895,7 +1063,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           )}
 
           {mediaList.length > 1 && activeMediaIndex < mediaList.length - 1 && (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Next" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.carouselNavRight}
               onPress={() => {
                 const nextIdx = activeMediaIndex + 1;
@@ -936,6 +1104,8 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           {/* Tagged People Icon Button */}
           {allTaggedUsers.length > 0 && (
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={`Tagged people, ${allTaggedUsers.length}`}
               style={styles.tagPeopleBtn}
               activeOpacity={0.85}
               onPress={() => setTaggedSheetVisible(true)}
@@ -969,9 +1139,13 @@ const PostCardComponent: React.FC<PostCardProps> = ({
         <View style={styles.actionLeftGroup}>
           {/* Like */}
           <TouchableOpacity
-            style={styles.actionItem}
+            accessibilityRole="button"
+            accessibilityLabel={liked ? 'Unlike' : 'Like'}
+            accessibilityState={{ selected: liked }}
+            style={[styles.actionItem, isInternal && { opacity: 0.6 }]}
             activeOpacity={0.7}
             onPress={handleLikeBtnPress}
+            disabled={isInternal}
           >
             <Icon
               name={liked ? 'heart-fill' : 'heart'}
@@ -987,13 +1161,15 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           {/* Comment Button */}
           {isCommentsDisabled ? (
             <View style={[styles.actionItem, { opacity: 0.55 }]}>
-              <Icon name="message-circle" size={22} color={themeColors.textMuted} strokeWidth={1.9} />
+              <Icon name="message-circle" size={22} color={themeColors.iconMuted} strokeWidth={1.9} />
               <Text style={[styles.actionCountText, { color: themeColors.textMuted, fontStyle: 'italic', fontSize: 12 }]}>
                 Off
               </Text>
             </View>
           ) : (
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={`Comments, ${totalCommentCount}`}
               style={styles.actionItem}
               activeOpacity={0.7}
               onPress={handleCommentAction}
@@ -1004,17 +1180,19 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           )}
 
           {/* Share */}
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.actionItem}
             activeOpacity={0.7}
             onPress={() => onSharePress?.(id, displayCaption)}
+            disabled={isInternal}
           >
             <Icon name="share" size={21} color={isDark ? '#E2E8F0' : '#1F2937'} strokeWidth={1.9} />
           </TouchableOpacity>
         </View>
 
         {/* Bookmark */}
-        <TouchableOpacity
+        {!isInternal && (
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={bookmarked ? 'Remove from saved' : 'Save'} accessibilityState={{ selected: bookmarked }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           style={styles.bookmarkBtn}
           activeOpacity={0.7}
           onPress={handleBookmarkBtnPress}
@@ -1027,6 +1205,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
             strokeWidth={bookmarked ? 2.5 : 1.9}
           />
         </TouchableOpacity>
+        )}
       </View>
 
       {/* ── 6. "Comments are turned off" Notice OR "View all X comments" Link ── */}
@@ -1048,24 +1227,24 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       {/* ── 7. Inline Expandable Comments Section (Only Active on Detail Screen) ───────── */}
       {isDetailView && (
         isCommentsDisabled ? (
-          <View style={styles.commentsDisabledDetailBox}>
-            <Text style={styles.commentsDisabledText}>Comments are turned off for this post.</Text>
+          <View style={[styles.commentsDisabledDetailBox, { backgroundColor: themeColors.bgCard, borderTopColor: themeColors.divider }]}>
+            <Text style={[styles.commentsDisabledText, { color: themeColors.textSecondary }]}>Comments are turned off for this post.</Text>
           </View>
         ) : showInlineComments ? (
-        <View style={styles.inlineCommentsContainer}>
+        <View style={[styles.inlineCommentsContainer, { backgroundColor: themeColors.bgCard, borderTopColor: themeColors.divider }]}>
           <View style={styles.inlineCommentsHeader}>
-            <Text style={styles.inlineCommentsTitle}>
+            <Text style={[styles.inlineCommentsTitle, { color: themeColors.textPrimary }]}>
               Comments ({comments.length})
             </Text>
             <TouchableOpacity onPress={() => setShowInlineComments(false)}>
-              <Text style={styles.inlineCommentsClose}>Hide</Text>
+              <Text style={[styles.inlineCommentsClose, { color: themeColors.textSecondary }]}>Hide</Text>
             </TouchableOpacity>
           </View>
 
           {loadingComments ? (
             <ActivityIndicator color={ORANGE} size="small" style={{ paddingVertical: 16 }} />
           ) : comments.length === 0 ? (
-            <Text style={styles.noCommentsText}>
+            <Text style={[styles.noCommentsText, { color: themeColors.textMuted }]}>
               No comments yet. Be the first to start the discussion!
             </Text>
           ) : (
@@ -1112,6 +1291,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                       <FormattedText
                         text={c.content}
                         style={[styles.commentRowContent, { color: themeColors.textSecondary }]}
+                        mentionStyle={isDark ? undefined : { color: '#C2321C' }}
                         onPressHashtag={(t) => onHashtagPress?.(t)}
                         onPressMention={(u) => onMentionPress?.(u)}
                       />
@@ -1120,7 +1300,7 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                         style={styles.commentReplyBtn}
                         onPress={() => handleReplyToComment(c)}
                       >
-                        <Text style={styles.commentReplyBtnText}>Reply</Text>
+                        <Text style={[styles.commentReplyBtnText, { color: themeColors.textSecondary }]}>Reply</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1133,10 +1313,10 @@ const PostCardComponent: React.FC<PostCardProps> = ({
           {replyTarget && (
             <View style={[styles.replyTargetBanner, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF7F5', borderColor: isDark ? 'rgba(255, 75, 51, 0.3)' : '#FFE5DF' }]}>
               <Text style={[styles.replyTargetText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                Replying to <Text style={{ fontWeight: '800', color: themeColors.textPrimary }}>{replyTarget.profiles?.full_name || 'Crew Member'}</Text>
+                Replying to <Text style={{ fontWeight: '700', color: themeColors.textPrimary }}>{replyTarget.profiles?.full_name || 'Crew Member'}</Text>
               </Text>
-              <TouchableOpacity onPress={() => setReplyTarget(null)}>
-                <Icon name="x" size={14} color={themeColors.textMuted} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setReplyTarget(null)}>
+                <Icon name="x" size={14} color={themeColors.iconMuted} />
               </TouchableOpacity>
             </View>
           )}
@@ -1151,10 +1331,10 @@ const PostCardComponent: React.FC<PostCardProps> = ({
               value={commentInputText}
               onChangeText={setCommentInputText}
             />
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Send" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 styles.inlineSendBtn,
-                (!commentInputText.trim() || submittingComment) && styles.inlineSendBtnDisabled,
+                (!commentInputText.trim() || submittingComment) && [styles.inlineSendBtnDisabled, { backgroundColor: themeColors.chipBg }],
               ]}
               onPress={handleSendComment}
               disabled={!commentInputText.trim() || submittingComment}
@@ -1184,11 +1364,11 @@ const PostCardComponent: React.FC<PostCardProps> = ({
                 <View style={[styles.sheetHandle, { backgroundColor: themeColors.border }]} />
                 <View style={[styles.sheetHeader, { borderBottomColor: themeColors.divider }]}>
                   <Text style={[styles.sheetTitle, { color: themeColors.textPrimary }]}>In this post</Text>
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                     onPress={() => setTaggedSheetVisible(false)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Icon name="x" size={20} color={themeColors.textSecondary} />
+                    <Icon name="x" size={20} color={themeColors.iconSecondary} />
                   </TouchableOpacity>
                 </View>
 
@@ -1241,97 +1421,64 @@ const PostCardComponent: React.FC<PostCardProps> = ({
       </Modal>
 
       {/* ── More Options Modal ──────────────────────────────────────────────── */}
-      <Modal
-        visible={moreMenuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMoreMenuVisible(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setMoreMenuVisible(false)}>
-          <View style={styles.modalOverlayCenter}>
-            <TouchableWithoutFeedback>
-              <View style={[styles.menuCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setMoreMenuVisible(false);
-                    onSharePress?.(id, displayCaption);
-                  }}
-                >
-                  <Icon name="share" size={18} color={themeColors.textPrimary} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>Share Post</Text>
-                </TouchableOpacity>
+      {moreMenu.render([
+        { label: 'Share Post', icon: 'share', onPress: () => onSharePress?.(id, displayCaption) },
+        { label: bookmarked ? 'Remove Bookmark' : 'Bookmark Post', icon: 'bookmark', onPress: () => handleBookmarkBtnPress() },
+        { hidden: !(isMe && onTogglePin), label: isPinned ? 'Unpin from Profile' : 'Pin to Profile', icon: 'pin', onPress: () => onTogglePin?.(id) },
+        { hidden: !isMe, label: 'Edit post', icon: 'edit-2', onPress: () => { setEditDraft(displayCaption); setEditOpen(true); } },
+        { hidden: !isMe, label: 'View insights', icon: 'eye', onPress: () => showInsights() },
+        { hidden: !(!isMe && !!currentUserId && !!feedReason), label: 'Why am I seeing this?', icon: 'eye', onPress: () => Alert.alert('Why you are seeing this', feedReasonText(feedReason)) },
+        ...((!isMe && !!currentUserId ? (tags || []).slice(0, 2) : []).map((t) => ({
+          label: `Mute #${String(t).replace(/^#/, '')}`, icon: 'volume-x', onPress: () => muteTopic(t),
+        }))),
+        { hidden: isMe || !currentUserId, label: 'Not interested', icon: 'eye-off', onPress: () => feedAction('hide') },
+        { hidden: isMe || !currentUserId, label: `Mute ${author.name}`, icon: 'volume-x', onPress: () => feedAction('mute') },
+        {
+          hidden: isMe || !currentUserId, label: `Block ${author.name}`, icon: 'user-x', destructive: true,
+          onPress: () => Alert.alert(`Block ${author.name}?`, "They will not be able to message you, and you will not see each other's posts.", [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Block', style: 'destructive', onPress: () => feedAction('block') },
+          ]),
+        },
+        isMe
+          ? {
+              label: 'Delete Post', icon: 'trash-2', destructive: true,
+              onPress: () => Alert.alert('Delete Post', 'Are you sure you want to permanently delete this post?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => onDeletePost?.(id) },
+              ]),
+            }
+          : { label: 'Report Content', icon: 'flag', destructive: true, onPress: () => setReportOpen(true) },
+      ])}
 
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setMoreMenuVisible(false);
-                    handleBookmarkBtnPress();
-                  }}
-                >
-                  <Icon name="bookmark" size={18} color={themeColors.textPrimary} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>
-                    {bookmarked ? 'Remove Bookmark' : 'Bookmark Post'}
-                  </Text>
-                </TouchableOpacity>
-
-                {isMe && onTogglePin && (
-                  <TouchableOpacity
-                    style={styles.menuItem}
-                    onPress={() => {
-                      setMoreMenuVisible(false);
-                      onTogglePin(id);
-                    }}
-                  >
-                    <Icon name="pin" size={18} color={themeColors.textPrimary} />
-                    <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>
-                      {isPinned ? 'Unpin from Profile' : 'Pin to Profile'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {isMe ? (
-                  <TouchableOpacity
-                    style={styles.menuItem}
-                    onPress={() => {
-                      setMoreMenuVisible(false);
-                      Alert.alert(
-                        'Delete Post',
-                        'Are you sure you want to permanently delete this post?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: () => onDeletePost?.(id),
-                          },
-                        ]
-                      );
-                    }}
-                  >
-                    <Icon name="trash-2" size={18} color="#EF4444" />
-                    <Text style={[styles.menuItemText, { color: '#EF4444' }]}>
-                      Delete Post
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.menuItem}
-                    onPress={() => {
-                      setMoreMenuVisible(false);
-                      setReportOpen(true);
-                    }}
-                  >
-                    <Icon name="x" size={18} color="#EF4444" />
-                    <Text style={[styles.menuItemText, { color: '#EF4444' }]}>
-                      Report Content
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </TouchableWithoutFeedback>
+      <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => !editSaving && setEditOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: themeColors.bgCard, borderColor: themeColors.border, borderWidth: 1, borderRadius: 16, padding: 16 }}>
+            <Text style={{ color: themeColors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 10 }}>Edit post</Text>
+            <TextInput
+              value={editDraft}
+              onChangeText={setEditDraft}
+              multiline
+              autoFocus
+              maxLength={POST_CAPTION_MAX + 50}
+              editable={!editSaving}
+              placeholder="Write a caption"
+              placeholderTextColor={themeColors.textMuted}
+              style={{ minHeight: 120, maxHeight: 280, textAlignVertical: 'top', borderWidth: 1, borderColor: themeColors.border, borderRadius: 10, padding: 12, color: themeColors.textPrimary, backgroundColor: themeColors.inputBg, fontSize: 15 }}
+            />
+            <Text style={{ color: editDraft.length > POST_CAPTION_MAX ? '#DC2626' : themeColors.textMuted, fontSize: 12, marginTop: 6, textAlign: 'right' }}>
+              {editDraft.length}/{POST_CAPTION_MAX}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center' }} onPress={() => setEditOpen(false)} disabled={editSaving}>
+                <Text style={{ color: themeColors.textPrimary, fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: ORANGE, alignItems: 'center', opacity: editSaving ? 0.7 : 1 }} onPress={saveEdit} disabled={editSaving}>
+                {editSaving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Save</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
-        </TouchableWithoutFeedback>
+        </View>
       </Modal>
 
       <ReportModal
@@ -1375,11 +1522,10 @@ const styles = StyleSheet.create({
   },
   pinnedBarText: {
     color: ORANGE,
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
     letterSpacing: 0.5,
-    textTransform: 'uppercase',
   },
   header: {
     flexDirection: 'row',
@@ -1393,6 +1539,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     gap: 10,
+  },
+  avatarRing: {
+    padding: 2,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.45)',
   },
   avatar: {
     width: 38,
@@ -1412,7 +1564,7 @@ const styles = StyleSheet.create({
   avatarFallbackText: {
     color: '#FF4B33',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   authorTextContainer: {
     flex: 1,
@@ -1424,18 +1576,23 @@ const styles = StyleSheet.create({
     gap: 4,
     flexWrap: 'nowrap',
   },
+  authorTime: {
+    fontSize: 12,
+    fontFamily: 'WorkSans-Regular',
+    flexShrink: 0,
+  },
   authorName: {
+    flexShrink: 1,
     color: '#0D0D0D',
-    fontSize: 13.5,
+    fontSize: 14,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
     letterSpacing: -0.1,
   },
   dotSeparator: {
     color: '#9CA3AF',
-    fontSize: 10,
+    fontSize: 12,
     marginHorizontal: 3,
-    fontFamily: 'Inconsolata-Regular',
   },
   actionText: {
     color: ORANGE,
@@ -1456,8 +1613,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   authorSub: {
-    color: '#6B7280',
-    fontSize: 11,
+    color: '#64748B',
+    fontSize: 12,
     fontFamily: 'WorkSans-Regular',
     fontWeight: '400',
   },
@@ -1469,12 +1626,12 @@ const styles = StyleSheet.create({
   },
   locationDot: {
     color: '#9CA3AF',
-    fontSize: 11,
+    fontSize: 12,
     marginRight: 2,
   },
   locationText: {
     color: '#4B5563',
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: 'WorkSans-Medium',
     fontWeight: '500',
   },
@@ -1527,8 +1684,7 @@ const styles = StyleSheet.create({
   },
   tagPillText: {
     color: ORANGE,
-    fontSize: 10,
-    fontFamily: 'Inconsolata-Bold',
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
@@ -1585,7 +1741,7 @@ const styles = StyleSheet.create({
   },
   indexBadgeText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   tagPeopleBtn: {
@@ -1605,7 +1761,7 @@ const styles = StyleSheet.create({
   },
   tagPeopleCount: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   dotsRow: {
@@ -1665,7 +1821,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   viewCommentsText: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 13,
     fontFamily: 'WorkSans-Regular',
     fontWeight: '600',
@@ -1690,7 +1846,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   inlineCommentsClose: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 12,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '600',
@@ -1728,7 +1884,7 @@ const styles = StyleSheet.create({
   commentRowAvatarFallbackText: {
     color: '#0D0D0D',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   commentRowBody: {
     flex: 1,
@@ -1757,8 +1913,7 @@ const styles = StyleSheet.create({
   },
   commentRowTime: {
     color: '#9CA3AF',
-    fontSize: 10,
-    fontFamily: 'Inconsolata-Regular',
+    fontSize: 12,
   },
   commentRowContent: {
     color: '#1F2937',
@@ -1771,8 +1926,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   commentReplyBtnText: {
-    color: '#6B7280',
-    fontSize: 11,
+    color: '#64748B',
+    fontSize: 12,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -1789,7 +1944,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFE5DF',
   },
   replyTargetText: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 12,
     fontFamily: 'WorkSans-Regular',
     flex: 1,
@@ -1840,10 +1995,13 @@ const styles = StyleSheet.create({
   },
   cardTextOverlayContent: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     textAlign: 'center',
   },
   sheetCard: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -1877,7 +2035,7 @@ const styles = StyleSheet.create({
     color: '#0D0D0D',
     fontSize: 16,
     fontFamily: 'Lora-Bold',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   sheetList: {
     paddingHorizontal: 16,
@@ -1906,7 +2064,7 @@ const styles = StyleSheet.create({
   taggedAvatarFallbackText: {
     color: '#FF4B33',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   taggedMeta: {
     flex: 1,
@@ -1918,7 +2076,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   taggedFullName: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 12,
     fontFamily: 'WorkSans-Regular',
     marginTop: 2,
@@ -1973,7 +2131,7 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   commentsDisabledText: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 12,
     fontFamily: 'WorkSans-Regular',
     fontStyle: 'italic',
@@ -1999,6 +2157,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
+    elevation: 10,
   },
   carouselNavRight: {
     position: 'absolute',
@@ -2012,6 +2171,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
+    elevation: 10,
   },
 });
 

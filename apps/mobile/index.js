@@ -93,6 +93,7 @@ try {
     globalThis.btoa = quickBase64.btoa;
     globalThis.atob = quickBase64.atob;
   }
+  globalThis.quickBase64 = quickBase64;
 } catch (_quickBase64Err) {
   // QuickBase64 native module not linked — use JS fallbacks
   if (!globalThis.btoa) {
@@ -183,14 +184,25 @@ import { installActivityIndicatorInterceptor } from './src/components/common/Cin
 installActivityIndicatorInterceptor();
 
 import App from './src/App';
+import { resolveCurrentUserId } from './src/services/offlineCache';
 import { name as appName } from './app.json';
 
 // Register background FCM message handler with client-side E2EE decryption
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log('[FCM] Background push notification received:', remoteMessage);
 
+  // Nobody is signed in on this phone (signed out, or the push arrived late): show nothing.
+  if (!(await resolveCurrentUserId().catch(() => null))) return;
+
   try {
     const data = remoteMessage.data || {};
+
+    // Answered on another device, or the caller hung up first: stop ringing here.
+    if (String(data.type || '') === 'call_answered' || String(data.type || '') === 'call_cancelled') {
+      NativeModules.NotificationBridge?.cancelIncomingCall?.();
+      return;
+    }
+
     const title = remoteMessage.notification?.title || data.title || data.senderName || 'CineCraft Connect';
     let body = remoteMessage.notification?.body || data.body || 'You have a new message.';
     const rawActionUrl = typeof data.actionUrl === 'string' ? data.actionUrl : (typeof data.action_url === 'string' ? data.action_url : '');
@@ -229,6 +241,33 @@ messaging().setBackgroundMessageHandler(async (remoteMessage) => {
         }
       }
     } catch { }
+
+    // Incoming call: ring like a phone call (full-screen over the lock screen) instead of a normal notification.
+    const callPushType = String(data.type || '');
+    if ((callPushType === 'incoming_call' || callPushType === 'call_invite') && NativeModules.NotificationBridge?.showIncomingCall) {
+      let callsAllowed = true;
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const settingKey = keys.find((k) => k.startsWith('@cinecraft_user_settings_'));
+        const raw = settingKey ? await AsyncStorage.getItem(settingKey) : null;
+        if (raw && JSON.parse(raw).allow_incoming_calls === 'nobody') callsAllowed = false;
+      } catch { }
+      if (!callsAllowed) return;
+
+      const callUrl = String(rawActionUrl || '');
+      const callRoomType = data.roomType || data.room_type ||
+        (callUrl.includes('discussion') ? 'discussion' : (callUrl.includes('/projects/') || callUrl.includes('space') ? 'project' : 'direct'));
+      NativeModules.NotificationBridge.showIncomingCall(
+        String(data.senderId || data.callerId || ''),
+        String(data.senderName || data.callerName || title || 'Incoming call'),
+        data.avatarUrl || data.avatar_url || null,
+        String(data.roomId || data.conversationId || ''),
+        String(data.roomName || ''),
+        String(callRoomType),
+        data.isVideo === 'true' || /video/i.test(String(data.title || ''))
+      );
+      return;
+    }
 
     // Helper: resolve current user's username and full_name for mentions-only checks
     let myUsername = '';

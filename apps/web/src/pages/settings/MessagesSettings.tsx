@@ -1,11 +1,13 @@
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { SettingsPageHeader, SettingsRadioRows, SettingsSection } from '@/components/settings/SettingsUI';
+import { SettingsPageHeader, SettingsRadioRows, SettingsSection, SettingsLoading } from '@/components/settings/SettingsUI';
+import { EncryptedMessagesSection } from '@/components/settings/EncryptedMessagesSection';
 
 const MessagesSettings = () => {
-  const { settings, updateSetting } = useUserSettings();
+  const { settings, updateSetting, loading } = useUserSettings();
+  if (loading) return <SettingsLoading />;
   return (
     <>
-      <SettingsPageHeader title="Messages" description="Who can send you direct messages." />
+      <SettingsPageHeader title="Messages" description="Who can message you, and how your chats are protected." />
       <SettingsSection>
         <SettingsRadioRows
           value={(settings?.allow_messages_from || 'everyone') as 'everyone' | 'connections' | 'nobody'}
@@ -17,6 +19,7 @@ const MessagesSettings = () => {
           ]}
         />
       </SettingsSection>
+      <EncryptedMessagesSection />
     </>
   );
 };

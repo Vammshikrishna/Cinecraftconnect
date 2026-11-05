@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,17 @@ import {
   Alert,
   Switch,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { ImagePickerBox } from '../../components/common/ImagePickerBox';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
+import { isTabletDevice } from '../../utils/pageType';
+import { TabletColumn } from '../../components/common/TabletContainer';
 
 const ORANGE = '#FF4B33';
 
@@ -37,6 +42,15 @@ const STATUS_OPTIONS = [
   { id: 'completed', label: 'Completed' },
 ];
 
+// Auto-inserts the dashes of YYYY-MM-DD while typing; deletions pass through untouched.
+const formatDateInput = (next: string, prev: string): string => {
+  if (next.length < prev.length) return next.replace(/[^0-9-]/g, '');
+  const d = next.replace(/\D/g, '').slice(0, 8);
+  if (d.length <= 4) return d;
+  if (d.length <= 6) return `${d.slice(0, 4)}-${d.slice(4)}`;
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
+};
+
 export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -45,7 +59,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
   // Step 1: Basic Info
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [location, setLocation] = useState('Hyderabad, Telangana, IND');
+  const [location, setLocation] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [imageUrl, setImageUrl] = useState('');
 
@@ -93,9 +107,48 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
     else if (step === 3) setStep(2);
   };
 
+  // The Android Back button goes up one step, like the header arrow, and leaves the screen only from step 1.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (step === 2) { setStep(1); return true; }
+        if (step === 3) { setStep(2); return true; }
+        return false;
+      });
+      return () => sub.remove();
+    }, [step])
+  );
+
+  const isIsoDate = (v: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const d = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  };
+
   const handleCreate = async () => {
     if (!title.trim() || !description.trim()) {
       Alert.alert('Missing Info', 'Please provide a title and description for your project.');
+      return;
+    }
+
+    const minNum = budgetMin.trim() ? Number(budgetMin) : null;
+    const maxNum = budgetMax.trim() ? Number(budgetMax) : null;
+    if ((minNum !== null && (!Number.isFinite(minNum) || minNum < 0)) || (maxNum !== null && (!Number.isFinite(maxNum) || maxNum < 0))) {
+      Alert.alert('Check the budget', 'The budget must be a number that is not negative.');
+      return;
+    }
+    if (minNum !== null && maxNum !== null && minNum > maxNum) {
+      Alert.alert('Check the budget', 'The minimum budget cannot be higher than the maximum budget.');
+      return;
+    }
+    const startTxt = startDate.trim();
+    const endTxt = endDate.trim();
+    if ((startTxt && !isIsoDate(startTxt)) || (endTxt && !isIsoDate(endTxt))) {
+      Alert.alert('Check the dates', 'Enter dates as YYYY-MM-DD, for example 2026-11-05.');
+      return;
+    }
+    if (startTxt && endTxt && endTxt < startTxt) {
+      Alert.alert('Check the dates', 'The end date cannot be before the start date.');
       return;
     }
 
@@ -119,10 +172,10 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
         status: status,
         is_public: isPublic,
         creator_id: user.id,
-        budget_min: budgetMin ? parseFloat(budgetMin) : null,
-        budget_max: budgetMax ? parseFloat(budgetMax) : null,
-        start_date: startDate.trim() || null,
-        end_date: endDate.trim() || null,
+        budget_min: minNum,
+        budget_max: maxNum,
+        start_date: startTxt || null,
+        end_date: endTxt || null,
         image_url: imageUrl.trim() || null,
       };
 
@@ -178,19 +231,15 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
         }
       }
 
-      Alert.alert('Project Created!', 'Your new ProjectSpace is ready with chat, call sheets, and production workspaces.', [
-        {
-          text: 'Open Workspace',
-          onPress: () =>
-            navigation.replace('ProjectSpace', {
-              projectId: newProject.id,
-              projectTitle: newProject.title,
-              projectDescription: newProject.description,
-            }),
-        },
-      ]);
+      // Go straight to the new workspace. (A success alert here is shown as a toast and its button only runs after it fades,
+      // which left the form on screen with an enabled Create button and allowed a second project.)
+      navigation.replace('ProjectSpace', {
+        projectId: newProject.id,
+        projectTitle: newProject.title,
+        projectDescription: newProject.description,
+      });
     } catch (err: any) {
-      Alert.alert('Creation Failed', err.message || 'Could not create project space. Please try again.');
+      Alert.alert('Creation Failed', friendlyError(err, 'Could not create project space. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -206,6 +255,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
           else navigation.goBack();
         }}
       />
+      <TabletColumn maxWidth={720}>
 
       {/* Multi-Step Wizard Progress Bar */}
       <View style={[styles.progressHeader, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
@@ -222,6 +272,8 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
 
           <TouchableOpacity
             style={[styles.stepTab, step === 2 && styles.stepTabActive]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: step === 2 }}
             onPress={() => {
               if (title.trim() && description.trim()) setStep(2);
             }}
@@ -234,6 +286,8 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
 
           <TouchableOpacity
             style={[styles.stepTab, step === 3 && styles.stepTabActive]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: step === 3 }}
             onPress={() => {
               if (title.trim() && description.trim() && selectedGenres.length > 0) setStep(3);
             }}
@@ -244,7 +298,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* STEP 1: BASIC INFORMATION */}
         {step === 1 && (
           <View style={[styles.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
@@ -263,6 +317,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
               placeholderTextColor={themeColors.textMuted}
               value={title}
               onChangeText={setTitle}
+              maxLength={120}
             />
 
             <Text style={[styles.label, { color: themeColors.textSecondary }]}>LOGLINE / DESCRIPTION *</Text>
@@ -272,6 +327,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
               placeholderTextColor={themeColors.textMuted}
               value={description}
               onChangeText={setDescription}
+              maxLength={2000}
               multiline
             />
 
@@ -280,6 +336,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
               style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
               value={location}
               onChangeText={setLocation}
+              maxLength={120}
               placeholder="e.g. Ramoji Film City, Hyderabad"
               placeholderTextColor={themeColors.textMuted}
             />
@@ -306,6 +363,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
               </View>
               <Switch
                 value={isPublic}
+                accessibilityLabel={isPublic ? 'Public Space' : 'Private Space'}
                 onValueChange={setIsPublic}
                 trackColor={{ false: '#767577', true: ORANGE }}
                 thumbColor="#FFFFFF"
@@ -414,6 +472,8 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
                       },
                     ]}
                     onPress={() => setStatus(st.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
                   >
                     <Text style={[styles.statusText, { color: isSelected ? '#FFFFFF' : themeColors.textPrimary }]}>
                       {st.label}
@@ -430,9 +490,10 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
                   placeholder="e.g. 500000"
                   placeholderTextColor={themeColors.textMuted}
-                  keyboardType="numeric"
+                  keyboardType="number-pad"
+                  maxLength={12}
                   value={budgetMin}
-                  onChangeText={setBudgetMin}
+                  onChangeText={(t) => setBudgetMin(t.replace(/[^0-9]/g, ''))}
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -441,9 +502,10 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
                   placeholder="e.g. 2500000"
                   placeholderTextColor={themeColors.textMuted}
-                  keyboardType="numeric"
+                  keyboardType="number-pad"
+                  maxLength={12}
                   value={budgetMax}
-                  onChangeText={setBudgetMax}
+                  onChangeText={(t) => setBudgetMax(t.replace(/[^0-9]/g, ''))}
                 />
               </View>
             </View>
@@ -455,8 +517,10 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
                   placeholder="YYYY-MM-DD"
                   placeholderTextColor={themeColors.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={10}
                   value={startDate}
-                  onChangeText={setStartDate}
+                  onChangeText={(t) => setStartDate(formatDateInput(t, startDate))}
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -465,8 +529,10 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
                   placeholder="YYYY-MM-DD"
                   placeholderTextColor={themeColors.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={10}
                   value={endDate}
-                  onChangeText={setEndDate}
+                  onChangeText={(t) => setEndDate(formatDateInput(t, endDate))}
                 />
               </View>
             </View>
@@ -491,6 +557,7 @@ export const CreateProjectScreen = ({ navigation }: { navigation: any }) => {
           </View>
         )}
       </ScrollView>
+      </TabletColumn>
     </View>
   );
 };
@@ -500,7 +567,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   progressHeader: {
-    paddingHorizontal: 16,
+    paddingHorizontal: isTabletDevice ? 24 : 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
@@ -521,8 +588,8 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: '#E5E7EB',
     color: '#374151',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -531,7 +598,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   stepTabText: {
-    fontSize: 12,
+    fontSize: isTabletDevice ? 13 : 12,
     fontWeight: '700',
   },
   stepConnector: {
@@ -540,11 +607,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   content: {
-    padding: 14,
+    padding: isTabletDevice ? 24 : 14,
+    paddingBottom: 96,
   },
   card: {
     borderRadius: 16,
-    padding: 16,
+    padding: isTabletDevice ? 24 : 16,
     borderWidth: 1,
   },
   stepTitleRow: {
@@ -554,19 +622,19 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 22 : 18,
+    fontWeight: '700',
     letterSpacing: -0.2,
   },
   cardSub: {
-    fontSize: 12,
+    fontSize: isTabletDevice ? 14 : 12,
     marginTop: 2,
     marginBottom: 16,
-    lineHeight: 16,
+    lineHeight: isTabletDevice ? 20 : 16,
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -574,12 +642,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
+    paddingVertical: isTabletDevice ? 12 : 8,
+    fontSize: isTabletDevice ? 15 : 13,
     marginBottom: 12,
   },
   textArea: {
-    height: 80,
+    height: isTabletDevice ? 130 : 80,
     textAlignVertical: 'top',
   },
   switchCard: {
@@ -596,7 +664,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   switchSub: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   badgeGrid: {
@@ -607,7 +675,7 @@ const styles = StyleSheet.create({
   },
   badgeChip: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: isTabletDevice ? 9 : 6,
     borderRadius: 20,
     borderWidth: 1,
   },
@@ -623,12 +691,12 @@ const styles = StyleSheet.create({
   },
   statusChip: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: isTabletDevice ? 9 : 6,
     borderRadius: 8,
     borderWidth: 1,
   },
   statusText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   rowTwoCol: {
@@ -641,7 +709,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   prevBtn: {
-    height: 44,
+    height: isTabletDevice ? 52 : 44,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
@@ -654,7 +722,7 @@ const styles = StyleSheet.create({
   },
   nextBtn: {
     backgroundColor: ORANGE,
-    height: 44,
+    height: isTabletDevice ? 52 : 44,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -662,20 +730,20 @@ const styles = StyleSheet.create({
   },
   nextBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   createBtn: {
     backgroundColor: ORANGE,
-    height: 44,
+    height: isTabletDevice ? 52 : 44,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   createBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

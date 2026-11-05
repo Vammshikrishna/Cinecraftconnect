@@ -3,13 +3,12 @@ import {
   View,
   Text,
   FlatList,
+  ActivityIndicator,
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
   TextInput,
   Image,
-  Modal,
-  TouchableWithoutFeedback,
   Alert,
   ScrollView,
   Platform,
@@ -17,8 +16,11 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
+import { ReportModal } from '../../components/modals/ReportModal';
 import { useFocusEffect } from '@react-navigation/native';
 import { Icon } from '../../components/common/Icon';
+import { DropdownTrigger, DropdownItem } from '../../components/common/DropdownMenu';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { getSupabaseClient } from '@cinecraft/api';
 import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
@@ -26,6 +28,7 @@ import { CardSkeleton } from '../../components/common/Skeleton';
 import LinearGradient from 'react-native-linear-gradient';
 import { CachedImage } from '../../components/common/CachedImage';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
 const FlashListAny = FlashList as any;
 import { fetchWithCache, getCache, saveCache, getCacheSync, resolveCurrentUserId } from '../../services/offlineCache';
 
@@ -36,14 +39,17 @@ import { useAccountType } from '../../hooks/useAccountType';
 import { useAppRole } from '../../hooks/useAppRole';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
+import { orTerm } from '../../utils/postgrest';
+import { usePagedList, PAGE_SIZE } from '../../hooks/usePagedList';
+import { tabletPageTitle, tabletPageSubtitle, isTabletDevice } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 
 const getTimeAgo = (dateStr?: string) => {
-  if (!dateStr) return '3 months ago';
+  if (!dateStr) return '';
   try {
     const diffMs = Date.now() - new Date(dateStr).getTime();
-    if (isNaN(diffMs)) return '3 months ago';
+    if (isNaN(diffMs)) return '';
     const diffSecs = Math.floor(diffMs / 1000);
     const diffMins = Math.floor(diffSecs / 60);
     if (diffMins < 1) return 'just now';
@@ -62,7 +68,7 @@ const getTimeAgo = (dateStr?: string) => {
     if (diffYears === 1) return '1 year ago';
     return `${diffYears} years ago`;
   } catch {
-    return '3 months ago';
+    return '';
   }
 };
 
@@ -75,7 +81,7 @@ const ProjectCardItem = React.memo(({
   isBookmarked,
   onPress,
   onToggleBookmark,
-  onMenuPress,
+  getMenuItems,
   onRolesPress,
   onViewSpacePress,
 }: {
@@ -87,7 +93,7 @@ const ProjectCardItem = React.memo(({
   isBookmarked: boolean;
   onPress: (item: any) => void;
   onToggleBookmark: (id: string) => void;
-  onMenuPress: (item: any) => void;
+  getMenuItems: (item: any) => DropdownItem[];
   onRolesPress: (item: any) => void;
   onViewSpacePress: (item: any) => void;
 }) => {
@@ -101,10 +107,9 @@ const ProjectCardItem = React.memo(({
       activeOpacity={0.9}
       onPress={() => onPress(item)}
     >
-      {/* Top Row: Square Poster + Header Info */}
-      <View style={styles.cardTopRow}>
-        {/* Left Square Poster */}
-        <View style={[styles.cardPosterContainer, { backgroundColor: themeColors.chipBg }]}>
+      {/* Top Row: Square Poster + Header Info (web: w-16/h-16, sm:w-20/h-20) */}
+      <View style={[styles.cardTopRow, isTablet && { gap: 16 }]}>
+        <View style={[styles.cardPosterContainer, { backgroundColor: themeColors.chipBg }, isTablet && styles.cardPosterContainerTablet]}>
           {item.cover_url || item.image_url ? (
             <CachedImage uri={item.cover_url || item.image_url} style={styles.cardPosterImage} resizeMode="cover" />
           ) : (
@@ -119,100 +124,99 @@ const ProjectCardItem = React.memo(({
           )}
         </View>
 
-        {/* Right Column: Scene Badge, Bookmark, Title, Subtitle */}
+        {/* Right Column: Title + Bookmark + 3-dots, then description */}
         <View style={styles.cardInfoColumn}>
-          {/* Header sub-row: Scene status + Actions (Bookmark + 3-Dots) */}
           <View style={styles.sceneBookmarkRow}>
-            <View
-              style={[
-                styles.sceneBadge,
-                {
-                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
-                  borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.25)',
-                },
-              ]}
+            <Text
+              style={[styles.projectTitle, { color: themeColors.textPrimary }, isTablet && { fontSize: 18 }]}
+              numberOfLines={1}
             >
-              <View style={styles.sceneGreenDot} />
-              <Text style={[styles.sceneBadgeText, { color: isDark ? '#34D399' : '#059669' }]}>
-                [SCENE: {item.status_display}]
-              </Text>
-            </View>
+              {item.title}
+            </Text>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <TouchableOpacity
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save"
                 onPress={() => onToggleBookmark(item.id)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                 style={styles.bookmarkTouch}
               >
                 <Icon
                   name="bookmark"
-                  size={17}
-                  color={isBookmarked ? ORANGE : (isDark ? '#9CA3AF' : '#64748B')}
+                  size={16}
+                  color={isBookmarked ? ORANGE : (isDark ? '#9CA3AF' : '#94A3B8')}
                   fill={isBookmarked ? ORANGE : 'none'}
                   strokeWidth={isBookmarked ? 2.5 : 1.8}
                 />
               </TouchableOpacity>
 
-              {/* 3-Dots More Options Button */}
-              <TouchableOpacity
-                style={{ padding: 2 }}
-                onPress={() => onMenuPress(item)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              <DropdownTrigger accessibilityLabel="More options"
+                style={{ padding: 4 }}
+                items={() => getMenuItems(item)}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               >
-                <Icon name="more-vertical" size={17} color={isDark ? '#9CA3AF' : '#64748B'} />
-              </TouchableOpacity>
+                <Icon name="more-vertical" size={16} color={isDark ? '#9CA3AF' : '#94A3B8'} />
+              </DropdownTrigger>
             </View>
           </View>
 
-          {/* Serif Title */}
-          <Text style={[styles.projectTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>
-            {item.title}
-          </Text>
-
-          {/* Synopsis / Description */}
           <Text style={[styles.projectLogline, { color: themeColors.textSecondary }]} numberOfLines={1}>
             {item.description}
           </Text>
         </View>
       </View>
 
-      {/* Middle: Location Chip */}
-      {item.location ? (
+      {/* Middle: Location + Status chips (web order) */}
+      <View style={styles.chipsRow}>
+        {item.location ? (
+          <View
+            style={[
+              styles.slugTagGray,
+              {
+                flexShrink: 1,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+              },
+            ]}
+          >
+            <Icon name="map-pin" size={12} color={isDark ? '#94A3B8' : '#64748B'} />
+            <Text style={[styles.slugTagGrayText, { color: isDark ? '#CBD5E1' : '#475569', flexShrink: 1 }, isTablet && styles.chipTextTablet]} numberOfLines={1}>
+              {item.location}
+            </Text>
+          </View>
+        ) : null}
         <View
           style={[
-            styles.slugTagLocationRow,
+            styles.slugTagGray,
             {
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#F1F5F9',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5',
+              borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(167, 243, 208, 0.6)',
             },
           ]}
         >
-          <Icon name="map-pin" size={11} color={isDark ? '#94A3B8' : '#64748B'} />
-          <Text style={[styles.slugTagGrayText, { color: isDark ? '#CBD5E1' : '#475569' }]} numberOfLines={1}>
-            LOC // {item.location}
+          <View style={styles.sceneGreenDot} />
+          <Text style={[styles.slugTagGrayText, { color: isDark ? '#34D399' : '#047857' }, isTablet && styles.chipTextTablet]}>
+            {item.status_display}
           </Text>
         </View>
-      ) : null}
+      </View>
 
-      {/* Metadata Badges Row */}
-      <View style={[styles.slugTagsSecondaryRow, { marginTop: 7 }]}>
-        {/* Roles Open (Clickable) */}
+      {/* Roles + Genre chips */}
+      <View style={[styles.chipsRow, { marginTop: 8 }]}>
         <TouchableOpacity
           style={[
             styles.slugTagRed,
             {
               backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
-              borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.2)',
+              borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(254, 202, 202, 0.6)',
             },
           ]}
           onPress={() => onRolesPress(item)}
           activeOpacity={0.8}
         >
-          <Icon name="users" size={11} color="#EF4444" />
-          <Text style={styles.slugTagRedText}>ROLES // {item.roles_count ?? 0} OPEN</Text>
+          <Icon name="users" size={12} color="#EF4444" />
+          <Text style={[styles.slugTagRedText, isTablet && styles.chipTextTablet]}>{item.roles_count ?? 0} open roles</Text>
         </TouchableOpacity>
 
-        {/* Genre */}
         {item.genre_display ? (
           <View
             style={[
@@ -223,9 +227,9 @@ const ProjectCardItem = React.memo(({
               },
             ]}
           >
-            <Icon name="film" size={11} color={isDark ? '#94A3B8' : '#64748B'} />
-            <Text style={[styles.slugTagGrayText, { color: isDark ? '#CBD5E1' : '#475569' }]}>
-              GENRE // {item.genre_display}
+            <Icon name="film" size={12} color={isDark ? '#94A3B8' : '#64748B'} />
+            <Text style={[styles.slugTagGrayText, { color: isDark ? '#CBD5E1' : '#475569' }, isTablet && styles.chipTextTablet]}>
+              {item.genre_display}
             </Text>
           </View>
         ) : null}
@@ -254,6 +258,7 @@ const ProjectCardItem = React.memo(({
             ]}
             onPress={() => onRolesPress(item)}
             activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
           >
             <Icon name="users" size={10.5} color="#EF4444" />
             <Text style={styles.rolesActionBtnText}>Roles ({item.roles_count ?? 0})</Text>
@@ -264,6 +269,7 @@ const ProjectCardItem = React.memo(({
             style={styles.viewSpaceActionBtn}
             onPress={() => onViewSpacePress(item)}
             activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
           >
             <Text style={styles.viewSpaceActionBtnText}>View Space</Text>
             <Icon name="chevron-right" size={10.5} color="#FFFFFF" strokeWidth={2.5} />
@@ -287,7 +293,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [bookmarkedIds, setBookmarkedIds] = useState<Record<string, boolean>>(() => getCacheSync<Record<string, boolean>>('projects_bookmarked_map') || {});
-  const [selectedProjectForMenu, setSelectedProjectForMenu] = useState<any | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ id: string; title: string } | null>(null);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [shareTitle, setShareTitle] = useState('');
   const [shareItemData, setShareItemData] = useState<any | null>(null);
@@ -335,52 +341,88 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
     }
   }, [currentUserId]);
 
-  const fetchProjects = async () => {
+  // The search goes to the server (debounced) so it covers every project, not just the loaded 25.
+  // The My Projects / Bookmarked tabs still filter the loaded rows on the device.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const { loadingMore, loadMore, resetPaging } = usePagedList<any>();
+
+  const buildProjectsQuery = useCallback(() => {
+    let query = (getSupabaseClient() as any).from('projects').select('*');
+    const q = orTerm(debouncedQuery);
+    if (q) {
+      query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,location.ilike.%${q}%`);
+    }
+    return query.order('created_at', { ascending: false });
+  }, [debouncedQuery]);
+
+  const loadMoreProjects = useCallback(
+    () =>
+      loadMore(
+        projects.length,
+        async (from, to) => {
+          const { data, error } = await buildProjectsQuery().range(from, to);
+          if (error) throw error;
+          return data || [];
+        },
+        setProjects,
+      ),
+    [loadMore, projects.length, buildProjectsQuery],
+  );
+
+  const fetchProjects = useCallback(async () => {
+    // Only the plain (no search) first page is cached; a search always asks the server.
+    const isDefaultQuery = !orTerm(debouncedQuery);
     // 1. Instant Cache Hydration
-    const cached = await getCache<any[]>('projects_list');
+    const cached = isDefaultQuery ? await getCache<any[]>('projects_list') : null;
     if (cached && cached.length > 0) {
       setProjects(cached);
       setLoading(false);
     }
 
+    const loadFirstPage = async () => {
+      const supabase = getSupabaseClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (user) {
+        setCurrentUserId(user.id);
+        fetchUserBookmarks(user.id);
+      }
+
+      const { data, error } = await buildProjectsQuery().range(0, PAGE_SIZE - 1);
+
+      // Throw so a failed query keeps the good cache instead of overwriting it with [].
+      if (error) throw error;
+      resetPaging((data || []).length);
+      return data || [];
+    };
+
     try {
-      await fetchWithCache(
-        'projects_list',
-        async () => {
-          const supabase = getSupabaseClient();
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          const user = session?.user;
-          if (user) {
-            setCurrentUserId(user.id);
-            fetchUserBookmarks(user.id);
-          }
-
-          const { data, error } = await supabase
-            .from('projects')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(25);
-
-          return !error && data ? data : [];
-        },
-        {
+      if (isDefaultQuery) {
+        await fetchWithCache('projects_list', loadFirstPage, {
           timeoutMs: 2500,
           onCacheHit: (data) => {
             if (data) setProjects(data);
           },
           onFreshData: (data) => {
-            if (data && data.length > 0) setProjects(data);
+            if (data) setProjects(data);
           },
-        }
-      );
+        });
+      } else {
+        setProjects(await loadFirstPage());
+      }
     } catch (e) {
       console.warn('[ProjectsScreen] Error fetching projects:', e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [debouncedQuery, buildProjectsQuery, resetPaging, fetchUserBookmarks]);
 
   // Real-time listener for cross-screen bookmark changes
   useEffect(() => {
@@ -415,7 +457,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
         supabase.removeChannel(channel);
       } catch { }
     };
-  }, [fetchUserBookmarks]);
+  }, [fetchUserBookmarks, fetchProjects]);
 
   useFocusEffect(
     useCallback(() => {
@@ -426,7 +468,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
       return () => {
         task.cancel();
       };
-    }, [fetchUserBookmarks])
+    }, [fetchUserBookmarks, fetchProjects])
   );
 
   useAutoRefreshOnReconnect(fetchProjects);
@@ -534,9 +576,41 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
     navigation.navigate('ProjectSpace', { projectId: item.id });
   }, [navigation]);
 
-  const handleMenuPress = useCallback((item: any) => {
-    setSelectedProjectForMenu(item);
-  }, []);
+  const handleMenuItems = useCallback((item: any): DropdownItem[] => [
+    { label: 'Enter Workspace', icon: 'external-link', onPress: () => navigation.navigate('ProjectSpace', { projectId: item.id }) },
+    { label: 'Share Workspace', icon: 'share', onPress: () => { setShareTitle(item?.title || 'ProjectSpace'); setShareItemData(item); setShareSheetVisible(true); } },
+    { label: bookmarkedIds[item?.id] ? 'Remove Bookmark' : 'Bookmark Project', icon: 'bookmark', onPress: () => handleToggleBookmark(item?.id) },
+    {
+      hidden: !(currentUserId && item?.creator_id === currentUserId),
+      label: 'Delete Project', icon: 'trash', destructive: true,
+      onPress: () => Alert.alert('Delete Project', 'Are you sure you want to delete this project space? This action is permanent.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const supabase = getSupabaseClient();
+              const { data: gone, error: delError } = await (supabase as any).from('projects').delete().eq('id', item.id).select('id');
+              if (delError) throw delError;
+              // A delete the database refuses can return no error and no rows: that is a failure, not a success.
+              if (!gone || gone.length === 0) throw new Error('The project was not deleted. You may not have permission, or it no longer exists.');
+              setProjects((prev) => prev.filter((p) => p.id !== item.id));
+            } catch (e: any) {
+              Alert.alert('Error', friendlyError(e, 'Failed to delete project.'));
+            }
+          },
+        },
+      ]),
+    },
+    {
+      label: 'Report Space', icon: 'flag', destructive: true,
+      onPress: () => {
+        if (!currentUserId) { Alert.alert('Sign in required', 'Please sign in to report a project space.'); return; }
+        if (item?.id) setReportTarget({ id: item.id, title: item.title || 'this project space' });
+      },
+    },
+  ], [currentUserId, bookmarkedIds, navigation, handleToggleBookmark]);
 
   const handleRolesPress = useCallback((item: any) => {
     navigation.navigate('ProjectDetail', { projectId: item.id });
@@ -546,21 +620,8 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
     navigation.navigate('ProjectSpace', { projectId: item.id });
   }, [navigation]);
 
-  const sampleProject = {
-    id: 'test-project-1',
-    title: 'Test-projectspaces',
-    description: 'Testing the projectspace and it fetures',
-    location: 'HYDERABAD, TELANGANA, IND',
-    roles_count: 4,
-    genre: 'ACTION',
-    status: 'ACTIVE',
-    image_url: 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=800&auto=format&fit=crop&q=80',
-    created_at: new Date(Date.now() - 92 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at_str: '3 months ago',
-  };
-
   const displayList = useMemo(() => {
-    return (projects.length > 0 ? projects : [sampleProject]).map((p) => {
+    return projects.map((p) => {
       let rolesCount = 0;
       if (Array.isArray(p.required_roles)) {
         rolesCount = p.required_roles.length;
@@ -570,7 +631,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
         rolesCount = 2;
       }
 
-      let genreStr = 'ACTION';
+      let genreStr = '';
       if (Array.isArray(p.genre) && p.genre.length > 0) {
         genreStr = p.genre.map((g: any) => String(g).toUpperCase()).join(', ');
       } else if (typeof p.genre === 'string' && p.genre) {
@@ -578,18 +639,18 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
       }
 
       const statusStr = String(p.status || 'ACTIVE').toUpperCase();
-      const locationStr = typeof p.location === 'string' && p.location ? p.location : 'HYDERABAD, TELANGANA, IND';
+      const locationStr = typeof p.location === 'string' && p.location ? p.location : '';
       const imageUrl =
         typeof p.image_url === 'string' && p.image_url
           ? p.image_url
           : 'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=800&auto=format&fit=crop&q=80';
 
-      const timeAgoStr = getTimeAgo(p.created_at || (p.id === 'test-project-1' ? sampleProject.created_at : undefined));
+      const timeAgoStr = getTimeAgo(p.created_at);
 
       return {
         ...p,
         title: p.title || 'Untitled Project',
-        description: p.description || 'Cinema craft production workspace.',
+        description: p.description || '',
         location: locationStr,
         roles_count: rolesCount,
         genre_display: genreStr,
@@ -609,7 +670,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
         (p.location || '').toLowerCase().includes(q);
 
       if (activeTab === 'My Projects') {
-        return matchesSearch && (p.creator_id === currentUserId || p.id === 'test-project-1');
+        return matchesSearch && p.creator_id === currentUserId;
       }
       if (activeTab === 'Bookmarked') {
         return matchesSearch && bookmarkedIds[p.id];
@@ -629,7 +690,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
         isBookmarked={!!bookmarkedIds[item.id]}
         onPress={handlePressProject}
         onToggleBookmark={handleToggleBookmark}
-        onMenuPress={handleMenuPress}
+        getMenuItems={handleMenuItems}
         onRolesPress={handleRolesPress}
         onViewSpacePress={handleViewSpacePress}
       />
@@ -642,7 +703,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
     bookmarkedIds,
     handlePressProject,
     handleToggleBookmark,
-    handleMenuPress,
+    handleMenuItems,
     handleRolesPress,
     handleViewSpacePress,
   ]);
@@ -668,10 +729,10 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
             <View style={styles.pageHeaderRow}>
               <View style={styles.pageTitleGroup}>
                 <Icon name="film" size={22} color={ORANGE} strokeWidth={2.2} />
-                <Text style={styles.pageTitle}>ProjectSpace</Text>
+                <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>ProjectSpace</Text>
               </View>
               {!isFan && !isInternal && (
-                <TouchableOpacity
+                <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={styles.createSpaceBtn}
                   onPress={() => navigation.navigate('CreateProject')}
                   accessibilityLabel="Create Space"
@@ -680,7 +741,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
                 </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.pageSubtitle}>
+            <Text style={[styles.pageSubtitle, tabletPageSubtitle]}>
               Discover and collaborate on professional film and digital media productions.
             </Text>
           </View>
@@ -694,13 +755,25 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
         </ScrollView>
       ) : (
         <FlashListAny
+          keyboardShouldPersistTaps="handled"
+          {...scrollChrome}
           key={`projects-grid-${numProjectColumns}`}
           data={filteredProjects}
           keyExtractor={(item: any) => item.id}
           renderItem={renderProjectCard}
           numColumns={numProjectColumns}
           estimatedItemSize={220}
-          contentContainerStyle={styles.listContent}
+          onEndReached={loadMoreProjects}
+          onEndReachedThreshold={0.6}
+          ListFooterComponent={loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color={ORANGE} /> : null}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', paddingVertical: 60, gap: 8 }}>
+              <Icon name="film" size={32} color={themeColors.iconMuted} />
+              <Text style={{ color: themeColors.textPrimary, fontSize: 16, fontWeight: '700' }}>No project spaces found</Text>
+              <Text style={{ color: themeColors.textSecondary, fontSize: 12, textAlign: 'center' }}>Project spaces you create or join will show up here.</Text>
+            </View>
+          }
+          contentContainerStyle={isTablet ? { ...styles.listContent, paddingHorizontal: 6 } : styles.listContent}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             <View style={styles.pageHeaderSection}>
@@ -708,10 +781,10 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
               <View style={styles.pageHeaderRow}>
                 <View style={styles.pageTitleGroup}>
                   <Icon name="film" size={22} color={ORANGE} strokeWidth={2.2} />
-                  <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>ProjectSpace</Text>
+                  <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>ProjectSpace</Text>
                 </View>
                 {!isFan && !isInternal && (
-                  <TouchableOpacity
+                  <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.createSpaceBtn}
                     onPress={() => navigation.navigate('CreateProject')}
                     activeOpacity={0.8}
@@ -723,7 +796,7 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
               </View>
 
               {/* Subtitle */}
-              <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+              <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                 Discover and collaborate on professional film and digital media productions.
               </Text>
 
@@ -731,22 +804,32 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
               {isFan && (
                 <View style={{ backgroundColor: isDark ? 'rgba(255, 75, 51, 0.1)' : '#FFF0ED', borderRadius: 8, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: isDark ? 'rgba(255, 75, 51, 0.25)' : '#FFE5DF', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Icon name="eye" size={14} color={ORANGE} />
-                  <Text style={{ flex: 1, fontSize: 11.5, color: themeColors.textSecondary }}>
+                  <Text style={{ flex: 1, fontSize: 12, color: themeColors.textSecondary }}>
                     <Text style={{ fontWeight: '700', color: ORANGE }}>Fan Account (Viewer Mode):</Text> Browsing is available. Production project creation is reserved for verified Creators & Studios.
                   </Text>
                 </View>
               )}
 
               {/* Search Box */}
-              <View style={[styles.searchBox, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                <Icon name="search" size={16} color="#9CA3AF" />
-                <TextInput
+              <View style={[styles.searchBox, isTabletDevice && { maxWidth: 720, width: '100%' }, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                <Icon name="search" size={16} color={themeColors.iconMuted} />
+                <TextInput returnKeyType="search" accessibilityLabel="Search projects by title, genre, location"
                   style={[styles.searchInput, { color: themeColors.textPrimary }]}
                   placeholder="Search projects by title, genre, location..."
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={themeColors.textMuted}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
+                {searchQuery ? (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Icon name="x" size={16} color={themeColors.iconMuted} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {/* Category Filter Tabs */}
@@ -794,120 +877,19 @@ export const ProjectsScreen = ({ navigation }: { navigation: any }) => {
       <UniversalShareSheet
         visible={shareSheetVisible}
         title={shareTitle}
-        url="https://cinecraftconnect.com"
+        shareUrl={shareItemData?.id ? `https://cinecraftconnect.com/projects/${shareItemData.id}` : 'https://cinecraftconnect.com'}
         itemType="project"
         itemData={shareItemData}
         onClose={() => setShareSheetVisible(false)}
       />
 
-      {/* Project Card Options Modal */}
-      <Modal
-        visible={!!selectedProjectForMenu}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setSelectedProjectForMenu(null)}
-      >
-        <TouchableWithoutFeedback onPress={() => setSelectedProjectForMenu(null)}>
-          <View style={styles.menuOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={[styles.menuCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                <View style={{ borderBottomWidth: 1, borderBottomColor: themeColors.border, paddingBottom: 10, marginBottom: 8 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: themeColors.textPrimary }} numberOfLines={1}>
-                    {selectedProjectForMenu?.title}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: themeColors.textSecondary }} numberOfLines={1}>
-                    ProjectSpace Options
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    const item = selectedProjectForMenu;
-                    setSelectedProjectForMenu(null);
-                    handleViewSpacePress(item);
-                  }}
-                >
-                  <Icon name="external-link" size={18} color={ORANGE} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>Enter Workspace</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    const item = selectedProjectForMenu;
-                    setSelectedProjectForMenu(null);
-                    setShareTitle(item?.title || 'ProjectSpace');
-                    setShareItemData(item);
-                    setShareSheetVisible(true);
-                  }}
-                >
-                  <Icon name="share" size={18} color={themeColors.textPrimary} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>Share Workspace</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    const id = selectedProjectForMenu?.id;
-                    setSelectedProjectForMenu(null);
-                    handleToggleBookmark(id);
-                  }}
-                >
-                  <Icon name="bookmark" size={18} color={themeColors.textPrimary} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>
-                    {selectedProjectForMenu && bookmarkedIds[selectedProjectForMenu.id] ? 'Remove Bookmark' : 'Bookmark Project'}
-                  </Text>
-                </TouchableOpacity>
-
-                {currentUserId && selectedProjectForMenu?.creator_id === currentUserId && (
-                  <TouchableOpacity
-                    style={styles.menuItem}
-                    onPress={() => {
-                      const item = selectedProjectForMenu;
-                      setSelectedProjectForMenu(null);
-                      Alert.alert(
-                        'Delete Project',
-                        'Are you sure you want to delete this project space? This action is permanent.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: async () => {
-                              try {
-                                const supabase = getSupabaseClient();
-                                await supabase.from('projects').delete().eq('id', item.id);
-                                setProjects((prev) => prev.filter((p) => p.id !== item.id));
-                              } catch (e: any) {
-                                Alert.alert('Error', e.message || 'Failed to delete project.');
-                              }
-                            },
-                          },
-                        ]
-                      );
-                    }}
-                  >
-                    <Icon name="trash" size={18} color="#EF4444" />
-                    <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Delete Project</Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setSelectedProjectForMenu(null);
-                    Alert.alert('Reported', 'Thank you for reporting this project space.');
-                  }}
-                >
-                  <Icon name="flag" size={18} color={themeColors.textMuted} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textSecondary }]}>Report Space</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+      <ReportModal
+        visible={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetTitle={reportTarget?.title}
+        targetType={'project' as any}
+        targetId={reportTarget?.id}
+      />
     </TabletContainer>
   );
 };
@@ -938,13 +920,13 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: '#0D0D0D',
-    fontSize: 19,
-    fontWeight: '900',
+    fontSize: 20,
+    fontWeight: '700',
     letterSpacing: -0.5,
   },
   createSpaceBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -959,7 +941,7 @@ const styles = StyleSheet.create({
     display: 'none',
   },
   pageSubtitle: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 12,
     lineHeight: 18,
     marginBottom: 14,
@@ -985,7 +967,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: '#0D0D0D',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '500',
   },
   tabsRow: {
@@ -1007,7 +989,7 @@ const styles = StyleSheet.create({
   },
   tabBtnText: {
     color: '#4B5563',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   tabBtnTextActive: {
@@ -1019,7 +1001,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 16,
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.08)',
     padding: 16,
@@ -1029,17 +1011,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  // Web grid gap is 20px (gap-5) and sm:p-5 padding; list gets 6px side padding so edges line up with the 16px page header
   projectCardTablet2Col: {
     flex: 1,
-    marginHorizontal: 0,
-    marginBottom: 16,
-    maxWidth: '48.8%',
+    marginHorizontal: 10,
+    marginBottom: 20,
+    padding: 20,
   },
   projectCardTablet3Col: {
     flex: 1,
-    marginHorizontal: 0,
-    marginBottom: 16,
-    maxWidth: '32.2%',
+    marginHorizontal: 10,
+    marginBottom: 20,
+    padding: 20,
   },
   columnWrapper: {
     paddingHorizontal: 16,
@@ -1057,11 +1040,26 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardPosterContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 15,
+    width: 64,
+    height: 64,
+    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#F3F4F6',
+  },
+  cardPosterContainerTablet: {
+    width: 80,
+    height: 80,
+    borderRadius: 16,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  chipTextTablet: {
+    fontSize: 12,
   },
   cardPosterImage: {
     width: '100%',
@@ -1076,13 +1074,13 @@ const styles = StyleSheet.create({
   cardInfoColumn: {
     flex: 1,
     justifyContent: 'space-between',
-    minHeight: 72,
-    paddingVertical: 1,
+    minWidth: 0,
   },
   sceneBookmarkRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   sceneBadge: {
     flexDirection: 'row',
@@ -1096,47 +1094,46 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(16, 185, 129, 0.25)',
   },
   sceneGreenDot: {
-    width: 5.5,
-    height: 5.5,
+    width: 6,
+    height: 6,
     borderRadius: 3,
     backgroundColor: '#10B981',
   },
   sceneBadgeText: {
     color: '#059669',
-    fontSize: 9,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.8,
-    textTransform: 'uppercase',
   },
   bookmarkTouch: {
     padding: 2,
   },
   projectTitle: {
     color: '#0F172A',
-    fontSize: 16.5,
+    fontSize: 16,
+    lineHeight: 22,
+    flex: 1,
     fontFamily: Platform.OS === 'ios' ? 'Lora-Bold' : 'serif',
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.3,
-    marginTop: 2,
   },
   projectLogline: {
     color: '#64748B',
-    fontSize: 11.5,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '400',
-    marginTop: 1.5,
+    marginTop: 2,
   },
   slugTagLocationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4.5,
+    gap: 6,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
     alignSelf: 'flex-start',
     marginTop: 10,
     maxWidth: '100%',
@@ -1158,40 +1155,34 @@ const styles = StyleSheet.create({
   slugTagGray: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4.5,
+    gap: 6,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   slugTagGrayText: {
     color: '#475569',
-    fontSize: 9,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    fontSize: 12,
+    fontWeight: '500',
   },
   slugTagRed: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4.5,
+    gap: 6,
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   slugTagRedText: {
-    color: '#EF4444',
-    fontSize: 9,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '500',
   },
   cardMenuCircleBtn: {
     width: 28,
@@ -1210,10 +1201,11 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     marginTop: 10,
     gap: 8,
+    flexWrap: 'wrap',
   },
   timeAgoText: {
     color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '400',
   },
   footerActionsGroup: {
@@ -1227,24 +1219,24 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 4.5,
-    borderRadius: 7,
+    borderColor: 'rgba(254, 202, 202, 0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   rolesActionBtnText: {
-    color: '#EF4444',
-    fontSize: 10.5,
-    fontWeight: '700',
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '600',
   },
   viewSpaceActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     backgroundColor: ORANGE,
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
-    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
     shadowColor: ORANGE,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -1253,8 +1245,8 @@ const styles = StyleSheet.create({
   },
   viewSpaceActionBtnText: {
     color: '#FFFFFF',
-    fontSize: 10.5,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   // ── Menu Modal ─────────────────────────────────────────────────────────────

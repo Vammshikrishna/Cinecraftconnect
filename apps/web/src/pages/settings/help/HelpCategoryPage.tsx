@@ -10,7 +10,7 @@ const HelpCategoryPage = () => {
     return (
       <>
         <HelpBack to="/settings/help" label="Help Center" />
-        <p className="text-muted-foreground">That topic does not exist.</p>
+        <p className="text-muted-foreground">That topic does not exist. <Link to="/settings/help" className="text-primary font-medium">Search the Help Center</Link></p>
       </>
     );
   }
@@ -20,6 +20,7 @@ const HelpCategoryPage = () => {
       <HelpBack to="/settings/help" label="Help Center" />
       <SettingsPageHeader title={category.title} description={category.description} />
       <SettingsSection>
+        {articles.length === 0 && <p className="px-4 py-6 text-sm text-center text-muted-foreground">No articles in this topic yet.</p>}
         {articles.map(a => <ArticleRow key={a.id} article={a} />)}
       </SettingsSection>
       <p className="text-sm text-muted-foreground">Can't find what you need? <Link to="/settings/help/new" className="text-primary font-medium">Contact support</Link></p>

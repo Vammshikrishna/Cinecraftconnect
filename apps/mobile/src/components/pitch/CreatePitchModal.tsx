@@ -16,6 +16,7 @@ import {
 import { Icon } from '../common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { getSupabaseClient } from '@cinecraft/api';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -116,6 +117,22 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
       return;
     }
 
+    const dl = deadline.trim();
+    if (dl) {
+      const real = /^\d{4}-\d{2}-\d{2}$/.test(dl) && new Date(`${dl}T00:00:00Z`).toISOString().slice(0, 10) === dl;
+      if (!real) {
+        Alert.alert('Check the deadline', 'Enter the deadline as YYYY-MM-DD, for example 2026-09-30.');
+        return;
+      }
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      // a call that is already closed on the day it is published helps nobody (an existing past deadline can stay when editing)
+      if (dl < today && dl !== (initialData?.deadline || '')) {
+        Alert.alert('Pick a deadline from today on', 'The submission deadline cannot be in the past.');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const supabase = getSupabaseClient();
@@ -164,7 +181,7 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
       onCreated?.();
       onClose();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to submit pitch call.');
+      Alert.alert('Error', friendlyError(err, 'Failed to submit pitch call.'));
     } finally {
       setSubmitting(false);
     }
@@ -189,12 +206,12 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
                 {pitchCallId ? 'Edit Pitch Call' : 'Post a Pitch Call'}
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Icon name="x" size={20} color={themeColors.textSecondary} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="x" size={20} color={themeColors.iconSecondary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* Title */}
             <Text style={[styles.label, { color: themeColors.textMuted }]}>PITCH CALL TITLE *</Text>
             <TextInput
@@ -431,6 +448,10 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
               placeholderTextColor={themeColors.textMuted}
               value={deadline}
               onChangeText={setDeadline}
+              accessibilityLabel="Submission deadline, year-month-day"
+              autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
             />
 
             <Text style={[styles.label, { color: themeColors.textMuted }]}>PRODUCER GUILD MEMBER ID (FOR VERIFICATION)</Text>
@@ -452,17 +473,17 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
             {/* Toggles */}
             <View style={[styles.switchRow, { borderBottomColor: themeColors.divider }]}>
               <Text style={[styles.switchLabel, { color: themeColors.textPrimary }]}>Open to Debut Writers</Text>
-              <Switch value={openToDebut} onValueChange={setOpenToDebut} trackColor={{ true: ORANGE }} />
+              <Switch accessibilityLabel="Open to Debut Writers" value={openToDebut} onValueChange={setOpenToDebut} trackColor={{ true: ORANGE }} />
             </View>
 
             <View style={[styles.switchRow, { borderBottomColor: themeColors.divider }]}>
               <Text style={[styles.switchLabel, { color: themeColors.textPrimary }]}>Regional Stories Welcome</Text>
-              <Switch value={regionalWelcome} onValueChange={setRegionalWelcome} trackColor={{ true: ORANGE }} />
+              <Switch accessibilityLabel="Regional Stories Welcome" value={regionalWelcome} onValueChange={setRegionalWelcome} trackColor={{ true: ORANGE }} />
             </View>
 
             <View style={[styles.switchRow, { borderBottomColor: themeColors.divider }]}>
               <Text style={[styles.switchLabel, { color: themeColors.textPrimary }]}>Require Writer NDA Signature</Text>
-              <Switch value={ndaRequired} onValueChange={setNdaRequired} trackColor={{ true: ORANGE }} />
+              <Switch accessibilityLabel="Require Writer NDA Signature" value={ndaRequired} onValueChange={setNdaRequired} trackColor={{ true: ORANGE }} />
             </View>
 
             {/* Submit Button */}
@@ -496,6 +517,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -534,8 +558,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     color: INK,
   },
   modalBody: {
@@ -543,8 +567,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   label: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 14,
@@ -588,7 +612,7 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   switchRow: {
     flexDirection: 'row',
@@ -599,7 +623,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   switchLabel: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     color: INK,
   },
@@ -616,7 +640,7 @@ const styles = StyleSheet.create({
   },
   submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

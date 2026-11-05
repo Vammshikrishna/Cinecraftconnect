@@ -1,5 +1,6 @@
 import { ReportModal } from '../../components/modals/ReportModal';
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { DropdownTrigger, DropdownItem } from '../../components/common/DropdownMenu';
+import React, { useEffect, useState, useCallback, useMemo , useRef } from 'react';
 import {
   View,
   Text,
@@ -12,12 +13,12 @@ import {
   ScrollView,
   Platform,
   InteractionManager,
-  Modal,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useFocusEffect } from '@react-navigation/native';
 import { useIsOffline } from '../../hooks/useIsOffline';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
@@ -29,11 +30,14 @@ import { useResponsive } from '../../hooks/useResponsive';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { CachedImage } from '../../components/common/CachedImage';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
 const FlashListAny = FlashList as any;
 import { useAccountType } from '../../hooks/useAccountType';
 import { useAppRole } from '../../hooks/useAppRole';
 import { CreateRoomModal } from '../../components/modals/CreateRoomModal';
 import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
+import { JoinRequestNoteModal, joinRequestUiState, sendJoinRequest } from '../../components/discussions/PrivateRoomAccess';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -41,10 +45,10 @@ const INK = '#0D0D0D';
 const CATEGORY_TAGS = ['ALL', 'CINEMA', 'SCREENWRITING', 'CINEMATOGRAPHY', 'SOUND', 'VFX', 'ACTING'];
 
 const getTimeAgo = (dateStr?: string) => {
-  if (!dateStr) return '98d ago';
+  if (!dateStr) return '';
   try {
     const diffMs = Date.now() - new Date(dateStr).getTime();
-    if (isNaN(diffMs) || diffMs < 0) return '98d ago';
+    if (isNaN(diffMs) || diffMs < 0) return '';
     const diffSecs = Math.floor(diffMs / 1000);
     const diffMins = Math.floor(diffSecs / 60);
     if (diffMins < 1) return 'just now';
@@ -56,7 +60,7 @@ const getTimeAgo = (dateStr?: string) => {
     const diffMonths = Math.floor(diffDays / 30);
     return `${diffMonths}mo ago`;
   } catch {
-    return '98d ago';
+    return '';
   }
 };
 
@@ -68,8 +72,9 @@ const RoomCardItem = React.memo(({
   isLandscape,
   isMember,
   isCallActive,
+  isPending,
   onJoinRoom,
-  onMorePress,
+  getMenuItems,
 }: {
   item: any;
   themeColors: any;
@@ -78,15 +83,18 @@ const RoomCardItem = React.memo(({
   isLandscape: boolean;
   isMember: boolean;
   isCallActive: boolean;
+  isPending?: boolean;
   onJoinRoom: (item: any) => void;
-  onMorePress: (item: any) => void;
+  getMenuItems: (item: any) => DropdownItem[];
 }) => {
   const categoryName = item.room_categories?.name || (item.tags || [])[0] || 'GENERAL';
   const hasCustomEmoji = !!item.settings?.roomEmoji;
   const isPrivate = item.room_type === 'private';
   const memberCount = item.member_count || 1;
+  // staff only see member numbers inside a room they hold audited access for
+  const { isInternal: hideCounts } = useAppRole();
   const timeAgoStr = getTimeAgo(item.created_at);
-  const ctaText = isMember ? 'Enter Room' : 'Join Discussion Room';
+  const ctaText = isMember ? 'Enter Room' : isPrivate ? (isPending ? 'Request pending' : 'Request to join') : 'Join Discussion Room';
 
   return (
     <TouchableOpacity
@@ -107,31 +115,28 @@ const RoomCardItem = React.memo(({
         <Text style={[styles.webRoomTitle, { color: themeColors.textPrimary }]} numberOfLines={2}>
           {item.title}
         </Text>
-        {isCallActive && (
-          <View style={styles.webLiveBadge}>
-            <View style={styles.webLiveDot} />
-            <Text style={styles.webLiveText}>ACTIVE</Text>
-          </View>
-        )}
-        <TouchableOpacity
+        <DropdownTrigger accessibilityLabel="More options" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           style={styles.moreMenuBtn}
-          onPress={(e) => {
-            e.stopPropagation();
-            onMorePress(item);
-          }}
+          items={() => getMenuItems(item)}
         >
-          <Icon name="more-vertical" size={16} color={themeColors.textMuted} />
-        </TouchableOpacity>
+          <Icon name="more-vertical" size={16} color={themeColors.iconMuted} />
+        </DropdownTrigger>
       </View>
 
       {/* Category & Type Row */}
       <View style={styles.webMonoBadgeRow}>
         <View style={[styles.webMonoBadgeCategory, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.12)' : '#FFF7F5', borderColor: isDark ? 'rgba(255, 75, 51, 0.25)' : '#FFE5DF' }]}>
-          <Text style={styles.webMonoBadgeCategoryText}>CATEGORY // {categoryName.toUpperCase()}</Text>
+          <Text style={styles.webMonoBadgeCategoryText}>{categoryName}</Text>
         </View>
         {isPrivate && (
           <View style={[styles.webMonoBadgePrivate, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FFFBEB', borderColor: isDark ? 'rgba(245, 158, 11, 0.25)' : '#FDE68A' }]}>
-            <Text style={styles.webMonoBadgePrivateText}>TYPE // PRIVATE</Text>
+            <Text style={styles.webMonoBadgePrivateText}>Private</Text>
+          </View>
+        )}
+        {isCallActive && (
+          <View style={styles.webLiveBadge}>
+            <View style={styles.webLiveDot} />
+            <Text style={styles.webLiveText}>Active</Text>
           </View>
         )}
       </View>
@@ -143,9 +148,11 @@ const RoomCardItem = React.memo(({
 
       {/* Members & Timestamp Row */}
       <View style={styles.webMembersRow}>
+        {!hideCounts && (
         <View style={[styles.webMembersBadge, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-          <Text style={[styles.webMembersBadgeText, { color: themeColors.textMuted }]}>MEMBERS // {memberCount}</Text>
+          <Text style={[styles.webMembersBadgeText, { color: themeColors.textMuted }]}>{memberCount} {memberCount === 1 ? 'member' : 'members'}</Text>
         </View>
+        )}
         {!!timeAgoStr && (
           <Text style={[styles.webTimeAgoText, { color: themeColors.textMuted }]}>{timeAgoStr}</Text>
         )}
@@ -155,9 +162,9 @@ const RoomCardItem = React.memo(({
       <View style={[styles.webCardDivider, { borderTopColor: themeColors.border }]} />
 
       {/* CTA Button with Web DiscussionRoomIcon SVG */}
-      <TouchableOpacity style={styles.webRoomCtaBtn} onPress={() => onJoinRoom(item)}>
-        <Icon name="DiscussionRoomIcon" size={18} color="#FFFFFF" />
-        <Text style={styles.webRoomCtaBtnText}>{ctaText}</Text>
+      <TouchableOpacity style={[styles.webRoomCtaBtn, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.16)' : 'rgba(255, 75, 51, 0.10)' }]} onPress={() => onJoinRoom(item)} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+        <Icon name="DiscussionRoomIcon" size={18} color={isDark ? '#FF7A66' : '#C4301B'} />
+        <Text style={[styles.webRoomCtaBtnText, { color: isDark ? '#FF7A66' : '#C4301B' }]}>{ctaText}</Text>
       </TouchableOpacity>
     </TouchableOpacity>
   );
@@ -181,12 +188,16 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
   const [categories, setCategories] = useState<string[]>(CATEGORY_TAGS);
   const [activeCallRoomIds, setActiveCallRoomIds] = useState<Set<string>>(new Set());
 
-  const [selectedRoomForMenu, setSelectedRoomForMenu] = useState<any | null>(null);
   const [reportRoom, setReportRoom] = useState<any | null>(null);
   const [shareSheetVisible, setShareSheetVisible] = useState(false);
   const [shareRoomData, setShareRoomData] = useState<any>(null);
+  const [pendingRoomIds, setPendingRoomIds] = useState<Set<string>>(new Set());
+  const [noteRoom, setNoteRoom] = useState<any | null>(null);
+
+  const [loadError, setLoadError] = useState(false);
 
   const fetchRooms = useCallback(async () => {
+    let listFailed = false;
     const cached = await getCache<any[]>('discussion_rooms');
     if (cached && cached.length > 0) {
       setRooms(cached);
@@ -205,6 +216,17 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
         if (memberData) {
           setJoinedRoomIds(new Set(memberData.map((m: any) => m.room_id)));
         }
+        // Rooms with a pending join request (the newest request per room decides); fails soft.
+        try {
+          const { data: reqRows } = await (supabase.from('room_join_requests' as any) as any)
+            .select('room_id, status, created_at')
+            .eq('user_id', user.id);
+          if (reqRows) {
+            const byRoom: Record<string, any[]> = {};
+            reqRows.forEach((r: any) => { (byRoom[r.room_id] = byRoom[r.room_id] || []).push(r); });
+            setPendingRoomIds(new Set(Object.keys(byRoom).filter((id) => joinRequestUiState(byRoom[id]) === 'pending')));
+          }
+        } catch { /* older database: no pending state */ }
       }
 
       // Fetch dynamic room categories
@@ -251,7 +273,7 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
 
           if (roomsData.length === 0) {
             try {
-              const { data: directData } = await (supabase.from('discussion_rooms') as any)
+              const { data: directData, error: directQueryErr } = await (supabase.from('discussion_rooms') as any)
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(50);
@@ -259,7 +281,9 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
               if (directData) {
                 roomsData = directData;
               }
+              if (directQueryErr && !directData) listFailed = true;
             } catch (directErr) {
+              listFailed = true;
               console.warn('[DiscussionRooms] Direct select error:', directErr);
             }
           }
@@ -300,24 +324,54 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
         }
       );
     } catch (e) {
+      listFailed = true;
       console.warn('[DiscussionRooms] Error fetching rooms:', e);
     } finally {
+      setLoadError(listFailed);
       setLoading(false);
     }
   }, []);
 
+  // One join / request at a time: a second tap on a slow link must not fire a second upsert.
+  const joiningRef = useRef(false);
   const handleJoinRoom = async (item: any) => {
-    if (currentUserId && !joinedRoomIds.has(item.id)) {
+    if (joiningRef.current) return;
+    joiningRef.current = true;
+    try {
+      await handleJoinRoomInner(item);
+    } finally {
+      joiningRef.current = false;
+    }
+  };
+
+  const handleJoinRoomInner = async (item: any) => {
+    const isPrivateRoom = item.is_private || item.room_type === 'private';
+    const isRoomOwner = !!currentUserId && (item.creator_id === currentUserId || item.created_by === currentUserId);
+    // Staff only observe (same as the web): they are never added as members. Fans are viewers and are not enrolled either.
+    if (currentUserId && !isInternal && !isFan && !isRoomOwner && !joinedRoomIds.has(item.id)) {
+      const supabase = getSupabaseClient() as any;
+      if (isPrivateRoom) {
+        // A private room needs the admin to let the person in: send a request instead of joining.
+        if (pendingRoomIds.has(item.id)) {
+          Alert.alert('Request pending', 'Your request to join this private room is waiting for the room admin.');
+          return;
+        }
+        setNoteRoom(item);
+        return;
+      }
       try {
-        const supabase = getSupabaseClient();
-        await (supabase.from('room_members' as any) as any)
+        const { error: joinError } = await supabase
+          .from('room_members')
           .upsert({ room_id: item.id, user_id: currentUserId, role: 'member' }, { onConflict: 'room_id,user_id' });
+        if (joinError) throw joinError;
         setJoinedRoomIds((prev) => new Set(prev).add(item.id));
         setRooms((prev) =>
           prev.map((r) => (r.id === item.id ? { ...r, member_count: (r.member_count || 0) + 1 } : r))
         );
       } catch (err) {
         console.warn('[DiscussionRooms] Join room error:', err);
+        Alert.alert('Could not join the room', friendlyError(err, 'Please try again.'));
+        return;
       }
     }
     navigation.navigate('DiscussionRoomDetail', {
@@ -449,9 +503,32 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
     });
   }, [rooms, currentUserId, joinedRoomIds, isFan, searchQuery, selectedCategory]);
 
-  const handleMorePress = useCallback((roomItem: any) => {
-    setSelectedRoomForMenu(roomItem);
-  }, []);
+  const handleMenuItems = useCallback((item: any): DropdownItem[] => [
+    { label: 'Enter Room', icon: 'DiscussionRoomIcon', onPress: () => handleJoinRoom(item) },
+    { label: 'Share Room Link', icon: 'share', onPress: () => { setShareRoomData(item); setShareSheetVisible(true); } },
+    {
+      hidden: !(currentUserId && item?.creator_id === currentUserId),
+      label: 'Delete Room', icon: 'trash', destructive: true,
+      onPress: () => Alert.alert('Delete Room', 'Are you sure you want to delete this discussion room?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const supabase = getSupabaseClient();
+              const { error: delError } = await supabase.from('discussion_rooms').delete().eq('id', item.id);
+              if (delError) throw delError;
+              setRooms((prev) => prev.filter((r) => r.id !== item.id));
+            } catch (e: any) {
+              Alert.alert('Error', friendlyError(e, 'Failed to delete room.'));
+            }
+          },
+        },
+      ]),
+    },
+    { label: 'Report Room', icon: 'flag', destructive: true, onPress: () => setReportRoom(item) },
+  ], [currentUserId, handleJoinRoom]);
 
   const renderRoom = useCallback(
     ({ item }: { item: any }) => {
@@ -467,16 +544,17 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
           item={item}
           isMember={isMember}
           isCallActive={isCallActive}
+          isPending={pendingRoomIds.has(item.id)}
           themeColors={themeColors}
           isDark={isDark}
           isTablet={isTablet}
           isLandscape={isLandscape}
           onJoinRoom={handleJoinRoom}
-          onMorePress={handleMorePress}
+          getMenuItems={handleMenuItems}
         />
       );
     },
-    [currentUserId, joinedRoomIds, activeCallRoomIds, themeColors, isDark, isTablet, isLandscape, handleJoinRoom, handleMorePress]
+    [currentUserId, joinedRoomIds, pendingRoomIds, activeCallRoomIds, themeColors, isDark, isTablet, isLandscape, handleJoinRoom, handleMenuItems]
   );
 
   return (
@@ -497,7 +575,7 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
           <View style={styles.pageHeaderSection}>
             <View style={styles.pageTitleGroup}>
               <Icon name="DiscussionRoomIcon" size={24} color={ORANGE} />
-              <Text style={styles.pageTitle}>Discussion Rooms</Text>
+              <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Discussion Rooms</Text>
             </View>
           </View>
           <View style={isTablet ? styles.skeletonTabletRow : { paddingHorizontal: 16, gap: 14 }}>
@@ -510,6 +588,8 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
         </ScrollView>
       ) : (
         <FlashListAny
+          keyboardShouldPersistTaps="handled"
+          {...scrollChrome}
           key={`discussion-rooms-grid-${numColumns}`}
           data={filtered}
           renderItem={renderRoom}
@@ -523,16 +603,16 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
               <View style={styles.pageHeaderRow}>
                 <View style={styles.pageTitleGroup}>
                   <Icon name="DiscussionRoomIcon" size={24} color={ORANGE} />
-                  <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Discussion Rooms</Text>
+                  <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Discussion Rooms</Text>
                   {isInternal && (
                     <View style={{ backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF0ED', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: isDark ? 'rgba(255, 75, 51, 0.3)' : '#FFE5DF', marginLeft: 6 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: ORANGE }}>OBSERVATION MODE</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: ORANGE }}>OBSERVATION MODE</Text>
                     </View>
                   )}
                 </View>
 
                 {!isFan && !isInternal && (
-                  <TouchableOpacity
+                  <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.createRoomBtn}
                     onPress={() => setShowCreate(true)}
                     accessibilityLabel="Create Room"
@@ -542,20 +622,30 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
                 )}
               </View>
 
-              <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+              <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                 Join real-time creative huddles, craft exchanges, and production debates.
               </Text>
 
               {/* Search Bar */}
               <View style={[styles.searchBox, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                <Icon name="search" size={16} color="#9CA3AF" />
-                <TextInput
+                <Icon name="search" size={16} color={themeColors.iconMuted} />
+                <TextInput returnKeyType="search" accessibilityLabel="Search craft discussion rooms"
                   style={[styles.searchInput, { color: themeColors.textPrimary }]}
                   placeholder="Search craft discussion rooms..."
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={themeColors.textMuted}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />
+                {searchQuery ? (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Icon name="x" size={16} color={themeColors.iconMuted} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {/* Category Pills */}
@@ -602,10 +692,12 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
           ListEmptyComponent={
             isOffline ? (
               <OfflineEmptyState />
+            ) : loadError && rooms.length === 0 ? (
+              <LoadErrorState message="Could not load discussion rooms. Check your connection and try again." onRetry={() => { setLoading(true); fetchRooms(); }} />
             ) : (
               <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 }}>
-                <Icon name="message-circle" size={36} color={themeColors.textMuted} />
-                <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '800' }}>No Rooms Found</Text>
+                <Icon name="message-circle" size={36} color={themeColors.iconMuted} />
+                <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '700' }}>No Rooms Found</Text>
                 <Text style={{ color: themeColors.textSecondary, fontSize: 13, textAlign: 'center' }}>Try adjusting your filters or create a new room.</Text>
               </View>
             )
@@ -637,106 +729,30 @@ export const DiscussionRoomsScreen = ({ navigation }: { navigation: any }) => {
         onCreated={fetchRooms}
       />
 
-      {/* Discussion Room Card Options Modal */}
-      <Modal
-        visible={!!selectedRoomForMenu}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setSelectedRoomForMenu(null)}
-      >
-        <TouchableWithoutFeedback onPress={() => setSelectedRoomForMenu(null)}>
-          <View style={styles.menuOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={[styles.menuCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                <View style={{ borderBottomWidth: 1, borderBottomColor: themeColors.border, paddingBottom: 10, marginBottom: 8 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: themeColors.textPrimary }} numberOfLines={1}>
-                    {selectedRoomForMenu?.title}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: themeColors.textSecondary }} numberOfLines={1}>
-                    Discussion Room Options
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    const item = selectedRoomForMenu;
-                    setSelectedRoomForMenu(null);
-                    handleJoinRoom(item);
-                  }}
-                >
-                  <Icon name="DiscussionRoomIcon" size={18} color={ORANGE} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>Enter Room</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    const item = selectedRoomForMenu;
-                    setSelectedRoomForMenu(null);
-                    setShareRoomData(item);
-                    setShareSheetVisible(true);
-                  }}
-                >
-                  <Icon name="share" size={18} color={themeColors.textPrimary} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textPrimary }]}>Share Room Link</Text>
-                </TouchableOpacity>
-
-                {currentUserId && selectedRoomForMenu?.creator_id === currentUserId && (
-                  <TouchableOpacity
-                    style={styles.menuItem}
-                    onPress={() => {
-                      const item = selectedRoomForMenu;
-                      setSelectedRoomForMenu(null);
-                      Alert.alert(
-                        'Delete Room',
-                        'Are you sure you want to delete this discussion room?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: async () => {
-                              try {
-                                const supabase = getSupabaseClient();
-                                await supabase.from('discussion_rooms').delete().eq('id', item.id);
-                                setRooms((prev) => prev.filter((r) => r.id !== item.id));
-                              } catch (e: any) {
-                                Alert.alert('Error', e.message || 'Failed to delete room.');
-                              }
-                            },
-                          },
-                        ]
-                      );
-                    }}
-                  >
-                    <Icon name="trash" size={18} color="#EF4444" />
-                    <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Delete Room</Text>
-                  </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setReportRoom(selectedRoomForMenu);
-                    setSelectedRoomForMenu(null);
-                  }}
-                >
-                  <Icon name="flag" size={18} color={themeColors.textMuted} />
-                  <Text style={[styles.menuItemText, { color: themeColors.textSecondary }]}>Report Room</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
       <ReportModal
         visible={!!reportRoom}
         onClose={() => setReportRoom(null)}
         targetTitle={reportRoom?.title || 'this room'}
         targetType="room"
         targetId={reportRoom?.id}
+      />
+
+      <JoinRequestNoteModal
+        visible={!!noteRoom}
+        roomTitle={noteRoom?.title || ''}
+        onCancel={() => setNoteRoom(null)}
+        onSend={async (note) => {
+          const room = noteRoom;
+          if (!room || !currentUserId) return;
+          try {
+            const r = await sendJoinRequest(room.id, currentUserId, note);
+            setPendingRoomIds((prev) => new Set(prev).add(room.id));
+            setNoteRoom(null);
+            Alert.alert(r === 'already' ? 'Request pending' : 'Request sent', r === 'already' ? 'You already have a pending request for this room.' : 'Your request to join this private room has been sent to the admin.');
+          } catch (err) {
+            Alert.alert('Could not send the request', friendlyError(err, 'Please try again.'));
+          }
+        }}
       />
 
       {/* Universal Share Sheet */}
@@ -778,19 +794,19 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 18.5,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   pageSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 12,
   },
   createRoomBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -805,7 +821,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 12,
@@ -814,7 +830,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: INK,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   categoryScroll: {
     marginBottom: 4,
@@ -834,7 +850,7 @@ const styles = StyleSheet.create({
   },
   categoryChipText: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   categoryChipTextActive: {
@@ -856,12 +872,10 @@ const styles = StyleSheet.create({
   },
   webRoomCardTablet: {
     flex: 1,
-    marginHorizontal: 0,
+    marginHorizontal: 8,
     marginBottom: 16,
-    maxWidth: '48.8%',
   },
   webRoomCardTablet3Col: {
-    maxWidth: '32.2%',
   },
   columnWrapper: {
     paddingHorizontal: 16,
@@ -887,7 +901,7 @@ const styles = StyleSheet.create({
   webRoomTitle: {
     flex: 1,
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: Platform.OS === 'ios' ? 'Lora-Bold' : 'serif',
     lineHeight: 22,
@@ -915,8 +929,8 @@ const styles = StyleSheet.create({
   },
   webLiveText: {
     color: ORANGE,
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   webMonoBadgeRow: {
     flexDirection: 'row',
@@ -935,10 +949,9 @@ const styles = StyleSheet.create({
   },
   webMonoBadgeCategoryText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.6,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   webMonoBadgePrivate: {
     backgroundColor: '#FFFBEB',
@@ -950,18 +963,17 @@ const styles = StyleSheet.create({
   },
   webMonoBadgePrivateText: {
     color: '#D97706',
-    fontSize: 9.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.6,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   webTimeAgoText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
     fontWeight: '500',
   },
   webRoomDesc: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#64748B',
     lineHeight: 18,
     marginBottom: 12,
@@ -985,11 +997,10 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   webMembersBadgeText: {
-    fontSize: 9.5,
+    fontSize: 12,
     color: '#64748B',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '800',
-    letterSpacing: 0.6,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   webCardDivider: {
     borderTopWidth: 1,
@@ -1008,7 +1019,7 @@ const styles = StyleSheet.create({
   webRoomCtaBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
@@ -1020,6 +1031,9 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   modalHeaderRow: {
     flexDirection: 'row',
@@ -1029,12 +1043,12 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   inputLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 8,
@@ -1071,7 +1085,7 @@ const styles = StyleSheet.create({
   modalCancelText: {
     color: '#64748B',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   modalSubmitBtn: {
     flex: 1,
@@ -1084,7 +1098,7 @@ const styles = StyleSheet.create({
   modalSubmitText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   menuOverlay: {
     flex: 1,

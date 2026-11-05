@@ -119,7 +119,7 @@ export const CineSpinner: React.FC<CineSpinnerProps> = ({
         ]}
       >
         <Image
-          source={require('../../assets/logo.jpg')}
+          source={require('../../assets/logo-512.png')}
           style={{
             width: imageDimension,
             height: imageDimension,
@@ -211,7 +211,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   loaderSubtitle: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontFamily: 'Lora-Regular',
     color: '#9CA3AF',
     textAlign: 'center',

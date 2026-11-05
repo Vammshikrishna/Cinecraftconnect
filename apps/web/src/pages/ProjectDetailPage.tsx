@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useAppRole } from '@/hooks/useAppRole';
+import { useAccountType } from '@/hooks/useAccountType';
 import { 
   MapPin, 
   Calendar, 
@@ -19,7 +19,9 @@ import {
 import { BackButton } from '@/components/common/BackButton';
 import { ProjectApplicationDialog } from '@/components/projects/ProjectApplicationDialog';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
-import { Share2 } from 'lucide-react';
+import { ShareIcon } from '@/components/icons/ShareIcon';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { LoadError } from '@/components/settings/LoadError';
 
 interface Project {
   id: string;
@@ -39,10 +41,11 @@ interface Project {
 
 const ProjectDetailPage = () => {
   const { projectId } = useParams();
-  const { push } = useAppNavigation();
-  const { user } = useAuth();
+  const { push, replace } = useAppNavigation();
+  const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const { isInternal } = useAppRole();
+  const { isFan } = useAccountType();
   
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,8 +61,12 @@ const ProjectDetailPage = () => {
     }
   }, [projectId]);
 
+  const [loadFailed, setLoadFailed] = useState(false);
+
   const fetchProject = async () => {
     setLoading(true);
+    setLoadFailed(false);
+    let redirecting = false;
     try {
       const { data, error } = await supabase
         .from('projects')
@@ -67,12 +74,17 @@ const ProjectDetailPage = () => {
         .eq('id', projectId || '')
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // no row means it does not exist; any other error is a failed load
+        if (error.code === 'PGRST116') { setProject(null); return; }
+        throw error;
+      }
       setProject(data);
 
       // Check for membership & application
       if (user && projectId) {
         // 1. Check Space ID first (projects vs project_spaces)
+        let appliedViaSpace = false;
         const { data: spaceData } = await supabase
           .from('project_spaces')
           .select('id')
@@ -80,6 +92,14 @@ const ProjectDetailPage = () => {
           .maybeSingle();
 
           if (spaceData) {
+            // applications are saved as join requests on the space (ProjectApplicationDialog)
+            const { data: joinReq } = await supabase
+              .from('project_space_join_requests' as any)
+              .select('id')
+              .eq('project_space_id', spaceData.id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+            appliedViaSpace = !!joinReq;
             const { data: memberData } = await supabase
               .from('project_space_members')
               .select('role')
@@ -94,7 +114,9 @@ const ProjectDetailPage = () => {
 
             // Auto-redirect if member or owner
             if (isMemberRes || isOwner || isInternal) {
-              push(`/projects/${projectId}/space`, { noScroll: true });
+              // replace, not push: with push the back button returned to this page, which redirected again (a trap)
+              redirecting = true;
+              replace(`/projects/${projectId}/space`, { noScroll: true });
               return; // Exit early
             }
           }
@@ -108,13 +130,14 @@ const ProjectDetailPage = () => {
         .maybeSingle();
 
       if (appError) console.error('Error checking application:', appError);
-      setHasApplied(!!appData);
+      setHasApplied(appliedViaSpace || !!appData);
       }
     } catch (error) {
       console.error('Error fetching project:', error);
-      toast({ title: 'Error', description: 'Failed to load project details', variant: 'destructive' });
+      setLoadFailed(true);
     } finally {
-      setLoading(false);
+      // keep the skeleton while we hand over to the space, so the detail page never flashes
+      if (!redirecting) setLoading(false);
     }
   };
 
@@ -127,11 +150,18 @@ const ProjectDetailPage = () => {
     }
   };
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><LoadingSpinner size="lg" /></div>;
-
+  if (loading) return <ScreenSkeleton variant="detail" />;
+  if (!project && loadFailed) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center flex-col gap-4 px-4">
+        <LoadError title="Could not load this project" onRetry={() => fetchProject()} />
+        <Button variant="outline" onClick={() => push('/projects', { noScroll: true })}>View All Projects</Button>
+      </div>
+    );
+  }
   if (!project) {
     return (
-      <div className="flex h-screen items-center justify-center flex-col gap-4">
+      <div className="flex h-dvh items-center justify-center flex-col gap-4">
         <h2 className="text-2xl font-bold">Project Not Found</h2>
         <Button onClick={() => push('/projects', { noScroll: true })}>View All Projects</Button>
       </div>
@@ -141,8 +171,8 @@ const ProjectDetailPage = () => {
   const isOwner = user?.id === project.creator_id;
 
   return (
-    <div className="min-h-screen bg-background pt-24 pb-40">
-      <div className="max-w-4xl mx-auto px-4 md:px-8">
+    <div className="min-h-dvh bg-background pt-24 pb-40">
+      <div className="max-w-[1152px] mx-auto px-4 md:px-8">
         <BackButton className="mb-6" to="/projects" />
 
         <div className="glass-card p-6 md:p-10 space-y-8">
@@ -151,14 +181,14 @@ const ProjectDetailPage = () => {
               <Badge variant={getStatusVariant(project.status)} className="capitalize px-4 py-1 text-sm font-medium">
                 {project.status || 'Planning'}
               </Badge>
-              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-gradient leading-tight">
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gradient leading-tight">
                 {project.title}
               </h1>
             </div>
             
             <div className="flex flex-wrap gap-3">
-              <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
-                <Share2 className="h-4 w-4" />
+              <Button aria-label="Share" variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                <ShareIcon className="h-4 w-4" />
               </Button>
               {(isOwner || isMember || isInternal) ? (
                 <Button 
@@ -168,16 +198,16 @@ const ProjectDetailPage = () => {
                   <Briefcase className="mr-2 h-4 w-4" />
                   {isOwner ? 'Manage Workspace' : isInternal ? 'Enter Workspace (Staff)' : 'Enter Workspace'}
                 </Button>
-              ) : (
+              ) : isFan ? null : (
                 <Button 
                   className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
-                  disabled={hasApplied}
+                  // the page is public, so it can draw before the sign-in check finishes: do not tell a signed-in person to sign in
+                  disabled={hasApplied || authLoading}
                   onClick={() => {
                     if (!user) {
                       toast({
                         title: 'Sign in required',
                         description: 'Redirecting to sign in page...',
-                        variant: 'destructive'
                       });
                       push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
                       return;
@@ -201,19 +231,19 @@ const ProjectDetailPage = () => {
                   <Film className="h-5 w-5 text-primary" />
                   About the Project
                 </h3>
-                <p className="text-muted-foreground leading-relaxed">
+                <p className="text-muted-foreground leading-relaxed whitespace-pre-line break-words">
                   {project.description || 'No description provided.'}
                 </p>
               </section>
 
-              <div className="space-y-4">
+              {!!project.genre?.length && <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Genres</h3>
                 <div className="flex flex-wrap gap-2">
                   {project.genre?.map(g => (
                     <Badge key={g} variant="secondary" className="bg-secondary/50">{g}</Badge>
                   ))}
                 </div>
-              </div>
+              </div>}
             </div>
 
             <div className="glass-card p-6 space-y-6 border-primary/10">
@@ -251,14 +281,14 @@ const ProjectDetailPage = () => {
                 </div>
               </div>
 
-              <div className="space-y-3 pt-4 border-t border-border/50">
+              {!!project.required_roles?.length && <div className="space-y-3 pt-4 border-t border-border/50">
                 <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Seeking Roles</h4>
                 <div className="flex flex-wrap gap-2">
                   {project.required_roles?.map(role => (
                     <Badge key={role} className="bg-primary/5 text-primary border border-primary/20">{role}</Badge>
                   ))}
                 </div>
-              </div>
+              </div>}
             </div>
           </div>
         </div>

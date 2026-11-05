@@ -1,5 +1,5 @@
 import { Star, Users, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
 import { useAppRole } from '@/hooks/useAppRole';
@@ -48,18 +48,30 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
         push(`/content/${contentType}/${rating.id}`);
     };
 
+    const cardKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            handleCardClick();
+        }
+    };
+    const starLabel = (star: number) => `Rate ${rating.title} ${star} of 5`;
+
     if (variant === 'vertical') {
         return (
             <div
                 onClick={handleCardClick}
-                className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 hover:shadow-xl group flex flex-col h-full w-full cursor-pointer"
+                onKeyDown={cardKeyDown}
+                role="link"
+                tabIndex={0}
+                aria-label={rating.title}
+                className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 transition-[border-color,box-shadow] duration-300 hover:border-primary/50 hover:shadow-xl group flex flex-col h-full w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
                 <div className="aspect-[2/3] w-full relative overflow-hidden">
                     {rating.poster_url ? (
                         <LazyImage
                             src={rating.poster_url}
                             alt={rating.title}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            className="w-full h-full object-cover transition-transform duration-300 ease-out [@media(hover:hover)]:group-hover:scale-105"
                         />
                     ) : (
                         <div className="w-full h-full bg-muted flex items-center justify-center text-muted-foreground">
@@ -69,7 +81,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
 
                     <div className="absolute top-2 left-2 flex flex-col gap-1.5">
                         {rating.app_rating && rating.app_rating > 0 && (
-                            <div className="bg-primary/90 backdrop-blur-sm text-primary-foreground text-xs px-2 py-1 rounded flex items-center gap-1 w-fit font-semibold shadow-lg">
+                            <div className="bg-primary/90 text-primary-foreground text-xs px-2 py-1 rounded flex items-center gap-1 w-fit font-semibold shadow-lg">
                                 <Users className="h-3.5 w-3.5" />
                                 <span>{rating.app_rating.toFixed(1)}</span>
                             </div>
@@ -83,8 +95,8 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                                 e.stopPropagation();
                                 onDismiss(rating.id);
                             }}
-                            className="absolute top-2 right-2 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
-                            title="Dismiss suggestion"
+                            className="absolute top-2 right-2 z-30 h-9 w-9 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/80 hover:text-white transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+                            title="Dismiss suggestion" aria-label="Dismiss suggestion"
                         >
                             <X size={14} strokeWidth={3} />
                         </button>
@@ -113,7 +125,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                         onClick={(e) => e.stopPropagation()}
                     >
                         {[1, 2, 3, 4, 5].map((star) => (
-                            <button
+                            <button aria-label={starLabel(star)}
                                 key={star}
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -121,8 +133,8 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                                 }}
                                 onMouseEnter={() => !isInternal && setHoverRating(star)}
                                 className={cn(
-                                    "focus:outline-none transition-transform p-0.5",
-                                    !isInternal ? "hover:scale-125 cursor-pointer" : "cursor-not-allowed opacity-50"
+                                    "p-2 -m-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-transform duration-150",
+                                    !isInternal ? "[@media(hover:hover)]:hover:scale-125 active:scale-90 cursor-pointer" : "cursor-not-allowed opacity-50"
                                 )}
                                 disabled={!onRate || isInternal}
                             >
@@ -146,7 +158,11 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
     return (
         <div
             onClick={handleCardClick}
-            className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 hover:shadow-lg group flex flex-col h-full cursor-pointer"
+            onKeyDown={cardKeyDown}
+            role="link"
+            tabIndex={0}
+            aria-label={rating.title}
+            className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 transition-[border-color,box-shadow] duration-300 hover:border-primary/50 hover:shadow-lg group flex flex-col h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-500" />
 
@@ -165,7 +181,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                     )}
                     <div className="absolute top-2 left-2 flex flex-col gap-1">
                         {rating.app_rating && rating.app_rating > 0 && (
-                            <div className="bg-primary/90 backdrop-blur-sm text-primary-foreground text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 w-fit">
+                            <div className="bg-primary/90 text-primary-foreground text-[12px] px-1.5 py-0.5 rounded flex items-center gap-1 w-fit">
                                 <Users className="h-3 w-3" />
                                 <span>App {rating.app_rating.toFixed(1)}</span>
                             </div>
@@ -180,8 +196,8 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                             e.stopPropagation();
                             onDismiss(rating.id);
                         }}
-                        className="absolute top-3 right-3 z-30 h-7 w-7 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-black/5 dark:border-white/5"
-                        title="Dismiss suggestion"
+                        className="absolute top-3 right-3 z-30 h-9 w-9 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 backdrop-blur-md border border-black/5 dark:border-white/5"
+                        title="Dismiss suggestion" aria-label="Dismiss suggestion"
                     >
                         <X size={14} strokeWidth={3} />
                     </button>
@@ -194,8 +210,8 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                                 {rating.title}
                             </h3>
                             {language && (
-                                <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded shrink-0">
-                                    LANG // {language}
+                                <div className="text-[12px] font-medium text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded shrink-0">
+                                    {language}
                                 </div>
                             )}
                         </div>
@@ -210,7 +226,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                                 {rating.user_rating ? "Your Rating" : "Rate this"}
                             </span>
                             {rating.created_at && (
-                                <span className="text-[10px] text-muted-foreground">
+                                <span className="text-[12px] text-muted-foreground">
                                     {new Date(rating.created_at).getFullYear()}
                                 </span>
                             )}
@@ -222,7 +238,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                             onClick={(e) => e.stopPropagation()}
                         >
                             {[1, 2, 3, 4, 5].map((star) => (
-                                <button
+                                <button aria-label={starLabel(star)}
                                     key={star}
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -230,8 +246,8 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                                     }}
                                     onMouseEnter={() => !isInternal && setHoverRating(star)}
                                     className={cn(
-                                        "focus:outline-none transition-transform",
-                                        !isInternal ? "hover:scale-110 cursor-pointer" : "cursor-not-allowed opacity-50"
+                                        "p-2 -m-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-transform duration-150",
+                                        !isInternal ? "[@media(hover:hover)]:hover:scale-110 active:scale-90 cursor-pointer" : "cursor-not-allowed opacity-50"
                                     )}
                                     disabled={!onRate || isInternal}
                                 >

@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { EQUIPMENT_CATEGORIES, LOCATION_CATEGORIES, VENDOR_CATEGORIES } from '@/types/marketplace';
+import { friendlyError } from '@cinecraft/core';
 
 interface Alert { id: string; kind: 'gear' | 'service'; category: string | null; keyword: string | null; max_price: number | null }
 const db = supabase as any;
@@ -43,6 +44,10 @@ export const GearAlertsDialog = ({ triggerButton }: { triggerButton?: React.Reac
 
   const create = async () => {
     if (!user) return;
+    if (form.max_price && !(Number(form.max_price) > 0)) {
+      toast({ title: 'Check the maximum price', description: 'Enter an amount above 0, or leave it empty.', variant: 'destructive' });
+      return;
+    }
     if (!form.keyword.trim() && form.category === ANY && !form.max_price) {
       toast({ title: 'Add something to match', description: 'Enter a keyword, a category or a maximum price.', variant: 'destructive' });
       return;
@@ -57,7 +62,7 @@ export const GearAlertsDialog = ({ triggerButton }: { triggerButton?: React.Reac
     });
     setSaving(false);
     if (error) {
-      toast({ title: 'Could not save the alert', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not save the alert', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     toast({ title: 'Alert saved', description: form.kind === 'service' ? "We'll notify you when a matching service is added." : "We'll notify you when matching gear is listed." });
@@ -95,7 +100,7 @@ export const GearAlertsDialog = ({ triggerButton }: { triggerButton?: React.Reac
             alerts.map((a) => (
               <div key={a.id} className="flex items-center gap-3 rounded-2xl border border-border/60 p-3">
                 <p className="flex-1 text-sm font-bold min-w-0 truncate">{describe(a)}</p>
-                <Button variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => remove(a)}><Trash2 className="w-4 h-4" /></Button>
+                <Button aria-label="Delete" variant="ghost" size="icon" className="text-red-500 hover:bg-red-500/10" onClick={() => remove(a)}><Trash2 className="w-4 h-4" /></Button>
               </div>
             ))
           )}
@@ -105,7 +110,7 @@ export const GearAlertsDialog = ({ triggerButton }: { triggerButton?: React.Reac
           <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">New alert</p>
           <div className="grid grid-cols-2 gap-2">
             {(['gear', 'service'] as const).map((k) => (
-              <Button key={k} type="button" variant={form.kind === k ? 'default' : 'outline'} className="rounded-xl h-9 text-xs font-bold" onClick={() => setForm({ ...form, kind: k, category: ANY })}>
+              <Button key={k} type="button" variant={form.kind === k ? 'default' : 'outline'} className="rounded-xl h-10 md:h-9 text-xs font-bold" onClick={() => setForm({ ...form, kind: k, category: ANY })}>
                 {k === 'gear' ? 'Gear & locations' : 'Vendor services'}
               </Button>
             ))}

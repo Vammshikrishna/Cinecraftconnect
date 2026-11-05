@@ -37,7 +37,7 @@ export const ConnectNoteModal = ({ visible, onClose, name, onSend, defaultNote }
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.backdrop}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <View style={[s.sheet, { backgroundColor: T.bgCard }]}>
-          <Text style={{ color: T.textPrimary, fontSize: 17, fontWeight: '900' }}>Connect with {name}</Text>
+          <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700' }}>Connect with {name}</Text>
           <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4, marginBottom: 12 }}>
             Add a short note so they know why you are reaching out (optional).
           </Text>
@@ -50,14 +50,14 @@ export const ConnectNoteModal = ({ visible, onClose, name, onSend, defaultNote }
             maxLength={200}
             multiline
           />
-          <Text style={{ color: T.textMuted, fontSize: 11, alignSelf: 'flex-end', marginTop: 4 }}>{note.length}/200</Text>
+          <Text style={{ color: T.textMuted, fontSize: 12, alignSelf: 'flex-end', marginTop: 4 }}>{note.length}/200</Text>
 
           <TouchableOpacity
             onPress={() => send(true)}
             disabled={sending || !note.trim()}
             style={[s.primary, (sending || !note.trim()) && { opacity: 0.5 }]}
           >
-            {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Send with note</Text>}
+            {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Send with note</Text>}
           </TouchableOpacity>
           <TouchableOpacity onPress={() => send(false)} disabled={sending} style={{ alignSelf: 'center', paddingVertical: 12 }}>
             <Text style={{ color: T.textSecondary, fontWeight: '700' }}>Send without a note</Text>
@@ -70,7 +70,7 @@ export const ConnectNoteModal = ({ visible, onClose, name, onSend, defaultNote }
 
 const s = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
   input: { minHeight: 90, borderWidth: 1, borderRadius: 12, padding: 12, textAlignVertical: 'top' },
   primary: { height: 46, borderRadius: 12, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
 });

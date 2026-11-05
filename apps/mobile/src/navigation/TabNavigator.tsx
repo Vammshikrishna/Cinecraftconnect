@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -9,6 +10,7 @@ import {
   DeviceEventEmitter,
   InteractionManager,
 } from 'react-native';
+import type { I18nKey } from '@cinecraft/core';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { FeedScreen } from '../screens/feed/FeedScreen';
 import { ProjectsScreen } from '../screens/projects/ProjectsScreen';
@@ -19,6 +21,7 @@ import { Icon } from '../components/common/Icon';
 import { useResponsive } from '../hooks/useResponsive';
 import { useUserSettings } from '../hooks/useUserSettings';
 import { useAccountType } from '../hooks/useAccountType';
+import { useT } from '../hooks/useT';
 
 import { PitchScreen } from '../screens/pitch/PitchScreen';
 import { RatingsScreen } from '../screens/ratings/RatingsScreen';
@@ -29,36 +32,49 @@ import { VendorsScreen } from '../screens/vendors/VendorsScreen';
 import { CompanyPagesScreen } from '../screens/pages/CompanyPagesScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { PublicProfileScreen } from '../screens/profile/PublicProfileScreen';
+import { withTabletColumn } from '../components/common/TabletContainer';
+import { getCurrentUserIdSync } from '../services/offlineCache';
 
 const Tab = createBottomTabNavigator();
+// on a tablet the profile sits in a centred column; on a phone it is unchanged
+// The Profile tab shows MY profile. Some screens (PitchDetail, PitchScreen) call navigate('Profile', { userId }) for another person:
+// when a userId other than mine is given, show that person's public profile instead of my own.
+const ProfileScreenTablet = (props: any) => {
+  const targetId = props?.route?.params?.userId;
+  const me = getCurrentUserIdSync();
+  if (targetId && targetId !== me) {
+    return <PublicProfileScreen {...props} />;
+  }
+  return <ProfileScreen {...props} />;
+};
 let lastHomePress = 0;
 
 const DummyScreen = () => <View style={{ flex: 1, backgroundColor: 'transparent' }} />;
 
 interface TabNavigatorProps {
   navigation: any;
-  hasUnreadDiscussions?: boolean;
-  hasUnreadProjects?: boolean;
 }
 
-const moreMenuItems = [
-  { label: 'Pitch', iconName: 'Lightbulb', route: 'Pitch' },
-  { label: 'Ratings', iconName: 'Star', route: 'Ratings' },
-  { label: 'Announcements', iconName: 'Megaphone', route: 'Announcements' },
-  { label: 'Marketplace', iconName: 'ShoppingBag', route: 'Marketplace' },
-  { label: 'Pages', iconName: 'StudioPageIcon', route: 'CompanyPages' },
+const moreMenuItems: { label: string; key: I18nKey; iconName: string; route: string }[] = [
+  { label: 'Pitch', key: 'nav.pitch', iconName: 'Lightbulb', route: 'Pitch' },
+  { label: 'Ratings', key: 'nav.ratings', iconName: 'Star', route: 'Ratings' },
+  { label: 'Announcements', key: 'nav.announcements', iconName: 'Megaphone', route: 'Announcements' },
+  { label: 'Marketplace', key: 'nav.marketplace', iconName: 'ShoppingBag', route: 'Marketplace' },
+  { label: 'Pages', key: 'nav.pages', iconName: 'StudioPageIcon', route: 'CompanyPages' },
 ];
 
 export const TabNavigator: React.FC<TabNavigatorProps> = ({
   navigation,
-  hasUnreadDiscussions = false,
-  hasUnreadProjects = false,
 }) => {
   const { isFan } = useAccountType();
+  const menuItems = moreMenuItems;
+  const { t } = useT();
   const [moreMenuVisible, setMoreMenuVisible] = useState(false);
   const { isTablet } = useResponsive();
+  // an explicit tab bar height does not include the bottom inset (gesture bar / 3-button navigation), so add it
+  const bottomInset = useSafeAreaInsets().bottom;
   const { themeColors, isDark } = useUserSettings();
-  const inactiveIconColor = isDark ? '#94A3B8' : '#6B7280';
+  const inactiveIconColor = isDark ? '#94A3B8' : '#64748B';
 
   // Memoized tab icons to prevent re-creation and touch responder drops
   const renderHomeIcon = useCallback(
@@ -84,11 +100,10 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
           size={22}
           color={focused ? '#FF4B33' : inactiveIconColor}
         />
-        {hasUnreadDiscussions && <View style={styles.notifDot} />}
         {focused && <View style={styles.activeDot} />}
       </View>
     ),
-    [hasUnreadDiscussions, inactiveIconColor]
+    [inactiveIconColor]
   );
 
   const renderRatingsIcon = useCallback(
@@ -144,11 +159,10 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
           color={focused ? '#FF4B33' : inactiveIconColor}
           strokeWidth={focused ? 2.3 : 1.8}
         />
-        {hasUnreadProjects && <View style={styles.notifDot} />}
         {focused && <View style={styles.activeDot} />}
       </View>
     ),
-    [hasUnreadProjects, inactiveIconColor]
+    [inactiveIconColor]
   );
 
   const renderJobsIcon = useCallback(
@@ -205,10 +219,63 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
     navigation.navigate(item.route);
   };
 
+  // Own tab bar so the highlight is decided here: only a visible tab can be highlighted. When a hidden route (Profile, or
+  // Pitch / Ratings / Announcements for creators) is open, no tab is highlighted, except More for the routes it opens.
+  const renderTabBar = ({ state, descriptors, navigation: nav }: any) => {
+    const current = state.routes[state.index];
+    const moreRoutes = ['Pitch', 'Ratings', 'Announcements', 'Marketplace', 'Vendors', 'CompanyPages'];
+    const fullH = (isTablet ? 64 : 58) + bottomInset;
+    return (
+      <View
+        style={{
+          flexDirection: 'row',
+          backgroundColor: themeColors.bgCard,
+          borderTopColor: themeColors.border,
+          borderTopWidth: 1,
+          height: fullH,
+          paddingBottom: (isTablet ? 8 : 4) + bottomInset,
+          paddingTop: isTablet ? 8 : 4,
+          elevation: 8,
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: isDark ? 0.35 : 0.06,
+          shadowRadius: 4,
+        }}
+      >
+        {state.routes.map((route: any) => {
+          const { options } = descriptors[route.key];
+          const hidden = (options.tabBarItemStyle as any)?.display === 'none';
+          if (hidden) return null;
+          const isFocused = current.key === route.key
+            || (route.name === 'More' && !isFan && moreRoutes.includes(current.name));
+          const onPress = () => {
+            const event = nav.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!isFocused && !event.defaultPrevented) nav.navigate({ name: route.name, merge: true });
+          };
+          return (
+            <TouchableOpacity
+              key={route.key}
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+              onPress={onPress}
+              onLongPress={() => nav.emit({ type: 'tabLongPress', target: route.key })}
+              accessibilityRole="button"
+              accessibilityState={isFocused ? { selected: true } : {}}
+              accessibilityLabel={options.tabBarAccessibilityLabel}
+              activeOpacity={0.7}
+            >
+              {options.tabBarIcon ? (options.tabBarIcon as any)({ focused: isFocused, color: isFocused ? '#FF4B33' : inactiveIconColor, size: 22 }) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  };
+
   return (
     <>
       <Tab.Navigator
         detachInactiveScreens={false}
+        tabBar={renderTabBar}
         screenOptions={{
           headerShown: false,
           lazy: true,
@@ -217,8 +284,8 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
             backgroundColor: themeColors.bgCard,
             borderTopColor: themeColors.border,
             borderTopWidth: 1,
-            height: isTablet ? 64 : 58,
-            paddingBottom: isTablet ? 8 : 4,
+            height: (isTablet ? 64 : 58) + bottomInset,
+            paddingBottom: (isTablet ? 8 : 4) + bottomInset,
             paddingTop: isTablet ? 8 : 4,
             elevation: 8,
             shadowColor: '#000000',
@@ -246,6 +313,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
           }}
           options={{
             tabBarIcon: renderHomeIcon,
+                tabBarAccessibilityLabel: 'Home',
           }}
         />
 
@@ -258,6 +326,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={DiscussionRoomsScreen}
               options={{
                 tabBarIcon: renderDiscussionsIcon,
+                tabBarAccessibilityLabel: 'Discussions',
               }}
             />
 
@@ -267,6 +336,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={RatingsScreen}
               options={{
                 tabBarIcon: renderRatingsIcon,
+                tabBarAccessibilityLabel: 'Ratings',
               }}
             />
 
@@ -276,6 +346,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={AnnouncementsScreen}
               options={{
                 tabBarIcon: renderAnnouncementsIcon,
+                tabBarAccessibilityLabel: 'Announcements',
               }}
             />
 
@@ -285,6 +356,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={CompanyPagesScreen}
               options={{
                 tabBarIcon: renderCompanyPagesIcon,
+                tabBarAccessibilityLabel: 'Company pages',
               }}
             />
           </>
@@ -297,6 +369,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={ProjectsScreen}
               options={{
                 tabBarIcon: renderProjectsIcon,
+                tabBarAccessibilityLabel: 'Projects',
               }}
             />
 
@@ -306,6 +379,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={DiscussionRoomsScreen}
               options={{
                 tabBarIcon: renderDiscussionsIcon,
+                tabBarAccessibilityLabel: 'Discussions',
               }}
             />
 
@@ -315,6 +389,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={JobsScreen}
               options={{
                 tabBarIcon: renderJobsIcon,
+                tabBarAccessibilityLabel: 'Jobs',
               }}
             />
 
@@ -324,6 +399,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               component={NetworkScreen}
               options={{
                 tabBarIcon: renderNetworkIcon,
+                tabBarAccessibilityLabel: 'Network',
               }}
             />
 
@@ -339,6 +415,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
               }}
               options={{
                 tabBarIcon: renderMoreIcon,
+                tabBarAccessibilityLabel: 'More',
               }}
             />
 
@@ -353,7 +430,7 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
         )}
 
         {/* Global Hidden Tabs (for all roles) */}
-        <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarItemStyle: { display: 'none' } }} />
+        <Tab.Screen name="Profile" component={ProfileScreenTablet} options={{ tabBarItemStyle: { display: 'none' } }} />
       </Tab.Navigator>
 
       {/* Floating Popup More Menu matching Web MobileNav Dropdown */}
@@ -364,43 +441,48 @@ export const TabNavigator: React.FC<TabNavigatorProps> = ({
         onRequestClose={() => setMoreMenuVisible(false)}
       >
         <TouchableWithoutFeedback onPress={() => setMoreMenuVisible(false)}>
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, isTablet && { paddingBottom: 72, paddingRight: 24 }]}>
             <TouchableWithoutFeedback>
               <View
                 style={[
                   styles.morePopupCard,
+                  isTablet && { width: 260, borderRadius: 16 },
                   {
                     backgroundColor: themeColors.bgCard,
                     borderColor: themeColors.border,
                   },
                 ]}
               >
-                {moreMenuItems.map((item, index) => {
+                {menuItems.map((item, index) => {
                   return (
                     <TouchableOpacity
                       key={item.label}
                       style={[
                         styles.morePopupItem,
-                        index !== moreMenuItems.length - 1 && {
+                        isTablet && { paddingVertical: 14, paddingHorizontal: 18 },
+                        index !== menuItems.length - 1 && {
                           borderBottomWidth: 1,
                           borderBottomColor: themeColors.divider,
                         },
                       ]}
                       onPress={() => handleMoreItemPress(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t(item.key)}
                     >
                       <Icon
                         name={item.iconName}
-                        size={18}
-                        color={themeColors.textSecondary}
+                        size={isTablet ? 22 : 18}
+                        color={themeColors.iconSecondary}
                         strokeWidth={2}
                       />
                       <Text
                         style={[
                           styles.moreItemLabel,
+                          isTablet && { fontSize: 16 },
                           { color: themeColors.textPrimary },
                         ]}
                       >
-                        {item.label}
+                        {t(item.key)}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -461,6 +543,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   morePopupItem: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,

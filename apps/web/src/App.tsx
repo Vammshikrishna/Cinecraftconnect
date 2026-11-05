@@ -3,20 +3,33 @@ import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, useParam
 import { useAuth } from "@/contexts/AuthContext";
 import { PresenceProvider } from "@/contexts/PresenceContext";
 import { Toaster } from "@/components/ui/toaster";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import Navbar from "@/components/navbar/Navbar";
 import LandingNavbar from "@/components/landing/LandingNavbar";
+import PublicPage from "@/components/landing/PublicPage";
+import { hasReturningHint } from "@/lib/auth/returningHint";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import ErrorBoundary from "@/components/ui/error-boundary";
 import GlobalFeatures from "@/components/GlobalFeatures";
+import { MobileNavInset } from "@/components/layout/MobileNavInset";
+import { RouteAccessibility } from "@/components/layout/RouteAccessibility";
+import { ConfirmHost } from "@/components/common/ConfirmHost";
+import { ScreenSkeleton } from "@/components/ui/enhanced-skeleton";
 import { PremiumNotificationOverlay } from "@/components/notifications/PremiumNotificationOverlay";
 import DesktopOnlyGuard from "@/components/DesktopOnlyGuard";
 import { SystemStatusBanner } from "@/components/internal/shared/SystemStatusBanner";
+import { FormErrorLinker } from "@/components/common/FormErrorLinker";
+import LanguageSync from "@/components/common/LanguageSync";
+import PageTranslator from "@/components/common/PageTranslator";
 import { OfflineBanner } from "@/components/offline/OfflineBanner";
 import { CookieConsentBanner } from "@/components/gdpr/CookieConsentBanner";
 import { MaintenanceGuard } from "@/components/MaintenanceGuard";
 import { FeatureGuard } from "@/components/FeatureGuard";
+import { StaffBlock } from "@/components/StaffBlock";
+import { FanBlock } from "@/components/FanBlock";
+import { RoomExistsGuard } from "@/components/discussions/RoomExistsGuard";
+import { projectSpaceAliasTarget } from "@/components/routeGuardHelpers";
+import { StaffMfaGate } from "@/components/internal/shared/StaffMfaGate";
 import { PlatformFlagsProvider } from "@/contexts/PlatformFlagsContext";
 import { SuspendedGuard } from "./components/SuspendedGuard";
 import ScrollToTop from "@/components/ScrollToTop";
@@ -33,6 +46,9 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 // Lazy Loaded Pages
 const LegalPage = lazy(() => import("./pages/LegalPage"));
+const SupportHub = lazy(() => import("./pages/SupportHub").then((m) => ({ default: m.SupportHub })));
+const SupportCategory = lazy(() => import("./pages/SupportHub").then((m) => ({ default: m.SupportCategory })));
+const SupportArticle = lazy(() => import("./pages/SupportHub").then((m) => ({ default: m.SupportArticle })));
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Feed from "./pages/Feed";
@@ -63,6 +79,7 @@ const HelpHome = lazy(() => import("./pages/settings/help/HelpHome"));
 const HelpCategoryPage = lazy(() => import("./pages/settings/help/HelpCategoryPage"));
 const HelpArticlePage = lazy(() => import("./pages/settings/help/HelpArticlePage"));
 const HelpRequests = lazy(() => import("./pages/settings/help/HelpRequests"));
+const HelpReports = lazy(() => import("./pages/settings/help/HelpReports"));
 const HelpNewRequest = lazy(() => import("./pages/settings/help/HelpNewRequest"));
 const HelpTicketPage = lazy(() => import("./pages/settings/help/HelpTicketPage"));
 const LegalSettings = lazy(() => import("./pages/settings/LegalSettings"));
@@ -74,18 +91,28 @@ const RequestsSettings = lazy(() => import("./pages/settings/RequestsSettings"))
 const QuietHoursSettings = lazy(() => import("./pages/settings/QuietHoursSettings"));
 const LanguageSettings = lazy(() => import("./pages/settings/LanguageSettings"));
 const BlockedSettings = lazy(() => import("./pages/settings/BlockedSettings"));
+const AccountStandingSettings = lazy(() => import("./pages/settings/AccountStandingSettings"));
 const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
 const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
 const AvailabilityCalendar = lazy(() => import("./pages/profile/AvailabilityCalendar"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
+const Plans = lazy(() => import("./pages/Plans"));
+const Gifts = lazy(() => import("./pages/Gifts"));
+const MyPayments = lazy(() => import("./pages/MyPayments"));
 const MarketplaceListingDetail = lazy(() => import("./pages/MarketplaceListingDetail"));
 const Wishlist = lazy(() => import("./pages/Wishlist"));
 const CompanyPageRedirect = () => {
   const { slug } = useParams<{ slug: string }>();
   return <Navigate to={`/pages/${slug}`} replace />;
 };
+// Old alias: /project-space/:projectId opens that project's space (feature flag and sign-in are checked by the route).
+const ProjectSpaceAlias = () => {
+  const { projectId } = useParams<{ projectId: string }>();
+  return <Navigate to={projectSpaceAliasTarget(projectId)} replace />;
+};
 const MyBookings = lazy(() => import("./pages/marketplace/MyBookings"));
 const MyQuotes = lazy(() => import("./pages/marketplace/MyQuotes"));
+const MarketplaceDisputes = lazy(() => import("./pages/marketplace/MarketplaceDisputes"));
 const SellerHub = lazy(() => import("./pages/marketplace/SellerHub"));
 const SharedWishlist = lazy(() => import("./pages/SharedWishlist"));
 const Vendors = lazy(() => import("./pages/Vendors"));
@@ -98,7 +125,6 @@ const ContentDetailPage = lazy(() => import("./pages/ContentDetailPage"));
 const RatingsPage = lazy(() => import("./pages/RatingsPage"));
 const MyRatings = lazy(() => import("./pages/MyRatings"));
 const UsernameRedirect = lazy(() => import("./pages/UsernameRedirect"));
-const CrewSheet = lazy(() => import("./pages/CrewSheet"));
 const Shortlists = lazy(() => import("./pages/Shortlists"));
 const FilmListDetail = lazy(() => import("./pages/FilmListDetail"));
 const CategoryPage = lazy(() => import("./pages/CategoryPage"));
@@ -109,6 +135,7 @@ const Notifications = lazy(() => import("./pages/Notifications"));
 const JobDetail = lazy(() => import("@/pages/JobDetail"));
 const PostDetailPage = lazy(() => import("@/pages/PostDetailPage"));
 const ProjectDetailPage = lazy(() => import("./pages/ProjectDetailPage"));
+const JoinProjectByInvite = lazy(() => import("./pages/JoinProjectByInvite"));
 const DiscussionRoomDetailPage = lazy(() => import("./pages/DiscussionRoomDetailPage"));
 const Support = lazy(() => import("./pages/Support"));
 const SupportTicketRedirect = lazy(() => import("./pages/SupportTicketRedirect"));
@@ -126,6 +153,8 @@ const CookiePolicy = lazy(() => import("./pages/legal/CookiePolicy"));
 // Resource Pages
 const Documentation = lazy(() => import("./pages/resources/Documentation"));
 const CommunityGuidelines = lazy(() => import("./pages/resources/CommunityGuidelines"));
+const Transparency = lazy(() => import("./pages/Transparency"));
+const StatusPage = lazy(() => import("./pages/StatusPage"));
 const SafetyCenter = lazy(() => import("./pages/resources/SafetyCenter"));
 
 // Marketing Pages
@@ -136,11 +165,15 @@ const Features = lazy(() => import("./pages/Features"));
 const ModerationDashboard = lazy(() => import("./pages/admin/ModerationDashboard"));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
+const FinanceDashboard = lazy(() => import("./pages/admin/FinanceDashboard"));
 
 // Custom route for the landing page
 const LandingRoute = () => {
-  const { user } = useAuth();
-  return user ? <Navigate to="/feed" /> : <Index />;
+  const { user, isLoading } = useAuth();
+  // A returning user waits for the saved session, so they never see the landing page flash before the redirect. A first-time visitor
+  // (no hint) sees the page straight away; if a session does turn up, they are sent to the feed as before.
+  if (isLoading && hasReturningHint()) return null;
+  return user ? <Navigate to="/feed" replace /> : <Index />;
 };
 
 // Clean navigation wrapper that selects and hides navbars based on auth state and current route
@@ -161,7 +194,7 @@ const NavigationWrapper = ({ isLoading, user, profile }: { isLoading: boolean; u
     return null;
   }
   
-  const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
+  const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin', 'finance'].includes(profile.role));
   // Show the full authenticated Navbar as soon as user is set.
   // While profile is still loading (profile=null but user exists), show Navbar — it handles null profile gracefully.
   // Only fall back to LandingNavbar for unauthenticated users or users who haven't completed onboarding.
@@ -213,8 +246,13 @@ const App = () => {
               <CallProvider>
                 <PresenceProvider>
                 <ScrollToTop />
+                <RouteAccessibility />
+                <ConfirmHost />
                 <OfflineBanner />
                 <SystemStatusBanner />
+                <FormErrorLinker />
+                <LanguageSync />
+                <PageTranslator />
                 <CookieConsentBanner />
                 <Toaster />
                 <UserPreferencesEffect />
@@ -226,65 +264,58 @@ const App = () => {
                 <MaintenanceGuard>
                   <ErrorBoundary>
                     <Suspense
-                      fallback={
-                        <div className="flex-1 w-full flex items-center justify-center bg-background/50 backdrop-blur-sm min-h-[60vh]">
-                          <div className="flex flex-col items-center gap-4">
-                            <LoadingSpinner size="lg" />
-                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-[0.3em] animate-pulse">Loading Workspace</p>
-                          </div>
-                        </div>
-                      }
+                      fallback={<ScreenSkeleton variant="detail" className="min-h-[60vh]" />}
                     >
                       <SuspendedGuard>
+                        <MobileNavInset>
                         <Routes>
                           <Route path="/" element={<LandingRoute />} />
                           <Route path="/auth" element={<Auth />} />
                           <Route path="/register" element={<Auth />} />
-                          <Route path="/about" element={<About />} />
-                          <Route path="/features" element={<Features />} />
+                          <Route path="/about" element={<PublicPage><About /></PublicPage>} />
+                          <Route path="/features" element={<PublicPage><Features /></PublicPage>} />
                           <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
                           <Route path="/post/:postId" element={<PostDetailPage />} />
                           <Route path="/posts/:postId" element={<PostDetailPage />} />
-                          <Route path="/create" element={<ProtectedRoute><CreatePost /></ProtectedRoute>} />
+                          <Route path="/create" element={<StaffBlock><ProtectedRoute><FanBlock><CreatePost /></FanBlock></ProtectedRoute></StaffBlock>} />
                           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
                           <Route path="/profile/availability" element={<ProtectedRoute><AvailabilityCalendar /></ProtectedRoute>} />
                           <Route path="/profile/availability/:userId" element={<ProtectedRoute><AvailabilityCalendar /></ProtectedRoute>} />
                           <Route path="/u/:identifier" element={<UsernameRedirect />} />
-                          <Route path="/crew-sheet/:identifier" element={<CrewSheet />} />
-                          <Route path="/network/shortlists" element={<ProtectedRoute><Shortlists /></ProtectedRoute>} />
+                          <Route path="/network/shortlists" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><Shortlists /></FanBlock></ProtectedRoute></StaffBlock>} />
                           <Route path="/profile/:userId/availability" element={<ProtectedRoute><AvailabilityCalendar /></ProtectedRoute>} />
                           <Route path="/profile/:userId" element={<FeatureGuard flag="talent_network_enabled" fallbackTitle="Network Restricted"><PublicProfile /></FeatureGuard>} />
-                          <Route path="/projects" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled" fallbackTitle="Project Hub Restricted"><Projects /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/projects/create" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><CreateProject /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/projects" element={<ProtectedRoute><FanBlock redirectTo="/404"><FeatureGuard flag="project_creation_enabled" fallbackTitle="Project Hub Restricted"><Projects /></FeatureGuard></FanBlock></ProtectedRoute>} />
+                          <Route path="/projects/create" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><FeatureGuard flag="project_creation_enabled"><CreateProject /></FeatureGuard></FanBlock></ProtectedRoute></StaffBlock>} />
+                          <Route path="/projects/join/:code" element={<ProtectedRoute><FanBlock redirectTo="/404"><JoinProjectByInvite /></FanBlock></ProtectedRoute>} />
                           <Route path="/projects/:projectId" element={<FeatureGuard flag="project_creation_enabled"><ProjectDetailPage /></FeatureGuard>} />
-                          <Route path="/projects/:projectId/space" element={<FeatureGuard flag="project_creation_enabled"><ProjectSpacePage /></FeatureGuard>} />
+                          <Route path="/projects/:projectId/space" element={<FanBlock redirectTo="/404"><FeatureGuard flag="project_creation_enabled"><ProjectSpacePage /></FeatureGuard></FanBlock>} />
                           <Route path="/jobs" element={<ProtectedRoute><FeatureGuard flag="job_posting_enabled" fallbackTitle="Job Board Restricted"><Jobs /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/network" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Talent Search Restricted"><Network /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/craft/:craftName" element={<CraftPage />} />
                           <Route path="/all-crafts" element={<AllCraftsPage />} />
-                          {import.meta.env.DEV && (
-                            <Route path="/setup-admin" element={
-                              <DesktopOnlyGuard>
-                                <SetupAdmin />
-                              </DesktopOnlyGuard>
-                            } />
-                          )}
+                          <Route path="/setup-admin" element={
+                            <DesktopOnlyGuard>
+                              <SetupAdmin />
+                            </DesktopOnlyGuard>
+                          } />
                           <Route path="/discussion-rooms" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled" fallbackTitle="Discussions Offline"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/discussion-rooms/:roomId" element={<FeatureGuard flag="discussion_rooms_enabled"><DiscussionRoomDetailPage /></FeatureGuard>} />
-                          <Route path="/discussion-rooms/:roomId/chat" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/discussion-rooms/:roomId/chat" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled"><RoomExistsGuard><DiscussionRooms /></RoomExistsGuard></FeatureGuard></ProtectedRoute>} />
                           <Route path="/discussions" element={<Navigate to="/discussion-rooms" replace />} />
                           <Route path="/discussions/:roomId" element={<FeatureGuard flag="discussion_rooms_enabled"><DiscussionRoomDetailPage /></FeatureGuard>} />
-                          <Route path="/project-space/:projectId" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
-                          <Route path="/messages" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled" fallbackTitle="Messaging Offline"><Messages /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/messages/:conversationId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/dm/:userId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/legal/:type" element={<LegalPage />} />
+                          <Route path="/project-space/:projectId" element={<ProtectedRoute><FanBlock redirectTo="/404"><FeatureGuard flag="project_creation_enabled"><ProjectSpaceAlias /></FeatureGuard></FanBlock></ProtectedRoute>} />
+                          <Route path="/messages" element={<StaffBlock><ProtectedRoute><FeatureGuard flag="messaging_enabled" fallbackTitle="Messaging Offline"><Messages /></FeatureGuard></ProtectedRoute></StaffBlock>} />
+                          <Route path="/messages/:conversationId" element={<StaffBlock><ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute></StaffBlock>} />
+                          <Route path="/dm/:userId" element={<StaffBlock><ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute></StaffBlock>} />
+                          <Route path="/legal/:type" element={<PublicPage><LegalPage /></PublicPage>} />
                           <Route path="/settings" element={<ProtectedRoute><SettingsLayout /></ProtectedRoute>}>
                             <Route index element={<Settings />} />
                             <Route path="appearance" element={<AppearanceSettings />} />
                             <Route path="notifications" element={<NotificationsSettings />} />
                             <Route path="privacy" element={<PrivacySettings />} />
                             <Route path="blocked" element={<BlockedSettings />} />
+                            <Route path="standing" element={<AccountStandingSettings />} />
                             <Route path="activity" element={<ActivitySettings />} />
                             <Route path="messages" element={<MessagesSettings />} />
                             <Route path="requests" element={<RequestsSettings />} />
@@ -295,6 +326,7 @@ const App = () => {
                             <Route path="help/category/:id" element={<HelpCategoryPage />} />
                             <Route path="help/article/:id" element={<HelpArticlePage />} />
                             <Route path="help/requests" element={<HelpRequests />} />
+                            <Route path="help/reports" element={<HelpReports />} />
                             <Route path="help/requests/:id" element={<HelpTicketPage />} />
                             <Route path="help/new" element={<HelpNewRequest />} />
                             <Route path="legal/:type" element={<LegalSettings />} />
@@ -303,81 +335,111 @@ const App = () => {
                             <Route path="sessions" element={<SessionsSecurity />} />
                             <Route path="accessibility" element={<AccessibilitySettings />} />
                             <Route path="sound" element={<SoundSettings />} />
+                            <Route path="availability" element={<AvailabilityCalendar embedded />} />
                             <Route path="data" element={<DataSettings />} />
                             <Route path="account" element={<AccountSettings />} />
+                            <Route path="plans" element={<StaffBlock><Plans embedded /></StaffBlock>} />
+                            <Route path="payments" element={<StaffBlock><MyPayments embedded /></StaffBlock>} />
                           </Route>
                           <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
+                          <Route path="/payments" element={<ProtectedRoute><StaffBlock><MyPayments /></StaffBlock></ProtectedRoute>} />
+                          <Route path="/gifts" element={<ProtectedRoute><StaffBlock><Gifts /></StaffBlock></ProtectedRoute>} />
+                          <Route path="/plans" element={<ProtectedRoute><StaffBlock><Plans /></StaffBlock></ProtectedRoute>} />
                           <Route path="/marketplace" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled" fallbackTitle="Marketplace Disabled"><Marketplace /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/marketplace/bookings" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><MyBookings /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/marketplace/quotes" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><MyQuotes /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/marketplace/hub" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><SellerHub /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/marketplace/wishlist" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><Wishlist /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/marketplace/wishlist/shared/:token" element={<SharedWishlist />} />
+                          <Route path="/marketplace/bookings" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><FeatureGuard flag="marketplace_enabled"><MyBookings /></FeatureGuard></FanBlock></ProtectedRoute></StaffBlock>} />
+                          <Route path="/marketplace/disputes" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><FeatureGuard flag="marketplace_enabled"><MarketplaceDisputes /></FeatureGuard></FanBlock></ProtectedRoute></StaffBlock>} />
+                          <Route path="/marketplace/quotes" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><FeatureGuard flag="marketplace_enabled"><MyQuotes /></FeatureGuard></FanBlock></ProtectedRoute></StaffBlock>} />
+                          <Route path="/marketplace/hub" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><FeatureGuard flag="marketplace_enabled"><SellerHub /></FeatureGuard></FanBlock></ProtectedRoute></StaffBlock>} />
+                          <Route path="/marketplace/wishlist" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><FeatureGuard flag="marketplace_enabled"><Wishlist /></FeatureGuard></FanBlock></ProtectedRoute></StaffBlock>} />
+                          <Route path="/marketplace/wishlist/shared/:token" element={<FeatureGuard flag="marketplace_enabled"><SharedWishlist /></FeatureGuard>} />
                           <Route path="/marketplace/:listingId" element={<FeatureGuard flag="marketplace_enabled"><MarketplaceListingDetail /></FeatureGuard>} />
                           <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
                           <Route path="/vendors/:id" element={<VendorDetail />} />
                           <Route path="/vendors/services/:id" element={<VendorServiceDetail />} />
-                          <Route path="/jobs/:jobId" element={<JobDetail />} />
-                          <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
-                          <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
+                          <Route path="/jobs/:jobId" element={<FeatureGuard flag="job_posting_enabled" fallbackTitle="Job Board Restricted"><JobDetail /></FeatureGuard>} />
+                          <Route path="/jobs/applications" element={<StaffBlock><ProtectedRoute><FeatureGuard flag="job_posting_enabled" fallbackTitle="Job Board Restricted"><MyApplications /></FeatureGuard></ProtectedRoute></StaffBlock>} />
+                          <Route path="/jobs/manage" element={<StaffBlock><ProtectedRoute><FanBlock title="This area is for creators and studios" description="Fan accounts can follow people and react to posts, but cannot use this page."><FeatureGuard flag="job_posting_enabled" fallbackTitle="Job Board Restricted"><ManageJobs /></FeatureGuard></FanBlock></ProtectedRoute></StaffBlock>} />
                           <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+                          <Route path="/explore" element={<Navigate to="/search" replace />} />
                           <Route path="/content/:type/:id" element={<ContentDetailPage />} />
                           <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
-                          <Route path="/ratings/mine" element={<ProtectedRoute><MyRatings /></ProtectedRoute>} />
+                          <Route path="/ratings/mine" element={<StaffBlock><ProtectedRoute><MyRatings /></ProtectedRoute></StaffBlock>} />
                           <Route path="/lists/:id" element={<ProtectedRoute><FilmListDetail /></ProtectedRoute>} />
                           <Route path="/category/:categoryId" element={<ProtectedRoute><CategoryPage /></ProtectedRoute>} />
-                          <Route path="/pitch" element={<ProtectedRoute><Pitch /></ProtectedRoute>} />
-                          <Route path="/pitch/:pitchId" element={<PitchDetail />} />
-                          <Route path="/pitch/:pitchId/submit" element={<ProtectedRoute><SubmitPitch /></ProtectedRoute>} />
-                          <Route path="/pitch/submission/:submissionId/review" element={<ProtectedRoute><ReviewSubmission /></ProtectedRoute>} />
+                          <Route path="/pitch" element={<ProtectedRoute><FanBlock redirectTo="/404"><Pitch /></FanBlock></ProtectedRoute>} />
+                          <Route path="/pitch/:pitchId" element={<FanBlock redirectTo="/404"><PitchDetail /></FanBlock>} />
+                          <Route path="/pitch/:pitchId/submit" element={<StaffBlock><ProtectedRoute><FanBlock redirectTo="/404"><SubmitPitch /></FanBlock></ProtectedRoute></StaffBlock>} />
+                          <Route path="/pitch/submission/:submissionId/review" element={<StaffBlock><ProtectedRoute><ReviewSubmission /></ProtectedRoute></StaffBlock>} />
                           <Route path="/announcements" element={<AnnouncementsPage />} />
                           <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
                           <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
                           <Route path="/pages/:slug" element={<CompanyPageDetail />} />
                           <Route path="/company/:slug" element={<CompanyPageRedirect />} />
-                          <Route path="/support" element={<Navigate to="/settings/help" replace />} />
+                          <Route path="/support" element={<PublicPage><SupportHub /></PublicPage>} />
+                          <Route path="/support/category/:id" element={<PublicPage><SupportCategory /></PublicPage>} />
+                          <Route path="/support/article/:id" element={<PublicPage><SupportArticle /></PublicPage>} />
                           <Route path="/support/ticket/:ticketId" element={<SupportTicketRedirect />} />
 
 
                           {/* Public Legal Routes */}
-                          <Route path="/privacy" element={<PrivacyPolicy />} />
-                          <Route path="/terms" element={<TermsOfService />} />
-                          <Route path="/cookie" element={<CookiePolicy />} />
-                          <Route path="/documentation" element={<Documentation />} />
-                          <Route path="/community-guidelines" element={<CommunityGuidelines />} />
-                          <Route path="/safety-center" element={<SafetyCenter />} />
+                          <Route path="/privacy" element={<PublicPage><PrivacyPolicy /></PublicPage>} />
+                          <Route path="/terms" element={<PublicPage><TermsOfService /></PublicPage>} />
+                          <Route path="/cookie" element={<PublicPage><CookiePolicy /></PublicPage>} />
+                          <Route path="/documentation" element={<PublicPage><Documentation /></PublicPage>} />
+                          <Route path="/community-guidelines" element={<PublicPage><CommunityGuidelines /></PublicPage>} />
+                          <Route path="/transparency" element={<Transparency />} />
+                          <Route path="/status" element={<StatusPage />} />
+                          <Route path="/safety-center" element={<PublicPage><SafetyCenter /></PublicPage>} />
 
                           {/* Internal Governance Routes — role-gated */}
                           <Route path="/moderation" element={
                             <ProtectedRoute>
                               <RoleGuard requiredRole="moderator">
+                                <StaffMfaGate>
                                 <DesktopOnlyGuard>
                                   <ModerationDashboard />
                                 </DesktopOnlyGuard>
+                                </StaffMfaGate>
                               </RoleGuard>
                             </ProtectedRoute>
                           } />
                           <Route path="/admin" element={
                             <ProtectedRoute>
                               <RoleGuard requiredRole="admin">
+                                <StaffMfaGate>
                                 <DesktopOnlyGuard>
                                   <AdminDashboard />
                                 </DesktopOnlyGuard>
+                                </StaffMfaGate>
+                              </RoleGuard>
+                            </ProtectedRoute>
+                          } />
+                          <Route path="/finance" element={
+                            <ProtectedRoute>
+                              <RoleGuard requiredRole="finance" onlyRoles={['finance', 'admin', 'super_admin']}>
+                                <StaffMfaGate>
+                                <DesktopOnlyGuard>
+                                  <FinanceDashboard />
+                                </DesktopOnlyGuard>
+                                </StaffMfaGate>
                               </RoleGuard>
                             </ProtectedRoute>
                           } />
                           <Route path="/super-admin" element={
                             <ProtectedRoute>
                               <RoleGuard requiredRole="super_admin">
+                                <StaffMfaGate>
                                 <DesktopOnlyGuard>
                                   <SuperAdminDashboard />
                                 </DesktopOnlyGuard>
+                                </StaffMfaGate>
                               </RoleGuard>
                             </ProtectedRoute>
                           } />
 
                           <Route path="*" element={<NotFound />} />
                         </Routes>
+                        </MobileNavInset>
                       </SuspendedGuard>
                     </Suspense>
                   </ErrorBoundary>

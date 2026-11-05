@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ThumbsDown, ThumbsUp } from 'lucide-react';
 import { HELP_ARTICLES, getHelpArticle, getHelpCategory } from '@cinecraft/core';
 import { supabase } from '@/integrations/supabase/client';
 import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { SettingsSection } from '@/components/settings/SettingsUI';
 import { ArticleRow, HelpBack } from '@/components/help/HelpParts';
@@ -14,12 +15,22 @@ const HelpArticlePage = () => {
   const [vote, setVote] = useState<null | boolean>(null);
   const [comment, setComment] = useState('');
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const { toast } = useToast();
+
+  // Moving to another article through "Related articles" keeps this component mounted: start fresh.
+  useEffect(() => {
+    setVote(null);
+    setComment('');
+    setSent(false);
+    setSending(false);
+  }, [id]);
 
   if (!article) {
     return (
       <>
         <HelpBack to="/settings/help" label="Help Center" />
-        <p className="text-muted-foreground">That article does not exist.</p>
+        <p className="text-muted-foreground">That article does not exist. <Link to="/settings/help" className="text-primary font-medium">Search the Help Center</Link></p>
       </>
     );
   }
@@ -28,28 +39,36 @@ const HelpArticlePage = () => {
 
   const send = async (helpful: boolean, text?: string) => {
     setVote(helpful);
-    await (supabase as any).rpc('submit_help_feedback', { p_article: article.id, p_helpful: helpful, p_comment: text || null });
+    setSending(true);
+    if (helpful) setSent(true); // show the thanks straight away; undone below if it fails
+    const { error } = await (supabase as any).rpc('submit_help_feedback', { p_article: article.id, p_helpful: helpful, p_comment: text || null });
+    setSending(false);
+    if (error) {
+      if (helpful) setSent(false);
+      toast({ title: 'Could not send your feedback', description: 'Please try again.', variant: 'destructive' });
+      return;
+    }
     if (helpful || text !== undefined) setSent(true);
   };
 
   return (
     <>
       <HelpBack to={`/settings/help/category/${article.category}`} label={category?.title || 'Help Center'} />
-      <h2 className="text-2xl font-bold leading-tight">{article.title}</h2>
+      <h1 className="text-2xl font-bold leading-tight break-words">{article.title}</h1>
       <p className="text-muted-foreground mt-1 mb-6">{article.summary}</p>
 
       {article.steps && (
-        <ol className="space-y-3 mb-6">
+        <ol className="space-y-3 mb-6 list-none">
           {article.steps.map((s, i) => (
             <li key={i} className="flex gap-3">
-              <span className="h-6 w-6 shrink-0 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
-              <p className="text-[15px] leading-relaxed">{s}</p>
+              <span aria-hidden="true" className="h-6 w-6 shrink-0 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+              <p className="text-base leading-relaxed">{s}</p>
             </li>
           ))}
         </ol>
       )}
       <div className="space-y-3 mb-8">
-        {article.body.map((p, i) => <p key={i} className="text-[15px] leading-relaxed text-muted-foreground">{p}</p>)}
+        {article.body.map((p, i) => <p key={i} className="text-base leading-relaxed text-foreground/80">{p}</p>)}
       </div>
 
       <div className="rounded-2xl border bg-card p-5 mb-8">
@@ -57,16 +76,16 @@ const HelpArticlePage = () => {
           <p className="text-sm font-medium">Thanks for your feedback. {vote === false && <>If you still need help, <Link to="/settings/help/new" className="text-primary">contact support</Link>.</>}</p>
         ) : (
           <>
-            <p className="font-semibold text-[15px] mb-3">Was this article helpful?</p>
+            <p className="font-semibold text-base mb-3">Was this article helpful?</p>
             <div className="flex gap-2">
-              <Button variant={vote === true ? 'default' : 'outline'} size="sm" onClick={() => send(true)}><ThumbsUp className="h-4 w-4 mr-1.5" /> Yes</Button>
+              <Button variant={vote === true ? 'default' : 'outline'} size="sm" disabled={sending} onClick={() => send(true)}><ThumbsUp className="h-4 w-4 mr-1.5" /> Yes</Button>
               <Button variant={vote === false ? 'default' : 'outline'} size="sm" onClick={() => setVote(false)}><ThumbsDown className="h-4 w-4 mr-1.5" /> No</Button>
             </div>
             {vote === false && (
-              <div className="mt-4 space-y-2">
-                <Textarea rows={3} maxLength={300} value={comment} onChange={e => setComment(e.target.value)} placeholder="What was missing or unclear? (optional)" className="resize-none" />
+              <div className="mt-4 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                <Textarea autoFocus aria-label="What was missing or unclear?" rows={3} maxLength={300} value={comment} onChange={e => setComment(e.target.value)} placeholder="What was missing or unclear? (optional)" className="resize-none" />
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => send(false, comment)}>Send feedback</Button>
+                  <Button size="sm" disabled={sending} onClick={() => send(false, comment)}>{sending ? 'Sending…' : 'Send feedback'}</Button>
                   <Button size="sm" variant="ghost" asChild><Link to="/settings/help/new">Contact support</Link></Button>
                 </div>
               </div>

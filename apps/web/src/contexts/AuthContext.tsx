@@ -1,3 +1,4 @@
+import { SavedSessionExpiredError, savedSessionExpiredUrl } from '@/lib/auth/savedSessionExpired';
 import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { fetchProfileExtras, mergeProfileExtras } from '@/lib/profileExtras';
@@ -21,16 +22,19 @@ import { eventBus } from '@/lib/events/eventBus';
 import { startupOrchestrator, BootStage } from '@/lib/startup/startupOrchestrator';
 import { mainThreadScheduler } from '@/lib/performance/mainThreadScheduler';
 
-import { secureStorageEngine } from '@/lib/auth/secureStorage';
+import {
+  listSavedAccounts,
+  upsertSavedAccount,
+  removeSavedAccount,
+  getSavedAccountTokens,
+  SavedAccountMeta,
+} from '@/lib/auth/savedAccountsStore';
 import { queryClient } from '@/lib/queryClient';
+import { toast } from '@/hooks/use-toast';
+import { setReturningHint } from '@/lib/auth/returningHint';
 
-export interface SavedAccount {
-  userId: string;
-  email: string;
-  username: string;
-  avatarUrl: string;
-  session: Session;
-}
+// Saved accounts expose metadata only; their tokens live encrypted in the token vault (AUTH-F-09).
+export type SavedAccount = SavedAccountMeta;
 
 type Profile = Tables<'profiles'> & {
   onboarding_completed?: boolean;
@@ -40,6 +44,11 @@ type Profile = Tables<'profiles'> & {
 type AuthContextType = {
   user: User | null;
   profile: Profile | null;
+  /** true when the profile could not be loaded (network or server error); the app must not assume onboarding is done */
+  profileLoadFailed: boolean;
+  retryProfile: () => void;
+  /** re-reads the signed-in user's profile into the context (no page reload); resolves when the new profile is in place */
+  refreshProfile: () => Promise<void>;
   session: Session | null;
   isLoading: boolean;
   authState: AuthState;
@@ -55,23 +64,12 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const SAVED_ACCOUNTS_KEY = 'cc_saved_accounts';
-
 const loadSavedAccounts = async (): Promise<SavedAccount[]> => {
   try {
-    const data = await secureStorageEngine.getItem(SAVED_ACCOUNTS_KEY);
-    return data ? JSON.parse(data) : [];
+    return await listSavedAccounts();
   } catch (e) {
-    console.error('Failed to parse saved accounts:', e);
+    console.error('Failed to load saved accounts:', e);
     return [];
-  }
-};
-
-const saveAccountsList = async (accounts: SavedAccount[]): Promise<void> => {
-  try {
-    await secureStorageEngine.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(accounts));
-  } catch (e) {
-    console.error('Failed to save accounts:', e);
   }
 };
 
@@ -88,6 +86,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileLoadFailed, setProfileLoadFailed] = useState(false);
+  const [profileRetryTick, setProfileRetryTick] = useState(0);
+  const retryProfile = () => { setProfileLoadFailed(false); setProfileRetryTick(t => t + 1); };
+  const refreshProfile = async () => {
+    const uid = lastUserIdRef.current;
+    if (!uid) return;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, updated_at, username, full_name, avatar_url, website, bio, location, experience, craft, account_type, accept_direct_pitches, onboarding_completed, is_internal, public_key, is_verified, is_banned, trust_score, is_official_team')
+        .eq('id', uid)
+        .single();
+      if (error || !data) return;
+      let accountState: any = null;
+      try { accountState = (await (supabase as any).rpc('get_my_account_state')).data; } catch { /* optional */ }
+      // keep the role and merged extras already loaded; only replace the columns that were re-read
+      if (lastUserIdRef.current !== uid) return;
+      setProfile(prev => (prev && prev.id === uid ? { ...prev, ...(data as any), ...(accountState || {}) } : prev));
+    } catch (e) {
+      console.warn('[AUTH] refreshProfile failed:', e);
+    }
+  };
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authState, setAuthState] = useState<AuthState>('BOOTSTRAPPING');
@@ -95,30 +115,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isInitializingRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
 
-  const updateSavedAccountInfo = async (userId: string, accountInfo: Partial<SavedAccount>) => {
-    const currentAccounts = await loadSavedAccounts();
-    const index = currentAccounts.findIndex(acc => acc.userId === userId);
-    
-    let updated: SavedAccount[];
-    if (index > -1) {
-      updated = [...currentAccounts];
-      updated[index] = {
-        ...updated[index],
-        ...accountInfo,
-        session: (accountInfo.session || updated[index].session)
-      } as SavedAccount;
-    } else {
-      // Only insert a new account if we have the minimum required fields (userId, email, session)
-      if (accountInfo.userId && accountInfo.email && accountInfo.session) {
-        updated = [...currentAccounts, accountInfo as SavedAccount];
-      } else {
-        console.warn('[AUTH] Attempted to insert incomplete saved account:', accountInfo);
-        return;
-      }
+  const updateSavedAccountInfo = async (
+    userId: string,
+    accountInfo: Partial<Pick<SavedAccount, 'userId' | 'email' | 'username' | 'avatarUrl'>> & { session?: Session }
+  ) => {
+    try {
+      const { session: sess, userId: _ignored, ...meta } = accountInfo;
+      const updated = await upsertSavedAccount(
+        userId,
+        meta,
+        sess ? { access_token: sess.access_token, refresh_token: sess.refresh_token } : null
+      );
+      setSavedAccounts(updated);
+    } catch (e) {
+      console.error('Failed to save account:', e);
     }
-    
-    await saveAccountsList(updated);
-    setSavedAccounts(updated);
   };
 
   useEffect(() => {
@@ -129,6 +140,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUser(session.user);
         lastUserIdRef.current = session.user.id;
         transitionTo('AUTHENTICATED', 'bootstrap_found_session');
+        setReturningHint(true);
       } else if (timedOut) {
         // Storage decryption timed out — don't mark as logged out.
         // onAuthStateChange will fire with the real session once decryption completes.
@@ -183,6 +195,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           initializedRef.current = false;
           supabase.realtime.setAuth(session.access_token);
           transitionTo('AUTHENTICATED', `onAuthStateChange_${event}`);
+          setReturningHint(true);
 
           // Only broadcast if the user ID has actually changed (prevents focus/visibility event storm loops)
           if (lastUserIdRef.current !== session.user.id) {
@@ -231,6 +244,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (event === 'SIGNED_OUT') {
         transitionTo('UNAUTHENTICATED', 'onAuthStateChange_SIGNED_OUT');
+        setReturningHint(false);
         setProfile(null);
         lastUserIdRef.current = null;
         sessionManager.destroy();
@@ -328,22 +342,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     if (user && !isLoading) {
+      let cancelled = false;
       const fetchProfile = async () => {
         let retries = 0;
         const maxRetries = 5;
         let finalData = null;
-        let finalError = null;
+        let finalError: any = null;
 
         while (retries < maxRetries) {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, account_type, accept_direct_pitches, onboarding_completed, is_internal, public_key, is_verified, is_banned, trust_score, is_official_team, user_roles(role)')
-            .eq('id', user.id)
-            .single();
+          let data: any = null;
+          let error: any = null;
+          try {
+            const res = await supabase
+              .from('profiles')
+              .select('id, updated_at, username, full_name, avatar_url, website, bio, location, experience, craft, account_type, accept_direct_pitches, onboarding_completed, is_internal, public_key, is_verified, is_banned, trust_score, is_official_team, user_roles(role)')
+              .eq('id', user.id)
+              .single();
+            data = res.data; error = res.error;
+          } catch (e) {
+            error = e || new Error('profile fetch failed');
+          }
 
-          if (error && error.code === 'PGRST116') {
-            console.warn(`[AUTH] Profile not found yet (Postgres trigger might be running). Retrying... (${retries + 1}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, 200));
+          // not found yet (the signup trigger may still be running) or a transient network error: try again
+          if (error && (error.code === 'PGRST116' || !error.code)) {
+            console.warn(`[AUTH] Profile not available yet. Retrying... (${retries + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, error.code ? 200 : 800));
             retries++;
             finalError = error;
           } else {
@@ -353,10 +376,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         }
 
+        if (cancelled) return;
         if (finalError) {
           console.error('Error fetching profile after retries:', finalError);
           (window as any).__lastProfileError = finalError;
+          // never leave the app guessing: ProtectedRoute shows a retry state instead of letting an unknown profile through
+          setProfileLoadFailed(true);
         } else if (finalData) {
+          setProfileLoadFailed(false);
           (window as any).__lastProfileError = null;
           (window as any).__lastProfileData = finalData;
           const rawRole = (finalData as any).user_roles;
@@ -402,15 +429,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .subscribe();
 
       return () => {
+        cancelled = true;
         supabase.removeChannel(channel);
       };
     } else {
       setProfile(null);
+      setProfileLoadFailed(false);
     }
   // Depend only on user?.id and isLoading — NOT on session or the user object itself.
   // This prevents profile re-fetches on every TOKEN_REFRESHED event, which would
   // cause setProfile() to cascade re-renders across all pages whenever the JWT refreshes.
-  }, [user?.id, isLoading]);
+  }, [user?.id, isLoading, profileRetryTick]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -449,9 +478,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signOut = async () => {
     const currentUserId = user?.id;
     if (currentUserId) {
-      const currentAccounts = await loadSavedAccounts();
-      const updated = currentAccounts.filter(acc => acc.userId !== currentUserId);
-      await saveAccountsList(updated);
+      // Removes the account and its encrypted tokens from this device.
+      const updated = await removeSavedAccount(currentUserId);
       setSavedAccounts(updated);
 
       try {
@@ -467,9 +495,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setSession(null);
     setProfile(null);
 
-    const remainingAccounts = await loadSavedAccounts();
+    const remainingAccounts = (await loadSavedAccounts()).filter(acc => acc.hasTokens);
     if (remainingAccounts.length > 0) {
-      await switchAccount(remainingAccounts[0].userId);
+      try {
+        await switchAccount(remainingAccounts[0].userId);
+      } catch (e: any) {
+        if (e instanceof SavedSessionExpiredError) {
+          window.location.href = savedSessionExpiredUrl(e.email);
+          return;
+        }
+        toast({ title: 'Switch Failed', description: e?.message || 'Could not switch accounts.', variant: 'destructive' });
+      }
     } else {
       window.location.href = '/';
     }
@@ -481,6 +517,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!targetAccount) {
       console.error('[AUTH] Target account not found in saved accounts list.');
       return;
+    }
+
+    // Tokens are decrypted only now, for this one switch. None available (no WebCrypto / IndexedDB, tampered, key lost):
+    // ask the user to sign in again instead of ever keeping plain-text tokens.
+    const savedTokens = await getSavedAccountTokens(targetUserId);
+    if (!savedTokens) {
+      throw new Error(`Please sign in again to switch to ${targetAccount.email || 'this account'}. Saved sign-ins cannot be kept securely on this browser.`);
     }
 
     setIsLoading(true);
@@ -504,21 +547,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     realtimeManager.destroy();
 
     const { data: sessionData, error } = await supabase.auth.setSession({
-      access_token: targetAccount.session.access_token,
-      refresh_token: targetAccount.session.refresh_token,
+      access_token: savedTokens.access_token,
+      refresh_token: savedTokens.refresh_token,
     });
 
     if (error) {
       console.error('[AUTH] Failed to set session on switch:', error);
       
-      const updated = currentAccounts.filter(acc => acc.userId !== targetUserId);
-      await saveAccountsList(updated);
+      const updated = await removeSavedAccount(targetUserId);
       setSavedAccounts(updated);
       
       setIsLoading(false);
-      
-      window.location.href = `/auth?error=session_expired&email=${encodeURIComponent(targetAccount.email)}`;
-      return;
+
+      // the caller sends the person to the sign-in page, which shows this message and fills in the email
+      throw new SavedSessionExpiredError(targetAccount.email);
     }
 
     if (sessionData?.session) {
@@ -567,14 +609,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const removeAccount = async (targetUserId: string) => {
-    const currentAccounts = await loadSavedAccounts();
-    const updated = currentAccounts.filter(acc => acc.userId !== targetUserId);
-    await saveAccountsList(updated);
+    const updated = await removeSavedAccount(targetUserId);
     setSavedAccounts(updated);
 
     if (user?.id === targetUserId) {
-      if (updated.length > 0) {
-        await switchAccount(updated[0].userId);
+      const switchable = updated.filter(acc => acc.hasTokens);
+      if (switchable.length > 0) {
+        try {
+          await switchAccount(switchable[0].userId);
+        } catch (e: any) {
+          if (e instanceof SavedSessionExpiredError) {
+            window.location.href = savedSessionExpiredUrl(e.email);
+            return;
+          }
+          toast({ title: 'Switch Failed', description: e?.message || 'Could not switch accounts.', variant: 'destructive' });
+        }
       } else {
         await signOut();
       }
@@ -584,6 +633,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const value = {
     user,
     profile,
+    profileLoadFailed,
+    retryProfile,
+    refreshProfile,
     session,
     isLoading,
     authState,

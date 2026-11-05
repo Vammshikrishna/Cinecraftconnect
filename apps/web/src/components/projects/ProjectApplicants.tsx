@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { WorkspaceHero } from './WorkspaceUI';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Check, X, UserPlus } from 'lucide-react';
 import { useAppRole } from '@/hooks/useAppRole';
@@ -21,9 +22,11 @@ interface Applicant {
 
 interface ProjectApplicantsProps {
   projectId: string;
+  /** true only for the space / project creator */
+  canManage?: boolean;
 }
 
-const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
+const ProjectApplicants = ({ projectId, canManage = false }: ProjectApplicantsProps) => {
   const { isInternal } = useAppRole();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,9 +145,13 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
 
     return (
         <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar pb-24">
-            <div className="flex flex-col gap-1 mb-8">
-                <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Requests</h1>
-                <p className="text-3xl font-extrabold text-foreground">Applicants</p>
+            <div className="mb-8">
+                <WorkspaceHero
+                    icon={UserPlus}
+                    title="Applicants"
+                    description="People who asked to join this project."
+                    stats={[{ label: 'Pending', value: applicants.length, tone: 'warn' }]}
+                />
             </div>
 
       {applicants.length === 0 ? (
@@ -158,7 +165,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
       ) : (
         <div className="space-y-3">
           {applicants.map(applicant => (
-            <div key={applicant.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 rounded-2xl bg-card border border-border gap-4 shadow-sm hover:bg-accent/50 hover:border-primary/20 transition-all duration-300">
+            <div key={applicant.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 rounded-2xl bg-card border border-border gap-4 shadow-sm hover:bg-accent/50 hover:border-primary/20 transition duration-300">
               <div className="flex items-center gap-4">
                 <Avatar className="h-12 w-12 border-2 border-primary/20">
                   <AvatarImage src={applicant.profiles?.avatar_url} />
@@ -176,14 +183,14 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 {applicant.status === 'pending' ? (
-                  !isInternal ? (
+                  canManage && !isInternal ? (
                     <>
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
                         disabled={processingId === applicant.id}
-                        className="flex-1 sm:flex-none border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground rounded-xl h-11 font-bold transition-all"
+                        className="flex-1 sm:flex-none border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground rounded-xl h-11 font-bold transition"
                       >
                         <Check className="h-4 w-4 mr-2" />
                         Approve
@@ -200,8 +207,8 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
                       </Button>
                     </>
                   ) : (
-                    <div className="bg-muted/30 border border-border/50 px-4 py-2 rounded-xl text-xs text-muted-foreground font-bold uppercase tracking-widest">
-                      Observation Mode
+                    <div className="bg-muted/30 border border-border/50 px-4 py-2 rounded-xl text-xs text-muted-foreground font-bold">
+                      {isInternal ? 'Observation Mode' : 'Waiting for the project creator'}
                     </div>
                   )
                 ) : (

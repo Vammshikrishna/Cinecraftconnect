@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { friendlyError } from '@cinecraft/core';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -286,7 +287,7 @@ export const useProjectBudget = (projectId: string) => {
     },
     onError: (err: any, _item, context) => {
       if (context?.previous !== undefined) queryClient.setQueryData(scheduleKey, context.previous);
-      toast({ title: 'Error', description: err.message || 'Could not add schedule item', variant: 'destructive' });
+      toast({ title: 'Error', description: friendlyError(err, 'Could not add schedule item'), variant: 'destructive' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: scheduleKey });
@@ -329,7 +330,7 @@ export const useProjectBudget = (projectId: string) => {
     },
     onError: (err: any, _patch, context) => {
       if (context?.previous !== undefined) queryClient.setQueryData(scheduleKey, context.previous);
-      toast({ title: 'Error', description: err.message || 'Could not update schedule item', variant: 'destructive' });
+      toast({ title: 'Error', description: friendlyError(err, 'Could not update schedule item'), variant: 'destructive' });
     },
     onSuccess: () => toast({ title: 'Success', description: 'Schedule item updated' }),
   });

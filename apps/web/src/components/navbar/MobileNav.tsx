@@ -1,13 +1,16 @@
+import { useState } from "react";
+import { useT } from '@/hooks/useT';
 import { useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Home, Film, Briefcase, Users, MoreHorizontal, ShoppingBag, BookOpen, Megaphone, Star, Lightbulb } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { Home, Film, Briefcase, Users, MoreHorizontal, ShoppingBag, BookOpen, Megaphone, Star, Lightbulb, ArrowLeftRight } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { AccountSwitcherSheet } from "@/components/profile/AccountSwitcherSheet";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountType } from "@/hooks/useAccountType";
 import { useUnreadMessages } from "@/hooks/useUnreadMessages";
@@ -19,7 +22,9 @@ import { useScrollDirection } from "@/hooks/useScrollDirection";
 import { useAppNavigation } from "@/contexts/NavigationContext";
 
 export function MobileNav() {
+  const { t } = useT();
   const location = useLocation();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const { hasUnreadDiscussions, hasUnreadProjects } = useUnreadMessages();
@@ -35,7 +40,8 @@ export function MobileNav() {
                     location.pathname.endsWith('/space');
 
   const isScrollingDown = !isChatPage && scrollDirection === 'down';
-  const showNav = user && !isKeyboardVisible && !isEmojiPickerOpen && !isScrollingDown && !isChatPage;
+  // the bar stays mounted while scrolling and slides away with a transform; it only unmounts when it must not exist at all
+  const showNav = user && !isKeyboardVisible && !isEmojiPickerOpen && !isChatPage;
 
   const isActive = (path: string) => {
     if (path === "/") {
@@ -56,19 +62,19 @@ export function MobileNav() {
   };
 
   const creatorNavItems = [
-    { to: "/feed", icon: Home, label: 'Home' },
-    { to: "/projects", icon: Film, label: 'Projects' },
-    { to: "/discussion-rooms", icon: DiscussionRoomIcon, label: 'Discussions' },
-    { to: "/jobs", icon: Briefcase, label: 'Jobs' },
-    { to: "/network", icon: Users, label: 'Network' },
+    { to: "/feed", icon: Home, label: 'Home', key: 'nav.home' },
+    { to: "/projects", icon: Film, label: 'Projects', key: 'nav.projects' },
+    { to: "/discussion-rooms", icon: DiscussionRoomIcon, label: 'Discussions', key: 'nav.discussions' },
+    { to: "/jobs", icon: Briefcase, label: 'Jobs', key: 'nav.jobs' },
+    { to: "/network", icon: Users, label: 'Network', key: 'nav.network' },
   ];
 
   const fanNavItems = [
-    { to: "/feed", icon: Home, label: 'Home' },
-    { to: "/discussion-rooms", icon: DiscussionRoomIcon, label: 'Discussions' },
-    { to: "/ratings", icon: Star, label: 'Ratings' },
-    { to: "/announcements", icon: Megaphone, label: 'Announcements' },
-    { to: "/pages", icon: StudioPageIcon, label: 'Pages' },
+    { to: "/feed", icon: Home, label: 'Home', key: 'nav.home' },
+    { to: "/discussion-rooms", icon: DiscussionRoomIcon, label: 'Discussions', key: 'nav.discussions' },
+    { to: "/ratings", icon: Star, label: 'Ratings', key: 'nav.ratings' },
+    { to: "/announcements", icon: Megaphone, label: 'Announcements', key: 'nav.announcements' },
+    { to: "/pages", icon: StudioPageIcon, label: 'Pages', key: 'nav.pages' },
   ];
 
   const navItems = isFan ? fanNavItems : creatorNavItems;
@@ -85,28 +91,26 @@ export function MobileNav() {
   const isMoreActive = allMorePaths.some(p => location.pathname.startsWith(p));
 
   return (
-    <AnimatePresence mode="wait">
+    <>
+    <AccountSwitcherSheet isOpen={switcherOpen} onOpenChange={setSwitcherOpen} />
       {showNav && (
-        <motion.nav
-          key="mobile-nav"
-          initial={{ y: 100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 100, opacity: 0 }}
-          transition={{ type: "spring", damping: 25, stiffness: 200, duration: 0.2 }}
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-[100] bg-card/95 backdrop-blur-xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+8px)] md:pb-[calc(env(safe-area-inset-bottom)+20px)] shadow-[0_-8px_30px_rgba(0,0,0,0.12)]"
+        <nav
+          aria-hidden={isScrollingDown || undefined}
+          className={cn("lg:hidden fixed bottom-0 left-0 right-0 z-[100] bg-background/75 backdrop-blur-xl backdrop-saturate-150 border-t border-border/60 pb-[calc(env(safe-area-inset-bottom)+8px)] md:pb-[calc(env(safe-area-inset-bottom)+20px)] shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-200 ease-out-strong", isScrollingDown && "translate-y-full pointer-events-none")}
         >
           <div className="flex items-center justify-around py-1 md:py-2 px-2 md:px-4">
-            {navItems.map(({ to, icon: Icon, label }) => (
+            {navItems.map(({ to, icon: Icon, label, key }) => (
               <button
                 key={to}
+                aria-label={t(key as any)}
                 onClick={() => handleTabClick(to)}
-                className={`flex flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-all duration-200 ${isActive(to) ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                className={`flex min-h-[44px] min-w-[44px] flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-[color,transform] duration-150 active:scale-90 ${isActive(to) ? "text-primary" : "text-muted-foreground hover:text-foreground"
                   }`}
               >
                 <div className="relative">
                   <Icon className={cn("w-5 h-5 md:w-6 md:h-6", isActive(to) ? "text-primary" : "")} />
                   {hasNotification(label) && (
-                    <span className="absolute -top-1 -right-1 flex h-2 w-2 md:h-2.5 md:w-2.5 items-center justify-center rounded-full bg-red-500 border-2 border-card animate-pulse" />
+                    <span className="absolute -top-1 -right-1 flex h-2 w-2 md:h-2.5 md:w-2.5 items-center justify-center rounded-full bg-red-500 border-2 border-card" />
                   )}
                 </div>
                 {isActive(to) && (
@@ -120,7 +124,8 @@ export function MobileNav() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className={`flex flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-all duration-200 ${isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                    aria-label="More"
+                    className={`flex min-h-[44px] min-w-[44px] flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-[color,transform] duration-150 active:scale-90 ${isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
                   >
                     <MoreHorizontal className={cn("w-5 h-5 md:w-6 md:h-6", isMoreActive ? "text-primary" : "")} />
                     {isMoreActive && (
@@ -160,12 +165,19 @@ export function MobileNav() {
                       <span>Pages</span>
                     </div>
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setSwitcherOpen(true)}>
+                    <div className="flex items-center gap-3 cursor-pointer w-full">
+                      <ArrowLeftRight size={18} />
+                      <span>Switch account</span>
+                    </div>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
           </div>
-        </motion.nav>
+        </nav>
       )}
-    </AnimatePresence>
+    </>
   );
 }

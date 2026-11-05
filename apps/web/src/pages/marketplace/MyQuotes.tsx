@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
-import { FileText, Loader2, Check, X, MessageSquare, Star } from 'lucide-react';
+import { FileText, Check, X, MessageSquare, Star, Flag } from 'lucide-react';
+import { OpenDisputeDialog } from '@/components/marketplace/OpenDisputeDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +16,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { PageHeader } from '@/components/common/PageHeader';
 import { BackButton } from '@/components/common/BackButton';
 import { OrdersTabs } from '@/components/marketplace/OrdersTabs';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { LoadError } from '@/components/settings/LoadError';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
 
 const db = supabase as any;
 type QStatus = 'requested' | 'quoted' | 'accepted' | 'declined' | 'cancelled' | 'completed';
@@ -57,8 +61,10 @@ const MyQuotes = () => {
   const [role, setRole] = useState<'requester' | 'vendor'>('requester');
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [respondTo, setRespondTo] = useState<Quote | null>(null);
+  const [disputeFor, setDisputeFor] = useState<Quote | null>(null);
   const [form, setForm] = useState({ amount: '', message: '', days: '14' });
 
   const load = useCallback(async () => {
@@ -70,8 +76,7 @@ const MyQuotes = () => {
         requester:requester_id ( id, full_name, username ),
         service:service_id ( title )`)
       .order('created_at', { ascending: false });
-    if (error) console.error(error);
-    setQuotes((data || []) as Quote[]);
+    if (error) { console.error(error); setLoadError(true); } else { setLoadError(false); setQuotes((data || []) as Quote[]); }
     setLoading(false);
   }, [user?.id]);
 
@@ -94,6 +99,20 @@ const MyQuotes = () => {
   const waiting = quotes.filter((q) => q.vendor?.owner_id === user?.id && q.status === 'requested').length;
 
   const decide = async (q: Quote, action: 'accept' | 'decline' | 'cancel' | 'complete') => {
+    if (action === 'decline' || action === 'cancel') {
+      const ok = await confirmDialog(
+        action === 'decline' ? 'Decline this quote request? The other person will be notified. This cannot be undone.' : 'Cancel this request? The vendor will be notified. This cannot be undone.',
+        { title: action === 'decline' ? 'Decline this request?' : 'Cancel this request?', confirmLabel: action === 'decline' ? 'Yes, decline' : 'Yes, cancel it', cancelLabel: 'Keep it', destructive: true },
+      );
+      if (!ok) return;
+    }
+    if (action === 'accept') {
+      const ok = await confirmDialog(
+        `Accept this quote${q.quote_amount ? ` of ${q.quote_amount}` : ''}? The vendor will be notified and the booking is confirmed.`,
+        { title: 'Accept this quote?', confirmLabel: 'Yes, accept', cancelLabel: 'Not yet', destructive: false },
+      );
+      if (!ok) return;
+    }
     setBusyId(q.id);
     const { data, error } = await db.rpc('decide_quote', { p_quote_id: q.id, p_action: action });
     setBusyId(null);
@@ -121,8 +140,8 @@ const MyQuotes = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background pt-16 md:pt-20 pb-28">
-      <div className="max-w-4xl mx-auto px-4 md:px-8">
+    <div className="min-h-dvh bg-background pt-16 md:pt-20 pb-28">
+      <div className="max-w-[1152px] mx-auto px-4 md:px-8">
         <BackButton label="BACK TO MARKETPLACE" to="/marketplace?tab=services" className="mb-6" />
         <PageHeader title="Orders" subtitle="Quote requests you sent to vendors, and requests clients sent to your business." Icon={FileText} />
         <OrdersTabs current="quotes" />
@@ -131,13 +150,15 @@ const MyQuotes = () => {
           <TabsList className="grid grid-cols-2 w-full sm:w-96 h-11 rounded-xl">
             <TabsTrigger value="requester" className="rounded-lg font-bold">My requests</TabsTrigger>
             <TabsTrigger value="vendor" className="rounded-lg font-bold">
-              Received{waiting > 0 && <span className="ml-2 text-[10px] bg-amber-500 text-black rounded-full px-1.5 py-0.5 font-black">{waiting}</span>}
+              Received{waiting > 0 && <span className="ml-2 text-[12px] bg-amber-500 text-black rounded-full px-1.5 py-0.5 font-black">{waiting}</span>}
             </TabsTrigger>
           </TabsList>
         </Tabs>
 
         {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+          <ScreenSkeleton variant="list" />
+        ) : loadError && quotes.length === 0 ? (
+          <LoadError className="mt-6" title="Could not load your quotes" onRetry={() => { setLoading(true); load(); }} />
         ) : mine.length === 0 ? (
           <div className="text-center py-20 mt-6 rounded-[2rem] border border-dashed border-border/60 bg-card/30">
             <FileText className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" />
@@ -159,19 +180,19 @@ const MyQuotes = () => {
                       <Link to={`/vendors/${q.vendor_id}`} className="font-black text-lg hover:text-primary truncate block">{q.vendor?.business_name}</Link>
                       <p className="text-xs text-muted-foreground">{role === 'vendor' ? `From ${other}` : q.service?.title || 'General request'} · {formatDistanceToNow(new Date(q.created_at), { addSuffix: true })}</p>
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest rounded-full px-3 py-1 shrink-0" style={{ color: st.color, backgroundColor: st.tint }}>{st.label}</span>
+                    <span className="text-[12px] font-black uppercase tracking-widest rounded-full px-3 py-1 shrink-0" style={{ color: st.color, backgroundColor: st.tint }}>{st.label}</span>
                   </div>
 
-                  <p className="text-sm font-bold">{range(q)}{q.location ? ` · ${q.location}` : ''}{q.crew_size ? ` · crew ${q.crew_size}` : ''}{q.budget ? ` · budget ₹${Number(q.budget).toLocaleString()}` : ''}</p>
+                  <p className="text-sm font-bold">{range(q)}{q.location ? ` · ${q.location}` : ''}{q.crew_size ? ` · crew ${q.crew_size}` : ''}{q.budget ? ` · budget ₹${Number(q.budget).toLocaleString('en-IN')}` : ''}</p>
                   <p className="text-sm text-muted-foreground bg-muted/30 rounded-xl px-3 py-2 whitespace-pre-wrap">{q.brief}</p>
 
                   {q.quote_amount != null && (
                     <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Quote</p>
-                      <p className="text-2xl font-black text-primary">₹{Number(q.quote_amount).toLocaleString()}</p>
+                      <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Quote</p>
+                      <p className="text-2xl font-black text-primary">₹{Number(q.quote_amount).toLocaleString('en-IN')}</p>
                       {q.quote_message && <p className="text-sm mt-1 whitespace-pre-wrap">{q.quote_message}</p>}
                       {q.valid_until && q.status === 'quoted' && (
-                        <p className={`text-[11px] mt-2 font-bold ${expired ? 'text-red-500' : 'text-muted-foreground'}`}>
+                        <p className={`text-[12px] mt-2 font-bold ${expired ? 'text-red-500' : 'text-muted-foreground'}`}>
                           {expired ? 'Expired' : `Valid until ${format(new Date(q.valid_until), 'd MMM')}`}
                         </p>
                       )}
@@ -202,6 +223,9 @@ const MyQuotes = () => {
                     {role === 'requester' && (q.status === 'completed' || (q.status === 'accepted' && new Date(q.start_date) <= new Date())) && (
                       <Button size="sm" variant="outline" className="rounded-full" onClick={() => push(`/vendors/${q.vendor_id}`)}><Star className="w-4 h-4 mr-1" /> Review vendor</Button>
                     )}
+                    {(q.status === 'completed' || q.status === 'cancelled' || (q.status === 'accepted' && new Date(q.start_date) <= new Date())) && (
+                      <Button size="sm" variant="ghost" className="rounded-full text-muted-foreground" onClick={() => setDisputeFor(q)}><Flag className="w-4 h-4 mr-1" /> Report a problem</Button>
+                    )}
                     <Button size="sm" variant="ghost" className="rounded-full" onClick={() => push(`/messages/${role === 'requester' ? q.vendor?.owner_id : q.requester_id}`)}><MessageSquare className="w-4 h-4 mr-1" /> Message</Button>
                   </div>
                 </div>
@@ -210,6 +234,8 @@ const MyQuotes = () => {
           </div>
         )}
       </div>
+
+      <OpenDisputeDialog open={!!disputeFor} onOpenChange={(o) => !o && setDisputeFor(null)} kind="quote" refId={disputeFor?.id || ''} title={disputeFor?.vendor?.business_name || 'This job'} onOpened={() => push('/marketplace/disputes')} />
 
       <Dialog open={!!respondTo} onOpenChange={(o) => !o && setRespondTo(null)}>
         <DialogContent className="sm:max-w-[440px] w-[95vw]">

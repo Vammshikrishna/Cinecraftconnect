@@ -45,17 +45,31 @@ export function usePostBookmarks() {
         if (error) throw error;
       }
     },
+    // the bookmark fills in (or empties) at once; it goes back if the save fails
+    onMutate: async ({ postId, isBookmarked }: { postId: string; isBookmarked: boolean }) => {
+      await queryClient.cancelQueries({ queryKey: ["post_bookmarks", user?.id] });
+      const previous = queryClient.getQueryData<string[]>(["post_bookmarks", user?.id]);
+      if (previous) {
+        queryClient.setQueryData(
+          ["post_bookmarks", user?.id],
+          isBookmarked ? previous.filter((id) => id !== postId) : [...previous, postId],
+        );
+      }
+      return { previous };
+    },
     onSuccess: (_, variables) => {
-      // Invalidate both the IDs set AND potentially a list of bookmarked posts
-      queryClient.invalidateQueries({ queryKey: ["post_bookmarks", user?.id] });
-      queryClient.invalidateQueries({ queryKey: ["bookmarked_posts", user?.id] });
-      
       toast({
         title: variables.isBookmarked ? "Removed from bookmarks" : "Saved to bookmarks",
         duration: 2000,
       });
     },
-    onError: (error) => {
+    onSettled: () => {
+      // Invalidate both the IDs set AND potentially a list of bookmarked posts
+      queryClient.invalidateQueries({ queryKey: ["post_bookmarks", user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["bookmarked_posts", user?.id] });
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previous) queryClient.setQueryData(["post_bookmarks", user?.id], context.previous);
       console.error("Error toggling bookmark:", error);
       toast({
         title: "Error updating bookmarks",
@@ -84,7 +98,7 @@ export function usePostBookmarks() {
             share_count,
             created_at,
             author_id,
-            author:profiles (
+            author:profiles!posts_author_id_fkey (
               id,
               full_name,
               username,

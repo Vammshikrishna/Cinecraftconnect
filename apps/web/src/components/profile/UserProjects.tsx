@@ -10,6 +10,8 @@ import { Link } from 'react-router-dom';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface Project {
   id: string;
@@ -141,7 +143,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-6">
         {[...Array(2)].map((_, i) => (
           <EnhancedSkeleton key={i} className="h-80 w-full rounded-xl" />
         ))}
@@ -164,20 +166,20 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-6">
       {projects.map((project) => (
         <div key={project.id} className="relative group">
           {isAdmin && (
-            <Button
+            <Button aria-label="Delete"
               variant="destructive"
               size="icon"
               className="absolute top-2 right-2 z-30 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
               onClick={async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (!confirm('Are you sure you want to delete this project?')) return;
+                if (!await confirmDialog('Are you sure you want to delete this project?')) return;
                 const { error } = await supabase.from('projects').delete().eq('id', project.id);
-                if (error) toast({ title: 'Error', description: error.message, variant: 'destructive' });
+                if (error) toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
                 else {
                   toast({ title: 'Success', description: 'Project deleted' });
                   setProjects(prev => prev.filter(p => p.id !== project.id));
@@ -188,7 +190,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
             </Button>
           )}
           <Link to={`/projects/${project.id}`} className="block h-full">
-            <Card className="group relative overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:scale-[1.02] h-full">
+            <Card className="group relative overflow-hidden border-border/50 bg-card/50 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition duration-300 hover:scale-[1.02] h-full">
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
@@ -294,7 +296,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full mt-4 group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all"
+                className="w-full mt-4 group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition"
               >
                 View Project Details
               </Button>

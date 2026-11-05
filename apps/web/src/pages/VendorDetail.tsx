@@ -12,23 +12,15 @@ import { QuoteRequestDialog } from '@/components/vendors/QuoteRequestDialog';
 import { VendorVerificationDialog } from '@/components/vendors/VendorVerificationDialog';
 import { LeaveReviewModal } from '@/components/marketplace/LeaveReviewModal';
 import ReportDialog from '@/components/common/ReportDialog';
-import {
-    MapPin,
-    MessageSquare,
-    Share2,
-    Globe,
-    Phone,
-    Mail,
-    Building2,
-    Star,
-    FileText,
-    Flag
-} from 'lucide-react';
+import { MapPin, MessageSquare, Globe, Phone, Mail, Building2, Star, FileText, Flag } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { PageHeader } from '@/components/common/PageHeader';
 import { useAppRole } from '@/hooks/useAppRole';
-import { Trash2, Plus, BadgeCheck } from 'lucide-react';
+import { Trash2, Plus, BadgeCheck, AlertTriangle } from 'lucide-react';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const VendorDetail = () => {
     const { id } = useParams<{ id: string }>();
@@ -49,14 +41,34 @@ const VendorDetail = () => {
 
     const requireSignIn = (action: () => void) => {
         if (!user) {
-            toast({ title: 'Sign in required', description: 'Redirecting to sign in page...', variant: 'destructive' });
+            toast({ title: 'Sign in required', description: 'Redirecting to sign in page...' });
             push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
         }
         action();
     };
 
+    const [editingService, setEditingService] = useState<any | null>(null);
+    const [verifStatus, setVerifStatus] = useState<string | null>(null);
+    const [verifNote, setVerifNote] = useState<string | null>(null);
     const isOwner = user && vendor && user.id === vendor.owner_id;
+
+    // the owner's latest verification request decides whether to offer "Get verified", "being reviewed" or "Resubmit"
+    const loadVerifStatus = async () => {
+        if (!isOwner || !vendor) return;
+        const { data } = await supabase.from('vendor_verification_requests' as any).select('status, review_note').eq('vendor_id', vendor.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        setVerifStatus((data as any)?.status ?? null);
+        setVerifNote(((data as any)?.review_note as string | null) ?? null);
+    };
+    useEffect(() => { loadVerifStatus(); }, [isOwner, vendor?.id]);
+
+    const deleteService = async (service: any) => {
+        if (!await confirmDialog(`Delete the package "${service.title}"? People will no longer see it.`, { title: 'Delete this package?', confirmLabel: 'Delete package', destructive: true })) return;
+        const { error } = await supabase.from('vendor_services' as any).delete().eq('id', service.id);
+        if (error) { toast({ title: 'Could not delete the package', description: error.message, variant: 'destructive' }); return; }
+        toast({ title: 'Package deleted' });
+        fetchVendorDetails();
+    };
 
     useEffect(() => {
         if (id) {
@@ -68,10 +80,27 @@ const VendorDetail = () => {
         if (!id) return;
         try {
             setLoading(true);
-            const { data, error } = await supabase
+            let { data, error } = await supabase
                 .rpc('get_vendor_with_rating', { vendor_uuid: id });
 
-            if (error) throw error;
+            if (error) {
+                // The rating function can fail on its own (it did once when a column was added to vendors): read the vendor
+                // and its reviews directly so the page still opens.
+                const { data: v, error: vErr } = await supabase.from('vendors' as any).select('*').eq('id', id).maybeSingle();
+                if (vErr) throw vErr;
+                if (v) {
+                    const { data: revs } = await supabase.from('marketplace_reviews' as any).select('rating').eq('vendor_id', id);
+                    const ratings = ((revs as any[]) || []).map((r) => Number(r.rating)).filter((n) => Number.isFinite(n));
+                    data = [{
+                        ...(v as any),
+                        average_rating: ratings.length ? ratings.reduce((a, n) => a + n, 0) / ratings.length : 0,
+                        review_count: ratings.length,
+                    }] as any;
+                } else {
+                    data = [] as any;
+                }
+                error = null;
+            }
 
             if (data && data.length > 0) {
                 setVendor(data[0] as Vendor);
@@ -114,7 +143,6 @@ const VendorDetail = () => {
             toast({
                 title: 'Sign in required',
                 description: 'Redirecting to sign in page...',
-                variant: 'destructive'
             });
             push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
@@ -133,28 +161,28 @@ const VendorDetail = () => {
     
     const handleDeleteVendor = async () => {
         if (!vendor) return;
-        if (!confirm('Are you sure you want to delete this vendor profile? This action cannot be undone.')) return;
+        if (!await confirmDialog('Are you sure you want to delete this vendor profile? This action cannot be undone.')) return;
         try {
             const { error } = await supabase.from('vendors').delete().eq('id', vendor.id);
             if (error) throw error;
             toast({ title: "Vendor Deleted", description: "The vendor profile has been successfully removed." });
             goBack();
         } catch (error: any) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+            toast({ title: "Error", description: friendlyError(error), variant: "destructive" });
         }
     };
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-background pt-24 px-4 flex justify-center">
-                <div className="animate-pulse space-y-8 w-full max-w-6xl">
-                    <div className="h-8 bg-gray-800 rounded w-1/4"></div>
+            <div className="min-h-dvh bg-background pt-24 px-4 flex justify-center">
+                <div className="space-y-8 w-full max-w-[1400px]">
+                    <div className="h-8 bg-muted animate-pulse rounded w-1/4"></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="aspect-video bg-gray-800 rounded-xl"></div>
+                        <div className="aspect-video bg-muted animate-pulse rounded-xl"></div>
                         <div className="space-y-4">
-                            <div className="h-10 bg-gray-800 rounded w-3/4"></div>
-                            <div className="h-6 bg-gray-800 rounded w-1/2"></div>
-                            <div className="h-32 bg-gray-800 rounded w-full"></div>
+                            <div className="h-10 bg-muted animate-pulse rounded w-3/4"></div>
+                            <div className="h-6 bg-muted animate-pulse rounded w-1/2"></div>
+                            <div className="h-32 bg-muted animate-pulse rounded w-full"></div>
                         </div>
                     </div>
                 </div>
@@ -165,20 +193,20 @@ const VendorDetail = () => {
     if (!vendor) return null;
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-40">
-            <div className="max-w-6xl mx-auto px-4 md:px-8">
+        <div className="min-h-dvh bg-background pt-20 pb-40">
+            <div className="max-w-[1400px] mx-auto px-4 md:px-8">
                 <PageHeader
                     title={vendor.business_name}
                     subtitle={
                         <div className="flex items-center gap-2">
                             <span>Service provider{vendor.location ? ` in ${vendor.location}` : ''}</span>
                             {vendor.is_verified && (
-                                <Badge variant="outline" className="border-primary/40 text-primary font-black uppercase tracking-widest text-[10px] py-0.5 px-2 bg-primary/5 gap-1">
+                                <Badge variant="outline" className="border-primary/40 text-primary font-black uppercase tracking-widest text-[12px] py-0.5 px-2 bg-primary/5 gap-1">
                                     <BadgeCheck className="h-3 w-3" /> Verified
                                 </Badge>
                             )}
                             {isInternal && (
-                                <Badge variant="outline" className="border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[10px] py-0.5 px-2 bg-orange-500/5">
+                                <Badge variant="outline" className="border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[12px] py-0.5 px-2 bg-orange-500/5">
                                     Staff Observer
                                 </Badge>
                             )}
@@ -187,11 +215,11 @@ const VendorDetail = () => {
                     onBack={() => goBack()}
                     actions={
                         <div className="flex gap-2">
-                            <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
-                                <Share2 className="h-4 w-4" />
+                            <Button aria-label="Share" variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                                <ShareIcon className="h-4 w-4" />
                             </Button>
                             {isInternal && (
-                                <Button variant="ghost" size="icon" className="rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border-none" onClick={handleDeleteVendor}>
+                                <Button aria-label="Delete" variant="ghost" size="icon" className="rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border-none" onClick={handleDeleteVendor}>
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
                             )}
@@ -223,7 +251,7 @@ const VendorDetail = () => {
                                     <button
                                         key={idx}
                                         onClick={() => setActiveImageIndex(idx)}
-                                        className={`aspect-square rounded-2xl overflow-hidden border-2 transition-all duration-300 ${activeImageIndex === idx ? 'border-primary scale-105 shadow-xl shadow-primary/20' : 'border-transparent hover:border-primary/50 opacity-60 hover:opacity-100'
+                                        className={`aspect-square rounded-2xl overflow-hidden border-2 transition duration-300 ${activeImageIndex === idx ? 'border-primary scale-105 shadow-xl shadow-primary/20' : 'border-transparent hover:border-primary/50 opacity-60 hover:opacity-100'
                                             }`}
                                     >
                                         <img loading="lazy" decoding="async" src={img} alt={`View ${idx + 1}`} className="w-full h-full object-cover" />
@@ -233,7 +261,7 @@ const VendorDetail = () => {
                         )}
 
                         {/* Description */}
-                        <div className="space-y-4 p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
+                        <div className="space-y-4 p-8 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
                             <h3 className="text-xl font-black tracking-tight">About Us</h3>
                             <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
                                 {vendor.description}
@@ -242,7 +270,7 @@ const VendorDetail = () => {
 
                         {/* Services */}
                         {vendor.services_offered && vendor.services_offered.length > 0 && (
-                            <div className="space-y-4 p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
+                            <div className="space-y-4 p-8 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 rounded-[32px] shadow-xl">
                                 <h3 className="text-xl font-black tracking-tight">Services Offered</h3>
                                 <div className="flex flex-wrap gap-2">
                                     {vendor.services_offered.map((service, idx) => (
@@ -268,7 +296,7 @@ const VendorDetail = () => {
                             {services.length > 0 ? (
                                 <div className="grid grid-cols-1 gap-4">
                                     {services.map(service => (
-                                        <div key={service.id} className="p-5 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-3xl space-y-3 cursor-pointer hover:border-primary/50 hover:shadow-lg transition-all shadow-sm" onClick={() => push(`/vendors/services/${service.id}`)}>
+                                        <div key={service.id} role="link" tabIndex={0} aria-label={`View package ${service.title}`} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); push(`/vendors/services/${service.id}`); } }} className="p-5 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 rounded-3xl space-y-3 cursor-pointer hover:border-primary/50 hover:shadow-lg transition shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" onClick={() => push(`/vendors/services/${service.id}`)}>
                                             <div className="flex justify-between items-start">
                                                 <div>
                                                     <h4 className="font-bold text-lg">{service.title}</h4>
@@ -276,17 +304,23 @@ const VendorDetail = () => {
                                                 </div>
                                                 <div className="text-right shrink-0 ml-4">
                                                     <div className="font-black text-primary text-lg">₹{service.day_rate}</div>
-                                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">/ Day</div>
+                                                    <div className="text-[12px] uppercase tracking-widest text-muted-foreground">/ Day</div>
                                                 </div>
                                             </div>
+                                            {isOwner && (
+                                                <div className="flex gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                                                    <Button size="sm" variant="outline" aria-label={`Edit package ${service.title}`} onClick={() => setEditingService(service)}>Edit</Button>
+                                                    <Button size="sm" variant="outline" className="text-destructive" aria-label={`Delete package ${service.title}`} onClick={() => deleteService(service)}>Delete</Button>
+                                                </div>
+                                            )}
                                             <div className="flex flex-wrap gap-2 pt-2">
-                                                {service.production_types.slice(0, 3).map(pt => (
+                                                {(service.production_types ?? []).slice(0, 3).map(pt => (
                                                     <Badge key={pt} variant="outline" className="text-xs bg-secondary/10">
                                                         {pt}
                                                     </Badge>
                                                 ))}
-                                                {service.production_types.length > 3 && (
-                                                    <Badge variant="outline" className="text-xs bg-secondary/10">+{service.production_types.length - 3}</Badge>
+                                                {(service.production_types?.length ?? 0) > 3 && (
+                                                    <Badge variant="outline" className="text-xs bg-secondary/10">+{(service.production_types?.length ?? 0) - 3}</Badge>
                                                 )}
                                             </div>
                                         </div>
@@ -322,7 +356,7 @@ const VendorDetail = () => {
                                              </Badge>
                                          ))}
                                      </div>
-                                     {vendor.average_rating && vendor.average_rating > 0 && (
+                                     {(vendor.average_rating ?? 0) > 0 && (
                                          <div className="flex items-center gap-1 mt-2 text-sm font-medium">
                                              <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
                                              <span>{vendor.average_rating.toFixed(1)}</span>
@@ -337,23 +371,25 @@ const VendorDetail = () => {
                             {/* Contact Actions */}
                             <div className="relative z-10 flex flex-col gap-3">
                                 {!isInternal && !isOwner && (
-                                    <Button className="w-full gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={() => requireSignIn(() => setQuoteOpen(true))}>
+                                    <Button className="w-full gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition" onClick={() => requireSignIn(() => setQuoteOpen(true))}>
                                         <FileText className="h-5 w-5" />
                                         <span className="font-bold tracking-wide">Request a quote</span>
                                     </Button>
                                 )}
-                                {!isInternal && (
+                                {!isInternal && !isOwner && (
                                     <Button variant="outline" className="w-full gap-2.5 h-12 rounded-xl text-sm font-bold" onClick={handleContactVendor}>
                                         <MessageSquare className="h-4 w-4" />
                                         Chat with Vendor
                                     </Button>
                                 )}
-                                {!isInternal && !isOwner && (
+                                {!isOwner && (
                                     <div className="flex gap-3">
+                                        {!isInternal && (
                                         <Button variant="outline" className="flex-1 h-12 rounded-xl text-sm font-bold" onClick={() => requireSignIn(() => setReviewOpen(true))}>
                                             <Star className="h-4 w-4 mr-2" />
-                                            Review
+                                            Leave a review
                                         </Button>
+                                        )}
                                         <Button variant="ghost" className="flex-1 h-12 rounded-xl text-sm font-bold text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500" onClick={() => requireSignIn(() => setReportOpen(true))}>
                                             <Flag className="h-4 w-4 mr-2" />
                                             Report
@@ -366,11 +402,24 @@ const VendorDetail = () => {
                                             <FileText className="h-5 w-5" />
                                             <span className="font-bold tracking-wide">View quote requests</span>
                                         </Button>
-                                        {!vendor.is_verified && (
-                                            <Button variant="outline" className="w-full h-12 rounded-xl text-sm font-bold gap-2" onClick={() => setVerifyOpen(true)}>
-                                                <BadgeCheck className="h-4 w-4" /> Get verified
-                                            </Button>
-                                        )}
+                                        {!vendor.is_verified && (verifStatus === 'pending' ? (
+                                            <div className="w-full h-12 rounded-xl border border-dashed flex items-center justify-center gap-2 text-sm font-semibold text-muted-foreground" role="status">
+                                                <BadgeCheck className="h-4 w-4" /> Verification is being reviewed
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {verifStatus === 'rejected' && (
+                                                    <div className="w-full rounded-xl border border-primary/40 bg-primary/10 p-3 text-left" role="alert">
+                                                        <p className="flex items-center gap-2 text-sm font-bold text-primary"><AlertTriangle className="h-4 w-4 shrink-0" /> Verification was not approved</p>
+                                                        {verifNote && <p className="mt-1 text-sm text-foreground/90 break-words whitespace-pre-line">Reason: {verifNote}</p>}
+                                                        <p className="mt-1 text-xs text-muted-foreground">Fix the issue and submit again.</p>
+                                                    </div>
+                                                )}
+                                                <Button variant="outline" className="w-full h-12 rounded-xl text-sm font-bold gap-2" onClick={() => setVerifyOpen(true)}>
+                                                    <BadgeCheck className="h-4 w-4" /> {verifStatus === 'rejected' ? 'Fix and resubmit' : 'Get verified'}
+                                                </Button>
+                                            </>
+                                        ))}
                                     </>
                                 )}
                             </div>
@@ -411,29 +460,29 @@ const VendorDetail = () => {
                                 )}
 
                                 {vendor.phone && (
-                                    <div className="flex items-center gap-3 text-sm">
-                                        <Phone className="h-4 w-4 text-primary" />
-                                        <span>{vendor.phone}</span>
+                                    <div className="flex items-center gap-3 text-sm min-w-0">
+                                        <Phone className="h-4 w-4 text-primary shrink-0" />
+                                        <a href={`tel:${vendor.phone}`} className="hover:text-primary transition-colors min-w-0 break-words">{vendor.phone}</a>
                                     </div>
                                 )}
 
                                 {vendor.email && (
-                                    <div className="flex items-center gap-3 text-sm">
-                                        <Mail className="h-4 w-4 text-primary" />
-                                        <a href={`mailto:${vendor.email}`} className="hover:text-primary transition-colors">
+                                    <div className="flex items-center gap-3 text-sm min-w-0">
+                                        <Mail className="h-4 w-4 text-primary shrink-0" />
+                                        <a href={`mailto:${vendor.email}`} className="hover:text-primary transition-colors min-w-0 break-all">
                                             {vendor.email}
                                         </a>
                                     </div>
                                 )}
 
                                 {vendor.website && (
-                                    <div className="flex items-center gap-3 text-sm">
-                                        <Globe className="h-4 w-4 text-primary" />
+                                    <div className="flex items-center gap-3 text-sm min-w-0">
+                                        <Globe className="h-4 w-4 text-primary shrink-0" />
                                         <a
                                             href={vendor.website.startsWith('http') ? vendor.website : `https://${vendor.website}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="hover:text-primary transition-colors truncate"
+                                            className="hover:text-primary transition-colors truncate min-w-0"
                                         >
                                             {vendor.website}
                                         </a>
@@ -454,7 +503,16 @@ const VendorDetail = () => {
                 </>
             )}
             {isOwner && vendor && (
-                <VendorVerificationDialog open={verifyOpen} onOpenChange={setVerifyOpen} vendorId={vendor.id} vendorName={vendor.business_name} onSubmitted={fetchVendorDetails} />
+                <VendorVerificationDialog open={verifyOpen} onOpenChange={setVerifyOpen} vendorId={vendor.id} vendorName={vendor.business_name} onSubmitted={() => { fetchVendorDetails(); loadVerifStatus(); }} />
+            )}
+            {isOwner && vendor && (
+                <ServicePackageModal
+                    open={!!editingService}
+                    onOpenChange={(o) => { if (!o) setEditingService(null); }}
+                    vendorId={vendor.id}
+                    service={editingService}
+                    onSuccess={fetchVendorDetails}
+                />
             )}
             {isOwner && vendor && (
                 <ServicePackageModal

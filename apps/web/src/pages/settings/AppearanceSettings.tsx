@@ -1,11 +1,12 @@
 import { useTheme } from '@/components/theme-provider';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { SettingsPageHeader, SettingsSection, SettingsRadioRows, useScrollToHash } from '@/components/settings/SettingsUI';
+import { SettingsPageHeader, SettingsSection, SettingsRadioRows, SettingsLoading, useScrollToHash } from '@/components/settings/SettingsUI';
 
 const AppearanceSettings = () => {
   const { settings, loading, updateSetting } = useUserSettings();
   const { theme, setTheme } = useTheme();
   useScrollToHash(!loading);
+  if (loading) return <SettingsLoading />;
 
   return (
     <>

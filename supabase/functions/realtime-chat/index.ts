@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleRateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,6 +9,12 @@ const corsHeaders = {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // No app screen uses this function today, and every session is paid for with the project's OpenAI key.
+  // It stays switched off until REALTIME_CHAT_ENABLED=true is set as an Edge Function secret.
+  if (Deno.env.get('REALTIME_CHAT_ENABLED') !== 'true') {
+    return new Response('AI voice chat is switched off', { status: 503, headers: corsHeaders });
   }
 
   // Verify JWT authentication
@@ -31,6 +38,10 @@ Deno.serve(async (req: Request) => {
 
 
 
+  // At most 5 sessions per person per 10 minutes.
+  const rl = await handleRateLimit(req, 'realtime-chat', 5, 10 * 60 * 1000);
+  if (!rl.allowed && rl.response) return rl.response;
+
   const { headers } = req;
   const upgradeHeader = headers.get("upgrade") || "";
 
@@ -48,6 +59,16 @@ Deno.serve(async (req: Request) => {
 
   let openAISocket: WebSocket | null = null;
   let sessionCreated = false;
+
+  // A session ends after 10 minutes, and the client may only send audio and chat messages: it cannot change the
+  // model settings (instructions, tools, voice) with its own session.update.
+  const MAX_SESSION_MS = 10 * 60 * 1000;
+  const MAX_CLIENT_MESSAGE_BYTES = 256 * 1024;
+  const ALLOWED_CLIENT_TYPES = new Set([
+    'input_audio_buffer.append', 'input_audio_buffer.commit', 'input_audio_buffer.clear',
+    'conversation.item.create', 'conversation.item.truncate', 'response.create', 'response.cancel',
+  ]);
+  const sessionTimer = setTimeout(() => { try { socket.close(); } catch { /* already closed */ } }, MAX_SESSION_MS);
 
   socket.onopen = () => {
 
@@ -115,7 +136,7 @@ Deno.serve(async (req: Request) => {
               ],
               tool_choice: "auto",
               temperature: 0.8,
-              max_response_output_tokens: "inf"
+              max_response_output_tokens: 1024
             }
           };
           
@@ -146,7 +167,9 @@ Deno.serve(async (req: Request) => {
 
   socket.onmessage = (event) => {
     try {
+      if (typeof event.data !== 'string' || event.data.length > MAX_CLIENT_MESSAGE_BYTES) return;
       const message = JSON.parse(event.data);
+      if (!message || !ALLOWED_CLIENT_TYPES.has(message.type)) return;
 
       
       if (message.type === 'conversation.item.create') {
@@ -160,7 +183,7 @@ Deno.serve(async (req: Request) => {
   };
 
   socket.onclose = () => {
-
+    clearTimeout(sessionTimer);
     openAISocket?.close();
   };
 

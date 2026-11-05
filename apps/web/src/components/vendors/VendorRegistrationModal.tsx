@@ -15,6 +15,8 @@ import { useToast } from '@/hooks/use-toast';
 import { VENDOR_CATEGORIES } from '@/types/marketplace';
 import { X, Building2 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { friendlyError } from '@cinecraft/core';
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
 
 interface VendorRegistrationModalProps {
     open: boolean;
@@ -27,6 +29,7 @@ export const VendorRegistrationModal = ({
     onOpenChange,
     onSuccess
 }: VendorRegistrationModalProps) => {
+    const guardDiscard = useDiscardGuard(open, onOpenChange);
     const { user } = useAuth();
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
@@ -108,6 +111,16 @@ export const VendorRegistrationModal = ({
             return;
         }
 
+        // the inputs are not inside a <form>, so the browser does not check them: do it here
+        const problem = !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim()) ? 'Enter a valid email address.'
+            : phone.replace(/\D/g, '').length < 7 ? 'Enter a valid phone number.'
+            : website && !/^https?:\/\/[^\s.]+\.[^\s]{2,}$/i.test(website.trim()) ? 'The website must start with http:// or https://.'
+            : '';
+        if (problem) {
+            toast({ title: 'Check your details', description: problem, variant: 'destructive' });
+            return;
+        }
+
         try {
             setLoading(true);
 
@@ -146,7 +159,7 @@ export const VendorRegistrationModal = ({
             console.error('Error registering vendor:', error);
             toast({
                 title: 'Error',
-                description: error.message || 'Failed to register vendor',
+                description: friendlyError(error, 'Failed to register vendor'),
                 variant: 'destructive'
             });
         } finally {
@@ -155,7 +168,7 @@ export const VendorRegistrationModal = ({
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={guardDiscard}>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Register Your Business</DialogTitle>
@@ -173,7 +186,7 @@ export const VendorRegistrationModal = ({
                                         alt="Logo preview"
                                         className="w-full h-full object-cover rounded-lg"
                                     />
-                                    <button
+                                    <button type="button" aria-label="Remove logo"
                                         onClick={() => {
                                             setLogo(null);
                                             setLogoPreview('');
@@ -228,12 +241,13 @@ export const VendorRegistrationModal = ({
                             {VENDOR_CATEGORIES.map((category) => (
                                 <div key={category} className="flex items-center space-x-2">
                                     <Checkbox
-                                        id={category}
+                                        id={`vendor-cat-${category.replace(/[^a-zA-Z0-9]+/g, '-')}`}
+                                        aria-label={category}
                                         checked={selectedCategories.includes(category)}
                                         onCheckedChange={() => handleCategoryToggle(category)}
                                     />
                                     <label
-                                        htmlFor={category}
+                                        htmlFor={`vendor-cat-${category.replace(/[^a-zA-Z0-9]+/g, '-')}`}
                                         className="text-sm cursor-pointer"
                                     >
                                         {category}

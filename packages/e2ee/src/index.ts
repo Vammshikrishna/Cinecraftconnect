@@ -1,5 +1,6 @@
 export * from './cryptoProvider';
 export * from './e2ee';
+export * from './pinVault';
 export * from './protocol';
 export * from './serialization/versioning';
 export * from './serialization/envelope';

@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Check, X, Trash2, Quote } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
 
 const REL: Record<string, string> = { worked_with: 'Worked together', managed: 'Managed them', hired: 'Hired them', mentored: 'Mentored them' };
 
@@ -26,12 +27,12 @@ export const RecommendationsSection = ({ userId, isOwner }: { userId: string; is
 
   const respond = async (id: string, approve: boolean) => {
     const { error } = await (supabase as any).rpc('respond_recommendation', { p_id: id, p_approve: approve });
-    if (error) return toast({ title: 'Could not update', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not update', description: friendlyError(error), variant: 'destructive' });
     load();
   };
   const remove = async (id: string) => {
     const { error } = await (supabase as any).from('profile_recommendations').delete().eq('id', id);
-    if (error) return toast({ title: 'Could not remove', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not remove', description: friendlyError(error), variant: 'destructive' });
     load();
   };
 
@@ -45,7 +46,7 @@ export const RecommendationsSection = ({ userId, isOwner }: { userId: string; is
       {rows.map(r => (
         <div key={r.id} className={`rounded-xl border p-4 space-y-3 bg-card/40 ${r.status === 'pending' ? 'border-primary/40' : ''}`}>
           {r.status === 'pending' && (
-            <p className="text-[10px] font-black uppercase tracking-widest text-primary">{isOwner ? 'Waiting for your approval' : 'Waiting for approval'}</p>
+            <p className="text-[12px] font-black uppercase tracking-widest text-primary">{isOwner ? 'Waiting for your approval' : 'Waiting for approval'}</p>
           )}
           <p className="text-sm leading-relaxed"><Quote className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />{r.body}</p>
           <div className="flex items-center justify-between gap-3">
@@ -53,14 +54,14 @@ export const RecommendationsSection = ({ userId, isOwner }: { userId: string; is
               <Avatar className="h-8 w-8"><AvatarImage src={r.author_avatar || undefined} /><AvatarFallback>{(r.author_name || '?')[0]}</AvatarFallback></Avatar>
               <div className="min-w-0">
                 <p className="text-sm font-semibold truncate">{r.author_name}</p>
-                <p className="text-[11px] text-muted-foreground truncate">{REL[r.relationship]}{r.project_title ? ` · ${r.project_title}` : ''} · {formatDistanceToNow(new Date(r.created_at), { addSuffix: true })}</p>
+                <p className="text-[12px] text-muted-foreground truncate">{REL[r.relationship]}{r.project_title ? ` · ${r.project_title}` : ''} · {formatDistanceToNow(new Date(r.created_at), { addSuffix: true })}</p>
               </div>
             </Link>
             <div className="flex gap-1 shrink-0">
               {isOwner && r.status === 'pending' && (
                 <>
                   <Button size="sm" onClick={() => respond(r.id, true)}><Check className="h-4 w-4 mr-1" />Approve</Button>
-                  <Button size="sm" variant="outline" onClick={() => respond(r.id, false)}><X className="h-4 w-4" /></Button>
+                  <Button aria-label="Close" size="sm" variant="outline" onClick={() => respond(r.id, false)}><X className="h-4 w-4" /></Button>
                 </>
               )}
               {(isOwner || r.is_mine) && r.status !== 'pending' && (

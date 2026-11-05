@@ -1,13 +1,25 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Alert, RefreshControl, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, RefreshControl, TextInput } from 'react-native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { CachedImage } from '../../components/common/CachedImage';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { fetchContentDetails, getSafeImageUrl } from '../../services/tmdbService';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { friendlyError } from '@cinecraft/core';
+import { TabletColumn } from '../../components/common/TabletContainer';
+import { useResponsive } from '../../hooks/useResponsive';
 
 const ORANGE = '#FF4B33';
+
+const padToColumns = (rows: any[], cols: number) => {
+  if (cols <= 1 || rows.length % cols === 0) return rows;
+  const extra = cols - (rows.length % cols);
+  return [...rows, ...Array.from({ length: extra }, (_, i) => ({ id: `__pad${i}`, __pad: true }))];
+};
+
 const PAGE = 24;
 
 type Row = {
@@ -24,6 +36,7 @@ type Row = {
 /** Everything I rated, and my watchlist. */
 export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
   const { themeColors: T } = useUserSettings();
+  const { numPosterColumns } = useResponsive();
   const [tab, setTab] = useState<'rated' | 'watchlist' | 'lists'>('rated');
   const [newName, setNewName] = useState('');
   const [sort, setSort] = useState<'recent' | 'high' | 'low'>('recent');
@@ -31,14 +44,17 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [more, setMore] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async (offset: number, replace: boolean) => {
     try {
       const supabase = getSupabaseClient() as any;
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setLoadError(false);
       if (tab === 'lists') {
-        const { data } = await supabase.from('film_lists').select('id, name, description, is_public, item_count, created_at').eq('user_id', user.id).order('updated_at', { ascending: false });
+        const { data, error: listErr } = await supabase.from('film_lists').select('id, name, description, is_public, item_count, created_at').eq('user_id', user.id).order('updated_at', { ascending: false });
+        if (listErr) throw listErr;
         setRows((data || []) as any);
         setMore(false);
         return;
@@ -50,7 +66,8 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
       if (tab === 'rated' && sort === 'high') q = q.order('rating', { ascending: false }).order('updated_at', { ascending: false });
       else if (tab === 'rated' && sort === 'low') q = q.order('rating', { ascending: true }).order('updated_at', { ascending: false });
       else q = q.order(tab === 'rated' ? 'updated_at' : 'created_at', { ascending: false });
-      const { data } = await q.range(offset, offset + PAGE - 1);
+      const { data, error: qErr } = await q.range(offset, offset + PAGE - 1);
+      if (qErr) throw qErr;
       const list = (data || []) as Row[];
       setRows((prev) => (replace ? list : [...prev, ...list]));
       setMore(list.length === PAGE);
@@ -63,6 +80,7 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
         }
       });
     } catch (e) {
+      setLoadError(true);
       console.warn('[MyRatings] load error:', e);
     } finally {
       setLoading(false);
@@ -71,6 +89,8 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
   }, [tab, sort]);
 
   useEffect(() => {
+    // Drop the previous tab's rows so Watchlist never briefly shows rated titles.
+    setRows([]);
     setLoading(true);
     load(0, true);
   }, [load]);
@@ -81,7 +101,7 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { error } = await supabase.from('film_lists').insert({ user_id: user.id, name: newName.trim() });
-    if (error) return Alert.alert('Could not create the list', error.message);
+    if (error) return Alert.alert('Could not create the list', friendlyError(error));
     setNewName('');
     load(0, true);
   };
@@ -102,7 +122,7 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
         style: 'destructive',
         onPress: async () => {
           const { error } = await (getSupabaseClient() as any).from(tab === 'rated' ? 'user_film_ratings' : 'film_watchlist').delete().eq('id', r.id);
-          if (error) return Alert.alert('Could not remove', error.message);
+          if (error) return Alert.alert('Could not remove', friendlyError(error));
           setRows((prev) => prev.filter((x) => x.id !== r.id));
         },
       },
@@ -113,13 +133,14 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
       onPress={onPress}
       style={[s.chip, { backgroundColor: active ? 'rgba(255,75,51,0.12)' : T.chipBg, borderColor: active ? ORANGE : T.border }]}
     >
-      <Text style={{ color: active ? ORANGE : T.textSecondary, fontSize: 12.5, fontWeight: '800' }}>{label}</Text>
+      <Text style={{ color: active ? ORANGE : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{label}</Text>
     </TouchableOpacity>
   );
 
   return (
     <View style={[s.container, { backgroundColor: T.bgScreen }]}>
       <Header title="My Ratings" showLogo={false} onBack={() => navigation.goBack()} />
+      <TabletColumn maxWidth="content">
       <View style={s.chipRow}>
         <Chip label="Rated" active={tab === 'rated'} onPress={() => setTab('rated')} />
         <Chip label="Watchlist" active={tab === 'watchlist'} onPress={() => setTab('watchlist')} />
@@ -134,13 +155,15 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
       )}
 
       {loading && rows.length === 0 ? (
-        <ActivityIndicator color={ORANGE} style={{ marginTop: 40 }} />
+        <ScreenSkeleton variant="list" />
+      ) : loadError && rows.length === 0 ? (
+        <LoadErrorState message="Could not load your ratings. Check your connection and try again." onRetry={() => { setLoading(true); load(0, true); }} />
       ) : (
         <FlatList
-          key={tab === 'lists' ? 'lists' : 'grid'}
-          data={rows}
+          key={tab === 'lists' ? 'lists' : `grid-${numPosterColumns}`}
+          data={tab === 'lists' ? rows : padToColumns(rows, numPosterColumns)}
           keyExtractor={(r) => r.id}
-          numColumns={tab === 'lists' ? 1 : 2}
+          numColumns={tab === 'lists' ? 1 : numPosterColumns}
           ListHeaderComponent={
             tab === 'lists' ? (
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
@@ -153,7 +176,7 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
                   maxLength={80}
                   onSubmitEditing={createList}
                 />
-                <TouchableOpacity onPress={createList} disabled={!newName.trim()} style={{ width: 42, height: 42, borderRadius: 10, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center', opacity: newName.trim() ? 1 : 0.5 }}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={createList} disabled={!newName.trim()} style={{ width: 42, height: 42, borderRadius: 10, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center', opacity: newName.trim() ? 1 : 0.5 }}>
                   <Icon name="plus" size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -161,7 +184,7 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
           }
           contentContainerStyle={{ padding: 12, paddingBottom: 60 }}
           columnWrapperStyle={tab === 'lists' ? undefined : { gap: 12 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(0, true); }} tintColor={ORANGE} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(0, true); }} tintColor={ORANGE} colors={[ORANGE]} />}
           onEndReachedThreshold={0.4}
           onEndReached={() => { if (more && !loading) load(rows.length, false); }}
           ListEmptyComponent={
@@ -169,17 +192,17 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
               {tab === 'rated' ? 'You have not rated anything yet.' : tab === 'lists' ? 'No lists yet. Create one, then use Add to list on any title.' : 'Your watchlist is empty. Tap the bookmark on any title to save it.'}
             </Text>
           }
-          renderItem={({ item: r }: { item: any }) => tab === 'lists' ? (
+          renderItem={({ item: r }: { item: any }) => r.__pad ? <View style={{ flex: 1 }} /> : tab === 'lists' ? (
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={() => navigation.navigate('FilmList', { listId: r.id })}
               style={[s.card, { backgroundColor: T.bgCard, borderColor: T.border, padding: 14, gap: 3 }]}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ color: T.textPrimary, fontSize: 15, fontWeight: '800', flex: 1 }} numberOfLines={1}>{r.name}</Text>
-                <Icon name={r.is_public ? 'globe' : 'lock'} size={14} color={T.textMuted} />
+                <Text style={{ color: T.textPrimary, fontSize: 16, fontWeight: '700', flex: 1 }} numberOfLines={1}>{r.name}</Text>
+                <Icon name={r.is_public ? 'globe' : 'lock'} size={14} color={T.iconMuted} />
               </View>
-              {!!r.description && <Text style={{ color: T.textSecondary, fontSize: 12.5 }} numberOfLines={2}>{r.description}</Text>}
+              {!!r.description && <Text style={{ color: T.textSecondary, fontSize: 12 }} numberOfLines={2}>{r.description}</Text>}
               <Text style={{ color: T.textMuted, fontSize: 12 }}>{r.item_count} title{r.item_count === 1 ? '' : 's'}</Text>
             </TouchableOpacity>
           ) : (
@@ -193,18 +216,18 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
                 <CachedImage uri={getSafeImageUrl(r.poster_path)} style={s.poster} resizeMode="cover" />
               ) : (
                 <View style={[s.poster, { backgroundColor: T.chipBg, alignItems: 'center', justifyContent: 'center' }]}>
-                  <Icon name="film" size={26} color={T.textMuted} />
+                  <Icon name="film" size={26} color={T.iconMuted} />
                 </View>
               )}
               <View style={{ padding: 8, gap: 3 }}>
-                <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '800' }} numberOfLines={1}>{r.title || 'Untitled'}</Text>
+                <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '700' }} numberOfLines={1}>{r.title || 'Untitled'}</Text>
                 {tab === 'rated' && r.rating != null ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <Icon name="star" size={12} color="#F59E0B" />
                     <Text style={{ color: T.textSecondary, fontSize: 12 }}>{Number(r.rating).toFixed(1)} / 5</Text>
                   </View>
                 ) : (
-                  <Text style={{ color: T.textMuted, fontSize: 11.5 }}>{new Date(r.created_at).toLocaleDateString()}</Text>
+                  <Text style={{ color: T.textMuted, fontSize: 12 }}>{new Date(r.created_at).toLocaleDateString()}</Text>
                 )}
               </View>
             </TouchableOpacity>
@@ -212,8 +235,9 @@ export const MyRatingsScreen = ({ navigation }: { navigation: any }) => {
         />
       )}
       {rows.length > 0 && tab !== 'lists' && (
-        <Text style={{ color: T.textMuted, fontSize: 11, textAlign: 'center', paddingBottom: 8 }}>Long-press a title to remove it</Text>
+        <Text style={{ color: T.textMuted, fontSize: 12, textAlign: 'center', paddingBottom: 8 }}>Long-press a title to remove it</Text>
       )}
+      </TabletColumn>
     </View>
   );
 };

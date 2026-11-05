@@ -31,8 +31,8 @@ const PageLoader = () => {
   return (
     <div className="fixed top-0 left-0 right-0 z-[9999] h-[3px]">
       <div 
-        className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary transition-all duration-500 ease-out shadow-[0_0_10px_rgba(var(--primary),0.5)]"
-        style={{ width: `${progress}%` }}
+        className="h-full bg-gradient-to-r from-primary via-primary/80 to-primary origin-left transition-transform duration-500 ease-out shadow-[0_0_10px_hsl(var(--primary)/0.5)]"
+        style={{ transform: `scaleX(${progress / 100})` }}
       />
     </div>
   );

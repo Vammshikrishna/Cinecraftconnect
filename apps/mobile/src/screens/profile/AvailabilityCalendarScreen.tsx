@@ -16,7 +16,10 @@ import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useResponsive } from '../../hooks/useResponsive';
+import { useHeaderInset } from '../../hooks/useHeaderInset';
 import { getSupabaseClient } from '@cinecraft/api';
+import { friendlyError } from '@cinecraft/core';
+import { showToast } from '../../contexts/ToastContext';
 
 const ORANGE = '#FF4B33';
 
@@ -32,7 +35,10 @@ export interface UserAvailability {
 
 export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any; navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
-  const { isTablet } = useResponsive();
+  const { isTablet, isLandscape } = useResponsive();
+  const headerInset = useHeaderInset();
+  const sideBySide = isTablet && isLandscape;
+  const cellH = isTablet ? (isLandscape ? 64 : 76) : 44;
   const supabase = getSupabaseClient();
 
   const routeUserId = route?.params?.userId;
@@ -174,7 +180,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
       setSelectedDates([]);
       await fetchAvailability();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update availability.');
+      Alert.alert('Error', friendlyError(err, 'Failed to update availability.'));
     } finally {
       setSaving(false);
     }
@@ -198,7 +204,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
       Alert.alert('Deleted', 'Availability entry removed.');
       await fetchAvailability();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to remove availability.');
+      Alert.alert('Error', friendlyError(err, 'Failed to remove availability.'));
     } finally {
       setSaving(false);
     }
@@ -207,6 +213,10 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
   // Builds a real .ics file body from the schedule and hands it to the system share sheet
   // (same output as the web "Download .ics file" button).
   const handleExportICal = async () => {
+    if (!availabilities.some((a) => a.start_date)) {
+      showToast({ title: 'Nothing to export yet. Mark some days as booked or tentative first.', type: 'error' });
+      return;
+    }
     const esc = (t: string) =>
       t.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
     const compact = (d: string) => d.split('T')[0].replace(/-/g, '');
@@ -237,7 +247,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
     try {
       await Share.share({ title: 'cinecraft-availability.ics', message: lines.join('\r\n') });
     } catch (e: any) {
-      Alert.alert('Export failed', e?.message || 'Could not export your calendar.');
+      Alert.alert('Export failed', friendlyError(e, 'Could not export your calendar.'));
     }
   };
 
@@ -276,10 +286,10 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
   return (
     <TabletContainer
       backgroundColor={themeColors.bgScreen}
-      maxWidth={800}
+      maxWidth="content"
       header={
-        <View style={[styles.headerContainer, { backgroundColor: themeColors.bgScreen, borderBottomColor: themeColors.border }]}>
-          <TouchableOpacity
+        <View style={[styles.headerContainer, { backgroundColor: themeColors.bgScreen, borderBottomColor: themeColors.border, paddingHorizontal: 16 + headerInset }]}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
@@ -295,10 +305,10 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
         </View>
       }
     >
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.container, isTablet && styles.containerTablet]} showsVerticalScrollIndicator={false}>
         {!isOwnCalendar && targetProfileAccountType === 'fan' ? (
           <View style={[styles.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border, padding: 24, alignItems: 'center' }]}>
-            <Icon name="calendar" size={32} color={themeColors.textSecondary} />
+            <Icon name="calendar" size={32} color={themeColors.iconSecondary} />
             <Text style={[styles.cardTitle, { color: themeColors.textPrimary, marginTop: 12, textAlign: 'center' }]}>
               Crew Availability Unavailable
             </Text>
@@ -313,7 +323,8 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
             </TouchableOpacity>
           </View>
         ) : (
-          <>
+          <View style={sideBySide ? styles.tabletRow : undefined}>
+           <View style={sideBySide ? styles.tabletLeftCol : undefined}>
             {/* Main Calendar Card - Web Parity Header & Grid */}
             <View style={[styles.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
           {/* Card Header: "Select Dates" (Own) or "Availability Calendar" (Visitor) */}
@@ -326,7 +337,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
             </View>
 
             {isOwnCalendar ? (
-              <View style={[styles.inlineControlGroup, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
+              <View style={[styles.inlineControlGroup, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }, selectedDates.length === 0 && { flexWrap: 'wrap' }]}>
                 <View style={styles.statusPillsInline}>
                   {(['booked', 'tentative', 'free'] as const).map(st => {
                     const isSelected = statusToApply === st;
@@ -338,8 +349,18 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
                         style={[
                           styles.inlineStatusPill,
                           isSelected && { backgroundColor: activeColor },
+                          selectedDates.length === 0 && { opacity: 0.45 },
                         ]}
-                        onPress={() => setStatusToApply(st)}
+                        onPress={() => {
+                          if (selectedDates.length === 0) {
+                            showToast({ title: 'Select one or more days first', type: 'info' });
+                            return;
+                          }
+                          setStatusToApply(st);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Mark as ${st}`}
+                        accessibilityState={{ selected: isSelected, disabled: selectedDates.length === 0 }}
                         activeOpacity={0.8}
                       >
                         <Text
@@ -370,6 +391,9 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
                     <Text style={styles.inlineApplyBtnText}>Apply</Text>
                   )}
                 </TouchableOpacity>
+                {selectedDates.length === 0 && (
+                  <Text style={{ color: themeColors.textMuted, fontSize: 11, width: '100%', paddingHorizontal: 6 }}>Select one or more days first</Text>
+                )}
               </View>
             ) : (
               <TouchableOpacity
@@ -385,13 +409,13 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
 
           {/* Month Header & Controls */}
           <View style={styles.monthNavRow}>
-            <TouchableOpacity style={styles.monthNavBtn} onPress={prevMonth} activeOpacity={0.7}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.monthNavBtn} onPress={prevMonth} activeOpacity={0.7}>
               <Icon name="chevron-left" size={20} color={themeColors.textPrimary} />
             </TouchableOpacity>
             <Text style={[styles.monthNavTitle, { color: themeColors.textPrimary }]}>
               {monthNames[month]} {year}
             </Text>
-            <TouchableOpacity style={styles.monthNavBtn} onPress={nextMonth} activeOpacity={0.7}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Next month" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.monthNavBtn} onPress={nextMonth} activeOpacity={0.7}>
               <Icon name="chevron-right" size={20} color={themeColors.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -414,7 +438,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
             <View style={styles.daysGrid}>
               {daysGrid.map((dayNum, index) => {
                 if (dayNum === null) {
-                  return <View key={`empty-${index}`} style={styles.dayCellEmpty} />;
+                  return <View key={`empty-${index}`} style={[styles.dayCellEmpty, { height: cellH }]} />;
                 }
 
                 const dateStr = formatDateStr(dayNum);
@@ -430,6 +454,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
                     key={dateStr}
                     style={[
                       styles.dayCell,
+                      { height: cellH },
                       { borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E2E8F0' },
                       isSelected && { borderColor: ORANGE, borderWidth: 2, backgroundColor: 'rgba(255,75,51,0.12)' },
                       !isSelected && hasBookedPersonal && { backgroundColor: 'rgba(239,68,68,0.2)' },
@@ -438,15 +463,19 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
                     ]}
                     onPress={() => toggleDateSelection(dateStr)}
                     activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${dateStr}, ${hasBookedPersonal ? 'booked' : hasBookedProject ? 'booked for a project' : hasTentative ? 'tentative' : 'available'}${isSelected ? ', selected' : ''}`}
+                    accessibilityState={{ selected: isSelected }}
                   >
                     <Text
                       style={[
                         styles.dayNumberText,
+                        isTablet && { fontSize: 16 },
                         { color: themeColors.textPrimary },
                         isSelected && { color: ORANGE, fontWeight: 'bold' },
                         !isSelected && hasBookedPersonal && { color: '#EF4444', fontWeight: 'bold' },
                         !isSelected && hasBookedProject && { color: '#A855F7', fontWeight: 'bold' },
-                        !isSelected && hasTentative && { color: '#EAB308', fontWeight: 'bold' },
+                        !isSelected && hasTentative && { color: isDark ? '#EAB308' : '#A16207', fontWeight: 'bold' },
                       ]}
                     >
                       {dayNum}
@@ -480,6 +509,8 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
             </View>
           </View>
         </View>
+           </View>
+           <View style={sideBySide ? styles.tabletRightCol : undefined}>
 
         {/* ProjectSpace Connection & Schedule Commitments Card */}
         <View style={[styles.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
@@ -501,7 +532,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
 
           {activeMonthAvailabilities.length === 0 ? (
             <View style={styles.emptyAgendaBox}>
-              <Icon name="calendar" size={24} color={themeColors.textSecondary} />
+              <Icon name="calendar" size={24} color={themeColors.iconSecondary} />
               <Text style={[styles.emptyAgendaText, { color: themeColors.textSecondary }]}>
                 No scheduled commitments found for this selection.
               </Text>
@@ -556,7 +587,7 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
                           <Icon name="arrow-right" size={12} color="#A855F7" />
                         </TouchableOpacity>
                       ) : (
-                        <TouchableOpacity
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           style={styles.deletePersonalBtn}
                           onPress={() => handleDeletePersonalEntry(item)}
                           activeOpacity={0.7}
@@ -593,7 +624,8 @@ export const AvailabilityCalendarScreen = ({ route, navigation }: { route?: any;
             </Text>
           </View>
         </View>
-        </>
+           </View>
+          </View>
         )}
       </ScrollView>
     </TabletContainer>
@@ -616,16 +648,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18.5,
+    fontSize: 18,
     fontWeight: '700',
   },
   headerSubtitle: {
-    fontSize: 11.5,
+    fontSize: 12,
     marginTop: 2,
   },
   container: {
     padding: 16,
     paddingBottom: 40,
+  },
+  containerTablet: {
+    padding: 24,
+    paddingBottom: 60,
+  },
+  tabletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 20,
+  },
+  tabletLeftCol: {
+    flex: 3,
+  },
+  tabletRightCol: {
+    flex: 2,
   },
   card: {
     borderRadius: 20,
@@ -667,7 +714,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   inlineStatusText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   inlineApplyBtn: {
@@ -678,8 +725,8 @@ const styles = StyleSheet.create({
   },
   inlineApplyBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardTitle: {
     fontSize: 16,
@@ -712,9 +759,8 @@ const styles = StyleSheet.create({
   weekdayText: {
     width: '14.28%',
     textAlign: 'center',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    textTransform: 'uppercase',
   },
   loadingBox: {
     height: 220,
@@ -771,7 +817,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   legendText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   agendaHeaderRow: {
@@ -788,7 +834,7 @@ const styles = StyleSheet.create({
   },
   clearSelText: {
     color: ORANGE,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   emptyAgendaBox: {
@@ -826,8 +872,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   agendaBadgeText: {
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   agendaTitle: {
@@ -836,7 +882,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   agendaDates: {
-    fontSize: 11,
+    fontSize: 12,
   },
   projectConnectBtn: {
     flexDirection: 'row',
@@ -849,8 +895,8 @@ const styles = StyleSheet.create({
   },
   projectConnectBtnText: {
     color: '#A855F7',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   deletePersonalBtn: {
     padding: 8,
@@ -859,8 +905,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   syncSectionLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.8,
     marginBottom: 8,
   },
@@ -880,7 +926,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   syncHint: {
-    fontSize: 10.5,
+    fontSize: 12,
     lineHeight: 14,
   },
   importRow: {
@@ -897,7 +943,7 @@ const styles = StyleSheet.create({
   },
   saveImportBtn: {
     width: 42,
-    height: 42,
+    height: 44,
     borderRadius: 12,
     backgroundColor: ORANGE,
     alignItems: 'center',

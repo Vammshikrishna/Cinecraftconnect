@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { friendlyError } from '@cinecraft/core';
 
 export interface Follow {
   id: string;
@@ -52,14 +53,26 @@ export const useFollows = () => {
         .insert({ follower_id: user.id, following_id: userId });
       if (error) throw error;
     },
-    onSuccess: () => {
-      toast({ title: 'Success', description: 'You are now following' });
+    // the button changes at once; if the server refuses, it goes back and says why
+    onMutate: async (userId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['follows_manual', user?.id] });
+      const previous = queryClient.getQueryData<{ following: Follow[]; followers: Follow[] }>(['follows_manual', user?.id]);
+      if (previous && user) {
+        queryClient.setQueryData(['follows_manual', user.id], {
+          ...previous,
+          following: [...previous.following, { id: `pending-${userId}`, follower_id: user.id, following_id: userId, created_at: new Date().toISOString() }],
+        });
+      }
+      return { previous };
+    },
+    onError: (error: any, _userId: string, context: any) => {
+      if (context?.previous && user) queryClient.setQueryData(['follows_manual', user.id], context.previous);
+      toast({ title: 'Could not follow', description: friendlyError(error), variant: 'destructive' });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['follows_manual'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
-    onError: (error: any) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    }
   });
 
   const deleteFollowMutation = useMutation({
@@ -67,10 +80,25 @@ export const useFollows = () => {
       const { error } = await supabase.from('user_follows').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ['follows_manual', user?.id] });
+      const previous = queryClient.getQueryData<{ following: Follow[]; followers: Follow[] }>(['follows_manual', user?.id]);
+      if (previous && user) {
+        queryClient.setQueryData(['follows_manual', user.id], {
+          ...previous,
+          following: previous.following.filter((f) => f.id !== id),
+        });
+      }
+      return { previous };
+    },
+    onError: (error: any, _id: string, context: any) => {
+      if (context?.previous && user) queryClient.setQueryData(['follows_manual', user.id], context.previous);
+      toast({ title: 'Could not unfollow', description: friendlyError(error), variant: 'destructive' });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['follows_manual'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
-    }
+    },
   });
 
   useEffect(() => {

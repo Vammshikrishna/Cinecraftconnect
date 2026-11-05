@@ -1,11 +1,12 @@
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { SettingsPageHeader, SettingsSection, SettingsToggleRow, useScrollToHash } from '@/components/settings/SettingsUI';
+import { SettingsPageHeader, SettingsSection, SettingsToggleRow, SettingsLoading, useScrollToHash } from '@/components/settings/SettingsUI';
 
 const NotificationsSettings = () => {
   const { settings, loading, updateSetting } = useUserSettings();
   useScrollToHash(!loading);
   const s = settings || {};
   const pushOn = s.push_notifications !== false;
+  if (loading) return <SettingsLoading />;
 
   return (
     <>

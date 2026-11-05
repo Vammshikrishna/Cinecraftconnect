@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { friendlyError } from '@cinecraft/core';
 
 export interface Project {
     id: string;
@@ -33,7 +34,7 @@ export const useProjects = (activeTab: string = 'all') => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
-    const { data: projects = [], isLoading: loading, refetch } = useQuery({
+    const { data: projects = [], isLoading: loading, error, isError, refetch } = useQuery({
         queryKey: ['projects', activeTab, user?.id],
         queryFn: async () => {
             // 1. Fetch projects
@@ -229,7 +230,7 @@ export const useProjects = (activeTab: string = 'all') => {
             toast({ title: data.isBookmarked ? "Project bookmarked!" : "Bookmark removed" });
         },
         onError: (error: any) => {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+            toast({ title: "Error", description: friendlyError(error), variant: "destructive" });
         }
     });
     const deleteProject = useMutation({
@@ -253,9 +254,9 @@ export const useProjects = (activeTab: string = 'all') => {
             toast({ title: "Project deleted successfully" });
         },
         onError: (error: any) => {
-            toast({ title: "Error deleting project", description: error.message, variant: "destructive" });
+            toast({ title: "Error deleting project", description: friendlyError(error), variant: "destructive" });
         }
     });
 
-    return { projects, loading, toggleBookmark, deleteProject, refetch };
+    return { projects, loading, error, isError, toggleBookmark, deleteProject, refetch };
 };

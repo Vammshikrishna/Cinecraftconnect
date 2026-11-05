@@ -10,7 +10,6 @@ export interface UserProfile {
   craft: string;
   location?: string | null;
   bio?: string | null;
-  cover_image_url?: string | null;
   connection_status?: 'connected' | 'pending_sent' | 'pending_received' | 'none';
   connection_id?: string;
   is_verified?: boolean;

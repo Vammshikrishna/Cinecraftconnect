@@ -1,4 +1,5 @@
 import { ReportModal } from '../../components/modals/ReportModal';
+import { resolveChatParams } from '../../utils/chatParams';
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -19,7 +20,7 @@ import {
   Animated,
   PanResponder,
   InteractionManager,
-  Dimensions,
+  useWindowDimensions,
   Linking,
   FlatList,
   NativeModules,
@@ -29,15 +30,27 @@ import DocumentPicker from 'react-native-document-picker';
 import { FlashList } from '@shopify/flash-list';
 import { useFocusEffect } from '@react-navigation/native';
 import { Icon } from '../../components/common/Icon';
+import { CallDetailsModal } from '../../components/calls/CallDetailsModal';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { getSupabaseClient } from '@cinecraft/api';
 import { ENV } from '../../config/env';
 import { decryptDirectMessage, encryptDirectMessage } from '@cinecraft/e2ee';
 import { useE2EEChatKeys } from '../../hooks/useE2EEChatKeys';
+import { E2EEBanner } from '../../components/security/E2EEBanner';
+import { needsDowngradeConfirmation, isEncryptedPayload, friendlyError } from '@cinecraft/core';
+import { requestE2EEPrompt, openE2EEPrompt } from '../../services/e2eeState';
+import { confirmAsync } from '../../services/e2eeActions';
 import { ChatMessagesSkeleton } from '../../components/common/Skeleton';
 import { CachedImage } from '../../components/common/CachedImage';
 import { MediaCollageGrid } from '../../components/chat/MediaCollageGrid';
-import { getReplyThumbnail, getReplySnippet } from '../../components/chat/chatUtils';
+import { getReplyThumbnail, getReplySnippet, parseShareData } from '../../components/chat/chatUtils';
+import { ShareCard, normalizeShareCardData } from '../../components/chat/ShareCard';
+import { JobShareCard } from '../../components/chat/JobShareCard';
+import { MessageRequestView } from '../../components/chat/MessageRequestView';
+import { useMessageRequests, useSenderRequestState } from '../../hooks/useMessageRequests';
+import { useConversationPrefs } from '../../hooks/useConversationPrefs';
+import { canSendWhileWaiting, WAITING_TEXT, NOT_ACCEPTING_TEXT } from '../../utils/messageRequests';
+import { canEditMessage, checkEditedText, editMinutesLeft } from '../../utils/messageEdit';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { setActiveChatContext, clearActiveChatContext } from '../../services/activeScreenTracker';
 import { handleSmartBack } from '../../services/navigationUtils';
@@ -47,12 +60,32 @@ const FlashListAny = FlashList as any;
 import { usePresence } from '../../hooks/usePresence';
 import { getCache, saveCache, getCacheSync, getCurrentUserIdSync, resolveCurrentUserId } from '../../services/offlineCache';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAccountType } from '../../hooks/useAccountType';
+import { FAN_CALL_TOOLTIP } from '../../utils/fanCallRule';
+import { getChatClearedAt, setChatClearedNow, isAfterChatClear } from '../../utils/chatClearMarker';
+import { LinkifiedText } from '../../components/chat/LinkifiedText';
 import { DMSettingsModal } from '../../components/chat/DMSettingsModal';
+import { ForwardMessageModal, ForwardableMessage } from '../../components/chat/ForwardMessageModal';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// On a tablet a chat bubble is capped (see SwipeableMessageRow) so lines stay readable; on a phone it keeps its share of the screen.
+const BUBBLE_CAP_PX = 620;
+
+/** Chip text for a file waiting to be sent: photos and videos from the gallery have a media-store id as name (1000001379.jpg), so show "Photo"/"Video" and the size instead. */
+const attachmentChipLabel = (file: { name?: string; type?: string; size?: number }): string => {
+  const kind = file.type?.startsWith('image/') ? 'Photo' : file.type?.startsWith('video/') ? 'Video' : null;
+  const name = file.name || '';
+  const stem = name.replace(/\.[^.]+$/, '');
+  const generic = !name || /^\d+$/.test(stem) || /^(photo|video|image|file)_\d+$/i.test(stem);
+  const size = typeof file.size === 'number' && file.size > 0
+    ? file.size >= 1048576 ? `${(file.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`
+    : '';
+  if (kind && generic) return size ? `${kind} · ${size}` : kind;
+  return name || (kind ?? 'Attachment');
+};
+
 
 const generateDirectRoomId = (userId1: string, userId2: string): string => {
   const [id1, id2] = [userId1, userId2].sort();
@@ -81,8 +114,15 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   themeColors,
   isDark,
 }) => {
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isTabletRow = Math.min(winW, winH) >= 600;
+  const [rowW, setRowW] = useState(0);
   const panX = useRef(new Animated.Value(0)).current;
   const lastTapRef = useRef<number>(0);
+  const { triggerHaptic: rowHaptic } = useUserSettings();
+  const rowHapticRef = useRef(rowHaptic);
+  rowHapticRef.current = rowHaptic;
+  const swipeArmedRef = useRef(false);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -93,10 +133,18 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
         if (gestureState.dx > 0) {
           const drag = gestureState.dx > 55 ? 55 + (gestureState.dx - 55) * 0.32 : gestureState.dx;
           panX.setValue(Math.min(drag, 80));
+          // one light tick when the reply threshold is crossed
+          if (gestureState.dx > 42 && !swipeArmedRef.current) {
+            swipeArmedRef.current = true;
+            rowHapticRef.current(20);
+          } else if (gestureState.dx <= 42) {
+            swipeArmedRef.current = false;
+          }
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx > 42) {
+        swipeArmedRef.current = false;
+        if (gestureState.dx > 42 || (gestureState.dx > 24 && gestureState.vx > 0.5)) {
           onSwipeReply();
         }
         Animated.spring(panX, {
@@ -138,7 +186,10 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   });
 
   return (
-    <View style={[styles.swipeContainer, isMe ? styles.swipeContainerMe : styles.swipeContainerOther]}>
+    <View
+      style={[styles.swipeContainer, isMe ? styles.swipeContainerMe : styles.swipeContainerOther]}
+      onLayout={isTabletRow ? (e) => setRowW(e.nativeEvent.layout.width) : undefined}
+    >
       <Animated.View
         style={[
           styles.swipeReplyIconWrap,
@@ -158,6 +209,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
         style={[
           { transform: [{ translateX: panX }] },
           styles.swipeInnerWrap,
+          isTabletRow && rowW > 0 && { maxWidth: Math.min(BUBBLE_CAP_PX, Math.round(rowW * 0.82)) },
           isMe ? styles.swipeInnerWrapMe : styles.swipeInnerWrapOther,
         ]}
       >
@@ -176,11 +228,14 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
 };
 
 export const ConversationScreen = ({ route, navigation }: { route: any; navigation: any }) => {
-  const conversationId = route.params?.conversationId || route.params?.channelId || route.params?.channel_id;
-  const initialPartnerId = route.params?.partnerId || route.params?.partner_id || route.params?.senderId || route.params?.sender_id || route.params?.trigger_user_id || (conversationId && typeof conversationId === 'string' && conversationId.includes('-') ? conversationId : undefined);
-  const initialPartnerName = route.params?.partnerName || route.params?.senderName || route.params?.sender_name || route.params?.title;
-  const initialPartnerAvatar = route.params?.partnerAvatar || route.params?.avatarUrl || route.params?.avatar_url;
-  const initialPartnerCraft = route.params?.partnerCraft || 'FILMMAKER';
+  const { width: lightboxWinW } = useWindowDimensions();
+  // accept every naming scheme callers use (partnerId, recipientId, userId ...)
+  const chatParams = resolveChatParams(route.params);
+  const conversationId = chatParams.conversationId;
+  const initialPartnerId = chatParams.partnerId;
+  const initialPartnerName = chatParams.partnerName;
+  const initialPartnerAvatar = chatParams.partnerAvatar;
+  const initialPartnerCraft = chatParams.partnerCraft || 'FILMMAKER';
 
   const authUserId = getCurrentUserIdSync();
   const initialRoomId = conversationId || (authUserId && initialPartnerId ? generateDirectRoomId(authUserId, initialPartnerId) : null);
@@ -188,14 +243,19 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
 
   const [messages, setMessages] = useState<any[]>(() => initialCached || []);
   const rawMessagesRef = useRef<any[]>(initialCached || []);
+  const { isFan } = useAccountType();
+  // "Clear chat" marker for this device: messages at or before it stay hidden (nothing is deleted on the server)
+  const clearedAtRef = useRef<number | null>(null);
   const [inputText, setInputText] = useState('');
   const [selectedMessage, setSelectedMessage] = useState<any | null>(null);
   const [infoMessage, setInfoMessage] = useState<any | null>(null);
+  const [forwardPayload, setForwardPayload] = useState<ForwardableMessage | null>(null);
   const [reportingMessage, setReportingMessage] = useState<any | null>(null);
   const [starredMsgIds, setStarredMsgIds] = useState<Set<string>>(new Set());
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(authUserId || null);
   const [resolvedConvId, setResolvedConvId] = useState<string | null>(initialRoomId || null);
+  const [selectedCallMessage, setSelectedCallMessage] = useState<any>(null);
   const [resolvedPartnerId, setResolvedPartnerId] = useState<string | null>(initialPartnerId || null);
   const [partnerDetails, setPartnerDetails] = useState<{
     name: string;
@@ -211,6 +271,51 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const flatListRef = useRef<any>(null);
+  // True while the user is within ~120dp of the newest message; auto-scroll only then.
+
+  // keeps your place when older messages are added above (see onContentSizeChange)
+  const prependAnchorRef = useRef<{ h: number; off: number } | null>(null);
+  const prependTimerRef = useRef<any>(null);
+  const lastContentHeightRef = useRef(0);
+  const lastScrollOffsetRef = useRef(0);
+  const holdPlaceForOlder = () => {
+    prependAnchorRef.current = { h: lastContentHeightRef.current, off: lastScrollOffsetRef.current };
+    if (prependTimerRef.current) clearTimeout(prependTimerRef.current);
+    prependTimerRef.current = setTimeout(() => { prependAnchorRef.current = null; }, 2500);
+  };
+  const keepPlaceAfterPrepend = (h: number, scrollTo: (offset: number) => void) => {
+    lastContentHeightRef.current = h;
+    const a = prependAnchorRef.current;
+    if (a && h > a.h) scrollTo(a.off + (h - a.h));
+  };
+  const nearBottomRef = useRef(true);
+
+  // WhatsApp-style open: the list stays hidden until it is placed (first unread message or the bottom)
+  const [chatVisible, setChatVisible] = useState(false);
+  const chatPositionedRef = useRef(false);
+  const chatShowTimerRef = useRef<any>(null);
+  const chatShowMaxTimerRef = useRef<any>(null);
+  const chatPlaceTimerRef = useRef<any>(null);
+  const distFromBottomRef = useRef<number>(9999);
+  const lastContentHRef = useRef<number>(0);
+  const lastContentChangeAtRef = useRef<number>(0);
+  const lastMessagesChangeAtRef = useRef<number>(Date.now());
+  const messagesListRef = useRef<any[]>([]);
+  const userScrolledRef = useRef(false);
+  const [unreadAnchorId, setUnreadAnchorId] = useState<string | null>(null);
+  const [unreadCountAtOpen, setUnreadCountAtOpen] = useState(0);
+  const unreadAnchorRef = useRef<string | null>(null);
+  const unreadCapturedRef = useRef(false);
+  const unreadResolvedRef = useRef(false);
+  const unreadCapturePromiseRef = useRef<Promise<void> | null>(null);
+  const focusedOnceRef = useRef(false);
+  const messagesLenRef = useRef(0);
+  // FlashList.scrollToEnd on an empty list reads the layout of item -1 and throws "Cannot read property 'x' of undefined"
+  // (fatal in a release build). A brand-new chat has no messages, so only scroll when there is something to scroll to.
+  const scrollListToEnd = (animated: boolean) => {
+    if (messagesLenRef.current <= 0) return;
+    try { flatListRef.current?.scrollToEnd({ animated }); } catch { /* list not laid out yet */ }
+  };
 
   const [attachedFiles, setAttachedFiles] = useState<any[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -268,7 +373,24 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
   };
 
   // E2EE Keys
-  const { privateKey, userPublicKey, partnerPublicKey } = useE2EEChatKeys(resolvedPartnerId);
+  const { privateKey, userPublicKey, partnerPublicKey, dmPolicy } = useE2EEChatKeys(resolvedPartnerId);
+
+  // message requests: the receiver sees a request view; the sender waits and has a message allowance
+  const { requests: pendingRequests, hiddenRequests, deletedRequests } = useMessageRequests();
+  const activeRequest = resolvedPartnerId
+    ? [...pendingRequests, ...hiddenRequests, ...deletedRequests].find((r) => r.partner_id === resolvedPartnerId) || null
+    : null;
+  const [requestStateKey, setRequestStateKey] = useState(0);
+  const senderRequest = useSenderRequestState(resolvedPartnerId, requestStateKey);
+  const composerClosed = !canSendWhileWaiting(senderRequest);
+  // synced mute / pin
+  const { prefs: convoPrefs, setMuted: setSharedMuted } = useConversationPrefs();
+  const convoPrefsRef = useRef(convoPrefs);
+  convoPrefsRef.current = convoPrefs;
+  // editing one of my own messages
+  const [editingMessage, setEditingMessage] = useState<any | null>(null);
+  // ask for the PIN (only if this person turned encrypted messages on and needs to unlock or set up)
+  useEffect(() => { requestE2EEPrompt(); }, []);
   const privateKeyRef = useRef<string | null>(privateKey);
   useEffect(() => {
     privateKeyRef.current = privateKey;
@@ -328,7 +450,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
           if (raw) {
             const parsed = JSON.parse(raw);
             if (parsed.muteConversation !== undefined) {
-              setIsMuted(Boolean(parsed.muteConversation));
+              if (!(resolvedPartnerId && convoPrefsRef.current[resolvedPartnerId])) setIsMuted(Boolean(parsed.muteConversation));
               return;
             }
           }
@@ -340,9 +462,18 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
     loadMuteState();
   }, [resolvedConvId, resolvedPartnerId, conversationId, currentUserId]);
 
+  // the synced choice (conversation_prefs) wins over the old per-phone one
+  useEffect(() => {
+    const p = resolvedPartnerId ? convoPrefs[resolvedPartnerId] : undefined;
+    if (p) setIsMuted(!!p.muted);
+  }, [convoPrefs, resolvedPartnerId]);
+
+  useEffect(() => { setRequestStateKey((k) => k + 1); }, [messages.length]);
+
   const toggleMuteConversation = async () => {
     const newMuted = !isMuted;
     setIsMuted(newMuted);
+    if (resolvedPartnerId) setSharedMuted(resolvedPartnerId, newMuted);
     triggerHaptic();
     try {
       const uId = currentUserId || 'anonymous';
@@ -371,8 +502,55 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
   };
 
   const markMessagesRead = useCallback(async (channelId: string, userId: string) => {
+    // Once per open, before anything is marked read: find the first unread message from the other person
+    if (unreadCapturePromiseRef.current) {
+      await unreadCapturePromiseRef.current;
+    } else {
+      unreadCapturedRef.current = true;
+      let done: () => void = () => { };
+      unreadCapturePromiseRef.current = new Promise<void>((r) => { done = r; });
+      try {
+        const sb = getSupabaseClient();
+        const { data: unreadRows } = await (sb.from('direct_messages') as any)
+          .select('id, created_at')
+          .eq('channel_id', channelId)
+          .eq('receiver_id', userId)
+          .eq('is_read', false)
+          .order('created_at', { ascending: true })
+          .limit(200);
+        if (Array.isArray(unreadRows) && unreadRows.length > 0) {
+          unreadAnchorRef.current = String(unreadRows[0].id);
+          setUnreadAnchorId(String(unreadRows[0].id));
+          setUnreadCountAtOpen(unreadRows.length);
+        }
+      } catch { }
+      unreadResolvedRef.current = true;
+      done();
+    }
+
     // Respect user privacy setting: do not mark messages as read if read receipts are disabled
     if (settings.read_receipts === false) return;
+
+    // a message request stays unread until the user decides (accept / decline / ignore)
+    try {
+      // part GM: hidden and recently deleted requests are requests too (only 'expired' ones are not)
+      const v2 = await (getSupabaseClient() as any).rpc('get_message_requests_v2');
+      let reqRows: any = null;
+      let reqErr: any = v2.error;
+      if (!v2.error && Array.isArray(v2.data)) {
+        reqRows = v2.data.map((r: any) => ({ partner_id: r.partner_id, hidden: r.bucket === 'expired' }));
+      } else {
+        const v1 = await (getSupabaseClient() as any).rpc('get_message_requests');
+        reqRows = v1.data;
+        reqErr = v1.error;
+      }
+      if (!reqErr && Array.isArray(reqRows)) {
+        const { data: unreadFrom } = await (getSupabaseClient().from('direct_messages') as any)
+          .select('sender_id').eq('channel_id', channelId).eq('receiver_id', userId).eq('is_read', false).limit(20);
+        const senders = new Set((Array.isArray(unreadFrom) ? unreadFrom : []).map((r: any) => r.sender_id));
+        if (reqRows.some((r: any) => !r.hidden && senders.has(r.partner_id))) return;
+      }
+    } catch { /* if the check fails, behave as before */ }
 
     try {
       const supabase = getSupabaseClient();
@@ -388,11 +566,42 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
 
   const handleClearChat = useCallback(async () => {
     if (!resolvedConvId) return;
+    if (currentUserId && resolvedPartnerId) {
+      clearedAtRef.current = await setChatClearedNow(currentUserId, resolvedPartnerId);
+    }
     setMessages([]);
     rawMessagesRef.current = [];
     saveCache(`conv_messages_${resolvedConvId}`, []).catch(() => { });
+    // cleared messages must not keep a badge on the conversation row: mark them read so the list's unread count goes to 0
+    if (currentUserId) {
+      try {
+        await (getSupabaseClient().from('direct_messages') as any)
+          .update({ is_read: true })
+          .eq('channel_id', resolvedConvId)
+          .eq('receiver_id', currentUserId)
+          .eq('is_read', false);
+      } catch { /* best effort */ }
+    }
+    unreadAnchorRef.current = null;
+    setUnreadAnchorId(null);
+    setUnreadCountAtOpen(0);
     Alert.alert('Chat Cleared', 'Conversation history cleared on this device.');
-  }, [resolvedConvId]);
+  }, [resolvedConvId, currentUserId, resolvedPartnerId]);
+
+  // Load the marker once both ids are known and hide everything it covers (also in a cache-hydrated list)
+  useEffect(() => {
+    if (!currentUserId || !resolvedPartnerId) return;
+    let alive = true;
+    getChatClearedAt(currentUserId, resolvedPartnerId).then((at) => {
+      if (!alive) return;
+      clearedAtRef.current = at;
+      if (at != null) {
+        rawMessagesRef.current = rawMessagesRef.current.filter((m) => isAfterChatClear(m.created_at, at));
+        setMessages((prev) => prev.filter((m) => isAfterChatClear(m.created_at, at)));
+      }
+    });
+    return () => { alive = false; };
+  }, [currentUserId, resolvedPartnerId]);
 
   const decryptMessageContent = useCallback(async (content: string, isSender: boolean): Promise<string> => {
     if (!content) return '';
@@ -440,6 +649,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
   }, []);
 
   const processAndSetMessages = useCallback(async (rawList: any[], cId?: string) => {
+    rawList = rawList.filter((m) => isAfterChatClear(m.created_at, clearedAtRef.current));
     rawMessagesRef.current = rawList;
     const processed = await Promise.all(
       rawList.map(async (m) => {
@@ -485,16 +695,27 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
         const sorted = [...rpcData].sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
+        // the RPC does not return edited_at: one extra select so "(edited)" shows on a fresh load
+        try {
+          const ids = sorted.filter((m: any) => m?.id && m.edited_at === undefined).map((m: any) => m.id);
+          if (ids.length > 0) {
+            const { data: edRows } = await (supabase.from('direct_messages') as any).select('id, edited_at').in('id', ids);
+            if (Array.isArray(edRows)) {
+              const edMap = new Map<string, string | null>(edRows.map((r: any) => [r.id, r.edited_at]));
+              for (const m of sorted as any[]) if (edMap.has(m.id)) m.edited_at = edMap.get(m.id);
+            }
+          }
+        } catch { /* fail soft */ }
         setHasMoreOlder(rpcData.length === PAGE_SIZE);
         await processAndSetMessages(sorted, cId);
-        setTimeout(() => { flatListRef.current?.scrollToEnd({ animated: false }); }, 100);
+        setTimeout(() => { if (!unreadAnchorRef.current && !userScrolledRef.current && !chatPositionedRef.current) scrollListToEnd(false); }, 100);
         return;
       }
 
       // 2. Direct query fallback
       const { data, error } = await supabase
         .from('direct_messages' as any)
-        .select(`id, content, created_at, sender_id, receiver_id, reply_to_id, is_read, attachment_url, attachment_type`)
+        .select(`id, content, created_at, edited_at, sender_id, receiver_id, reply_to_id, is_read, attachment_url, attachment_type`)
         .eq('channel_id', cId)
         .order('created_at', { ascending: false })
         .limit(PAGE_SIZE);
@@ -503,7 +724,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
         const chronological = [...data].reverse();
         setHasMoreOlder(data.length === PAGE_SIZE);
         await processAndSetMessages(chronological, cId);
-        setTimeout(() => { flatListRef.current?.scrollToEnd({ animated: false }); }, 100);
+        setTimeout(() => { if (!unreadAnchorRef.current && !userScrolledRef.current && !chatPositionedRef.current) scrollListToEnd(false); }, 100);
       }
     } catch (e) {
       console.warn('[Conversation] Error fetching messages:', e);
@@ -522,7 +743,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
       const oldestTimestamp = rawMessagesRef.current[0]?.created_at || messages[0]?.created_at;
       const { data: rawData, error } = await supabase
         .from('direct_messages' as any)
-        .select(`id, content, created_at, sender_id, receiver_id, reply_to_id, is_read, attachment_url, attachment_type`)
+        .select(`id, content, created_at, edited_at, sender_id, receiver_id, reply_to_id, is_read, attachment_url, attachment_type`)
         .eq('channel_id', cId)
         .lt('created_at', oldestTimestamp)
         .order('created_at', { ascending: false })
@@ -531,7 +752,8 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
       const data = rawData as any[] | null;
 
       if (!error && data && data.length > 0) {
-        const older = [...data].reverse();
+        const older = [...data].reverse().filter((m: any) => isAfterChatClear(m.created_at, clearedAtRef.current));
+        if (older.length === 0) { setHasMoreOlder(false); return; }
         setHasMoreOlder(data.length === PAGE_SIZE);
         const processed = await Promise.all(
           older.map(async (m: any) => {
@@ -564,7 +786,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
         if (cached && cached.length > 0) {
           setMessages(cached);
           setLoading(false);
-          setTimeout(() => { flatListRef.current?.scrollToEnd({ animated: false }); }, 50);
+          setTimeout(() => { if (!unreadAnchorRef.current && !userScrolledRef.current && !chatPositionedRef.current) scrollListToEnd(false); }, 50);
         }
       });
     }
@@ -612,7 +834,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
           if (cached && cached.length > 0) {
             setMessages(cached);
             setLoading(false);
-            setTimeout(() => { flatListRef.current?.scrollToEnd({ animated: false }); }, 50);
+            setTimeout(() => { if (!unreadAnchorRef.current && !userScrolledRef.current && !chatPositionedRef.current) scrollListToEnd(false); }, 50);
           }
 
           // Start loading messages now. Looking up the partner (below) used to run first and delay the
@@ -689,6 +911,47 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
     }, [resolvedConvId, resolvedPartnerId, currentUserId, fetchMessages, markMessagesRead])
   );
 
+  // coming back to this screen (e.g. after a call): forget the "new messages" line
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedOnceRef.current) {
+        unreadAnchorRef.current = null;
+        setUnreadAnchorId(null);
+        setUnreadCountAtOpen(0);
+      }
+      focusedOnceRef.current = true;
+    }, [])
+  );
+
+  // safety net: whatever happens, the list is shown after a moment
+  const hasMessages = messages.length > 0;
+  messagesLenRef.current = messages.length;
+  if (messagesListRef.current !== messages) lastMessagesChangeAtRef.current = Date.now();
+  messagesListRef.current = messages;
+  useEffect(() => {
+    if (chatVisible || !hasMessages || loading) return;
+    const safety = setTimeout(() => {
+      if (chatPlaceTimerRef.current) { clearInterval(chatPlaceTimerRef.current); chatPlaceTimerRef.current = null; }
+      chatPositionedRef.current = true;
+      setChatVisible(true);
+    }, 3200);
+    return () => clearTimeout(safety);
+  }, [chatVisible, hasMessages, loading]);
+
+  useEffect(() => () => {
+    if (chatShowTimerRef.current) clearTimeout(chatShowTimerRef.current);
+    if (chatShowMaxTimerRef.current) clearTimeout(chatShowMaxTimerRef.current);
+    if (chatPlaceTimerRef.current) clearInterval(chatPlaceTimerRef.current);
+  }, []);
+
+  // an unread anchor that is found after the list was already placed: go to it, unless the person has started scrolling
+  useEffect(() => {
+    if (!unreadAnchorId || userScrolledRef.current) return;
+    const idx = messages.findIndex((m: any) => String(m.id) === unreadAnchorId);
+    if (idx < 0) return;
+    try { flatListRef.current?.scrollToIndex({ index: idx, viewPosition: 0.15, animated: false }); } catch { }
+  }, [unreadAnchorId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Re-decrypt messages when privateKey is loaded
   useEffect(() => {
     if (privateKey) {
@@ -717,6 +980,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
         async (payload) => {
           if (payload.eventType === 'INSERT') {
             const newMsg = payload.new as any;
+            if (!isAfterChatClear(newMsg.created_at, clearedAtRef.current)) return;
             const isSender = newMsg.sender_id === currentUserId;
             const decrypted = await decryptMessageContent(newMsg.content, isSender);
             const enriched = { ...newMsg, displayContent: decrypted, reactions: [] };
@@ -735,12 +999,14 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
               markMessagesRead(resolvedConvId, currentUserId);
             }
             setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: true });
+              if (nearBottomRef.current) scrollListToEnd(true);
             }, 100);
           } else if (payload.eventType === 'UPDATE') {
             const updated = payload.new as any;
             const isSender = updated.sender_id === currentUserId;
             const decrypted = await decryptMessageContent(updated.content, isSender);
+            // keep the raw copy in step so a later re-decrypt does not bring the old text back
+            rawMessagesRef.current = rawMessagesRef.current.map((m) => (m.id === updated.id ? { ...m, ...updated, rawContent: undefined } : m));
 
             setMessages((current) =>
               current.map((msg) => (msg.id === updated.id ? { ...msg, ...updated, displayContent: decrypted } : msg))
@@ -809,6 +1075,10 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
 
   const handleSend = async () => {
     if ((!inputText.trim() && attachedFiles.length === 0) || !resolvedConvId || !currentUserId || !resolvedPartnerId) return;
+    if (composerClosed) {
+      Alert.alert(WAITING_TEXT, 'You can send more once they accept your message request.');
+      return;
+    }
     setSending(true);
     const text = inputText.trim();
     const filesToSend = [...attachedFiles];
@@ -823,6 +1093,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
       if (filesToSend.length > 0) {
         setUploadingMedia(true);
         const uploadedItems: Array<{ url: string; type: string; name: string; size?: number }> = [];
+        let failedUploads = 0;
 
         for (const file of filesToSend) {
           try {
@@ -847,7 +1118,19 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             });
           } catch (uploadErr: any) {
             console.warn('[ConversationScreen] File upload error:', uploadErr);
+            failedUploads += 1;
           }
+        }
+
+        if (failedUploads > 0 && uploadedItems.length === 0) {
+          // nothing uploaded: keep the draft and files so the user can retry
+          setUploadingMedia(false);
+          setAttachedFiles(filesToSend);
+          setInputText(text);
+          throw new Error(failedUploads === 1 ? 'The attachment could not be uploaded. Please try again.' : 'The attachments could not be uploaded. Please try again.');
+        }
+        if (failedUploads > 0) {
+          Alert.alert('Some attachments failed', `${failedUploads} of ${filesToSend.length} attachment${filesToSend.length > 1 ? 's' : ''} could not be uploaded and were left out of the message.`);
         }
 
         if (uploadedItems.length === 1) {
@@ -861,21 +1144,33 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
         setUploadingMedia(false);
       }
 
-      // Encrypt message if public keys available
+      // How this message goes out depends on both people's settings (docs/E2EE_OPT_IN_DESIGN.md)
       let contentToSend = text;
-      if (text && !userPublicKey) {
-        throw new Error('Your secure messaging keys are not ready yet. Please wait a moment or set up your encryption PIN, then try again.');
-      }
-      if (text && !partnerPublicKey) {
-        throw new Error('This person has not set up secure messaging yet, so your message was not sent. Ask them to open CineCraft and finish setup.');
-      }
-      if (text && userPublicKey && partnerPublicKey) {
-        try {
-          contentToSend = await encryptDirectMessage(text, userPublicKey, partnerPublicKey);
-        } catch (encErr) {
-          // Never downgrade an encrypted conversation to plaintext on failure.
-          console.warn('[Conversation] Encryption failed, message not sent:', encErr);
-          throw new Error('Could not encrypt this message. It was not sent. Please try again.');
+      if (text) {
+        if (dmPolicy.mode === 'blocked_locked') {
+          openE2EEPrompt();
+          throw new Error('Unlock your encrypted messages with your PIN to send from this device.');
+        }
+        if (dmPolicy.mode === 'plaintext') {
+          // a chat that used to be encrypted must not quietly become plain text
+          const wasEncrypted = messages.some((m: any) => isEncryptedPayload(m.rawContent || m.content));
+          if (needsDowngradeConfirmation(dmPolicy.mode, wasEncrypted)) {
+            const proceed = await confirmAsync(
+              'Send without encryption?',
+              'This conversation was end-to-end encrypted, but the other person can\'t receive encrypted messages right now. If you continue, this message will be sent without encryption.',
+              'Send anyway',
+              true,
+            );
+            if (!proceed) { setInputText(text); return; }
+          }
+        } else if (userPublicKey && partnerPublicKey) {
+          try {
+            contentToSend = await encryptDirectMessage(text, userPublicKey, partnerPublicKey);
+          } catch (encErr) {
+            // Never downgrade an encrypted conversation to plaintext on failure.
+            console.warn('[Conversation] Encryption failed, message not sent:', encErr);
+            throw new Error('Could not encrypt this message. It was not sent. Please try again.');
+          }
         }
       }
 
@@ -914,16 +1209,101 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
           }
           return next;
         });
+        nearBottomRef.current = true;
+        setRequestStateKey((k) => k + 1); // the number of messages left may have changed
         setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
+          scrollListToEnd(true);
         }, 100);
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not send message.');
+      const errText = String(e?.message || e?.details || '');
+      if (/not accepting messages/i.test(errText)) {
+        Alert.alert('Message not sent', NOT_ACCEPTING_TEXT);
+      } else if (/waiting for them to accept/i.test(errText)) {
+        setRequestStateKey((k) => k + 1);
+        Alert.alert(WAITING_TEXT, 'You can send more once they accept your message request.');
+      } else {
+        Alert.alert('Error', friendlyError(e, 'Could not send message.'));
+      }
       setInputText(text);
+      if (filesToSend.length > 0) setAttachedFiles(filesToSend);
     } finally {
       setSending(false);
       setUploadingMedia(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const startEdit = (msg: any) => {
+    const text = String(msg?.displayContent || '');
+    if (!canEditMessage({ ...msg, content: text }, currentUserId)) {
+      Alert.alert('Cannot edit', 'Messages can be edited for 15 minutes after they are sent.');
+      setSelectedMessage(null);
+      return;
+    }
+    setEditingMessage(msg);
+    setReplyingTo(null);
+    setInputText(text);
+    setSelectedMessage(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMessage || !currentUserId || sending) return;
+    const original = String(editingMessage.displayContent || '');
+    const check = checkEditedText(original, inputText);
+    if (!check.ok) {
+      if (check.reason === 'unchanged') cancelEdit();
+      else Alert.alert('Edit message', check.message);
+      return;
+    }
+    if (!canEditMessage({ ...editingMessage, content: original }, currentUserId)) {
+      Alert.alert('Cannot edit', 'The 15 minute edit window has passed.');
+      cancelEdit();
+      return;
+    }
+    setSending(true);
+    try {
+      const wasEncrypted = isEncryptedPayload(editingMessage.rawContent || editingMessage.content);
+      let contentToSave = check.text;
+      if (dmPolicy.mode === 'blocked_locked') {
+        openE2EEPrompt();
+        throw new Error('Unlock your encrypted messages with your PIN to edit from this device.');
+      }
+      if (dmPolicy.mode === 'plaintext') {
+        if (wasEncrypted) throw new Error('This message was encrypted, so it cannot be changed to plain text right now.');
+      } else if (userPublicKey && partnerPublicKey) {
+        try {
+          contentToSave = await encryptDirectMessage(check.text, userPublicKey, partnerPublicKey);
+        } catch {
+          throw new Error('Could not encrypt this edit. Nothing was changed.');
+        }
+      } else if (wasEncrypted) {
+        throw new Error('Could not encrypt this edit. Nothing was changed.');
+      }
+      const editedAt = new Date().toISOString();
+      const { error } = await (getSupabaseClient().from('direct_messages') as any)
+        .update({ content: contentToSave })
+        .eq('id', editingMessage.id)
+        .eq('sender_id', currentUserId);
+      if (error) throw error;
+      const id = editingMessage.id;
+      rawMessagesRef.current = rawMessagesRef.current.map((m) => (m.id === id ? { ...m, content: contentToSave, rawContent: undefined, edited_at: editedAt } : m));
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === id ? { ...m, content: contentToSave, rawContent: contentToSave, displayContent: check.text, edited_at: editedAt } : m));
+        if (resolvedConvId) saveCache(`conv_messages_${resolvedConvId}`, next).catch(() => { });
+        return next;
+      });
+      setEditingMessage(null);
+      setInputText('');
+    } catch (e: any) {
+      const m = String(e?.message || '');
+      Alert.alert('Could not edit', /15|window|edit/i.test(m) ? m : friendlyError(e, 'Could not edit this message. Try again.'));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -1021,21 +1401,38 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
     );
   };
 
-  const handleForwardMessage = async (content: string) => {
+  const handleForwardMessage = (content: string) => {
+    // in-app picker (like web) instead of the Android system share sheet
+    setForwardPayload({
+      text: content,
+      attachment_url: selectedMessage?.attachment_url || null,
+      attachment_type: selectedMessage?.attachment_type || null,
+    });
     setSelectedMessage(null);
-    try {
-      await Share.share({
-        message: content,
-      });
-    } catch (err) {
-      console.warn('[Conversation] Forward error:', err);
-    }
   };
 
-  const handleStartCall = (isVideo: boolean) => {
+  const handleStartCall = async (isVideo: boolean, joining = false) => {
     if (!resolvedConvId && !resolvedPartnerId) {
       Alert.alert('Not Ready', 'Conversation is still loading. Please try again.');
       return;
+    }
+    if (!joining) {
+      if (isFan) {
+        Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+        return;
+      }
+      // Do not ring someone who is already in a live call. Fails open when the check is missing or errors.
+      if (resolvedPartnerId) {
+        try {
+          const { data: busy, error: busyErr } = await (getSupabaseClient() as any).rpc('is_partner_busy', { p_partner: resolvedPartnerId });
+          if (!busyErr && busy === true) {
+            Alert.alert(`${partnerDetails.name || 'This person'} is on another call`, 'Try again in a little while, or send a message.');
+            return;
+          }
+        } catch {
+          // keep going: the call itself is still checked on the server
+        }
+      }
     }
     navigation.navigate('Call', {
       roomId: resolvedConvId || `dm-${resolvedPartnerId || Date.now()}`,
@@ -1048,6 +1445,10 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
   };
 
   const handleCallButtonPress = () => {
+    if (isFan) {
+      Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+      return;
+    }
     Alert.alert(
       `Call ${partnerDetails.name || 'Contact'}`,
       'Select call type',
@@ -1129,6 +1530,24 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
     Date.now() - new Date(latestCallEvent.created_at).getTime() < 1000 * 60 * 30;
 
   const renderMessageItem = ({ item }: { item: any }) => {
+    const showUnreadDivider = !!unreadAnchorId && !!item && String(item.id) === unreadAnchorId && item.sender_id !== currentUserId;
+    if (!showUnreadDivider) return renderMessageItemInner({ item });
+    const dividerColor = (themeColors as any).primary || ORANGE;
+    return (
+      <>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10 }} accessibilityRole="text">
+          <View style={{ flex: 1, height: 1, backgroundColor: dividerColor, opacity: 0.4 }} />
+          <Text style={{ color: dividerColor, fontSize: 12, fontWeight: '700' }}>
+            {unreadCountAtOpen === 1 ? '1 new message' : `${unreadCountAtOpen} new messages`}
+          </Text>
+          <View style={{ flex: 1, height: 1, backgroundColor: dividerColor, opacity: 0.4 }} />
+        </View>
+        {renderMessageItemInner({ item })}
+      </>
+    );
+  };
+
+  const renderMessageItemInner = ({ item }: { item: any }) => {
     const isMe = item.sender_id === currentUserId;
     const isStarred = starredMsgIds.has(item.id);
     const isSelected = selectedMessage?.id === item.id;
@@ -1145,43 +1564,32 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
 
     if (isCallEvent) {
       const isStarted = item.content?.includes('started') || item.content?.includes('Video call started');
-      const cleanContent = (item.content || '').replace(/^📞\s*/, '');
+      const isMissed = typeof item.content === 'string' && /missed call/i.test(item.content);
+      // the caller sees "No answer", the person who missed it sees "Missed call"
+      const cleanContent = isMissed
+        ? (isMe ? 'No answer' : 'Missed call')
+        : (item.content || '').replace(/^📞\s*/, '');
       const timeStr = formatTime(item.created_at);
 
       return (
         <View style={styles.callEventCenteredRow}>
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => handleStartCall(true)}
+            onPress={() => setSelectedCallMessage(item)}
+            accessibilityRole="button"
+            accessibilityLabel="Call details"
             style={[styles.callEventPill, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
           >
             <View
               style={[
                 styles.callEventIconCircle,
-                isStarted ? styles.callEventIconGreen : styles.callEventIconRed,
+                isStarted && !isMissed ? styles.callEventIconGreen : styles.callEventIconRed,
               ]}
             >
-              <Icon name="phone" size={13} color={isStarted ? '#10B981' : '#EF4444'} />
+              <Icon name="phone" size={13} color={isStarted && !isMissed ? '#10B981' : '#EF4444'} />
             </View>
-            <View style={styles.callEventTextWrap}>
-              <Text style={[styles.callEventTitle, { color: themeColors.textPrimary }]}>{cleanContent}</Text>
-              {timeStr ? <Text style={[styles.callEventTime, { color: themeColors.textMuted }]}>{timeStr}</Text> : null}
-            </View>
-            <View
-              style={[
-                styles.callEventActionBadge,
-                isStarted ? styles.callJoinBadge : styles.callBackBadge,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.callEventActionText,
-                  isStarted ? styles.callJoinText : styles.callBackText,
-                ]}
-              >
-                {isStarted ? 'Join' : 'Call'}
-              </Text>
-            </View>
+            <Text style={[styles.callEventTitle, { color: themeColors.textPrimary }]}>{cleanContent}</Text>
+            {timeStr ? <Text style={[styles.callEventTime, { color: themeColors.textMuted }]}>{timeStr}</Text> : null}
           </TouchableOpacity>
         </View>
       );
@@ -1193,7 +1601,9 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
       rawDisplayText === 'Shared a video' ||
       rawDisplayText === 'Shared an attachment' ||
       (rawDisplayText.startsWith('Shared ') && rawDisplayText.endsWith(' photos'));
-    const displayText = isDefaultMedia ? '' : rawDisplayText;
+    // share messages render as cards (parsed after decrypt); any parse failure keeps the text line
+    const shareInfo = !item.attachment_url ? parseShareData(item.displayContent || '') : null;
+    const displayText = isDefaultMedia || shareInfo ? '' : rawDisplayText;
     const isMediaOnly = Boolean(item.attachment_url && !displayText);
 
     // Group reactions by emoji
@@ -1353,7 +1763,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                     isMediaOnly ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                         {isStarred && <Icon name="star" size={10} color="#FBBF24" fill="#FBBF24" />}
-                        <Text style={{ fontSize: 9.5, color: '#FFFFFF', fontWeight: '600' }}>
+                        <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '600' }}>
                           {formatTime(item.created_at)}
                         </Text>
                         {isMe && (
@@ -1373,6 +1783,35 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
               </View>
             ) : null}
 
+            {shareInfo ? (
+              <View style={{ padding: 4 }}>
+                {shareInfo.caption ? (
+                  <Text style={[styles.msgText, isMe ? styles.msgTextMe : [styles.msgTextOther, { color: themeColors.textPrimary }], { marginBottom: 6 }]}>
+                    {shareInfo.caption}
+                  </Text>
+                ) : null}
+                {shareInfo.type === 'job' && shareInfo.data?.id ? (
+                  <JobShareCard
+                    jobId={String(shareInfo.data.id)}
+                    title={shareInfo.data.title}
+                    company={shareInfo.data.company}
+                    location={shareInfo.data.location}
+                    logoUrl={shareInfo.data.logoUrl}
+                    description={shareInfo.data.description}
+                    salary={shareInfo.data.salary}
+                    navigation={navigation}
+                  />
+                ) : (
+                  <ShareCard data={shareInfo.data} navigation={navigation} />
+                )}
+                <View style={[styles.msgFooterInline, { alignSelf: 'flex-end', marginTop: 4, marginRight: 4 }]}>
+                  <Text style={[styles.msgTime, isMe ? styles.msgTimeMe : [styles.msgTimeOther, { color: themeColors.textMuted }]]}>
+                    {formatTime(item.created_at)}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
             {displayText ? (
               <View style={[styles.bubbleContentRow, item.attachment_url && { paddingHorizontal: 12, paddingBottom: 6 }]}>
                 <Text
@@ -1383,7 +1822,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                       : [styles.msgTextOther, { color: themeColors.textPrimary }],
                   ]}
                 >
-                  {displayText}
+                  <LinkifiedText text={String(displayText)} />
                 </Text>
 
                 {/* Inline Timestamp, Star indicator, and Double-tick status */}
@@ -1397,7 +1836,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                       isMe ? styles.msgTimeMe : [styles.msgTimeOther, { color: themeColors.textMuted }],
                     ]}
                   >
-                    {formatTime(item.created_at)}
+                    {item.edited_at ? '(edited) ' : ''}{formatTime(item.created_at)}
                   </Text>
                   {isMe && (
                     <View style={styles.tickContainer}>
@@ -1474,6 +1913,23 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
     );
   };
 
+  // the other person is not a connection and has not accepted yet: show the request instead of the chat
+  if (activeRequest) {
+    return (
+      <TabletContainer backgroundColor={themeColors.bgScreen}>
+        <MessageRequestView
+          request={activeRequest}
+          privateKey={privateKey}
+          currentUserId={currentUserId}
+          themeColors={themeColors}
+          navigation={navigation}
+          onBack={() => handleSmartBack(navigation)}
+          onAnswered={(accepted) => { if (!accepted) handleSmartBack(navigation); }}
+        />
+      </TabletContainer>
+    );
+  }
+
   const isSelectedMsgMe = selectedMessage?.sender_id === currentUserId;
   const isSelectedMsgStarred = selectedMessage ? starredMsgIds.has(selectedMessage.id) : false;
 
@@ -1495,7 +1951,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             ]}
           >
             <View style={styles.headerSelectionLeft}>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back"
                 style={styles.headerSelectionIconBtn}
                 onPress={() => setSelectedMessage(null)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1572,6 +2028,18 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                 </TouchableOpacity>
               )}
 
+              {/* Edit (own text, 15 minutes) */}
+              {isSelectedMsgMe && selectedMessage && canEditMessage({ ...selectedMessage, content: String(selectedMessage.displayContent || '') }, currentUserId) && (
+                <TouchableOpacity
+                  style={styles.headerSelectionActionBtn}
+                  onPress={() => startEdit(selectedMessage)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Edit"
+                >
+                  <Icon name="edit" size={18} color={themeColors.textPrimary} strokeWidth={2.2} />
+                </TouchableOpacity>
+              )}
+
               {/* Delete / Report */}
               {isSelectedMsgMe ? (
                 <TouchableOpacity
@@ -1607,7 +2075,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
               },
             ]}
           >
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back"
               style={styles.backBtn}
               onPress={() => handleSmartBack(navigation, 'Messages')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1616,6 +2084,8 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             </TouchableOpacity>
 
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={`${partnerDetails.name || 'Contact'} profile`}
               style={styles.partnerInfoTouch}
               onPress={() => setShowDMSettings(true)}
               activeOpacity={0.8}
@@ -1640,6 +2110,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             </TouchableOpacity>
 
             {/* Single Call Button */}
+            {!isFan ? (
             <TouchableOpacity
               style={[styles.callBtn, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1F0' }]}
               onPress={handleCallButtonPress}
@@ -1648,6 +2119,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             >
               <Icon name="phone" size={18} color={ORANGE} />
             </TouchableOpacity>
+            ) : null}
           </View>
         )}
 
@@ -1660,7 +2132,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             </View>
             <TouchableOpacity
               style={styles.activeCallJoinBtn}
-              onPress={() => handleStartCall(true)}
+              onPress={() => handleStartCall(true, true)}
               activeOpacity={0.8}
             >
               <Icon name="phone" size={12} color="#FFFFFF" />
@@ -1671,12 +2143,15 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
 
 
 
+        <E2EEBanner reason={dmPolicy.reason} partnerName={partnerDetails?.name || undefined} />
+
         {/* Messages Feed */}
         {loading ? (
           <ScrollView contentContainerStyle={styles.messagesList} showsVerticalScrollIndicator={false}>
             <ChatMessagesSkeleton showAvatars={false} showAuthorNames={false} />
           </ScrollView>
         ) : (
+          <View style={{ flex: 1 }}>
           <FlashListAny
             ref={flatListRef}
             data={messages}
@@ -1684,8 +2159,65 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             renderItem={renderMessageItem}
             contentContainerStyle={styles.messagesList}
             estimatedItemSize={90}
-            onContentSizeChange={() => {
-              if (messages && messages.length > 0) {
+            extraData={`${unreadAnchorId || ''}:${unreadCountAtOpen}`}
+            // hidden until placed, so the person never sees it scroll down from the top
+            style={{ opacity: chatVisible || messages.length === 0 ? 1 : 0 }}
+            onScrollBeginDrag={() => { userScrolledRef.current = true; }}
+            onScroll={(e: any) => {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              lastScrollOffsetRef.current = contentOffset.y;
+              distFromBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              nearBottomRef.current =
+                contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120;
+            }}
+            scrollEventThrottle={16}
+            onContentSizeChange={(_w: number, h: number) => {
+              if (h !== lastContentHRef.current) { lastContentHRef.current = h; lastContentChangeAtRef.current = Date.now(); }
+              keepPlaceAfterPrepend(h, (offset) => { try { flatListRef.current?.scrollToOffset({ offset, animated: false }); } catch { } });
+              if (!messages || messages.length === 0) return;
+              if (!chatPositionedRef.current) {
+                // First layout after opening: keep nudging to the first unread message (or the bottom) while the list is still hidden,
+                // and reveal it only once it is really there, so the person never sees it scroll.
+                if (chatPlaceTimerRef.current) return;
+                const startedAt = Date.now();
+                let okTicks = 0;
+                const reveal = () => {
+                  if (chatPlaceTimerRef.current) { clearInterval(chatPlaceTimerRef.current); chatPlaceTimerRef.current = null; }
+                  chatPositionedRef.current = true;
+                  setChatVisible(true);
+                };
+                const tick = () => {
+                  if (userScrolledRef.current) { reveal(); return; }
+                  const anchorId = unreadAnchorRef.current;
+                  const list = messagesListRef.current;
+                  const idx = anchorId ? list.findIndex((m: any) => String(m.id) === anchorId) : -1;
+                  // wait (briefly) until we know whether there are unread messages, so the list is placed once
+                  if (!unreadResolvedRef.current && Date.now() - startedAt < 400) {
+                    try { flatListRef.current?.scrollToEnd({ animated: false }); } catch { }
+                    return;
+                  }
+                  try {
+                    if (idx >= 0) {
+                      try {
+                        flatListRef.current?.scrollToIndex({ index: idx, viewPosition: 0.15, animated: false });
+                      } catch {
+                        flatListRef.current?.scrollToOffset({ offset: 90 * idx, animated: false });
+                      }
+                    } else {
+                      flatListRef.current?.scrollToEnd({ animated: false });
+                    }
+                  } catch { }
+                  // at the place AND the content has stopped growing (a picture that loads late would otherwise move the list after it is shown)
+                  // (messages can arrive in two stages, a few first and the rest a moment later: wait for both to settle)
+                  const quiet = Date.now() - Math.max(lastContentChangeAtRef.current, lastMessagesChangeAtRef.current) > 300;
+                  okTicks = (idx >= 0 || distFromBottomRef.current < 6) && quiet ? okTicks + 1 : 0;
+                  if (okTicks >= 1 || Date.now() - startedAt > 1800) reveal();
+                };
+                tick();
+                if (!chatPositionedRef.current) chatPlaceTimerRef.current = setInterval(tick, 50);
+                return;
+              }
+              if (!prependAnchorRef.current && nearBottomRef.current) {
                 try {
                   flatListRef.current?.scrollToEnd({ animated: true });
                 } catch { }
@@ -1702,7 +2234,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                     },
                   ]}
                   onPress={() => {
-                    if (resolvedConvId) fetchOlderDMs(resolvedConvId);
+                    if (resolvedConvId) { holdPlaceForOlder(); fetchOlderDMs(resolvedConvId); }
                   }}
                   disabled={loadingOlder}
                   activeOpacity={0.7}
@@ -1711,7 +2243,7 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                     <ActivityIndicator size="small" color={ORANGE} />
                   ) : (
                     <>
-                      <Icon name="chevron-up" size={14} color={themeColors.textSecondary} />
+                      <Icon name="chevron-up" size={14} color={themeColors.iconSecondary} />
                       <Text style={[styles.loadOlderText, { color: themeColors.textSecondary }]}>Load earlier messages</Text>
                     </>
                   )}
@@ -1739,6 +2271,11 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
               </View>
             }
           />
+          {/* opaque cover until the list is placed: opacity alone let one stray frame of the top of the list through */}
+          {!chatVisible && messages.length > 0 && (
+            <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: themeColors.bgScreen }} />
+          )}
+          </View>
         )}
 
         {/* WhatsApp-Style Replying Bar docked right on top of text input */}
@@ -1783,12 +2320,12 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                   ) : null}
                 </View>
               </View>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                 style={styles.replyingCloseBtn}
                 onPress={() => setReplyingTo(null)}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Icon name="x" size={16} color={themeColors.textSecondary} />
+                <Icon name="x" size={16} color={themeColors.iconSecondary} />
               </TouchableOpacity>
             </View>
           );
@@ -1802,14 +2339,39 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                 <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#334155' : '#FFFFFF', borderRadius: 20, paddingLeft: 10, paddingRight: 6, paddingVertical: 4, borderWidth: 1, borderColor: themeColors.border }}>
                   <Icon name={file.type?.startsWith('image/') ? 'image' : file.type?.startsWith('video/') ? 'video' : 'file'} size={14} color={ORANGE} />
                   <Text style={{ fontSize: 12, color: themeColors.textPrimary, marginLeft: 6, maxWidth: 120 }} numberOfLines={1}>
-                    {file.name || 'Attachment'}
+                    {attachmentChipLabel(file)}
                   </Text>
-                  <TouchableOpacity onPress={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))} style={{ marginLeft: 6, padding: 2 }}>
-                    <Icon name="x" size={14} color={themeColors.textMuted} />
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))} style={{ marginLeft: 6, padding: 2 }}>
+                    <Icon name="x" size={14} color={themeColors.iconMuted} />
                   </TouchableOpacity>
                 </View>
               ))}
             </ScrollView>
+          </View>
+        )}
+
+        {/* Message request: the sender waits for the other person to accept */}
+        {senderRequest.waiting && (
+          <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: isDark ? '#1E293B' : '#FFF7F5', borderTopWidth: 1, borderTopColor: themeColors.border }}>
+            <Text style={{ fontSize: 12, color: themeColors.textSecondary, textAlign: 'center' }}>
+              {WAITING_TEXT}
+              {!senderRequest.closed && senderRequest.remaining > 0
+                ? ` · you can send ${senderRequest.remaining} more message${senderRequest.remaining === 1 ? '' : 's'} until then`
+                : ' · you can send more once they accept'}
+            </Text>
+          </View>
+        )}
+
+        {/* Editing bar */}
+        {editingMessage && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderTopWidth: 1, borderTopColor: themeColors.border, gap: 8 }}>
+            <Icon name="edit" size={14} color={ORANGE} />
+            <Text style={{ flex: 1, fontSize: 12, color: themeColors.textSecondary }}>
+              Editing message · {editMinutesLeft(editingMessage.created_at)} min left
+            </Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel edit" onPress={cancelEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="x" size={16} color={themeColors.iconSecondary} />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1823,8 +2385,8 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             },
           ]}
         >
-          <TouchableOpacity onPress={handlePickDocument} style={{ padding: 8, marginRight: 2 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Icon name="paperclip" size={20} color={themeColors.textSecondary} />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach file" onPress={handlePickDocument} style={{ padding: 8, marginRight: 2 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Icon name="paperclip" size={20} color={themeColors.iconSecondary} />
           </TouchableOpacity>
 
           <TextInput
@@ -1839,13 +2401,15 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             placeholderTextColor={themeColors.textMuted}
             value={inputText}
             onChangeText={setInputText}
+            editable={editingMessage ? true : !composerClosed}
             multiline
+            maxLength={4000}
           />
 
-          <TouchableOpacity
-            style={[styles.sendBtn, ((!inputText.trim() && attachedFiles.length === 0) || sending || uploadingMedia) && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={(!inputText.trim() && attachedFiles.length === 0) || sending || uploadingMedia}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={editingMessage ? 'Save edit' : 'Send message'} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={[styles.sendBtn, ((!inputText.trim() && attachedFiles.length === 0) || sending || uploadingMedia || (composerClosed && !editingMessage)) && styles.sendBtnDisabled]}
+            onPress={editingMessage ? handleSaveEdit : handleSend}
+            disabled={(!inputText.trim() && attachedFiles.length === 0) || sending || uploadingMedia || (composerClosed && !editingMessage)}
           >
             {sending || uploadingMedia ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -1883,8 +2447,8 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
                 <View style={[styles.infoModalCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                   <View style={styles.infoModalHeader}>
                     <Text style={[styles.infoModalTitle, { color: themeColors.textPrimary }]}>Message Info</Text>
-                    <TouchableOpacity onPress={() => setInfoMessage(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Icon name="x" size={18} color={themeColors.textSecondary} />
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={() => setInfoMessage(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Icon name="x" size={18} color={themeColors.iconSecondary} />
                     </TouchableOpacity>
                   </View>
 
@@ -1936,6 +2500,13 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
           </TouchableWithoutFeedback>
         </Modal>
 
+        <ForwardMessageModal
+          visible={!!forwardPayload}
+          message={forwardPayload}
+          currentUserId={currentUserId}
+          onClose={() => setForwardPayload(null)}
+        />
+
         {/* Dedicated DM Settings Modal */}
         <DMSettingsModal
           visible={showDMSettings}
@@ -1946,8 +2517,9 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
           partnerCraft={partnerDetails.craft}
           currentUserId={currentUserId}
           isOnline={isPartnerOnline}
+          encryptionReason={dmPolicy.reason}
           onClose={() => setShowDMSettings(false)}
-          onStartCall={handleStartCall}
+          onStartCall={(v: boolean) => { void handleStartCall(v); }}
           onViewProfile={() => {
             if (resolvedPartnerId) {
               navigation.navigate('PublicProfile', {
@@ -1958,6 +2530,11 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
             }
           }}
           onClearChat={handleClearChat}
+          onConversationDeleted={() => {
+            setMessages([]);
+            rawMessagesRef.current = [];
+            navigation.goBack();
+          }}
           onMuteChanged={(muted) => setIsMuted(muted)}
         />
 
@@ -1971,10 +2548,10 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' }}>
             {/* Header Bar */}
             <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 10 : 0, zIndex: 10 }}>
-              <TouchableOpacity onPress={() => setLightboxState((prev) => ({ ...prev, visible: false }))} style={{ padding: 8 }}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setLightboxState((prev) => ({ ...prev, visible: false }))} style={{ padding: 8 }}>
                 <Icon name="x" size={24} color="#FFFFFF" />
               </TouchableOpacity>
-              <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
                 {lightboxState.images.length > 0 ? `${lightboxState.currentIndex + 1} of ${lightboxState.images.length}` : ''}
               </Text>
               <View style={{ width: 40 }} />
@@ -1987,21 +2564,28 @@ export const ConversationScreen = ({ route, navigation }: { route: any; navigati
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               initialScrollIndex={lightboxState.currentIndex >= 0 && lightboxState.currentIndex < lightboxState.images.length ? lightboxState.currentIndex : 0}
-              getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+              getItemLayout={(_, index) => ({ length: lightboxWinW, offset: lightboxWinW * index, index })}
               onMomentumScrollEnd={(e) => {
-                const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+                const idx = Math.round(e.nativeEvent.contentOffset.x / lightboxWinW);
                 setLightboxState((prev) => ({ ...prev, currentIndex: idx }));
               }}
               keyExtractor={(item, index) => item + index}
               renderItem={({ item }) => (
-                <View style={{ width: SCREEN_WIDTH, height: '88%', justifyContent: 'center', alignItems: 'center' }}>
-                  <CachedImage uri={item} style={{ width: SCREEN_WIDTH, height: '100%' }} resizeMode="contain" />
+                <View style={{ width: lightboxWinW, height: '88%', justifyContent: 'center', alignItems: 'center' }}>
+                  <CachedImage uri={item} style={{ width: lightboxWinW, height: '100%' }} resizeMode="contain" />
                 </View>
               )}
             />
           </View>
         </Modal>
       </KeyboardAvoidingView>
+      <CallDetailsModal
+        visible={!!selectedCallMessage}
+        onClose={() => setSelectedCallMessage(null)}
+        message={selectedCallMessage}
+        roomType="direct"
+        roomId={resolvedConvId || ''}
+      />
     </TabletContainer>
   );
 };
@@ -2035,7 +2619,7 @@ const styles = StyleSheet.create({
   headerAvatarFallbackText: {
     color: '#FF4B33',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   onlineDot: {
     position: 'absolute',
@@ -2049,10 +2633,10 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   headerTextGroup: { flex: 1, justifyContent: 'center' },
-  partnerName: { color: INK, fontSize: 15.5, fontWeight: '700' },
+  partnerName: { color: INK, fontSize: 16, fontWeight: '700' },
   callBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     backgroundColor: '#FFF1F0',
     alignItems: 'center',
@@ -2077,7 +2661,7 @@ const styles = StyleSheet.create({
   loadOlderText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#64748B',
   },
   swipeContainer: {
     position: 'relative',
@@ -2148,7 +2732,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerSelectionCount: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
   },
   headerSelectionActions: {
@@ -2158,7 +2742,7 @@ const styles = StyleSheet.create({
   },
   headerSelectionActionBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 18,
@@ -2303,7 +2887,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   quoteBubbleAuthor: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     marginBottom: 1,
   },
@@ -2351,7 +2935,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   replyingSnippetText: {
-    fontSize: 12.5,
+    fontSize: 12,
   },
   replyingCloseBtn: {
     width: 28,
@@ -2369,7 +2953,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   msgText: {
-    fontSize: 14.5,
+    fontSize: 14,
     lineHeight: 20,
   },
   msgTextMe: { color: '#FFFFFF' },
@@ -2384,7 +2968,7 @@ const styles = StyleSheet.create({
     paddingBottom: 1,
   },
   tickContainer: { marginLeft: 2, justifyContent: 'center', alignItems: 'center' },
-  msgTime: { fontSize: 9.5 },
+  msgTime: { fontSize: 12 },
   msgTimeMe: { color: 'rgba(255,255,255,0.75)' },
   msgTimeOther: { color: '#9CA3AF' },
 
@@ -2418,11 +3002,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   unifiedReactionEmoji: {
-    fontSize: 13.5,
+    fontSize: 14,
     lineHeight: 16,
   },
   unifiedReactionCountText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     marginLeft: 1,
   },
@@ -2441,11 +3025,11 @@ const styles = StyleSheet.create({
   bigAvatarFallbackText: {
     color: '#FF4B33',
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '700',
   },
-  emptyName: { fontSize: 17, fontWeight: '800', color: INK },
-  emptyCraft: { fontSize: 11, fontWeight: '800', color: ORANGE, textTransform: 'uppercase', marginTop: 2, marginBottom: 8 },
-  emptyHint: { fontSize: 12.5, color: '#6B7280', textAlign: 'center', lineHeight: 18 },
+  emptyName: { fontSize: 18, fontWeight: '700', color: INK },
+  emptyCraft: { fontSize: 12, fontWeight: '700', color: ORANGE, textTransform: 'uppercase', marginTop: 2, marginBottom: 8 },
+  emptyHint: { fontSize: 12, color: '#64748B', textAlign: 'center', lineHeight: 18 },
 
   inputContainer: {
     flexDirection: 'row',
@@ -2464,12 +3048,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     maxHeight: 100,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
   },
   sendBtn: {
     width: 38,
-    height: 38,
+    height: 44,
     borderRadius: 19,
     backgroundColor: ORANGE,
     alignItems: 'center',
@@ -2579,7 +3163,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   infoRowLabel: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '600',
   },
   infoRowVal: {
@@ -2602,7 +3186,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   infoCloseBtnText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
 
@@ -2630,7 +3214,7 @@ const styles = StyleSheet.create({
   },
   activeCallText: {
     color: '#F8FAFC',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   activeCallJoinBtn: {
@@ -2644,8 +3228,8 @@ const styles = StyleSheet.create({
   },
   activeCallJoinText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // Centered Call Event Card in Message Stream
@@ -2689,13 +3273,13 @@ const styles = StyleSheet.create({
   },
   callEventTitle: {
     color: INK,
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   callEventTime: {
     color: '#94A3B8',
-    fontSize: 10,
-    marginTop: 1,
+    fontSize: 12,
+    marginLeft: 2,
   },
   callEventActionBadge: {
     paddingHorizontal: 10,
@@ -2710,8 +3294,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   callEventActionText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   callJoinText: {
     color: '#059669',

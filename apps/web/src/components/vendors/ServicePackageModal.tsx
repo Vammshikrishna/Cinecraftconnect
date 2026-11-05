@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import {
     Dialog,
@@ -15,19 +15,23 @@ import { PRODUCTION_TYPES } from '@/types/marketplace';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { friendlyError } from '@cinecraft/core';
 
 interface ServicePackageModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     vendorId: string;
     onSuccess: () => void;
+    /** when given, the dialog edits this package instead of creating a new one */
+    service?: any | null;
 }
 
 export const ServicePackageModal = ({
     open,
     onOpenChange,
     vendorId,
-    onSuccess
+    onSuccess,
+    service
 }: ServicePackageModalProps) => {
     const { toast } = useToast();
     const { user } = useAuth();
@@ -43,6 +47,19 @@ export const ServicePackageModal = ({
     const [crewCapacity, setCrewCapacity] = useState('');
     const [checklistItems, setChecklistItems] = useState<string[]>([]);
     const [newItem, setNewItem] = useState('');
+
+    // opening the dialog for an existing package fills the form with its values
+    useEffect(() => {
+        if (!open || !service) return;
+        setTitle(service.title || '');
+        setDescription(service.description || '');
+        setDayRate(service.day_rate != null ? String(service.day_rate) : '');
+        setCoverageArea(service.coverage_area || '');
+        setMinBookingDays(String(service.min_booking_days || 1));
+        setSelectedProductionTypes(service.production_types || []);
+        setCrewCapacity(service.crew_capacity != null ? String(service.crew_capacity) : '');
+        setChecklistItems(service.service_checklist || []);
+    }, [open, service]);
 
     const handleProductionTypeToggle = (type: string) => {
         setSelectedProductionTypes(prev =>
@@ -84,12 +101,17 @@ export const ServicePackageModal = ({
             return;
         }
 
+        const rate = parseFloat(dayRate);
+        const minDays = parseInt(minBookingDays);
+        const crew = crewCapacity ? parseInt(crewCapacity) : null;
+        if (!(rate > 0)) { toast({ title: 'Check the day rate', description: 'The day rate must be more than 0.', variant: 'destructive' }); return; }
+        if (minBookingDays && !(minDays >= 1)) { toast({ title: 'Check the minimum days', description: 'The minimum booking is at least 1 day.', variant: 'destructive' }); return; }
+        if (crew !== null && !(crew >= 1)) { toast({ title: 'Check the crew capacity', description: 'Crew capacity must be at least 1, or leave it empty.', variant: 'destructive' }); return; }
+
         try {
             setLoading(true);
 
-            const { error } = await supabase
-                .from('vendor_services' as any)
-                .insert({
+            const row = {
                     vendor_id: vendorId,
                     title,
                     description,
@@ -100,11 +122,14 @@ export const ServicePackageModal = ({
                     crew_capacity: crewCapacity ? parseInt(crewCapacity) : null,
                     service_checklist: checklistItems,
                     is_active: true
-                });
+                };
+            const { error } = service?.id
+                ? await supabase.from('vendor_services' as any).update(row as any).eq('id', service.id)
+                : await supabase.from('vendor_services' as any).insert(row as any);
 
             if (error) throw error;
 
-            toast({ title: 'Success', description: 'Service package created!' });
+            toast({ title: 'Success', description: service?.id ? 'Service package updated!' : 'Service package created!' });
             resetForm();
             onSuccess();
             onOpenChange(false);
@@ -112,7 +137,7 @@ export const ServicePackageModal = ({
             console.error('Error creating service:', error);
             toast({
                 title: 'Error',
-                description: error.message || 'Failed to create service',
+                description: friendlyError(error, 'Failed to create service'),
                 variant: 'destructive'
             });
         } finally {
@@ -127,7 +152,7 @@ export const ServicePackageModal = ({
         }}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card text-card-foreground">
                 <DialogHeader>
-                    <DialogTitle>Add Service Package</DialogTitle>
+                    <DialogTitle>{service ? 'Edit Service Package' : 'Add Service Package'}</DialogTitle>
                 </DialogHeader>
 
                 <div className="space-y-6 pt-4">
@@ -236,7 +261,7 @@ export const ServicePackageModal = ({
                                     }
                                 }}
                             />
-                            <Button type="button" onClick={addChecklistItem} variant="secondary">
+                            <Button aria-label="Add" type="button" onClick={addChecklistItem} variant="secondary">
                                 <Plus size={16} />
                             </Button>
                         </div>
@@ -244,7 +269,7 @@ export const ServicePackageModal = ({
                             {checklistItems.map((item, idx) => (
                                 <div key={idx} className="flex items-center justify-between p-2 bg-secondary/20 rounded-md border border-border text-sm">
                                     <span>{item}</span>
-                                    <button
+                                    <button aria-label="Close"
                                         onClick={() => removeChecklistItem(idx)}
                                         className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
                                     >
@@ -259,7 +284,7 @@ export const ServicePackageModal = ({
                     </div>
 
                     <Button onClick={handleSubmit} disabled={loading} className="w-full">
-                        {loading ? 'Creating...' : 'Create Service Package'}
+                        {loading ? (service ? 'Saving...' : 'Creating...') : (service ? 'Save changes' : 'Create Service Package')}
                     </Button>
                 </div>
             </DialogContent>

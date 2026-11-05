@@ -8,6 +8,8 @@ import NotificationsDropdown from './NotificationsDropdown';
 import MoreMenu from './MoreMenu';
 import UserProfileMenu from './UserProfileMenu';
 import { MobileNav } from "./MobileNav";
+import SideNav from './SideNav';
+import { isStaffConsolePath } from '@/components/layout/MobileNavInset';
 import AppLogo from '@/components/common/AppLogo';
 import { MessageSquare } from 'lucide-react';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
@@ -32,7 +34,7 @@ const Navbar = () => {
   return (
     <>
       <header 
-        className={`fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-transform duration-300 overflow-x-hidden pt-[env(safe-area-inset-top)] ${shouldHideTopNavMobile ? '-translate-y-full lg:translate-y-0' : 'translate-y-0'}`}
+        className={`fixed top-0 left-0 right-0 z-50 bg-background/75 backdrop-blur-xl backdrop-saturate-150 border-b border-border/60 transition-transform duration-300 overflow-x-hidden pt-[env(safe-area-inset-top)] ${user ? 'lg:hidden' : ''} ${shouldHideTopNavMobile ? '-translate-y-full lg:translate-y-0' : 'translate-y-0'}`}
       >
         <div className="w-full px-1.5 sm:px-4 lg:px-8 max-w-7xl mx-auto">
           <div className="flex items-center justify-between py-2 sm:py-3 gap-1 sm:gap-4">
@@ -57,7 +59,7 @@ const Navbar = () => {
                       variant={isSearchActive ? "default" : "ghost"} 
                       size="icon" 
                       asChild 
-                      className={`h-8 w-8 sm:h-9 sm:w-9 lg:h-10 lg:w-10 p-0 transition-all duration-300 ${isSearchActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+                      className={`h-11 w-11 sm:h-10 sm:w-10 p-0 transition-[color,background-color,box-shadow,transform] duration-200 ${isSearchActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
                     >
                       <Link to="/search">
                         <Search className={`h-4 w-4 sm:h-5 sm:w-5 ${isSearchActive ? "text-primary-foreground" : ""}`} />
@@ -88,6 +90,8 @@ const Navbar = () => {
       </header>
       {/* Mobile Nav Menu (for links) */}
       {user && <MobileNav />}
+      {/* Wide screens: the navigation column on the left */}
+      {user && !isStaffConsolePath(location.pathname) && <SideNav />}
     </>
   );
 };
@@ -102,12 +106,12 @@ const ChatLink = () => {
       variant={isMessagesActive ? "default" : "ghost"} 
       size="icon" 
       asChild 
-      className={`h-8 w-8 sm:h-9 sm:w-9 lg:h-10 lg:w-10 p-0 relative transition-all duration-300 ${isMessagesActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+      className={`h-11 w-11 sm:h-10 sm:w-10 p-0 relative transition-[color,background-color,box-shadow,transform] duration-200 ${isMessagesActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
     >
       <Link to="/messages">
         <MessageSquare className={`h-4 w-4 sm:h-5 sm:w-5 ${isMessagesActive ? "text-primary-foreground" : ""}`} />
         {unreadCount > 0 && (
-          <span className={`absolute -top-1 -right-1 flex h-3.5 w-3.5 sm:h-4 sm:w-4 items-center justify-center rounded-full bg-red-500 text-[9px] sm:text-[10px] font-bold text-white border-2 animate-in zoom-in ${isMessagesActive ? 'border-primary' : 'border-background'}`}>
+          <span className={`absolute -top-1 -right-1 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-red-500 text-xs leading-none font-bold text-white border-2 animate-in zoom-in-95 ${isMessagesActive ? 'border-primary' : 'border-background'}`}>
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}

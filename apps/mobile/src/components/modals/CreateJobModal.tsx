@@ -15,6 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import {
@@ -37,6 +38,9 @@ import {
   type PayPeriod,
   type ScreeningQuestion,
 } from '@cinecraft/core';
+import { friendlyError } from '@cinecraft/core';
+import { isNetworkConnectedSync } from '../../services/offlineCache';
+import { enqueueJob, cancelQueuedJob, flushJobQueue, readJobQueue, subscribeJobQueue, isNetworkError, type QueuedJob } from '../../services/jobQueue';
 
 const ORANGE = '#FF4B33';
 const BLUE = '#1D72F2';
@@ -130,11 +134,22 @@ const fromJob = (j: any): FormState => ({
 
 export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose, onSuccess, onCreated, jobToEdit, duplicateFrom, defaultPageId }) => {
   const { themeColors } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [selectedPageId, setSelectedPageId] = useState<string>('user');
   const [myPages, setMyPages] = useState<any[]>([]);
   const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
+
+  const [pending, setPending] = useState<QueuedJob[]>([]);
+  useEffect(() => {
+    if (!visible) return;
+    let on = true;
+    readJobQueue().then((l) => on && setPending(l)).catch(() => {});
+    const unsub = subscribeJobQueue((l) => on && setPending(l));
+    flushJobQueue(() => onCreated?.());
+    return () => { on = false; unsub(); };
+  }, [visible]);
 
   const source = jobToEdit || duplicateFrom;
   const isEditing = !!jobToEdit?.id;
@@ -264,7 +279,22 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
     }
 
     setSaving(asDraft ? 'draft' : 'publish');
+    const queueOffline = async () => {
+      const supabase = getSupabaseClient() as any;
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) return false;
+      await enqueueJob({ mode: isEditing ? 'update' : 'insert', jobId: isEditing ? jobToEdit.id : undefined, userId: uid, payload: buildPayload(asDraft), title: form.title.trim() });
+      onClose();
+      Alert.alert('Saved offline', 'Saved offline, will post when back online.');
+      return true;
+    };
     try {
+      if (!isNetworkConnectedSync()) {
+        try {
+          if (await queueOffline()) return;
+        } catch {}
+      }
       const supabase = getSupabaseClient() as any;
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) throw new Error('Please sign in to post a job.');
@@ -287,7 +317,10 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
         asDraft ? 'Only you can see it until you publish.' : 'Your posting is live.'
       );
     } catch (e: any) {
-      Alert.alert('Could not save the job', e?.message || 'Please try again.');
+      try {
+        if (isNetworkError(e) && (await queueOffline())) return;
+      } catch {}
+      Alert.alert('Could not save the job', friendlyError(e, 'Please try again.'));
     } finally {
       setSaving(null);
     }
@@ -309,19 +342,33 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ maxHeight: '92%' }}>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ maxHeight: sheet.maxHeight, width: '100%', alignSelf: 'center' }}>
               <View style={[styles.modalContent, { backgroundColor: T.bgCard }]}>
                 <View style={[styles.handleBar, { backgroundColor: T.border }]} />
                 <View style={styles.headerRow}>
                   <Text style={[styles.title, { color: T.textPrimary }]}>
                     {isEditing ? (editingDraft ? 'Finish your draft' : 'Edit job') : duplicateFrom ? 'Duplicate job' : 'Post a Crew Opening'}
                   </Text>
-                  <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Icon name="x" size={20} color={T.textSecondary} />
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Icon name="x" size={20} color={T.iconSecondary} />
                   </TouchableOpacity>
                 </View>
 
-                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+                <ScrollView style={{ flexShrink: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentContainerStyle={{ paddingBottom: 24 }}>
+                  {pending.length > 0 && (
+                    <View style={{ borderWidth: 1, borderColor: T.border, backgroundColor: T.inputBg, borderRadius: 10, padding: 10, marginBottom: 12 }}>
+                      <Text style={{ color: T.textSecondary, fontSize: 12, fontWeight: '700', marginBottom: 4 }}>WAITING TO POST WHEN BACK ONLINE</Text>
+                      {pending.map((q) => (
+                        <View key={q.qid} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 }}>
+                          <Text style={{ color: T.textPrimary, flex: 1, fontSize: 13 }} numberOfLines={1}>{q.title || 'Untitled job'}{q.mode === 'update' ? ' (edit)' : ''}</Text>
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel pending job" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => cancelQueuedJob(q.qid)}>
+                            <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 12 }}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
                   {/* The role */}
                   <Label text="POST JOB AS" />
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
@@ -437,7 +484,7 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
                     {form.screening_questions.length < MAX_SCREENING_QUESTIONS && (
                       <TouchableOpacity onPress={addQuestion} style={styles.addQ}>
                         <Icon name="plus" size={13} color={ORANGE} />
-                        <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '800' }}>Add</Text>
+                        <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>Add</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -448,7 +495,7 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
                         {(['text', 'yesno', 'choice'] as const).map((t) => (
                           <Chip key={t} on={q.type === t} label={t === 'text' ? 'Short answer' : t === 'yesno' ? 'Yes / No' : 'Choice'} onPress={() => updateQuestion(q.id, { type: t, options: t === 'choice' ? q.options || ['', ''] : undefined })} color={BLUE} />
                         ))}
-                        <TouchableOpacity style={{ marginLeft: 'auto' }} onPress={() => removeQuestion(q.id)}>
+                        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 'auto' }} onPress={() => removeQuestion(q.id)}>
                           <Icon name="trash-2" size={16} color="#EF4444" />
                         </TouchableOpacity>
                       </View>
@@ -462,7 +509,7 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
                         />
                       )}
                       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 8 }}>
-                        <Switch value={q.required} onValueChange={(v) => updateQuestion(q.id, { required: v })} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
+                        <Switch accessibilityLabel="Required" value={q.required} onValueChange={(v) => updateQuestion(q.id, { required: v })} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
                         <Text style={{ color: T.textSecondary, fontSize: 12 }}>Required</Text>
                       </View>
                     </View>
@@ -473,24 +520,29 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
                       <Text style={[styles.switchTitle, { color: T.textPrimary }]}>Auto-close when filled</Text>
                       <Text style={[styles.switchSub, { color: T.textSecondary }]}>Automatically close this listing when an applicant is hired.</Text>
                     </View>
-                    <Switch value={form.auto_close_on_hire} onValueChange={(v) => set('auto_close_on_hire', v)} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
+                    <Switch accessibilityLabel="Auto-close when filled" value={form.auto_close_on_hire} onValueChange={(v) => set('auto_close_on_hire', v)} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
                   </View>
 
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
-                    {(!isEditing || editingDraft) && (
-                      <TouchableOpacity style={[styles.draftBtn, { borderColor: T.border }, !!saving && styles.btnDisabled]} disabled={!!saving} onPress={() => save(true)}>
-                        {saving === 'draft' ? <ActivityIndicator size="small" color={ORANGE} /> : <Text style={[styles.draftBtnText, { color: T.textPrimary }]}>Save draft</Text>}
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity style={[styles.postBtn, !!saving && styles.btnDisabled]} disabled={!!saving} onPress={() => save(false)} activeOpacity={0.85}>
-                      {saving === 'publish' ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <Text style={styles.postBtnText}>{isEditing && !editingDraft ? 'Save changes' : 'Publish job'}</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
                 </ScrollView>
+
+                {/* Pinned footer: always visible, clear of the system navigation bar */}
+                <View style={[styles.footer, { backgroundColor: T.bgCard, borderTopColor: T.border, paddingBottom: sheet.bottomPad }]}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel" style={[styles.cancelBtn, { borderColor: T.border }]} disabled={!!saving} onPress={onClose}>
+                    <Text style={[styles.draftBtnText, { color: T.textSecondary }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  {(!isEditing || editingDraft) && (
+                    <TouchableOpacity accessibilityRole="button" style={[styles.draftBtn, { borderColor: T.border }, !!saving && styles.btnDisabled]} disabled={!!saving} onPress={() => save(true)}>
+                      {saving === 'draft' ? <ActivityIndicator size="small" color={ORANGE} /> : <Text style={[styles.draftBtnText, { color: T.textPrimary }]} numberOfLines={1}>Save draft</Text>}
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity accessibilityRole="button" style={[styles.postBtn, !!saving && styles.btnDisabled]} disabled={!!saving} onPress={() => save(false)} activeOpacity={0.85}>
+                    {saving === 'publish' ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.postBtnText} numberOfLines={1}>{isEditing && !editingDraft ? 'Save changes' : 'Post job'}</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
@@ -502,18 +554,20 @@ export const CreateJobModal: React.FC<CreateJobModalProps> = ({ visible, onClose
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 10 },
+  modalContent: { width: '100%', maxWidth: 640, alignSelf: 'center', flexShrink: 1, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 10, overflow: 'hidden' },
+  footer: { flexDirection: 'row', gap: 8, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  cancelBtn: { height: 44, minWidth: 72, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   handleBar: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  title: { fontSize: 18, fontWeight: '800' },
-  label: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginBottom: 6, marginTop: 4 },
+  title: { fontSize: 18, fontWeight: '700' },
+  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6, marginTop: 4 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, marginBottom: 10 },
   textArea: { height: 90, textAlignVertical: 'top' },
   pageChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1, marginRight: 8 },
   pageChipText: { fontSize: 12, fontWeight: '700' },
   chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
   chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
-  chipText: { fontSize: 11.5, fontWeight: '700' },
+  chipText: { fontSize: 12, fontWeight: '700' },
   rowTwoCol: { flexDirection: 'row', gap: 10 },
   qHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   addQ: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4 },
@@ -521,11 +575,11 @@ const styles = StyleSheet.create({
   qInput: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13 },
   switchRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, marginVertical: 10, gap: 12 },
   switchTitle: { fontSize: 13, fontWeight: '700' },
-  switchSub: { fontSize: 11, marginTop: 2 },
+  switchSub: { fontSize: 12, marginTop: 2 },
   draftBtn: { flex: 1, height: 44, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  draftBtnText: { fontSize: 13.5, fontWeight: '800' },
+  draftBtnText: { fontSize: 14, fontWeight: '700' },
   postBtn: { flex: 1.4, backgroundColor: ORANGE, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  postBtnText: { color: '#FFFFFF', fontSize: 13.5, fontWeight: '800' },
+  postBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   btnDisabled: { opacity: 0.6 },
 });
 

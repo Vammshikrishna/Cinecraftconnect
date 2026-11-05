@@ -42,19 +42,34 @@ public class CallForegroundService extends Service {
         boolean withMic = intent == null || intent.getBooleanExtra(EXTRA_WITH_MIC, true);
         Notification notification = buildNotification(title != null ? title : "Call in progress");
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Listeners in an audio space only play audio; anyone who can speak also captures the microphone.
-                int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
-                if (withMic) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-                startForeground(NOTIFICATION_ID, notification, type);
-            } else {
-                startForeground(NOTIFICATION_ID, notification);
+        // Android kills the whole app ("did not then call startForeground()") if this service is started and then ends
+        // without ever becoming a foreground service. So try the best type first and fall back to ones that need less.
+        boolean started = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Listeners in an audio space only play audio; anyone who can speak also captures the microphone.
+            int playback = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+            int[] attempts = withMic
+                    ? new int[]{playback | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE, playback}
+                    : new int[]{playback};
+            for (int type : attempts) {
+                try {
+                    startForeground(NOTIFICATION_ID, notification, type);
+                    started = true;
+                    break;
+                } catch (Exception e) {
+                    // e.g. the microphone type is refused when the permission is not granted yet; try the next one
+                }
             }
-        } catch (Exception e) {
-            // Foreground start can be refused (e.g. mic permission not granted yet); never crash the call over it.
+        } else {
+            try {
+                startForeground(NOTIFICATION_ID, notification);
+                started = true;
+            } catch (Exception e) {
+                // fall through
+            }
+        }
+        if (!started) {
             stopSelf();
-            return START_NOT_STICKY;
         }
         return START_NOT_STICKY;
     }

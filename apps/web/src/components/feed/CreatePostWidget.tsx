@@ -21,7 +21,7 @@ export function CreatePostWidget({ defaultPageId = "user" }: CreatePostWidgetPro
             <Button
                 id="create-post-trigger"
                 onClick={() => navigate('/create')}
-                className="w-full justify-start text-left bg-muted/40 hover:bg-muted/70 border border-border/40 hover:border-primary/40 h-11 text-sm rounded-full px-4 shadow-none transition-all group"
+                className="w-full justify-start text-left bg-muted/40 hover:bg-muted/70 border border-border/40 hover:border-primary/40 h-11 text-sm rounded-full px-4 shadow-none transition group"
                 variant="ghost"
             >
                 <div className="p-1.5 rounded-full bg-primary/10 text-primary mr-2.5 group-hover:scale-110 transition-transform">

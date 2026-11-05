@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2, Upload, Video, Clapperboard } from "lucide-react";
+import { friendlyError } from '@cinecraft/core';
 
 interface JobApplicationModalProps {
     isOpen: boolean;
@@ -47,9 +48,21 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
     }, [isOpen, jobId]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setPortfolioFile(e.target.files[0]);
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        // the input's accept list is only a hint (a drag-and-drop or a renamed file gets past it), so check here too
+        const okType = /^(application\/pdf|image\/(jpeg|png))$/i.test(file.type) || /\.(pdf|jpe?g|png)$/i.test(file.name);
+        if (!okType) {
+            toast({ title: "That file type is not allowed", description: "Attach a PDF, JPG or PNG.", variant: "destructive" });
+            e.target.value = '';
+            return;
         }
+        if (file.size > 10 * 1024 * 1024) {
+            toast({ title: "File too large", description: "Please attach a file up to 10 MB.", variant: "destructive" });
+            e.target.value = '';
+            return;
+        }
+        setPortfolioFile(file);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -134,7 +147,7 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
         } catch (error: any) {
             toast({
                 title: "Error",
-                description: error.message,
+                description: friendlyError(error),
                 variant: "destructive",
             });
         } finally {
@@ -160,7 +173,7 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                     <div className="bg-gradient-to-br from-primary to-primary/90 p-6 sm:p-10 text-primary-foreground relative overflow-hidden shrink-0">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
                         <div className="flex items-center gap-3 sm:gap-4 relative z-10">
-                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner shrink-0">
+                             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-white/20 flex items-center justify-center border border-white/20 shadow-inner shrink-0">
                                  <Clapperboard className="w-6 h-6 sm:w-8 sm:h-8" />
                              </div>
                              <div className="min-w-0">
@@ -172,7 +185,7 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                     <form onSubmit={handleSubmit} className="p-5 sm:p-10 space-y-5 sm:space-y-8 flex-1">
                         <div className="space-y-5 sm:space-y-8">
                             <div className="space-y-2.5">
-                                <Label htmlFor="introduction" className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
+                                <Label htmlFor="introduction" className="text-[12px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
                                     Introduction & Experience
                                 </Label>
                                 <Textarea
@@ -180,13 +193,13 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                                     placeholder="Tell the call creator about your fit for this role..."
                                     value={introduction}
                                     onChange={(e) => setIntroduction(e.target.value)}
-                                    className="min-h-[100px] sm:min-h-[140px] rounded-xl sm:rounded-2xl bg-card border-border hover:bg-muted/50 focus:bg-background transition-all text-sm sm:text-lg p-4 sm:p-6 resize-none shadow-sm leading-relaxed"
+                                    className="min-h-[100px] sm:min-h-[140px] rounded-xl sm:rounded-2xl bg-card border-border hover:bg-muted/50 focus:bg-background transition text-sm sm:text-lg p-4 sm:p-6 resize-none shadow-sm leading-relaxed"
                                     required
                                 />
                             </div>
 
                             <div className="space-y-2.5">
-                                <Label htmlFor="showreel" className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
+                                <Label htmlFor="showreel" className="text-[12px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
                                     Showreel / Performance Link
                                 </Label>
                                 <div className="relative group">
@@ -199,27 +212,27 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                                         placeholder="YouTube or Vimeo Link..."
                                         value={showreelUrl}
                                         onChange={(e) => setShowreelUrl(e.target.value)}
-                                        className="w-full h-12 sm:h-16 pl-12 pr-4 rounded-xl sm:rounded-2xl bg-card border border-border focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all font-bold text-xs sm:text-sm shadow-sm"
+                                        className="w-full h-12 sm:h-16 pl-12 pr-4 rounded-xl sm:rounded-2xl bg-card border border-border focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition font-bold text-xs sm:text-sm shadow-sm"
                                     />
                                 </div>
                             </div>
 
                             <div className="space-y-2.5">
-                                <Label htmlFor="portfolio" className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
+                                <Label htmlFor="portfolio" className="text-[12px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
                                     Portfolio / Headshots / CV
                                 </Label>
                                 <div 
                                     onClick={() => document.getElementById('portfolio-upload')?.click()}
-                                    className="w-full py-4 sm:py-6 border-2 border-dashed border-border rounded-xl sm:rounded-2xl flex items-center gap-3 sm:gap-4 px-4 sm:px-6 group cursor-pointer hover:border-primary hover:bg-primary/5 transition-all shadow-sm"
+                                    className="w-full py-4 sm:py-6 border-2 border-dashed border-border rounded-xl sm:rounded-2xl flex items-center gap-3 sm:gap-4 px-4 sm:px-6 group cursor-pointer hover:border-primary hover:bg-primary/5 transition shadow-sm"
                                 >
-                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-muted flex items-center justify-center text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary transition-all shrink-0">
+                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-muted flex items-center justify-center text-muted-foreground group-hover:bg-primary/20 group-hover:text-primary transition shrink-0">
                                         <Upload size={20} className="sm:w-6 sm:h-6" />
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-xs sm:text-sm font-black text-foreground truncate px-1">
                                             {portfolioFile ? portfolioFile.name : "Select Media File"}
                                         </p>
-                                        <p className="text-[9px] sm:text-[11px] font-bold text-muted-foreground/50 px-1 uppercase tracking-tighter">PDF or IMAGES (MAX 10MB)</p>
+                                        <p className="text-[12px] sm:text-[12px] font-bold text-muted-foreground/50 px-1 uppercase tracking-tighter">PDF or IMAGES (MAX 10MB)</p>
                                     </div>
                                     <input
                                         id="portfolio-upload"
@@ -233,7 +246,7 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
 
                             {questions.length > 0 && (
                                 <div className="space-y-4">
-                                    <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
+                                    <p className="text-[12px] sm:text-xs font-black uppercase tracking-widest text-muted-foreground ml-1">
                                         Questions from the hiring team
                                     </p>
                                     {questions.map((q) => (
@@ -256,7 +269,7 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                                                             key={opt}
                                                             type="button"
                                                             onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: opt }))}
-                                                            className={`px-4 h-10 rounded-full border text-sm font-bold transition-all ${
+                                                            className={`px-4 h-10 rounded-full border text-sm font-bold transition ${
                                                                 answers[q.id] === opt
                                                                     ? 'bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20'
                                                                     : 'bg-card border-border hover:border-primary/50'
@@ -274,10 +287,10 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                         </div>
 
                         <div className="flex flex-col-reverse sm:flex-row items-center gap-3 pt-4 sm:pt-6">
-                            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-12 sm:h-16 w-full sm:flex-1 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[10px] sm:text-xs bg-muted/40 hover:bg-muted text-muted-foreground transition-all">
+                            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-12 sm:h-16 w-full sm:flex-1 rounded-xl sm:rounded-2xl font-black uppercase tracking-widest text-[12px] sm:text-xs bg-muted/40 hover:bg-muted text-muted-foreground transition">
                                 Dismiss
                             </Button>
-                            <Button type="submit" disabled={isSubmitting || deadlineClosed} className="h-12 sm:h-16 w-full sm:flex-[2] rounded-xl sm:rounded-2xl bg-primary text-primary-foreground font-black text-sm uppercase tracking-widest shadow-xl shadow-primary/20 hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                            <Button type="submit" disabled={isSubmitting || deadlineClosed} className="h-12 sm:h-16 w-full sm:flex-[2] rounded-xl sm:rounded-2xl bg-primary text-primary-foreground font-black text-sm uppercase tracking-widest shadow-xl shadow-primary/20 hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98] transition">
                                 {isSubmitting ? (
                                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                                 ) : (

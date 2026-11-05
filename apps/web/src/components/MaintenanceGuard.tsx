@@ -3,6 +3,8 @@ import { usePlatformFlags } from '@/hooks/usePlatformFlags';
 import { useAuth } from '@/contexts/AuthContext';
 import { Lock, ShieldAlert, Hammer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useLocation } from 'react-router-dom';
+import { isMaintenanceExemptPath } from '@/components/routeGuardHelpers';
 
 interface MaintenanceGuardProps {
   children: React.ReactNode;
@@ -11,26 +13,28 @@ interface MaintenanceGuardProps {
 export const MaintenanceGuard = ({ children }: MaintenanceGuardProps) => {
   const { isEnabled, loading } = usePlatformFlags();
   const { profile } = useAuth();
+  const location = useLocation();
 
   // Staff (moderator, admin, super_admin) can bypass maintenance mode
   const isStaff = profile?.role && ['moderator', 'admin', 'super_admin'].includes(profile.role);
 
   if (loading) return null;
 
-  if (!isEnabled('maintenance_mode') || isStaff) {
+  // /auth stays reachable so signed-out staff can sign in during maintenance (non-staff land back here after).
+  if (!isEnabled('maintenance_mode') || isStaff || isMaintenanceExemptPath(location.pathname)) {
     return <>{children}</>;
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
-      <div className="w-24 h-24 bg-amber-500/10 rounded-[2.5rem] flex items-center justify-center mb-8 animate-pulse">
+    <div className="min-h-dvh bg-background flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-24 h-24 bg-amber-500/10 rounded-[2.5rem] flex items-center justify-center mb-8">
         <Hammer className="w-12 h-12 text-amber-600" />
       </div>
       
       <div className="space-y-4 max-w-lg">
         <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full mb-2">
           <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-          <span className="text-[10px] font-black uppercase tracking-widest text-amber-700">Maintenance Protocol Active</span>
+          <span className="text-[12px] font-black uppercase tracking-widest text-amber-700">Maintenance Protocol Active</span>
         </div>
         
         <h1 className="text-4xl font-black uppercase tracking-tighter">CineCraft is Updating</h1>
@@ -44,12 +48,12 @@ export const MaintenanceGuard = ({ children }: MaintenanceGuardProps) => {
             <ShieldAlert className="w-5 h-5" />
             <Lock className="w-5 h-5" />
           </div>
-          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mt-4">
+          <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground mt-4">
             Security Clearance Required for Entry
           </p>
           <Button 
             variant="link" 
-            className="text-[10px] font-black uppercase tracking-widest text-primary mt-2"
+            className="text-[12px] font-black uppercase tracking-widest text-primary mt-2"
             onClick={() => window.location.href = '/auth'}
           >
             Staff Login

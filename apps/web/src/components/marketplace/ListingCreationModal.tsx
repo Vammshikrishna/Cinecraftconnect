@@ -27,6 +27,10 @@ import {
     EquipmentCondition
 } from '@/types/marketplace';
 import { Camera, Home, Upload, X, Package } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
+import { useProductAccess } from '@/hooks/useProductAccess';
+import ProductNotice from '@/components/billing/ProductNotice';
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
 
 interface ListingCreationModalProps {
     open: boolean;
@@ -43,10 +47,13 @@ export const ListingCreationModal = ({
     initialData,
     mode = 'create'
 }: ListingCreationModalProps) => {
+    const guardDiscard = useDiscardGuard(open, onOpenChange);
     const { user } = useAuth();
     const { toast } = useToast();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
+    // selling is its own paid product, separate from any plan (free during the beta)
+    const seller = useProductAccess('marketplace_seller');
 
     // Form state
     const [listingType, setListingType] = useState<ListingType>('equipment');
@@ -195,6 +202,16 @@ export const ListingCreationModal = ({
         return uploadedUrls;
     };
 
+    // the day price must be a real amount, and a week can never cost less than one day
+    const priceProblem = (() => {
+        const day = parseFloat(pricePerDay);
+        const week = pricePerWeek ? parseFloat(pricePerWeek) : null;
+        if (pricePerDay && !(day > 0)) return 'The price per day must be more than 0.';
+        if (week !== null && !(week > 0)) return 'The weekly price must be more than 0, or leave it empty.';
+        if (week !== null && day > 0 && week < day) return 'The weekly price cannot be lower than the daily price.';
+        return '';
+    })();
+
     const handleSubmit = async () => {
         if (!user) return;
 
@@ -269,7 +286,7 @@ export const ListingCreationModal = ({
             console.error('Error saving listing:', error);
             toast({
                 title: 'Error',
-                description: error.message || 'Failed to save listing',
+                description: friendlyError(error, 'Failed to save listing'),
                 variant: 'destructive'
             });
         } finally {
@@ -285,11 +302,12 @@ export const ListingCreationModal = ({
     const totalImageCount = existingImages.length + newImages.length;
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={guardDiscard}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card text-card-foreground">
                 <DialogHeader>
                     <DialogTitle>{mode === 'edit' ? 'Edit Listing' : 'Create New Listing'}</DialogTitle>
                 </DialogHeader>
+                {mode !== 'edit' && <ProductNotice access={seller.access} onBuy={seller.buy} buying={seller.buying} />}
 
                 {/* Step 1: Type Selection */}
                 {step === 1 && (
@@ -299,7 +317,7 @@ export const ListingCreationModal = ({
                             <div className="grid grid-cols-3 gap-4">
                                 <button
                                     onClick={() => setListingType('equipment')}
-                                    className={`p-6 rounded-lg border-2 transition-all ${listingType === 'equipment'
+                                    className={`p-6 rounded-lg border-2 transition ${listingType === 'equipment'
                                         ? 'border-primary bg-primary/10'
                                         : 'border-border hover:border-muted-foreground/50'
                                         }`}
@@ -310,7 +328,7 @@ export const ListingCreationModal = ({
                                 </button>
                                 <button
                                     onClick={() => setListingType('location')}
-                                    className={`p-6 rounded-lg border-2 transition-all ${listingType === 'location'
+                                    className={`p-6 rounded-lg border-2 transition ${listingType === 'location'
                                         ? 'border-primary bg-primary/10'
                                         : 'border-border hover:border-muted-foreground/50'
                                         }`}
@@ -321,7 +339,7 @@ export const ListingCreationModal = ({
                                 </button>
                                 <button
                                     onClick={() => setListingType('bundle')}
-                                    className={`p-6 rounded-lg border-2 transition-all ${listingType === 'bundle'
+                                    className={`p-6 rounded-lg border-2 transition ${listingType === 'bundle'
                                         ? 'border-primary bg-primary/10'
                                         : 'border-border hover:border-muted-foreground/50'
                                         }`}
@@ -418,7 +436,7 @@ export const ListingCreationModal = ({
                             />
                         </div>
                         {listingType !== 'location' && (
-                            <div className="space-y-4 pt-4 border-t border-white/10">
+                            <div className="space-y-4 pt-4 border-t border-foreground/10">
                                 <div>
                                     <h3 className="font-semibold text-lg text-foreground mb-1">Condition Grading</h3>
                                     <p className="text-sm text-muted-foreground mb-4">Please evaluate and guarantee the condition of this item.</p>
@@ -429,7 +447,7 @@ export const ListingCreationModal = ({
                                         </div>
                                     )}
 
-                                    <div className="space-y-3 mb-6 bg-secondary/20 p-4 rounded-xl border border-white/5">
+                                    <div className="space-y-3 mb-6 bg-secondary/20 p-4 rounded-xl border border-foreground/5">
                                         <div className="flex items-start space-x-3">
                                             <input 
                                                 type="checkbox" 
@@ -568,6 +586,7 @@ export const ListingCreationModal = ({
                             <p className="text-sm text-muted-foreground mt-1">
                                 Offer a discounted weekly rate
                             </p>
+                            {priceProblem && <p role="alert" className="text-sm text-destructive mt-1">{priceProblem}</p>}
                         </div>
 
                         <div className="flex gap-2">
@@ -577,7 +596,7 @@ export const ListingCreationModal = ({
                             <Button
                                 onClick={() => setStep(4)}
                                 className="flex-1"
-                                disabled={!pricePerDay}
+                                disabled={!pricePerDay || !!priceProblem}
                             >
                                 Continue
                             </Button>
@@ -615,13 +634,13 @@ export const ListingCreationModal = ({
                                             alt={`Existing ${index + 1}`}
                                             className="w-full h-full object-cover rounded-lg"
                                         />
-                                        <button
+                                        <button aria-label="Close"
                                             onClick={() => removeExistingImage(index)}
                                             className="absolute top-1 right-1 bg-destructive/80 text-destructive-foreground rounded-full p-1 hover:bg-destructive"
                                         >
                                             <X size={14} />
                                         </button>
-                                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[10px] px-1 rounded">Existing</span>
+                                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[12px] px-1 rounded">Existing</span>
                                     </div>
                                 ))}
 
@@ -633,13 +652,13 @@ export const ListingCreationModal = ({
                                             alt={`New ${index + 1}`}
                                             className="w-full h-full object-cover rounded-lg"
                                         />
-                                        <button
+                                        <button aria-label="Close"
                                             onClick={() => removeNewImage(index)}
                                             className="absolute top-1 right-1 bg-destructive/80 text-destructive-foreground rounded-full p-1 hover:bg-destructive"
                                         >
                                             <X size={14} />
                                         </button>
-                                        <span className="absolute bottom-1 left-1 bg-green-500/80 text-white text-[10px] px-1 rounded">New</span>
+                                        <span className="absolute bottom-1 left-1 bg-green-500/80 text-white text-[12px] px-1 rounded">New</span>
                                     </div>
                                 ))}
                             </div>
@@ -652,7 +671,7 @@ export const ListingCreationModal = ({
                             <Button
                                 onClick={handleSubmit}
                                 className="flex-1"
-                                disabled={loading || totalImageCount === 0}
+                                disabled={loading || totalImageCount === 0 || (mode !== 'edit' && seller.needsPurchase)}
                             >
                                 {loading ? 'Saving...' : (mode === 'edit' ? 'Update Listing' : 'Create Listing')}
                             </Button>

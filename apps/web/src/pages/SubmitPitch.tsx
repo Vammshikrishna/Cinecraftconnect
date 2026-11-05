@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -16,8 +16,14 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import SEO from '@/components/common/SEO';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAccountType } from '@/hooks/useAccountType';
+import { decideSubmitPitchAccess } from '@/components/routeGuardHelpers';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { createDirectPitchCall, friendlyError } from '@cinecraft/core';
+import { pitchDraftKey, canEditPitch } from '@cinecraft/core';
+import { newSubmissionId, checkPitchAttachment, uploadPitchAttachment, removePitchAttachment, attachmentLabel, PITCH_ATTACHMENT_MAX, signPitchAttachment } from '@cinecraft/core';
+import { useUnsavedChangesWatcher } from '@/hooks/useUnsavedChanges';
 
 const STEPS = [
     { id: 1, label: 'Your Story', icon: Lightbulb, description: 'The core of your pitch' },
@@ -26,18 +32,54 @@ const STEPS = [
 ];
 
 export default function SubmitPitch() {
+    useUnsavedChangesWatcher();
     const { pitchId } = useParams<{ pitchId: string }>();
     const navigate = useNavigate();
     const location = useLocation();
     const { toast } = useToast();
     const { user } = useAuth();
+    const { accountType } = useAccountType();
     const { submitPitch, loading } = useSubmitPitch();
 
     const [pitchCall, setPitchCall] = useState<PitchCall | null>(null);
     const [fetching, setFetching] = useState(true);
     const [step, setStep] = useState(1);
     const [submitted, setSubmitted] = useState(false);
+    const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (redirectTimer.current) clearTimeout(redirectTimer.current); }, []);
     const [directReceiverId, setDirectReceiverId] = useState<string | null>(null);
+    const editId = new URLSearchParams(location.search).get('edit');
+    const [editing, setEditing] = useState(false);
+    const [draftRestored, setDraftRestored] = useState(false);
+    const [submissionId] = useState(() => newSubmissionId());
+    const [attachmentPaths, setAttachmentPaths] = useState<string[]>([]);
+    const [uploading, setUploading] = useState(false);
+
+    const addAttachments = async (files: FileList | null) => {
+        if (!files || !user) return;
+        setUploading(true);
+        try {
+            let current = attachmentPaths;
+            for (const file of Array.from(files)) {
+                const problem = checkPitchAttachment(file, current.length);
+                if (problem) { toast({ title: 'Cannot attach this file', description: problem, variant: 'destructive' }); break; }
+                const ref = await uploadPitchAttachment(supabase, user.id, editId || submissionId, file, file.name, current.length + 1);
+                current = [...current, ref];
+                setAttachmentPaths(current);
+            }
+        } catch (e: any) {
+            toast({ title: 'Upload failed', description: friendlyError(e, 'Please try again.'), variant: 'destructive' });
+        } finally {
+            setUploading(false);
+        }
+    };
+    const dropAttachment = (ref: string) => {
+        setAttachmentPaths((p) => p.filter((x) => x !== ref));
+        removePitchAttachment(supabase, ref);
+    };
+    const openAttachment = async (ref: string) => {
+        try { window.open(await signPitchAttachment(supabase, ref), '_blank', 'noopener,noreferrer'); } catch { toast({ title: 'Could not open the file', variant: 'destructive' }); }
+    };
 
     const [form, setForm] = useState({
         title: '',
@@ -70,7 +112,44 @@ export default function SubmitPitch() {
         iftda_member_id: '',
     });
 
+    // the unfinished form is kept on this device, per call, until it is sent
+    const draftKey = pitchDraftKey(user?.id, pitchId === 'direct' ? `direct:${new URLSearchParams(location.search).get('to') || ''}` : (pitchId || ''));
+    const saveDraftReady = !!pitchCall && !editing && !submitted && !fetching;
     useEffect(() => {
+        if (!saveDraftReady) return;
+        const t = setTimeout(() => {
+            try {
+                const { nda_signed_at, ...rest } = form;
+                const empty = !form.title && !form.logline && !form.short_synopsis && !form.full_synopsis;
+                if (empty) localStorage.removeItem(draftKey);
+                else localStorage.setItem(draftKey, JSON.stringify({ form: rest, credentials, step }));
+            } catch { /* private mode: no draft, the form still works */ }
+        }, 600);
+        return () => clearTimeout(t);
+    }, [form, credentials, step, saveDraftReady, draftKey]);
+
+    const discardDraft = () => {
+        try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+        setForm((f) => ({ ...f, title: '', logline: '', short_synopsis: '', full_synopsis: '', genre: '', language: '', tone: '', why_fits: '', treatment_url: '', lookbook_url: '', character_notes: '', pilot_outline: '', reference_links: [], nda_signature: '' }));
+        setCredentials({ swa_member_id: '', swa_registration_number: '', copyright_registration_number: '', iftda_member_id: '' });
+        setStep(1);
+        setDraftRestored(false);
+    };
+
+    useEffect(() => {
+        const restoreDraft = () => {
+            try {
+                const raw = localStorage.getItem(draftKey);
+                if (!raw) return;
+                const d = JSON.parse(raw);
+                if (d?.form) {
+                    setForm((f) => ({ ...f, ...d.form, nda_preferred: f.nda_preferred, format: d.form.format || f.format }));
+                    if (d.credentials) setCredentials((c) => ({ ...c, ...d.credentials }));
+                    if (d.step) setStep(Math.min(3, Math.max(1, Number(d.step) || 1)));
+                    setDraftRestored(true);
+                }
+            } catch { /* a broken draft is ignored */ }
+        };
         const fetchPitch = async () => {
             if (!pitchId) return;
             setFetching(true);
@@ -105,6 +184,7 @@ export default function SubmitPitch() {
                     } as any);
                     
                     setForm(f => ({ ...f, nda_preferred: true }));
+                    restoreDraft();
                 } else {
                     const { data, error } = await supabase
                         .from('pitch_calls')
@@ -114,6 +194,28 @@ export default function SubmitPitch() {
                     if (error) throw error;
                     setPitchCall(data);
                     setForm(f => ({ ...f, format: data.format || '', nda_preferred: !!data.nda_required }));
+                    if (editId && user) {
+                        const { data: mine, error: mineError } = await supabase.from('pitch_submissions').select('*').eq('id', editId).eq('submitter_id', user.id).single();
+                        if (mineError || !mine || !canEditPitch((mine as any).status)) {
+                            toast({ title: 'This pitch can no longer be edited', description: 'The producer has started to review it.', variant: 'destructive' });
+                            navigate(-1);
+                            return;
+                        }
+                        const m: any = mine;
+                        setEditing(true);
+                        setForm(f => ({
+                            ...f,
+                            title: m.title || '', logline: m.logline || '', short_synopsis: m.short_synopsis || '', full_synopsis: m.full_synopsis || '',
+                            genre: m.genre || '', format: m.format || f.format, language: m.language || '', tone: m.tone || '', why_fits: m.why_fits || '',
+                            rights_owned: !!m.rights_owned, is_original_work: !!m.is_original_work, treatment_url: m.treatment_url || '', lookbook_url: m.lookbook_url || '',
+                            character_notes: m.character_notes || '', pilot_outline: m.pilot_outline || '', reference_links: m.reference_links || [],
+                            nda_signature: m.nda_signature || '',
+                        }));
+                        try { setCredentials((c) => ({ ...c, ...JSON.parse(m.guild_registration_number || '{}') })); } catch { /* old format */ }
+                        setAttachmentPaths(Array.isArray(m.attachment_paths) ? m.attachment_paths : []);
+                    } else {
+                        restoreDraft();
+                    }
                 }
             } catch (err) {
                 toast({ title: 'Error', description: 'Failed to load pitch details.', variant: 'destructive' });
@@ -123,19 +225,38 @@ export default function SubmitPitch() {
             }
         };
         fetchPitch();
-    }, [pitchId, location.search]);
+    }, [pitchId, location.search, user?.id]);
 
     if (fetching) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
-                <LoadingSpinner size="lg" />
-            </div>
+            <ScreenSkeleton variant="form" />
         );
     }
 
     if (!pitchCall) return null;
 
-    const ndaSignatureRequired = !!pitchCall.nda_required;
+    // Fans, the owner of the call and closed calls cannot submit (the database refuses too; this explains why).
+    const access = decideSubmitPitchAccess({ accountType, userId: user?.id, pitch: pitchCall as any, editing });
+    if (!access.allowed && !submitted) {
+        const message =
+            access.reason === 'fan' ? 'Fan accounts cannot submit pitches.'
+            : access.reason === 'own_call' ? 'You cannot submit a pitch to your own call.'
+            : access.reason === 'closed' ? 'This call is no longer open for submissions.'
+            : 'This call could not be found.';
+        return (
+            <div className="min-h-dvh bg-background flex items-center justify-center px-4">
+                <div className="text-center max-w-md">
+                    <h1 className="text-2xl font-bold text-foreground mb-2">Pitch not available</h1>
+                    <p className="text-muted-foreground mb-6">{message}</p>
+                    <Button onClick={() => navigate(pitchCall.id && pitchCall.id !== 'direct_placeholder' && access.reason !== 'fan' ? `/pitch/${pitchCall.id}` : '/pitch')}>
+                        {access.reason === 'fan' ? 'Back to pitches' : 'Back to the call'}
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
+    const ndaSignatureRequired = !!pitchCall.nda_required && !editing;
     const ndaSignatureValid = !ndaSignatureRequired || form.nda_signature.trim().length >= 3;
 
     const step1Valid = !!form.title && !!form.logline && !!form.short_synopsis;
@@ -145,75 +266,54 @@ export default function SubmitPitch() {
         e.preventDefault();
         if (!step3Valid) return;
         
+        if (editing && editId) {
+            const patch: any = {
+                title: form.title, logline: form.logline, short_synopsis: form.short_synopsis, full_synopsis: form.full_synopsis || null,
+                genre: form.genre || null, format: form.format || null, language: form.language || null, tone: form.tone || null, why_fits: form.why_fits || null,
+                rights_owned: form.rights_owned, is_original_work: form.is_original_work, treatment_url: form.treatment_url || null,
+                lookbook_url: form.lookbook_url || null, character_notes: form.character_notes || null, pilot_outline: form.pilot_outline || null,
+                reference_links: form.reference_links, guild_registration_number: JSON.stringify(credentials),
+                attachment_paths: attachmentPaths,
+            };
+            const { error: updateError } = await supabase.from('pitch_submissions').update(patch).eq('id', editId);
+            if (updateError) {
+                toast({ title: 'Could not save your changes', description: friendlyError(updateError), variant: 'destructive' });
+                return;
+            }
+            toast({ title: 'Pitch updated' });
+            navigate(-1);
+            return;
+        }
+
         let targetCallId = pitchCall.id;
-        
+
         if (pitchCall.id === 'direct_placeholder' && directReceiverId && user) {
-            // Create a pitch call brief where creator_id = directReceiverId (Producer's ID)
-            const { data: newCatcher, error: cError } = await supabase
-                .from('pitch_calls')
-                .insert({
-                    creator_id: directReceiverId,
-                    title: `Direct Pitch: ${form.title || 'New Concept'}`,
-                    project_type: 'other',
-                    requirement_description: 'Confidential direct concept submission brief.',
-                    status: 'open',
-                    is_published: true,
-                    attachments: { 
-                        is_direct_catcher: true, 
-                        target_producer_id: directReceiverId,
-                        target_producer_name: pitchCall.profiles?.full_name || 'Producer'
-                    }
-                })
-                .select('id')
-                .single();
-                
-            if (cError) {
-                console.warn("Failed to create direct_catcher brief due to RLS, attempting fallback", cError);
-                // Fallback 1: Find ANY existing call owned by this producer to host the direct pitch
-                const { data: fallbackCall } = await supabase
-                    .from('pitch_calls')
-                    .select('id')
-                    .eq('creator_id', directReceiverId)
-                    .limit(1)
-                    .maybeSingle();
-                
-                if (fallbackCall) {
-                    targetCallId = fallbackCall.id;
-                } else {
-                    // Fallback 2: Find ANY pitch call in the system to bypass the FK constraint
-                    const { data: absoluteFallback } = await supabase
-                        .from('pitch_calls')
-                        .select('id')
-                        .limit(1)
-                        .maybeSingle();
-                    
-                    if (absoluteFallback) {
-                        targetCallId = absoluteFallback.id;
-                    } else {
-                        toast({ title: 'Submission Error', description: 'Could not resolve a pitch brief ID for direct pitch.', variant: 'destructive' });
-                        return;
-                    }
-                }
-            } else {
-                targetCallId = newCatcher.id;
+            // the database creates the private brief (and checks blocks and the daily limit)
+            try {
+                targetCallId = await createDirectPitchCall(supabase, directReceiverId, form.title, pitchCall.profiles?.full_name);
+            } catch (err: any) {
+                toast({ title: 'Could not send the direct pitch', description: friendlyError(err, 'Please try again.'), variant: 'destructive' });
+                return;
             }
         }
 
         // Serialize credentials into the single guild_registration_number column
         const payload: any = { 
             ...form, 
+            id: submissionId,
             pitch_call_id: targetCallId,
-            guild_registration_number: JSON.stringify(credentials)
+            guild_registration_number: JSON.stringify(credentials),
+            attachment_paths: attachmentPaths,
         };
         
-        if (ndaSignatureRequired && form.nda_signature.trim()) {
-            payload.nda_signed_at = new Date().toISOString();
-        }
-        
+        // the signing time is stamped by the database
+        delete payload.nda_signed_at;
+
         const result = await submitPitch(payload);
         if (result) {
+            try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
             setSubmitted(true);
-            setTimeout(() => {
+            redirectTimer.current = setTimeout(() => {
                 if (pitchCall.id === 'direct_placeholder') {
                     navigate('/pitch');
                 } else {
@@ -233,9 +333,9 @@ export default function SubmitPitch() {
     // Success Screen
     if (submitted) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center px-4">
+            <div className="min-h-dvh bg-background flex items-center justify-center px-4">
                 <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
+                    initial={{ scale: 0.95, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     className="text-center max-w-md"
                 >
@@ -243,18 +343,22 @@ export default function SubmitPitch() {
                         <div className="h-24 w-24 rounded-full bg-green-500/10 border-2 border-green-500/30 flex items-center justify-center">
                             <CheckCircle2 className="h-12 w-12 text-green-500" />
                         </div>
-                        <div className="absolute inset-0 rounded-full bg-green-500/5 animate-ping" />
+                        <div className="absolute inset-0 rounded-full bg-green-500/5" />
                     </div>
                     <h1 className="text-3xl font-black text-foreground mb-3">Pitch Sent! 🎬</h1>
                     <p className="text-muted-foreground text-lg mb-2">Your pitch is now securely in the creator's hands.</p>
-                    <p className="text-sm text-muted-foreground/70">Redirecting you back…</p>
+                    <p className="text-sm text-muted-foreground mb-5">Redirecting you back…</p>
+                    <Button onClick={() => {
+                        if (redirectTimer.current) clearTimeout(redirectTimer.current);
+                        navigate(pitchCall.id === 'direct_placeholder' ? '/pitch' : `/pitch/${pitchCall.id}`);
+                    }}>Continue</Button>
                 </motion.div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-background text-foreground pb-24">
+        <div className="min-h-dvh bg-background text-foreground pb-24">
             <SEO title={`Submit Pitch to "${pitchCall.title}" | CineCraft`} />
 
             {/* Ambient gradient top */}
@@ -273,11 +377,23 @@ export default function SubmitPitch() {
                     Back to Pitch
                 </button>
 
+                {draftRestored && (
+                    <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+                        <span>We restored the draft you started on this device.</span>
+                        <button type="button" className="underline" onClick={discardDraft}>Start over</button>
+                    </div>
+                )}
+                {editing && (
+                    <div className="mb-4 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary">
+                        Editing your pitch. You can change it until the producer starts to review it.
+                    </div>
+                )}
+
                 {/* Context Card — who you're pitching to */}
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mb-8 p-5 bg-card/60 backdrop-blur-sm border border-border/60 rounded-2xl flex items-center gap-4"
+                    className="mb-8 p-5 bg-card/60 border border-border/60 rounded-2xl flex items-center gap-4"
                 >
                     <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
                         <Sparkles className="h-6 w-6 text-primary" />
@@ -308,7 +424,7 @@ export default function SubmitPitch() {
                                     className="flex flex-col items-center gap-1.5 w-full group"
                                     disabled={step <= s.id}
                                 >
-                                    <div className={`h-10 w-10 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                                    <div className={`h-10 w-10 rounded-full border-2 flex items-center justify-center transition-colors duration-300 ${
                                         step > s.id
                                             ? 'bg-primary border-primary text-primary-foreground'
                                             : step === s.id
@@ -321,13 +437,13 @@ export default function SubmitPitch() {
                                         }
                                     </div>
                                     <div className="text-center hidden sm:block">
-                                        <p className={`text-[10px] font-black uppercase tracking-wider ${step === s.id ? 'text-primary' : 'text-muted-foreground/50'}`}>
+                                        <p className={`text-[12px] font-black uppercase tracking-wider ${step === s.id ? 'text-primary' : 'text-muted-foreground/50'}`}>
                                             {s.label}
                                         </p>
                                     </div>
                                 </button>
                                 {i < STEPS.length - 1 && (
-                                    <div className={`h-0.5 flex-1 mx-1 mb-5 rounded-full transition-all duration-500 ${step > s.id ? 'bg-primary' : 'bg-border/30'}`} />
+                                    <div className={`h-0.5 flex-1 mx-1 mb-5 rounded-full transition-colors duration-500 ${step > s.id ? 'bg-primary' : 'bg-border/30'}`} />
                                 )}
                             </div>
                         ))}
@@ -441,7 +557,7 @@ export default function SubmitPitch() {
                                 <Button
                                     type="button"
                                     size="lg"
-                                    className="w-full h-13 text-base font-bold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
+                                    className="w-full h-13 text-base font-bold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition"
                                     onClick={() => setStep(2)}
                                     disabled={!step1Valid}
                                 >
@@ -486,7 +602,7 @@ export default function SubmitPitch() {
                                         </Label>
                                         <Textarea
                                             rows={9}
-                                            className="resize-none border-border/60 focus-visible:border-primary/60 focus-visible:ring-primary/20 bg-background/50 font-mono text-sm"
+                                            className="resize-none border-border/60 focus-visible:border-primary/60 focus-visible:ring-primary/20 bg-background/50 text-sm"
                                             placeholder="Your complete story treatment — full narrative arc, key turning points, character development, climax & resolution. Go deep here…"
                                             value={form.full_synopsis}
                                             onChange={e => setForm(f => ({ ...f, full_synopsis: e.target.value }))}
@@ -530,7 +646,7 @@ export default function SubmitPitch() {
                                 </div>
 
                                 <div className="flex gap-3">
-                                    <Button type="button" variant="outline" size="lg" className="h-13 px-6" onClick={() => setStep(1)}>
+                                    <Button aria-label="Previous" type="button" variant="outline" size="lg" className="h-13 px-6" onClick={() => setStep(1)}>
                                         <ChevronLeft className="h-4 w-4" />
                                     </Button>
                                     <Button
@@ -600,7 +716,7 @@ export default function SubmitPitch() {
                                                 onChange={e => setRefLink(e.target.value)}
                                                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRefLink(); }}}
                                             />
-                                            <Button type="button" variant="outline" className="h-11 px-4 shrink-0" onClick={addRefLink}>
+                                            <Button aria-label="Add" type="button" variant="outline" className="h-11 px-4 shrink-0" onClick={addRefLink}>
                                                 <Plus className="h-4 w-4" />
                                             </Button>
                                         </div>
@@ -612,7 +728,7 @@ export default function SubmitPitch() {
                                                         className="inline-flex items-center gap-1.5 text-xs bg-muted/60 border border-border/40 px-3 py-1.5 rounded-full font-medium max-w-[200px]"
                                                     >
                                                         <span className="truncate">{link.length > 30 ? link.substring(0, 30) + '…' : link}</span>
-                                                        <button type="button" onClick={() => setForm(f => ({ ...f, reference_links: f.reference_links.filter((_, j) => j !== i) }))} className="text-muted-foreground hover:text-destructive transition-colors shrink-0">
+                                                        <button aria-label={`Remove ${link}`} type="button" onClick={() => setForm(f => ({ ...f, reference_links: f.reference_links.filter((_, j) => j !== i) }))} className="-m-3 h-11 w-11 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors shrink-0">
                                                             <X className="h-3 w-3" />
                                                         </button>
                                                     </span>
@@ -637,7 +753,7 @@ export default function SubmitPitch() {
                                     {/* SWA Registration (Screenwriters Association) */}
                                     <div className="space-y-4">
                                         <div className="flex items-start gap-3 p-3.5 bg-primary/5 border border-primary/10 rounded-xl">
-                                            <div className="mt-0.5 bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] font-black tracking-wider">SWA</div>
+                                            <div className="mt-0.5 bg-primary/10 text-primary px-2 py-0.5 rounded text-[12px] font-black tracking-wider">SWA</div>
                                             <p className="text-xs text-muted-foreground leading-relaxed">
                                                 <span className="font-bold text-foreground">Screenwriters Association (SWA):</span> Trade union script registration serves as critical legal evidence of authorship and creation date in India.
                                             </p>
@@ -647,7 +763,7 @@ export default function SubmitPitch() {
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs font-bold text-foreground/80">SWA Member ID</Label>
                                                 <Input
-                                                    className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                    className="h-11 md:h-10 border-border/60 bg-background/50 text-base md:text-sm"
                                                     placeholder="e.g. SWA-2026-XXXXX"
                                                     value={credentials.swa_member_id}
                                                     onChange={e => setCredentials(c => ({ ...c, swa_member_id: e.target.value }))}
@@ -656,7 +772,7 @@ export default function SubmitPitch() {
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs font-bold text-foreground/80">SWA Script Registration #</Label>
                                                 <Input
-                                                    className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                    className="h-11 md:h-10 border-border/60 bg-background/50 text-base md:text-sm"
                                                     placeholder="e.g. SR-987654"
                                                     value={credentials.swa_registration_number}
                                                     onChange={e => setCredentials(c => ({ ...c, swa_registration_number: e.target.value }))}
@@ -672,29 +788,29 @@ export default function SubmitPitch() {
                                                 <Label className="text-xs font-bold text-foreground/80 flex items-center gap-1.5">
                                                     Copyright Office Registration #
                                                 </Label>
-                                                <span className="text-[10px] font-semibold text-muted-foreground">copyright.gov.in</span>
+                                                <span className="text-[12px] font-semibold text-muted-foreground">copyright.gov.in</span>
                                             </div>
                                             <Input
-                                                className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                className="h-11 md:h-10 border-border/60 bg-background/50 text-base md:text-sm"
                                                 placeholder="e.g. L-12345/2026"
                                                 value={credentials.copyright_registration_number}
                                                 onChange={e => setCredentials(c => ({ ...c, copyright_registration_number: e.target.value }))}
                                             />
-                                            <p className="text-[10px] text-muted-foreground">Statutory legal registration with the Copyright Office, Government of India.</p>
+                                            <p className="text-[12px] text-muted-foreground">Statutory legal registration with the Copyright Office, Government of India.</p>
                                         </div>
                                     </div>
 
                                     {/* IFTDA Registration (Directors only) */}
                                     <div className="space-y-3 pt-2 border-t border-border/40">
                                         <div className="space-y-1.5">
-                                            <Label className="text-xs font-bold text-foreground/80">IFTDA Member ID <span className="font-normal text-muted-foreground text-[10px] ml-1">(For directors)</span></Label>
+                                            <Label className="text-xs font-bold text-foreground/80">IFTDA Member ID <span className="font-normal text-muted-foreground text-[12px] ml-1">(For directors)</span></Label>
                                             <Input
-                                                className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                className="h-11 md:h-10 border-border/60 bg-background/50 text-base md:text-sm"
                                                 placeholder="e.g. DIR-5678"
                                                 value={credentials.iftda_member_id}
                                                 onChange={e => setCredentials(c => ({ ...c, iftda_member_id: e.target.value }))}
                                             />
-                                            <p className="text-[10px] text-muted-foreground">Indian Film & Television Directors' Association membership.</p>
+                                            <p className="text-[12px] text-muted-foreground">Indian Film & Television Directors' Association membership.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -721,11 +837,12 @@ export default function SubmitPitch() {
                                             <p className="text-muted-foreground/60 pt-1">Constitutes a legally binding clickwrap agreement under the Indian IT Act, 2000.</p>
                                         </div>
                                         <div className="space-y-2">
-                                            <Label className="text-xs font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                                            <Label htmlFor="nda-signature" className="text-xs font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
                                                 Type your full legal name to sign *
                                             </Label>
                                             <Input
-                                                className={`h-12 text-base font-medium transition-all ${
+                                                id="nda-signature"
+                                                className={`h-12 text-base font-medium transition-colors ${
                                                     form.nda_signature.trim().length >= 3
                                                         ? 'border-green-500/50 bg-green-500/5 focus-visible:ring-green-500/30'
                                                         : 'border-amber-400/40 bg-background/50 focus-visible:ring-amber-400/30'
@@ -744,14 +861,45 @@ export default function SubmitPitch() {
                                     </div>
                                 )}
 
+                                {/* Attachments */}
+                                <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-3">
+                                    <p className="text-sm font-black uppercase tracking-widest text-foreground/80">Attach files <span className="font-normal normal-case tracking-normal text-muted-foreground text-xs">(optional, up to {PITCH_ATTACHMENT_MAX}: PDF or image, 15 MB each)</span></p>
+                                    <p className="text-xs text-muted-foreground">Only the person you pitch to can open them.</p>
+                                    {attachmentPaths.length > 0 && (
+                                        <ul className="space-y-2">
+                                            {attachmentPaths.map((ref, i) => (
+                                                <li key={ref} className="flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-sm">
+                                                    <button type="button" className="flex items-center gap-2 font-semibold text-primary hover:underline truncate" onClick={() => openAttachment(ref)}>
+                                                        <FileText className="h-4 w-4 shrink-0" /> {attachmentLabel(ref, i)}
+                                                    </button>
+                                                    <button type="button" aria-label={`Remove ${attachmentLabel(ref, i)}`} onClick={() => dropAttachment(ref)} className="-m-2 h-11 w-11 flex items-center justify-center text-muted-foreground hover:text-destructive shrink-0"><X className="h-4 w-4" /></button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                    {attachmentPaths.length < PITCH_ATTACHMENT_MAX && (
+                                        <label className="inline-flex">
+                                            <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" className="sr-only" disabled={uploading}
+                                                onChange={(e) => { addAttachments(e.target.files); e.target.value = ''; }} />
+                                            <span className="inline-flex items-center gap-2 h-10 px-4 rounded-full border border-border/60 text-sm font-bold cursor-pointer hover:bg-muted/40">
+                                                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add a file
+                                            </span>
+                                        </label>
+                                    )}
+                                </div>
+
                                 {/* Legal Declarations */}
                                 <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-5">
                                     <p className="text-sm font-black uppercase tracking-widest text-foreground/80">Before you submit</p>
                                     <div
+                                        role="checkbox"
+                                        aria-checked={!!form.rights_owned}
+                                        tabIndex={0}
+                                        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setForm(f => ({ ...f, rights_owned: !f.rights_owned })); } }}
                                         onClick={() => setForm(f => ({ ...f, rights_owned: !f.rights_owned }))}
-                                        className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${form.rights_owned ? 'bg-green-500/5 border-green-500/30' : 'bg-muted/20 border-border/40 hover:border-border'}`}
+                                        className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${form.rights_owned ? 'bg-green-500/5 border-green-500/30' : 'bg-muted/20 border-border/40 hover:border-border'}`}
                                     >
-                                        <div className={`mt-0.5 h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${form.rights_owned ? 'bg-green-500 border-green-500' : 'border-border'}`}>
+                                        <div className={`mt-0.5 h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${form.rights_owned ? 'bg-green-500 border-green-500' : 'border-border'}`}>
                                             {form.rights_owned && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
                                         </div>
                                         <div>
@@ -760,10 +908,14 @@ export default function SubmitPitch() {
                                         </div>
                                     </div>
                                     <div
+                                        role="checkbox"
+                                        aria-checked={!!form.is_original_work}
+                                        tabIndex={0}
+                                        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setForm(f => ({ ...f, is_original_work: !f.is_original_work })); } }}
                                         onClick={() => setForm(f => ({ ...f, is_original_work: !f.is_original_work }))}
-                                        className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${form.is_original_work ? 'bg-green-500/5 border-green-500/30' : 'bg-muted/20 border-border/40 hover:border-border'}`}
+                                        className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${form.is_original_work ? 'bg-green-500/5 border-green-500/30' : 'bg-muted/20 border-border/40 hover:border-border'}`}
                                     >
-                                        <div className={`mt-0.5 h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${form.is_original_work ? 'bg-green-500 border-green-500' : 'border-border'}`}>
+                                        <div className={`mt-0.5 h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${form.is_original_work ? 'bg-green-500 border-green-500' : 'border-border'}`}>
                                             {form.is_original_work && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
                                         </div>
                                         <div>
@@ -771,20 +923,20 @@ export default function SubmitPitch() {
                                             <p className="text-xs text-muted-foreground mt-1">This pitch is my original creative work. It has not been plagiarized or adapted without authorization from another work.</p>
                                         </div>
                                     </div>
-                                    <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
+                                    <p className="text-xs text-muted-foreground leading-relaxed">
                                         False declarations may be treated as fraud under IPC Section 420. By submitting, you agree to CineCraft's Terms of Service and Pitch Marketplace Rules.
                                     </p>
                                 </div>
 
                                 <div className="flex gap-3 pb-4">
-                                    <Button type="button" variant="outline" size="lg" className="h-13 px-6" onClick={() => setStep(2)}>
+                                    <Button aria-label="Previous" type="button" variant="outline" size="lg" className="h-13 px-6" onClick={() => setStep(2)}>
                                         <ChevronLeft className="h-4 w-4" />
                                     </Button>
                                     <Button
                                         type="submit"
                                         size="lg"
-                                        className="flex-1 h-13 text-base font-bold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all"
-                                        disabled={loading || !step3Valid || !step1Valid}
+                                        className="flex-1 h-13 text-base font-bold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition"
+                                        disabled={loading || uploading || !step3Valid || !step1Valid}
                                     >
                                         {loading ? (
                                             <>

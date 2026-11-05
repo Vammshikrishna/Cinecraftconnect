@@ -8,6 +8,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { friendlyError } from '@cinecraft/core';
+import { useProductAccess } from '@/hooks/useProductAccess';
+import ProductNotice from '@/components/billing/ProductNotice';
 
 interface Props {
   open: boolean;
@@ -29,6 +32,8 @@ export const VendorVerificationDialog = ({ open, onOpenChange, vendorId, vendorN
   const [website, setWebsite] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  // a business review is its own paid product, separate from any plan (free during the beta)
+  const product = useProductAccess('vendor_verification', vendorId);
 
   useEffect(() => {
     if (open) {
@@ -67,7 +72,7 @@ export const VendorVerificationDialog = ({ open, onOpenChange, vendorId, vendorN
       onOpenChange(false);
       onSubmitted();
     } catch (e: any) {
-      toast({ title: 'Could not submit', description: e?.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: 'Could not submit', description: friendlyError(e, 'Please try again.'), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -81,6 +86,7 @@ export const VendorVerificationDialog = ({ open, onOpenChange, vendorId, vendorN
           <DialogDescription>{vendorName}. Your document is private: only you and our review team can open it.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          <ProductNotice access={product.access} onBuy={product.buy} buying={product.buying} />
           <label className="flex items-center gap-3 rounded-2xl border border-dashed border-border p-4 cursor-pointer hover:bg-muted/30">
             <Upload className="w-5 h-5 text-primary" />
             <span className="text-sm font-semibold flex-1 truncate">{file ? file.name : 'Attach a business document (PDF or image, up to 10 MB)'}</span>
@@ -89,7 +95,7 @@ export const VendorVerificationDialog = ({ open, onOpenChange, vendorId, vendorN
           <div className="space-y-1.5"><Label className="text-xs">Registration / GST number (optional)</Label><Input maxLength={80} value={registration} onChange={(e) => setRegistration(e.target.value)} /></div>
           <div className="space-y-1.5"><Label className="text-xs">Website (optional)</Label><Input maxLength={200} value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://" /></div>
           <div className="space-y-1.5"><Label className="text-xs">Anything we should know? (optional)</Label><Textarea className="min-h-[70px]" maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
-          <Button className="w-full h-12 rounded-xl font-bold" onClick={submit} disabled={busy || !file}>
+          <Button className="w-full h-12 rounded-xl font-bold" onClick={submit} disabled={busy || !file || product.needsPurchase}>
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit for review'}
           </Button>
         </div>

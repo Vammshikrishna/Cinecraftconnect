@@ -4,6 +4,7 @@ import { Check, X, LogOut, MailPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { confirmDialog } from '@/lib/confirmDialog';
 
 const db = supabase as any;
 
@@ -45,7 +46,7 @@ export const PageInviteBanner = ({ page, userId, isMember }: { page: { id: strin
   };
 
   const leave = async () => {
-    if (!window.confirm(`Leave the ${page.name} team?`)) return;
+    if (!await confirmDialog(`Leave the ${page.name} team?`)) return;
     setBusy(true);
     const { data, error } = await db.rpc('leave_page_team', { p_page_id: page.id });
     setBusy(false);

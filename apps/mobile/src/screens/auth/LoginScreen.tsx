@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { EMPTY_LOCKOUT, LockoutState, parseLockout, registerFailure, remainingSeconds, lockoutDelaySeconds } from '../../utils/loginLockout';
 import {
   View,
   Text,
@@ -19,6 +21,7 @@ import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { E2EERecoveryPinModal } from '../../components/security/E2EERecoveryPinModal';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 import { ENV } from '../../config/env';
 import { setCachedCurrentUserId, saveCache } from '../../services/offlineCache';
 import { saveCurrentAccount as amSaveCurrentAccount } from '../../services/accountManager';
@@ -29,9 +32,10 @@ GoogleSignin.configure({
   webClientId: ENV.GOOGLE_WEB_CLIENT_ID,
 });
 
+const LOCKOUT_KEY = 'login_lockout_v1';
 const CREAM = '#F8F5F0';
 const INK = '#0D0D0D';
-const ORANGE = '#f97316';
+const ORANGE = '#FF4B33'; // matches themeColors.primary; only used by StyleSheet defaults overridden inline
 
 const GoogleSvg = () => (
   <Svg width={18} height={18} viewBox="0 0 48 48">
@@ -58,12 +62,21 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
-  const [failedAttempts, setFailedAttempts] = useState(0);
+  // arriving from a saved sign-in that expired: fill the email in and say why
+  const expiredEmail: string | undefined = route?.params?.expiredEmail;
+  useEffect(() => {
+    if (expiredEmail) {
+      setEmail(expiredEmail);
+      setErrorMsg(`The saved sign-in for ${expiredEmail} has expired. Please sign in again to add it back.`);
+    }
+  }, [expiredEmail]);
+  const lockoutRef = useRef<LockoutState>(EMPTY_LOCKOUT);
+  const passwordInputRef = useRef<TextInput>(null);
   const [lockoutTimer, setLockoutTimer] = useState(0);
-  const [returningUser, setReturningUser] = useState<string | null>(null);
 
   const handleAuthSuccess = async (user: any, session: any) => {
-    setFailedAttempts(0);
+    lockoutRef.current = EMPTY_LOCKOUT;
+    AsyncStorage.removeItem(LOCKOUT_KEY).catch(() => {});
     setCachedCurrentUserId(user.id);
     if (session) {
       saveCache('user_session', session).catch(() => {});
@@ -99,6 +112,15 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
     }
   };
 
+  // the failed-attempt counter lives in storage, so leaving and reopening the screen does not reset it
+  useEffect(() => {
+    AsyncStorage.getItem(LOCKOUT_KEY).then((raw) => {
+      lockoutRef.current = parseLockout(raw);
+      const left = remainingSeconds(lockoutRef.current, Date.now());
+      if (left > 0) setLockoutTimer(left);
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (lockoutTimer > 0) {
@@ -131,20 +153,21 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
       });
 
       if (error) {
-        const nextAttempts = failedAttempts + 1;
-        setFailedAttempts(nextAttempts);
-        if (nextAttempts >= 3) {
-          const delay = 15 * Math.pow(2, nextAttempts - 3);
+        const next = registerFailure(lockoutRef.current, Date.now());
+        lockoutRef.current = next;
+        AsyncStorage.setItem(LOCKOUT_KEY, JSON.stringify(next)).catch(() => {});
+        if (next.attempts >= 3) {
+          const delay = lockoutDelaySeconds(next.attempts);
           setLockoutTimer(delay);
           setErrorMsg(`Too many failed attempts. Locked out for ${delay}s.`);
         } else {
-          setErrorMsg(error.message);
+          setErrorMsg(friendlyError(error, 'Could not sign in. Please check your details.'));
         }
       } else if (data.user) {
         await handleAuthSuccess(data.user, data.session);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'An unexpected error occurred.');
+      setErrorMsg(friendlyError(err, 'An unexpected error occurred.'));
     } finally {
       setLoading(false);
     }
@@ -181,7 +204,7 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
         });
 
         if (error) {
-          setErrorMsg(error.message);
+          setErrorMsg(friendlyError(error, 'Google sign-in failed.'));
         } else if (data.user) {
           await handleAuthSuccess(data.user, data.session);
         }
@@ -197,7 +220,7 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
         },
       });
       if (error) {
-        setErrorMsg(error.message || 'Apple sign-in failed.');
+        setErrorMsg(friendlyError(error, 'Apple sign-in failed.'));
       } else if (data?.url) {
         await Linking.openURL(data.url);
       }
@@ -212,7 +235,7 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
         setErrorMsg('Google Play Services not available or outdated on this device.');
         return;
       }
-      setErrorMsg(err.message || `${provider} sign-in failed.`);
+      setErrorMsg(friendlyError(err, `${provider} sign-in failed.`));
     } finally {
       setOauthLoading(null);
     }
@@ -220,7 +243,7 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
 
   return (
     <TabletContainer backgroundColor={themeColors.bgScreen} maxWidth={540}>
-      <ScrollView style={[styles.container, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.container, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* Brand Header */}
         <View style={styles.brandRow}>
           <AppLogo size="lg" textColor={isDark ? 'cream' : 'ink'} />
@@ -228,7 +251,7 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
 
         {/* Slug Eyebrow */}
         <View style={styles.slugRow}>
-          <View style={styles.slugDot} />
+          <View style={[styles.slugDot, { backgroundColor: themeColors.primary }]} />
           <Text style={[styles.slugText, { color: themeColors.textMuted }]}>INT. STAGE GATE — SIGN IN</Text>
         </View>
 
@@ -256,23 +279,10 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
 
         {/* Error Alert */}
         {errorMsg ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{errorMsg}</Text>
+          <View style={[styles.errorBox, { backgroundColor: themeColors.danger + '1A', borderColor: themeColors.danger + '55' }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+            <Text style={[styles.errorText, { color: themeColors.danger }]}>{errorMsg}</Text>
           </View>
         ) : null}
-
-        {/* Returning User Auto-fill Card */}
-        {returningUser && (
-          <View style={[styles.returningCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-            <View>
-              <Text style={[styles.returningSlug, { color: themeColors.textMuted }]}>RETURNING CREATOR</Text>
-              <Text style={[styles.returningEmail, { color: themeColors.textPrimary }]}>{returningUser}</Text>
-            </View>
-            <TouchableOpacity onPress={() => setEmail(returningUser)}>
-              <Text style={styles.autoFillBtn}>Auto Fill →</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* OAuth Action Buttons */}
         <View style={styles.oauthContainer}>
@@ -324,6 +334,12 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
+            autoComplete="email"
+            textContentType="emailAddress"
+            autoCorrect={false}
+            returnKeyType="next"
+            onSubmitEditing={() => passwordInputRef.current?.focus()}
+            blurOnSubmit={false}
             editable={!loading && lockoutTimer === 0}
           />
         </View>
@@ -339,13 +355,21 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
+              ref={passwordInputRef}
+              autoComplete="password"
+              textContentType="password"
+              autoCapitalize="none"
+              returnKeyType="go"
+              onSubmitEditing={handleLogin}
               editable={!loading && lockoutTimer === 0}
             />
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.eyeBtn}
+              accessibilityRole="button"
+              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               onPress={() => setShowPassword(!showPassword)}
             >
-              <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} color={themeColors.textSecondary} />
+              <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} color={themeColors.iconSecondary} />
             </TouchableOpacity>
           </View>
           <View style={[styles.passwordUnderline, { backgroundColor: themeColors.border }]} />
@@ -368,9 +392,11 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
         {/* Toggle to Register */}
         <TouchableOpacity
           style={styles.toggleRow}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
           onPress={() => navigation.navigate('Register')}
         >
-          <Text style={styles.toggleText}>→ CREATE A NEW ACCOUNT</Text>
+          <Text style={[styles.toggleText, { color: themeColors.primary }]}>→ CREATE A NEW ACCOUNT</Text>
         </TouchableOpacity>
 
         {/* Terms & Privacy */}
@@ -381,6 +407,8 @@ export const LoginScreen = ({ navigation, route }: { navigation: any; route?: an
         {/* Return to Home */}
         <TouchableOpacity
           style={styles.returnHomeTouch}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
           onPress={() => navigation.navigate('Landing')}
         >
           <Text style={[styles.returnHomeText, { color: themeColors.textMuted }]}>← RETURN TO HOME</Text>
@@ -396,9 +424,10 @@ const styles = StyleSheet.create({
     backgroundColor: CREAM,
   },
   content: {
+    flexGrow: 1,
     padding: 24,
     paddingTop: 48,
-    paddingBottom: 40,
+    paddingBottom: 64,
   },
   brandRow: {
     flexDirection: 'row',
@@ -419,9 +448,9 @@ const styles = StyleSheet.create({
   },
   slugText: {
     color: 'rgba(13, 13, 13, 0.4)',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 1.5,
+    letterSpacing: 0.3,
   },
   heading: {
     fontFamily: Platform.select({ ios: 'Georgia', android: 'serif' }),
@@ -433,9 +462,9 @@ const styles = StyleSheet.create({
   },
   sub: {
     color: 'rgba(13, 13, 13, 0.45)',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.5,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
     marginBottom: 24,
   },
   errorBox: {
@@ -464,9 +493,9 @@ const styles = StyleSheet.create({
   },
   returningSlug: {
     color: 'rgba(13, 13, 13, 0.4)',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
     marginBottom: 2,
   },
   returningEmail: {
@@ -477,7 +506,7 @@ const styles = StyleSheet.create({
   autoFillBtn: {
     color: ORANGE,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   oauthContainer: {
     gap: 10,
@@ -526,18 +555,18 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     color: 'rgba(13, 13, 13, 0.35)',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1.5,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   fieldGroup: {
     marginBottom: 18,
   },
   fieldLabel: {
     color: 'rgba(13, 13, 13, 0.45)',
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
     marginBottom: 4,
   },
   underlineInput: {
@@ -574,7 +603,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: CREAM,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   toggleRow: {
@@ -583,13 +612,13 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     color: ORANGE,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   termsText: {
     color: 'rgba(13, 13, 13, 0.35)',
-    fontSize: 10.5,
+    fontSize: 12,
     textAlign: 'center',
     lineHeight: 15,
     marginTop: 16,
@@ -601,9 +630,9 @@ const styles = StyleSheet.create({
   },
   returnHomeText: {
     color: 'rgba(13, 13, 13, 0.4)',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   addAccountBackBar: {
     flexDirection: 'row',
@@ -617,7 +646,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   addAccountBackText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

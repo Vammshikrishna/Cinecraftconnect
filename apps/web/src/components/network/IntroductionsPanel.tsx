@@ -4,6 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check, X } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
 
 /** Introductions: requests people made to me (accept / decline) and the ones I asked for. */
 export const IntroductionsPanel = () => {
@@ -22,7 +23,7 @@ export const IntroductionsPanel = () => {
   const respond = async (id: string, accept: boolean) => {
     const { error } = await (supabase as any).rpc('respond_introduction', { p_id: id, p_accept: accept });
     if (error) {
-      toast({ title: 'Could not complete', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not complete', description: friendlyError(error), variant: 'destructive' });
     } else {
       toast({ title: accept ? 'Introduction made' : 'Declined' });
     }
@@ -34,7 +35,7 @@ export const IntroductionsPanel = () => {
   if (rows.length === 0) return null;
 
   return (
-    <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
+    <Card className="bg-card/40 border-border/50 shadow-sm overflow-hidden">
       <div className="p-5 border-b border-border/50">
         <h2 className="text-xl font-semibold">Introductions</h2>
       </div>

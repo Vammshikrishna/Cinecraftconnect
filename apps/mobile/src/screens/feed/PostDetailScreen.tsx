@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
+  TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Text,
   RefreshControl,
   Alert,
@@ -15,15 +15,21 @@ import { UniversalShareSheet } from '../../components/common/UniversalShareSheet
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { getSupabaseClient } from '@cinecraft/api';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { friendlyError } from '@cinecraft/core';
+import { useUserSettings } from '../../hooks/useUserSettings';
+import { showToast } from '../../contexts/ToastContext';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 
 export const PostDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { postId } = route.params || {};
+  const { themeColors } = useUserSettings();
 
   const [post, setPost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserAccountType, setCurrentUserAccountType] = useState<string | null>(null);
@@ -54,7 +60,7 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
           .from('posts')
           .select(`
           *,
-          profiles (id, full_name, username, avatar_url, craft, is_verified, account_type)
+          profiles:author_id (id, full_name, username, avatar_url, craft, is_verified, account_type)
         `)
           .eq('id', postId)
           .single(),
@@ -71,9 +77,12 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
       const postData = postRes?.data;
       if (postRes?.error || !postData) {
         console.warn('[PostDetailScreen] Post not found:', postRes?.error);
+        // an error from the server or network is a failed load; no error and no row is a post that is really gone
+        setLoadError(!!postRes?.error);
         setPost(null);
         return;
       }
+      setLoadError(false);
 
       setPost(postData);
       setLoading(false);
@@ -105,6 +114,7 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
       }
     } catch (e) {
       console.warn('[PostDetailScreen] Error fetching post:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -150,13 +160,14 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
       } = await supabase.auth.getUser();
       if (!user) return;
 
-      if (newState) {
-        await supabase.from('post_bookmarks').insert({ post_id: id, user_id: user.id });
-      } else {
-        await supabase.from('post_bookmarks').delete().eq('post_id', id).eq('user_id', user.id);
-      }
+      const res: any = newState
+        ? await supabase.from('post_bookmarks').upsert({ post_id: id, user_id: user.id })
+        : await supabase.from('post_bookmarks').delete().eq('post_id', id).eq('user_id', user.id);
+      if (res?.error) throw res.error;
     } catch (e) {
       console.warn('[PostDetailScreen] Bookmark error:', e);
+      setIsBookmarked(!newState);
+      showToast({ title: newState ? 'Could not save the post' : 'Could not remove the bookmark', message: 'Check your connection and try again.', type: 'error' });
     }
   };
 
@@ -172,7 +183,7 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
             await supabase.from('posts').delete().eq('id', id);
             navigation.goBack();
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Could not delete post');
+            Alert.alert('Error', friendlyError(e, 'Could not delete post'));
           }
         },
       },
@@ -190,8 +201,7 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
 
   return (
     <TabletContainer
-      backgroundColor="#F8FAFC"
-      feedMode={true}
+      backgroundColor={themeColors.bgScreen}
       header={
         <Header
           title="Post"
@@ -202,14 +212,21 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
     >
 
       {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator color={ORANGE} size="large" />
-        </View>
+        <ScreenSkeleton variant="detail" />
       ) : !post ? (
         <View style={styles.centerBox}>
-          <Icon name="alert-circle" size={48} color="#9CA3AF" />
-          <Text style={styles.notFoundTitle}>Post Not Found</Text>
-          <Text style={styles.notFoundSub}>This post may have been deleted or is unavailable.</Text>
+          <Icon name="alert-circle" size={48} color={themeColors.iconMuted} />
+          <Text style={[styles.notFoundTitle, { color: themeColors.textPrimary }]}>{loadError ? 'Could not load this post' : 'Post Not Found'}</Text>
+          <Text style={[styles.notFoundSub, { color: themeColors.textSecondary }]}>{loadError ? 'Check your connection and try again.' : 'This post may have been deleted or is unavailable.'}</Text>
+          {loadError && (
+            <TouchableOpacity
+              onPress={() => { setLoading(true); fetchPost(); }}
+              accessibilityRole="button"
+              style={{ marginTop: 14, minHeight: 44, paddingHorizontal: 22, borderRadius: 22, backgroundColor: ORANGE, justifyContent: 'center' }}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Try again</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <ScrollView
@@ -218,8 +235,15 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[ORANGE]} />}
           showsVerticalScrollIndicator={false}
         >
+          <View style={styles.detailColumn}>
           <PostCard
             id={post.id}
+            hasPoll={!!(post as any).has_poll}
+            scheduledAt={(post as any).scheduled_at}
+            hasCollabs={!!(post as any).has_collabs}
+            linkPreview={(post as any).link_preview}
+            audience={(post as any).audience}
+            editedAt={(post as any).edited_at}
             author={{
               id: post.author_id,
               name: authorName,
@@ -235,7 +259,7 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
                     month: 'short',
                     day: 'numeric',
                   })
-                : 'RECENT'
+                : 'Recently'
             }
             content={post.content || ''}
             mediaUrl={post.media_url}
@@ -281,6 +305,7 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
             }}
             onDeletePost={handleDeletePost}
           />
+          </View>
         </ScrollView>
       )}
 
@@ -290,6 +315,7 @@ export const PostDetailScreen = ({ route, navigation }: { route: any; navigation
         onClose={() => setShareSheetVisible(false)}
         title={shareContent || 'Film Post on CineCraft'}
         itemType="post"
+        itemData={{ postId, previewUrl: post?.media_url, caption: post?.content, profiles: post?.profiles }}
         shareUrl={`https://cinecraftconnect.com/post/${postId}`}
       />
     </TabletContainer>
@@ -307,7 +333,12 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     width: '100%',
+    alignItems: 'center',
     paddingBottom: 40,
+  },
+  detailColumn: {
+    width: '100%',
+    maxWidth: 860,
   },
   centerBox: {
     flex: 1,
@@ -318,7 +349,7 @@ const styles = StyleSheet.create({
   },
   notFoundTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     marginTop: 8,
   },

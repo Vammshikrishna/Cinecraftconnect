@@ -10,19 +10,33 @@ import {
 } from 'react-native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { CachedImage } from '../../components/common/CachedImage';
 import { getSupabaseClient } from '@cinecraft/api';
+import { friendlyError } from '@cinecraft/core';
+import { useResponsive } from '../../hooks/useResponsive';
+import { isTabletDevice } from '../../utils/pageType';
+import { useAccountType } from '../../hooks/useAccountType';
+import { useAppRole } from '../../hooks/useAppRole';
 
 export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isTablet, isLandscape } = useResponsive();
+  const twoCol = isTablet && isLandscape;
   const { projectTitle, projectDescription, location, rolesCount, genre, imageUrl, projectId } =
     route.params || {};
 
   const [project, setProject] = useState<any>(null);
   const [appliedRoles, setAppliedRoles] = useState<Record<string, boolean>>({});
   const [applying, setApplying] = useState<string | null>(null);
+  const [myId, setMyId] = useState<string | null>(null);
+  const { isFan } = useAccountType();
+  const { isInternal } = useAppRole();
+
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!projectId) return;
@@ -30,12 +44,14 @@ export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigat
     (async () => {
       try {
         const supabase = getSupabaseClient();
-        const { data } = await (supabase.from('projects') as any)
+        const { data, error: projErr } = await (supabase.from('projects') as any)
           .select('id, title, description, location, genre, required_roles, image_url, status, creator_id')
           .eq('id', projectId)
           .maybeSingle();
+        if (active) setLoadError(!!projErr && !data);
         if (active && data) setProject(data);
         const user = (await supabase.auth.getSession()).data.session?.user ?? null; // local session: getUser() is a network call
+        if (user && active) setMyId(user.id);
         if (user && active) {
           const { data: mine } = await (supabase.from('project_applications') as any)
             .select('id')
@@ -43,15 +59,30 @@ export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigat
             .eq('user_id', user.id)
             .maybeSingle();
           if (mine) setAppliedRoles({ __any: true });
+          else {
+            // applications can also be saved as join requests on the project space (the web flow)
+            try {
+              const { data: space } = await (supabase.from('project_spaces') as any).select('id').eq('project_id', projectId).maybeSingle();
+              if (space?.id) {
+                const { data: joinReq } = await (supabase.from('project_space_join_requests') as any)
+                  .select('id')
+                  .eq('project_space_id', space.id)
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+                if (joinReq && active) setAppliedRoles({ __any: true });
+              }
+            } catch { /* older database: no join requests */ }
+          }
         }
       } catch (e) {
+        if (active) setLoadError(true);
         console.warn('[ProjectDetail] load error:', e);
       }
     })();
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, reloadKey]);
 
   const title = project?.title || projectTitle || 'Project';
   const desc = project?.description || projectDescription || '';
@@ -62,8 +93,12 @@ export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigat
   const projectGenre = Array.isArray(rawGenre) ? rawGenre.join(', ') : rawGenre || '';
   const img = project?.image_url || imageUrl || '';
 
+  // Fans, staff and the project's own owner cannot apply (the same rule as the web).
+  const isOwner = !!myId && project?.creator_id === myId;
+  const canApply = !isFan && !isInternal && !isOwner;
+
   const handleApply = async (roleName: string) => {
-    if (!projectId) return;
+    if (!projectId || !canApply) return;
     setApplying(roleName);
     try {
       const supabase = getSupabaseClient();
@@ -81,7 +116,7 @@ export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigat
       setAppliedRoles({ __any: true, [roleName]: true });
       Alert.alert('Application sent', `Your application for "${roleName}" has been submitted to the project team.`);
     } catch (e: any) {
-      Alert.alert('Could not apply', e?.message || 'You may have already applied to this project.');
+      Alert.alert('Could not apply', friendlyError(e, 'You may have already applied to this project.'));
     } finally {
       setApplying(null);
     }
@@ -98,21 +133,28 @@ export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigat
         />
       }
     >
-      <ScrollView contentContainerStyle={styles.content}>
-        <CachedImage uri={img} style={[styles.image, { backgroundColor: themeColors.chipBg }]} resizeMode="cover" />
+      {loadError && !project ? (
+        <LoadErrorState message="Could not load this project. Check your connection and try again." onRetry={() => { setLoadError(false); setReloadKey((k) => k + 1); }} />
+      ) : (
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={twoCol ? { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 4 } : undefined}>
+        <View style={twoCol ? { width: '42%', padding: 0 } : undefined}>
+        <CachedImage uri={img} style={[styles.image, twoCol && { height: undefined, aspectRatio: 4 / 3, borderRadius: 24, overflow: 'hidden' }, isTablet && !twoCol && { height: undefined, aspectRatio: 16 / 8 }, { backgroundColor: themeColors.chipBg }]} resizeMode="cover" />
+        </View>
+        <View style={twoCol ? { flex: 1 } : undefined}>
 
         <View style={[styles.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
           <View style={styles.badgeRow}>
             <View style={[styles.sceneBadge, { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.2)' : '#ECFDF5' }]}>
-              <Text style={[styles.sceneText, { color: isDark ? '#34D399' : '#059669' }]}>[SCENE: ACTIVE]</Text>
+              <Text style={[styles.sceneText, { color: isDark ? '#34D399' : '#059669' }]}>[SCENE: {String(project?.status || 'active').toUpperCase()}]</Text>
             </View>
-            <Text style={styles.genreText}>GENRE // {projectGenre}</Text>
+            <Text style={styles.genreText}>{projectGenre}</Text>
           </View>
 
           <Text style={[styles.title, { color: themeColors.textPrimary }]}>{title}</Text>
 
           <View style={styles.locationRow}>
-            <Icon name="map-pin" size={13} color={themeColors.textSecondary} />
+            <Icon name="map-pin" size={13} color={themeColors.iconSecondary} />
             <Text style={[styles.location, { color: themeColors.textSecondary }]}>{loc}</Text>
           </View>
 
@@ -128,14 +170,27 @@ export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigat
                 <Text style={[styles.roleName, { color: themeColors.textPrimary }]}>{role}</Text>
                 
               </View>
-              <TouchableOpacity style={styles.applyBtn} disabled={!!appliedRoles.__any || applying === role} onPress={() => handleApply(role)}>
-                <Text style={styles.applyBtnText}>{appliedRoles[role] ? 'Applied' : appliedRoles.__any ? 'Applied' : applying === role ? '…' : 'Apply'}</Text>
+              {canApply ? (
+              <TouchableOpacity
+                style={styles.applyBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Apply for ${role}`}
+                disabled={!!appliedRoles.__any || applying === role}
+                onPress={() => Alert.alert(`Apply as ${role}?`, 'Your application goes to the project team. You can apply to a project only once.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Apply', onPress: () => handleApply(role) },
+                ])}
+              >
+                <Text style={styles.applyBtnText}>{appliedRoles[role] ? 'Applied' : appliedRoles.__any ? 'Application Sent' : applying === role ? '…' : 'Apply'}</Text>
               </TouchableOpacity>
+              ) : null}
             </View>
           ))}
 
           <View style={[styles.divider, { backgroundColor: themeColors.divider }]} />
 
+          {(!isFan || isInternal) && (
           <TouchableOpacity
             style={styles.spaceBtn}
             onPress={() =>
@@ -148,8 +203,12 @@ export const ProjectDetailScreen = ({ route, navigation }: { route: any; navigat
           >
             <Text style={styles.spaceBtnText}>Enter Production Workspace →</Text>
           </TouchableOpacity>
+          )}
+        </View>
+        </View>
         </View>
       </ScrollView>
+      )}
     </TabletContainer>
   );
 };
@@ -160,18 +219,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
   },
   content: {
-    paddingBottom: 40,
+    paddingBottom: 72,
   },
   image: {
     width: '100%',
-    height: 200,
+    height: isTabletDevice ? 340 : 200,
     backgroundColor: '#0D0D0D',
   },
   card: {
     backgroundColor: '#FFFFFF',
     margin: 14,
     borderRadius: 24,
-    padding: 20,
+    padding: isTabletDevice ? 28 : 20,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
@@ -189,21 +248,19 @@ const styles = StyleSheet.create({
   },
   sceneText: {
     color: '#059669',
-    fontSize: 10,
-    fontFamily: 'Inconsolata-Bold',
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   genreText: {
     color: '#FF4B33',
-    fontSize: 10,
-    fontFamily: 'Inconsolata-Bold',
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.2,
   },
   title: {
     color: '#0D0D0D',
-    fontSize: 20,
+    fontSize: isTabletDevice ? 26 : 20,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: -0.3,
@@ -216,16 +273,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   location: {
-    color: '#6B7280',
-    fontSize: 11,
-    fontFamily: 'Inconsolata-Bold',
+    color: '#64748B',
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   desc: {
     color: '#4B5563',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: isTabletDevice ? 15 : 14,
+    lineHeight: isTabletDevice ? 23 : 20,
     fontFamily: 'WorkSans-Regular',
     marginBottom: 16,
   },
@@ -267,8 +323,8 @@ const styles = StyleSheet.create({
   },
   applyBtn: {
     backgroundColor: 'rgba(255, 75, 51, 0.1)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: isTabletDevice ? 11 : 8,
     borderRadius: 8,
   },
   applyBtnText: {
@@ -279,7 +335,7 @@ const styles = StyleSheet.create({
   },
   spaceBtn: {
     backgroundColor: '#FF4B33',
-    height: 48,
+    height: isTabletDevice ? 54 : 48,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

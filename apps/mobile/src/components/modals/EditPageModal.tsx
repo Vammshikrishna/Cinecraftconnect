@@ -11,8 +11,11 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
+import { pageDetailsProblem } from '../../utils/pageDetails';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -31,6 +34,7 @@ export const EditPageModal: React.FC<EditPageModalProps> = ({
   onUpdated,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [name, setName] = useState(page?.name || '');
   const [tagline, setTagline] = useState(page?.tagline || '');
   const [description, setDescription] = useState(page?.description || '');
@@ -47,6 +51,11 @@ export const EditPageModal: React.FC<EditPageModalProps> = ({
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Missing Name', 'Please enter company or studio name.');
+      return;
+    }
+    const problem = pageDetailsProblem({ website: websiteUrl });
+    if (problem) {
+      Alert.alert('Check the page details', problem);
       return;
     }
 
@@ -76,7 +85,7 @@ export const EditPageModal: React.FC<EditPageModalProps> = ({
       onClose();
       Alert.alert('Updated!', 'Company page details saved successfully.');
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to update company page.');
+      Alert.alert('Error', friendlyError(e, 'Failed to update company page.'));
     } finally {
       setLoading(false);
     }
@@ -87,16 +96,16 @@ export const EditPageModal: React.FC<EditPageModalProps> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}>
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
               <View style={styles.headerRow}>
                 <Text style={[styles.title, { color: themeColors.textPrimary }]}>Edit Page Details</Text>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad + 8 }}>
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>PAGE NAME *</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
@@ -214,6 +223,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 24,
     maxHeight: '85%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 40,
@@ -231,13 +243,13 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginBottom: 6,
@@ -250,7 +262,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
   },
   textArea: {
@@ -271,7 +283,7 @@ const styles = StyleSheet.create({
   saveBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

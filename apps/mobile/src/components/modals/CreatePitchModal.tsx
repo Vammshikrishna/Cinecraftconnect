@@ -13,8 +13,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 
@@ -68,6 +70,7 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
   onCreated,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [title, setTitle] = useState('');
   const [projectType, setProjectType] = useState('film');
   const [budgetRange, setBudgetRange] = useState('mid');
@@ -167,7 +170,7 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
       setRightsExpectation('');
       setDeadline('');
     } catch (e: any) {
-      Alert.alert('Failed to Publish Call', e.message || 'Could not publish pitch call. Please try again.');
+      Alert.alert('Failed to Publish Call', friendlyError(e, 'Could not publish pitch call. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -178,16 +181,16 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}>
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
               <View style={styles.headerRow}>
                 <Text style={[styles.title, { color: themeColors.textPrimary }]}>Post a Pitch Call Brief</Text>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad + 8 }}>
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>PITCH CALL TITLE *</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
@@ -374,7 +377,7 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
                     <Text style={[styles.switchTitle, { color: themeColors.textPrimary }]}>Open to Debut Writers</Text>
                     <Text style={[styles.switchSub, { color: themeColors.textSecondary }]}>Accept pitches from first-time screenwriters</Text>
                   </View>
-                  <Switch value={isOpenToDebut} onValueChange={setIsOpenToDebut} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
+                  <Switch accessibilityLabel="Open to Debut Writers" value={isOpenToDebut} onValueChange={setIsOpenToDebut} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
                 </View>
 
                 <View style={[styles.switchCard, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
@@ -382,7 +385,7 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
                     <Text style={[styles.switchTitle, { color: themeColors.textPrimary }]}>Regional Stories Welcome</Text>
                     <Text style={[styles.switchSub, { color: themeColors.textSecondary }]}>Open to regional culture & language scripts</Text>
                   </View>
-                  <Switch value={isRegionalWelcome} onValueChange={setIsRegionalWelcome} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
+                  <Switch accessibilityLabel="Regional Stories Welcome" value={isRegionalWelcome} onValueChange={setIsRegionalWelcome} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
                 </View>
 
                 <View style={[styles.switchCard, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
@@ -390,7 +393,7 @@ export const CreatePitchModal: React.FC<CreatePitchModalProps> = ({
                     <Text style={[styles.switchTitle, { color: themeColors.textPrimary }]}>NDA Required</Text>
                     <Text style={[styles.switchSub, { color: themeColors.textSecondary }]}>Require submitters to e-sign non-disclosure agreement</Text>
                   </View>
-                  <Switch value={ndaRequired} onValueChange={setNdaRequired} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
+                  <Switch accessibilityLabel="NDA Required" value={ndaRequired} onValueChange={setNdaRequired} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
                 </View>
 
                 {/* PRODUCER CREDENTIALS */}
@@ -449,6 +452,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     maxHeight: '90%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -465,11 +471,11 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 4,
@@ -499,7 +505,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   rowTwoCol: {
@@ -516,11 +522,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   switchTitle: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   switchSub: {
-    fontSize: 10.5,
+    fontSize: 12,
     marginTop: 2,
   },
   postBtn: {
@@ -533,8 +539,8 @@ const styles = StyleSheet.create({
   },
   postBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

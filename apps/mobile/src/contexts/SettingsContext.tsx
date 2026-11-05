@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { Vibration, useColorScheme } from 'react-native';
+import { Vibration, useColorScheme, Keyboard, Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabaseClient } from '@cinecraft/api';
+import { setBrandTextLight } from '../utils/brandText';
+import { setTextLanguage } from '../utils/translateText';
+import { setFontScale } from '../utils/defaultFonts';
 
 export interface UserSettings {
   id?: string;
@@ -101,10 +104,102 @@ export interface ThemeColors {
   textPrimary: string;
   textSecondary: string;
   textMuted: string;
+  /** icons keep the colours they always had (text colours were darkened for contrast) */
+  iconMuted: string;
+  iconSecondary: string;
   inputBg: string;
   divider: string;
   chipBg: string;
+  /** brand orange: the same in every theme (do not retype '#FF4B33' in screens) */
+  primary: string;
+  /** text and icons that sit on a primary fill */
+  onPrimary: string;
+  /** quiet tint of the brand colour for selected rows and chips */
+  primarySoft: string;
+  danger: string;
+  success: string;
+  warning: string;
+  /** scrim behind sheets and dialogs */
+  overlay: string;
+  /** a surface one step above bgCard (menus, raised sheets) */
+  bgElevated: string;
+  /** same value as bgElevated (name used by the settings screens) */
+  bgCardElevated: string;
+  /** app bar background */
+  headerBg: string;
 }
+
+const BRAND = { primary: '#FF4B33', onPrimary: '#FFFFFF' } as const;
+
+// Palettes live outside the component so they are one object each, shared by every consumer.
+const PALETTE_OLED: ThemeColors = {
+  bgScreen: '#000000',
+  bgCard: '#0A0A0A',
+  border: 'rgba(255, 255, 255, 0.12)',
+  textPrimary: '#F8FAFC',
+  textSecondary: '#94A3B8',
+  textMuted: '#8394A8',
+  iconMuted: '#64748B',
+  iconSecondary: '#94A3B8',
+  inputBg: '#111111',
+  divider: 'rgba(255, 255, 255, 0.08)',
+  chipBg: '#171717',
+  ...BRAND,
+  primarySoft: 'rgba(255, 75, 51, 0.14)',
+  danger: '#EF4444',
+  success: '#10B981',
+  warning: '#F59E0B',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+  bgElevated: '#121212',
+  bgCardElevated: '#121212',
+  headerBg: '#000000',
+};
+
+const PALETTE_LIGHT: ThemeColors = {
+  bgScreen: '#F8FAFC',
+  bgCard: '#FFFFFF',
+  border: '#E2E8F0',
+  textPrimary: '#0F172A',
+  textSecondary: '#475569',
+  textMuted: '#5B6B80',
+  iconMuted: '#94A3B8',
+  iconSecondary: '#64748B',
+  inputBg: '#F1F5F9',
+  divider: '#E2E8F0',
+  chipBg: '#F1F5F9',
+  ...BRAND,
+  primarySoft: '#FFF1EE',
+  danger: '#DC2626',
+  success: '#059669',
+  warning: '#D97706',
+  overlay: 'rgba(0, 0, 0, 0.4)',
+  bgElevated: '#FFFFFF',
+  bgCardElevated: '#FFFFFF',
+  headerBg: '#FFFFFF',
+};
+
+const PALETTE_DARK: ThemeColors = {
+  bgScreen: '#0B0F15',
+  bgCard: '#151C26',
+  border: 'rgba(255, 255, 255, 0.08)',
+  textPrimary: '#F1F5F9',
+  textSecondary: '#94A3B8',
+  textMuted: '#8394A8',
+  iconMuted: '#64748B',
+  iconSecondary: '#94A3B8',
+  inputBg: '#111722',
+  divider: 'rgba(255, 255, 255, 0.06)',
+  chipBg: '#1F2937',
+  ...BRAND,
+  primarySoft: 'rgba(255, 75, 51, 0.14)',
+  danger: '#EF4444',
+  success: '#10B981',
+  warning: '#F59E0B',
+  overlay: 'rgba(0, 0, 0, 0.5)',
+  bgElevated: '#1B2432',
+  bgCardElevated: '#1B2432',
+  headerBg: '#0B0F15',
+};
 
 export interface SettingsContextType {
   settings: UserSettings;
@@ -127,17 +222,7 @@ const SettingsContext = createContext<SettingsContextType>({
   updateSettings: async () => false,
   updateSetting: () => {},
   isDndActive: () => false,
-  themeColors: {
-    bgScreen: '#0B0F15',
-    bgCard: '#151C26',
-    border: 'rgba(255, 255, 255, 0.08)',
-    textPrimary: '#F1F5F9',
-    textSecondary: '#94A3B8',
-    textMuted: '#64748B',
-    inputBg: '#111722',
-    divider: 'rgba(255, 255, 255, 0.06)',
-    chipBg: '#1F2937',
-  },
+  themeColors: PALETTE_DARK,
   fontScale: 1.0,
   triggerHaptic: () => {},
   resolvedTheme: 'dark',
@@ -149,7 +234,30 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const systemScheme = useColorScheme();
+  const rawScheme = useColorScheme();
+  // Android can briefly report the other scheme when the keyboard opens or the window resizes. Keep the last scheme the
+  // phone settled on and only follow a change once it has held for a moment and the keyboard is closed.
+  const [systemScheme, setSystemScheme] = useState(rawScheme);
+  const keyboardOpenRef = React.useRef(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => { keyboardOpenRef.current = true; });
+    let settle: any;
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardOpenRef.current = false;
+      clearTimeout(settle);
+      settle = setTimeout(() => { const now = Appearance.getColorScheme(); if (now) setSystemScheme(now); }, 600);
+    });
+    return () => { show.remove(); hide.remove(); clearTimeout(settle); };
+  }, []);
+  useEffect(() => {
+    if (rawScheme === systemScheme) return;
+    const t = setTimeout(() => {
+      if (keyboardOpenRef.current) return;
+      const now = Appearance.getColorScheme();
+      if (now === rawScheme) setSystemScheme(rawScheme);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [rawScheme, systemScheme]);
 
   const activeTheme = settings.theme || 'system';
   const resolvedTheme: 'light' | 'dark' | 'oled' = useMemo(() => {
@@ -330,44 +438,10 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
 
   // 4. Active Theme Palette
   const themeColors: ThemeColors = useMemo(() => {
-    if (resolvedTheme === 'oled') {
-      return {
-        bgScreen: '#000000',
-        bgCard: '#0A0A0A',
-        border: 'rgba(255, 255, 255, 0.12)',
-        textPrimary: '#F8FAFC',
-        textSecondary: '#94A3B8',
-        textMuted: '#64748B',
-        inputBg: '#111111',
-        divider: 'rgba(255, 255, 255, 0.08)',
-        chipBg: '#171717',
-      };
-    }
-    if (resolvedTheme === 'light') {
-      return {
-        bgScreen: '#F8FAFC',
-        bgCard: '#FFFFFF',
-        border: '#E2E8F0',
-        textPrimary: '#0F172A',
-        textSecondary: '#64748B',
-        textMuted: '#94A3B8',
-        inputBg: '#F1F5F9',
-        divider: '#E2E8F0',
-        chipBg: '#F1F5F9',
-      };
-    }
-    // Cinema Dark default
-    return {
-      bgScreen: '#0B0F15',
-      bgCard: '#151C26',
-      border: 'rgba(255, 255, 255, 0.08)',
-      textPrimary: '#F1F5F9',
-      textSecondary: '#94A3B8',
-      textMuted: '#64748B',
-      inputBg: '#111722',
-      divider: 'rgba(255, 255, 255, 0.06)',
-      chipBg: '#1F2937',
-    };
+    setBrandTextLight(resolvedTheme === 'light');
+    if (resolvedTheme === 'oled') return PALETTE_OLED;
+    if (resolvedTheme === 'light') return PALETTE_LIGHT;
+    return PALETTE_DARK; // Cinema Dark default
   }, [resolvedTheme]);
 
   // 5. Font Scale
@@ -376,6 +450,11 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
     if (settings.font_size === 'large') return 1.15;
     return 1.0;
   }, [settings.font_size]);
+
+  // 5b. The words on every screen follow the chosen language (set before the screens below render)
+  setTextLanguage(settings.language);
+  // 5c. ...and so do the type sizes (the Font Size setting is applied in the shared text layer)
+  setFontScale(fontScale);
 
   // 6. Trigger Haptic Vibration (respects settings.haptic_feedback)
   const triggerHaptic = useCallback(

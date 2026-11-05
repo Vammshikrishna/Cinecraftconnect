@@ -12,6 +12,8 @@ export const initializeSupabase = (
   options?: {
     customStorage?: any;
     detectSessionInUrl?: boolean;
+    /** 'pkce' makes sign-in links carry a one-time code that only this device can redeem (no token in the link). */
+    flowType?: 'pkce' | 'implicit';
   }
 ): SupabaseClient<CleanDatabase> => {
   const storageEngine = options?.customStorage || {
@@ -26,6 +28,7 @@ export const initializeSupabase = (
       persistSession: true,
       detectSessionInUrl: options?.detectSessionInUrl ?? true,
       storage: storageEngine,
+      ...(options?.flowType ? { flowType: options.flowType } : {}),
     },
     realtime: {
       params: {

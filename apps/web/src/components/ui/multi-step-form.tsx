@@ -1,5 +1,5 @@
 
-import { useState, ReactNode } from 'react';
+import { useState, useRef, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -7,33 +7,64 @@ import { cn } from '@/lib/utils';
 interface Step {
   title: string;
   component: ReactNode;
-  validation?: () => boolean;
+  /** Return true/null/undefined when valid, false for a silent failure, or a string with the message to show. */
+  validation?: () => boolean | string | null | undefined;
 }
 
 interface MultiStepFormProps {
   steps: Step[];
-  onComplete: () => void;
+  /** May return a promise: the Complete button stays off until it settles, so a double tap cannot run it twice. */
+  onComplete: () => void | Promise<void>;
   className?: string;
 }
 
 export const MultiStepForm = ({ steps, onComplete, className }: MultiStepFormProps) => {
   const [currentStep, setCurrentStep] = useState(0);
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // a failed step puts the cursor on the first field that needs attention
+  const focusFirstInvalid = () => {
+    requestAnimationFrame(() => {
+      const root = contentRef.current;
+      if (!root) return;
+      const empty = Array.from(root.querySelectorAll<HTMLElement>('input[required], textarea[required], select[required]'))
+        .find((el) => !(el as HTMLInputElement).value);
+      const target = root.querySelector<HTMLElement>('[aria-invalid="true"]') || empty;
+      target?.focus({ preventScroll: false });
+    });
+  };
 
   const nextStep = () => {
     const currentValidation = steps[currentStep].validation;
-    if (currentValidation && !currentValidation()) {
-      return;
+    if (currentValidation) {
+      const result = currentValidation();
+      if (typeof result === 'string') {
+        setStepError(result);
+        focusFirstInvalid();
+        return;
+      }
+      if (result === false) {
+        setStepError('Please complete the required fields before continuing.');
+        focusFirstInvalid();
+        return;
+      }
     }
+    setStepError(null);
 
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
-      onComplete();
+      if (completing) return;
+      setCompleting(true);
+      Promise.resolve(onComplete()).catch(() => { }).finally(() => setCompleting(false));
     }
   };
 
   const prevStep = () => {
     if (currentStep > 0) {
+      setStepError(null);
       setCurrentStep(currentStep - 1);
     }
   };
@@ -77,18 +108,21 @@ export const MultiStepForm = ({ steps, onComplete, className }: MultiStepFormPro
         <div className="relative h-2">
           <div className="absolute top-0 left-0 h-full bg-muted rounded-full w-full"></div>
           <div
-            className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-secondary rounded-full transition-all duration-300"
-            style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+            className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-secondary rounded-full origin-left transition-transform duration-300"
+            style={{ transform: `scaleX(${(currentStep + 1) / steps.length})` }}
           ></div>
         </div>
       </div>
 
       {/* Step Content */}
-      <div className="mb-8">
+      <div className="mb-8" ref={contentRef}>
         <h2 className="text-xl md:text-2xl font-bold text-foreground mb-4 md:mb-6 hidden sm:block">
           {steps[currentStep].title}
         </h2>
         {steps[currentStep].component}
+        {stepError && (
+          <p role="alert" className="mt-4 text-sm font-medium text-destructive">{stepError}</p>
+        )}
       </div>
 
       {/* Navigation */}
@@ -106,6 +140,7 @@ export const MultiStepForm = ({ steps, onComplete, className }: MultiStepFormPro
 
         <Button
           onClick={nextStep}
+          disabled={completing}
           className="flex items-center bg-primary hover:bg-primary/90"
         >
           {currentStep === steps.length - 1 ? 'Complete' : 'Next'}

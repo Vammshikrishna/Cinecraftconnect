@@ -131,7 +131,7 @@ export const JobShareCard: React.FC<JobShareCardProps> = ({
             </Text>
             {type && (
               <View style={styles.typeBadge}>
-                <Text style={styles.typeBadgeText}>TYPE // {type.toUpperCase()}</Text>
+                <Text style={styles.typeBadgeText}>{type}</Text>
               </View>
             )}
           </View>
@@ -139,7 +139,7 @@ export const JobShareCard: React.FC<JobShareCardProps> = ({
           <View style={styles.metaRow}>
             <View style={styles.locationTag}>
               <Text style={styles.locationTagText} numberOfLines={1}>
-                LOC // {location || 'Global'}
+                {location || 'Global'}
               </Text>
             </View>
             {salary && <Text style={styles.salaryText}>{salary}</Text>}
@@ -177,7 +177,7 @@ export const JobShareCard: React.FC<JobShareCardProps> = ({
           </Text>
           {type && (
             <View style={styles.typeBadge}>
-              <Text style={styles.typeBadgeText}>TYPE // {type.toUpperCase()}</Text>
+              <Text style={styles.typeBadgeText}>{type}</Text>
             </View>
           )}
         </View>
@@ -186,7 +186,7 @@ export const JobShareCard: React.FC<JobShareCardProps> = ({
         {location && (
           <View style={styles.locationTag}>
             <Text style={styles.locationTagText} numberOfLines={1}>
-              LOC // {location}
+              {location}
             </Text>
           </View>
         )}
@@ -336,12 +336,12 @@ const styles = StyleSheet.create({
   logoFallbackText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   companyNameText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   hiringBadge: {
     backgroundColor: ORANGE,
@@ -366,8 +366,8 @@ const styles = StyleSheet.create({
   },
   hiringBadgeText: {
     color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   compactBody: {
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   },
   titleText: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     flex: 1,
@@ -408,8 +408,8 @@ const styles = StyleSheet.create({
   },
   typeBadgeText: {
     color: ORANGE,
-    fontSize: 8.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   metaRow: {
     flexDirection: 'row',
@@ -426,17 +426,17 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   locationTagText: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
   salaryText: {
     color: '#10B981',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   descText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     fontStyle: 'italic',
     lineHeight: 15,
@@ -466,10 +466,9 @@ const styles = StyleSheet.create({
   },
   activeBadgeText: {
     color: '#374151',
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.6,
-    textTransform: 'uppercase',
   },
   salaryBadge: {
     backgroundColor: 'rgba(34,197,94,0.08)',
@@ -481,8 +480,8 @@ const styles = StyleSheet.create({
   },
   salaryBadgeText: {
     color: '#16A34A',
-    fontSize: 8,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.6,
   },
   authorRow: {
@@ -510,23 +509,21 @@ const styles = StyleSheet.create({
   },
   authorLogoFallbackText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   authorMeta: {
     flex: 1,
   },
   authorName: {
-    fontSize: 10.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#111827',
-    textTransform: 'uppercase',
   },
   authorRole: {
-    fontSize: 8,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
-    textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
   ctaButton: {
@@ -546,10 +543,9 @@ const styles = StyleSheet.create({
   },
   ctaButtonText: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });
 

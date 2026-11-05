@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useE2EEBackup } from '@/contexts/E2EEBackupContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { getDisplayMessage } from '@/lib/chat-utils';
+import { isChatMuted } from '@/lib/conversationPrefs';
 import { getLocalPrivateKey } from '@/lib/e2ee-storage';
 import { 
     importPrivateKey, 
@@ -107,6 +108,8 @@ export const GlobalNotificationListener = () => {
                     console.log('🔕 [Realtime] Ignored DM call event notification toast');
                     return;
                 }
+
+                if (isChatMuted(user.id, message.sender_id)) return;
                 
                 // Fetch profile using async IIFE with cache
                 (async () => {

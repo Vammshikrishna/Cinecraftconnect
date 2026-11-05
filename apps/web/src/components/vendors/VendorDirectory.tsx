@@ -221,7 +221,7 @@ export const VendorDirectory = ({ searchSlot, registerOpen, onRegisterOpenChange
                     </button>
                   </div>
                   {!isInternal && registerOpen === undefined && (
-                    <Button onClick={() => setShowRegistrationModal(true)} className="gap-2 rounded-xl h-9 px-4 mb-2 font-bold text-sm shrink-0">
+                    <Button onClick={() => setShowRegistrationModal(true)} className="gap-2 rounded-xl h-10 md:h-9 px-4 mb-2 font-bold text-sm shrink-0">
                         <Plus size={16} strokeWidth={3} />
                         <span>Register Business</span>
                     </Button>

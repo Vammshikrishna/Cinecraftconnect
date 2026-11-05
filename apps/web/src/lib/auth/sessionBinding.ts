@@ -19,6 +19,20 @@ export const hashToken = async (token: string): Promise<string> => {
  * Links a newly issued Supabase session to the physical device.
  * Writes to the user_sessions table for monitoring and remote revocation.
  */
+/** Reads the auth session id (session_id claim) from an access token; null if absent. Not a trust decision, only a link. */
+export const authSessionIdFromAccessToken = (accessToken?: string | null): string | null => {
+  try {
+    const part = (accessToken || '').split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const json = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, '=')));
+    const id = json?.session_id;
+    return typeof id === 'string' && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+};
+
 export const bindSessionToDevice = async (session: any) => {
   if (!session?.refresh_token || !session?.user) return;
   
@@ -55,7 +69,17 @@ export const bindSessionToDevice = async (session: any) => {
       .limit(1)
       .maybeSingle();
 
-    let result;
+    const write = async (row: Record<string, unknown>) => {
+      if (existingSession && (existingSession as any).id) {
+        return supabase
+          .from('user_sessions' as any)
+          .update(row)
+          .eq('id', (existingSession as any).id);
+      }
+      return supabase
+        .from('user_sessions' as any)
+        .insert(row);
+    };
     const sessionData = {
       user_id: session.user.id,
       device_id: meta.deviceId,
@@ -66,18 +90,16 @@ export const bindSessionToDevice = async (session: any) => {
       last_active_at: new Date().toISOString(),
       is_current: true,
       trusted: !isSuspicious,
-      suspicious: isSuspicious
+      suspicious: isSuspicious,
+      // Links this row to the real auth session so "revoke one device" can target it (part_dr_revoke_one_session.sql).
+      auth_session_id: authSessionIdFromAccessToken(session.access_token)
     };
 
-    if (existingSession && (existingSession as any).id) {
-      result = await supabase
-        .from('user_sessions' as any)
-        .update(sessionData)
-        .eq('id', (existingSession as any).id);
-    } else {
-      result = await supabase
-        .from('user_sessions' as any)
-        .insert(sessionData);
+    let result = await write(sessionData);
+    // Until part_dr_revoke_one_session.sql has been run the column does not exist: retry without it.
+    if (result.error && /auth_session_id/.test(`${result.error.message} ${(result.error as any).details ?? ''}`)) {
+      const { auth_session_id: _omit, ...legacyRow } = sessionData;
+      result = await write(legacyRow);
     }
 
     const { error } = result;

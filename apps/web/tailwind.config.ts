@@ -3,6 +3,8 @@ import type { Config } from "tailwindcss";
 
 export default {
 	darkMode: ["class"],
+	// hover styles only on devices that can hover, so they do not stick after a tap on a phone
+	future: { hoverOnlyWhenSupported: true },
 	content: [
 		"./pages/**/*.{ts,tsx}",
 		"./components/**/*.{ts,tsx}",
@@ -19,6 +21,21 @@ export default {
 			}
 		},
 		extend: {
+			// h-13 / w-13 are used by the pitch buttons but are not in Tailwind's default scale
+			spacing: { '13': '3.25rem' },
+			// one motion scale: hover and press stay snappy, only big surfaces take longer
+			transitionDuration: { '300': '250ms', '500': '300ms', '700': '400ms', '1000': '500ms' },
+			// house easing: strong ease-out for anything entering or responding to input
+			transitionTimingFunction: {
+				DEFAULT: 'cubic-bezier(0.23, 1, 0.32, 1)',
+				'out-strong': 'cubic-bezier(0.23, 1, 0.32, 1)',
+				'in-out-strong': 'cubic-bezier(0.77, 0, 0.175, 1)',
+				drawer: 'cubic-bezier(0.32, 0.72, 0, 1)',
+			},
+			// bare `zoom-in` / `zoom-out` must never mean scale(0)
+			animationScale: { DEFAULT: '0.95' },
+			// one overlay stack: overlay < dialog < popover < alert < toast < tooltip
+			zIndex: { overlay: '1000', dialog: '1010', popover: '1100', alert: '1200', toast: '1300', tooltip: '1400' },
 			fontFamily: {
 				sans: [
 					"'Work Sans'",
@@ -270,7 +287,7 @@ export default {
 				'scale-in': 'scale-in 0.2s ease-out',
 				'slide-up': 'slide-up 0.5s ease-out',
 				'bounce-in': 'bounce-in 0.6s ease-out',
-				shimmer: 'shimmer 2s infinite',
+				shimmer: 'shimmer 1.6s linear infinite',
 				float: 'float 3s ease-in-out infinite',
 				glow: 'glow 2s ease-in-out infinite alternate',
 				'film-scroll': 'film-scroll 20s linear infinite'

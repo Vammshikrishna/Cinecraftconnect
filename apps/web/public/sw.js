@@ -5,7 +5,7 @@
  * Optimized for Supabase storage transformations.
  */
 
-const SHELL_CACHE = 'cinecraft-shell-v3';
+const SHELL_CACHE = 'cinecraft-shell-v4';
 const IMAGE_CACHE = 'cinecraft-images-v2';
 const API_CACHE = 'cinecraft-api-v2';
 
@@ -17,7 +17,7 @@ const SHELL_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/logo.png',
+  '/logo-192.jpg',
 ];
 
 // ─── Install ─────────────────────────────────────────────────────────────────
@@ -96,6 +96,11 @@ self.addEventListener('fetch', (event) => {
 // ─── Strategies ──────────────────────────────────────────────────────────────
 
 async function cacheFirstMedia(request, normalizedUrl) {
+  // Private files (signed or authenticated storage links) belong to one signed-in person: never keep them in the
+  // shared cache, where the next person using this browser could read them.
+  if (/\/storage\/v1\/object\/(sign|authenticated)\//.test(new URL(request.url).pathname)) {
+    return fetch(request);
+  }
   const cache = await caches.open(IMAGE_CACHE);
   // Try matching with normalized URL first
   const cached = await cache.match(normalizedUrl || request);

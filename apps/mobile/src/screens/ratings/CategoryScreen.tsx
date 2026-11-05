@@ -15,8 +15,10 @@ import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { useResponsive } from '../../hooks/useResponsive';
+import { useUserSettings } from '../../hooks/useUserSettings';
 import { CachedImage } from '../../components/common/CachedImage';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
 const FlashListAny = FlashList as any;
 import {
   fetchTrending,
@@ -43,6 +45,8 @@ import {
 } from '../../services/tmdbService';
 import { getSupabaseClient } from '@cinecraft/api';
 import { getCache, saveCache } from '../../services/offlineCache';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { useAppRole } from '../../hooks/useAppRole';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -92,19 +96,22 @@ interface CategoryMovieCardProps {
   currentRating: number;
   onRate: (item: TMDBContent, star: number) => void;
   onPress: (item: TMDBContent) => void;
+  themeColors: any;
+  isDark: boolean;
 }
 
-const CategoryMovieCard = React.memo(({ item, currentRating, onRate, onPress }: CategoryMovieCardProps) => {
+const CategoryMovieCard = React.memo(({ item, currentRating, onRate, onPress, themeColors, isDark }: CategoryMovieCardProps) => {
+  const { isInternal: staffViewer } = useAppRole();
   const title = item.title || item.name || 'Untitled';
   const releaseDate = item.release_date || item.first_air_date || '';
-  const year = releaseDate ? releaseDate.substring(0, 4) : '2026';
+  const year = releaseDate ? releaseDate.substring(0, 4) : '';
   const langCode = (item.original_language || 'en').toLowerCase();
   const langLabel = LANGUAGE_NAMES[langCode] || langCode.toUpperCase();
   const posterUrl = getSafeImageUrl(item.poster_path);
 
   return (
     <TouchableOpacity
-      style={styles.gridCard}
+      style={[styles.gridCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
       activeOpacity={0.9}
       onPress={() => onPress(item)}
     >
@@ -126,18 +133,19 @@ const CategoryMovieCard = React.memo(({ item, currentRating, onRate, onPress }: 
       </View>
 
       <View style={styles.cardInfoBody}>
-        <Text style={styles.movieTitleText} numberOfLines={2}>
+        <Text style={[styles.movieTitleText, { color: themeColors.textPrimary }]} numberOfLines={2}>
           {title}
         </Text>
 
-        <View style={styles.metaSubRow}>
-          <Text style={styles.langText}>{langLabel}</Text>
-          <Text style={styles.yearText}>{year}</Text>
+        <View style={[styles.metaSubRow, { borderTopColor: themeColors.divider }]}>
+          <Text style={[styles.langText, { color: themeColors.textSecondary }]}>{langLabel}</Text>
+          <Text style={[styles.yearText, { color: themeColors.textMuted }]}>{year}</Text>
         </View>
 
+        {!staffViewer && (
         <View style={styles.starRatingRow}>
           {[1, 2, 3, 4, 5].map((star) => (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Rate ${star} out of 5`} accessibilityState={{ selected: star <= currentRating }} hitSlop={{ top: 12, bottom: 12, left: 3, right: 3 }}
               key={star}
               onPress={() => onRate(item, star)}
               activeOpacity={0.7}
@@ -146,11 +154,12 @@ const CategoryMovieCard = React.memo(({ item, currentRating, onRate, onPress }: 
               <Icon
                 name="star"
                 size={15}
-                color={star <= currentRating ? '#F59E0B' : '#E2E8F0'}
+                color={star <= currentRating ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0')}
               />
             </TouchableOpacity>
           ))}
         </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -158,6 +167,7 @@ const CategoryMovieCard = React.memo(({ item, currentRating, onRate, onPress }: 
 
 export const CategoryScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { isTablet, isLargeTablet, numPosterColumns } = useResponsive();
+  const { themeColors, isDark } = useUserSettings();
   const { categoryId, title: routeTitle } = route.params || {};
   const categoryConfig = categoryId ? CATEGORY_MAP[categoryId] : null;
   const pageTitle = routeTitle || categoryConfig?.title || 'Category';
@@ -313,7 +323,8 @@ export const CategoryScreen = ({ route, navigation }: { route: any; navigation: 
     const tmdbId = item.id;
     const mediaType = item.title ? 'movie' : 'tv';
 
-    // Optimistic Update
+    // Optimistic Update (rolled back on failure)
+    const previousRating = userRatings[tmdbId];
     setUserRatings((prev) => ({ ...prev, [tmdbId]: rating }));
 
     try {
@@ -329,9 +340,15 @@ export const CategoryScreen = ({ route, navigation }: { route: any; navigation: 
 
       if (error) throw error;
     } catch (e: any) {
-      Alert.alert('Rating Error', e.message || 'Could not save rating.');
+      setUserRatings((prev) => {
+        const next = { ...prev };
+        if (previousRating === undefined) delete next[tmdbId];
+        else next[tmdbId] = previousRating;
+        return next;
+      });
+      Alert.alert('Rating Error', friendlyError(e, 'Could not save rating.'));
     }
-  }, [currentUserId]);
+  }, [currentUserId, userRatings]);
 
   const handleMoviePress = useCallback((item: TMDBContent) => {
     const title = item.title || item.name || 'Untitled';
@@ -355,12 +372,14 @@ export const CategoryScreen = ({ route, navigation }: { route: any; navigation: 
       currentRating={userRatings[item.id] || 0}
       onRate={handleRateMovie}
       onPress={handleMoviePress}
+      themeColors={themeColors}
+      isDark={isDark}
     />
-  ), [userRatings, handleRateMovie, handleMoviePress]);
+  ), [userRatings, handleRateMovie, handleMoviePress, themeColors, isDark]);
 
   return (
     <TabletContainer
-      backgroundColor="#F8F9FA"
+      backgroundColor={themeColors.bgScreen}
       header={
         <Header
           title={pageTitle}
@@ -370,9 +389,7 @@ export const CategoryScreen = ({ route, navigation }: { route: any; navigation: 
       }
     >
       {loading && items.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={ORANGE} />
-        </View>
+        <ScreenSkeleton variant="detail" />
       ) : (
         <FlashListAny
           key={`cat-grid-${numPosterColumns}`}
@@ -403,7 +420,7 @@ export const CategoryScreen = ({ route, navigation }: { route: any; navigation: 
           ListEmptyComponent={
             !loading ? (
               <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No titles found in this category.</Text>
+                <Text style={[styles.emptyText, { color: themeColors.textSecondary }]}>No titles found in this category.</Text>
               </View>
             ) : null
           }
@@ -447,7 +464,7 @@ const styles = StyleSheet.create({
   },
   posterWrapper: {
     width: '100%',
-    height: 230,
+    aspectRatio: 2 / 3, // follows the card width (a fixed 230 cropped posters on a tablet's wide cards)
     position: 'relative',
     backgroundColor: '#F1F5F9',
   },
@@ -475,15 +492,15 @@ const styles = StyleSheet.create({
   },
   appRatingText: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardInfoBody: {
     padding: 10,
   },
   movieTitleText: {
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     lineHeight: 18,
@@ -500,12 +517,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   langText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   yearText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
   },

@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { useVendorMutation } from '@/hooks/mutations/useVendorMutation';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface VendorCardProps {
     vendor: Vendor;
@@ -35,19 +37,19 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
         e.preventDefault();
         e.stopPropagation();
 
-        if (!confirm('Are you sure you want to delete this vendor?')) return;
+        if (!await confirmDialog('Are you sure you want to delete this vendor?')) return;
 
         try {
             await deleteVendor(vendor.id);
             toast({ title: "Success", description: "Vendor deleted successfully" });
         } catch (error: any) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+            toast({ title: "Error", description: friendlyError(error), variant: "destructive" });
         }
     };
 
     return (
-        <div onClick={() => push(`/vendors/${vendor.id}`)} className="no-underline block group h-full relative cursor-pointer">
-            <div className="glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2">
+        <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => push(`/vendors/${vendor.id}`)} className="no-underline block group h-full relative cursor-pointer">
+            <div className="glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-1">
                 {/* Cover */}
                 <div className="relative aspect-video overflow-hidden bg-muted flex-shrink-0">
                     {cover ? (
@@ -77,7 +79,7 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
                                 e.stopPropagation();
                                 onDismiss(vendor.id);
                             }}
-                            className="absolute top-3 left-3 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+                            className="absolute top-3 left-3 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
                             title="Dismiss suggestion"
                         >
                             <X size={14} strokeWidth={3} />
@@ -86,18 +88,18 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
 
                     <div className="absolute top-3 right-3 flex items-center gap-2 shadow-lg">
                         {vendor.is_verified && (
-                            <div className="px-2.5 py-1 rounded-full bg-primary/90 backdrop-blur-md border border-white/20 text-[9px] font-black text-primary-foreground uppercase tracking-[0.1em] flex items-center gap-1 shadow-lg">
+                            <div className="px-2.5 py-1 rounded-full bg-primary/90 border border-white/20 text-[12px] font-black text-primary-foreground uppercase tracking-[0.1em] flex items-center gap-1 shadow-lg">
                                 <CheckCircle2 size={10} /> VERIFIED
                             </div>
                         )}
-                        <div className="px-2.5 py-1 rounded-full bg-background/80 backdrop-blur-md border border-white/20 text-[9px] font-black text-foreground uppercase tracking-[0.1em]">
+                        <div className="px-2.5 py-1 rounded-full bg-background/80 border border-white/20 text-[12px] font-black text-foreground uppercase tracking-[0.1em]">
                             {categories[0] || 'Vendor'}
                         </div>
                         {isAdmin && (
                             <div className="relative z-30" onClick={(e) => e.stopPropagation()}>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full bg-background/80 backdrop-blur-md hover:bg-background border border-white/20">
+                                        <Button aria-label="More options" variant="ghost" size="icon" className="h-6 w-6 rounded-full bg-background/80 hover:bg-background border border-white/20">
                                             <MoreVertical size={12} className="text-foreground" />
                                         </Button>
                                     </DropdownMenuTrigger>
@@ -124,32 +126,32 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
                                 <div className="px-2 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex flex-col items-center justify-center shrink-0 mt-0.5">
                                     <div className="flex items-center gap-0.5">
                                         <Star size={10} className="text-yellow-500 fill-yellow-500" />
-                                        <span className="text-[10px] font-black text-yellow-600 dark:text-yellow-400">{averageRating.toFixed(1)}</span>
+                                        <span className="text-[12px] font-black text-yellow-600 dark:text-yellow-400">{averageRating.toFixed(1)}</span>
                                     </div>
-                                    <span className="text-[7px] font-bold text-yellow-600/60 dark:text-yellow-400/60 uppercase tracking-widest">{reviewCount}</span>
+                                    <span className="text-xs font-medium text-yellow-600/60 dark:text-yellow-400/60">{reviewCount}</span>
                                 </div>
                             )}
                         </div>
-                        <p className="text-[11px] md:text-xs text-muted-foreground/80 leading-relaxed line-clamp-2 font-medium">
+                        <p className="text-[12px] md:text-xs text-muted-foreground/80 leading-relaxed line-clamp-2 font-medium">
                             {vendor.description}
                         </p>
                     </div>
 
                     <div className="space-y-2.5 mt-auto pt-2">
                         <div className="flex flex-wrap items-center gap-2 mt-auto">
-                            <div className="font-mono flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
-                                <span className="truncate">LOC // {vendor.location}</span>
+                            <div className="flex items-center text-[12px] font-medium text-muted-foreground gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
+                                <span className="truncate">{vendor.location}</span>
                             </div>
                             {categories[1] && (
-                                <div className="font-mono flex items-center text-[10px] font-bold text-primary uppercase tracking-widest gap-1.5 bg-primary/10 py-1 px-2.5 rounded border border-primary/20 max-w-full">
-                                    <span className="truncate">CAT // {categories[1]}</span>
+                                <div className="flex items-center text-[12px] font-medium text-primary gap-1.5 bg-primary/10 py-1 px-2.5 rounded border border-primary/20 max-w-full">
+                                    <span className="truncate">{categories[1]}</span>
                                 </div>
                             )}
                         </div>
 
                         <div className="flex items-end justify-between pt-3 border-t border-black/5 dark:border-white/5 mt-2">
                             <div className="text-primary font-black text-sm tracking-tight">View profile →</div>
-                            <div className="text-[10px] font-bold text-muted-foreground uppercase bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
+                            <div className="text-[12px] font-bold text-muted-foreground uppercase bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
                                 Vendor
                             </div>
                         </div>

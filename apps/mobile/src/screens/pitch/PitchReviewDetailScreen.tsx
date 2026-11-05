@@ -5,15 +5,23 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   InteractionManager,
+  Linking,
+  Share,
 } from 'react-native';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { getSupabaseClient } from '@cinecraft/api';
+import { isTabletDevice } from '../../utils/pageType';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { ReviewNotesPanel } from '../../components/pitch/ReviewNotesPanel';
+import { ReportModal } from '../../components/modals/ReportModal';
+import { useToast } from '../../contexts/ToastContext';
+import { fetchNdaRecord, buildNdaRecordText, blockUser, attachmentLabel, signPitchAttachment, friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -34,9 +42,10 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
   const [submission, setSubmission] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const { showToast } = useToast();
 
   const fetchDetail = async () => {
-    if (!submissionId) return;
+    if (!submissionId) { setLoading(false); return; }
     setLoading(true);
     try {
       const supabase = getSupabaseClient();
@@ -51,12 +60,15 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
 
       if (error) throw error;
 
-      // Auto-mark as seen if newly submitted
+      // Auto-mark as seen if newly submitted, by the call owner only (the database refuses anyone else)
       if (data.status === 'submitted') {
-        await (supabase.from('pitch_submissions') as any)
-          .update({ status: 'seen', seen_at: new Date().toISOString() })
-          .eq('id', submissionId);
-        data.status = 'seen';
+        const { data: { user: reader } } = await supabase.auth.getUser();
+        if (reader && reader.id !== data.submitter_id) {
+          const { error: seenError } = await (supabase.from('pitch_submissions') as any)
+            .update({ status: 'seen', seen_at: new Date().toISOString() })
+            .eq('id', submissionId);
+          if (!seenError) data.status = 'seen';
+        }
       }
 
       setSubmission(data);
@@ -89,7 +101,48 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
     return () => task.cancel();
   }, [submissionId]);
 
+  const [reportOpen, setReportOpen] = useState(false);
+  const openRef = async (ref: string) => {
+    try {
+      const url = ref.startsWith('pitch_assets:') ? await signPitchAttachment(getSupabaseClient(), ref) : ref;
+      if (/^https?:\/\//i.test(url)) await Linking.openURL(url);
+    } catch { Alert.alert('Could not open the file'); }
+  };
+  const shareNdaRecord = async () => {
+    try {
+      const rec = await fetchNdaRecord(getSupabaseClient(), submissionId);
+      if (!rec) { Alert.alert('No NDA record available'); return; }
+      await Share.share({ title: 'NDA record', message: buildNdaRecordText(rec) });
+    } catch { Alert.alert('Could not build the NDA record'); }
+  };
+  const confirmBlock = () => {
+    Alert.alert('Block this writer?', 'They will not be able to message you or send you pitches.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Block', style: 'destructive',
+        onPress: async () => {
+          try { if (ownerId) await blockUser(getSupabaseClient(), ownerId, submission.submitter_id); Alert.alert('Writer blocked'); } catch (e: any) { Alert.alert('Could not block', friendlyError(e, 'Please try again.')); }
+        },
+      },
+    ]);
+  };
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  useEffect(() => { getSupabaseClient().auth.getUser().then(({ data }) => setOwnerId(data.user?.id ?? null)).catch(() => { }); }, []);
+
+  // "Pass Respectfully" is final for the writer, so ask first; everything else is reversible via the Undo toast.
+  const requestStatus = (act: { value: string; label: string }) => {
+    if (act.value === 'passed') {
+      Alert.alert('Pass on this pitch?', 'The writer will be told you passed. You can change the status afterwards.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Pass', style: 'destructive', onPress: () => handleUpdateStatus(act.value) },
+      ]);
+      return;
+    }
+    handleUpdateStatus(act.value);
+  };
+
   const handleUpdateStatus = async (newStatus: string) => {
+    const previousStatus = submission?.status;
     setUpdating(true);
     try {
       const supabase = getSupabaseClient();
@@ -105,9 +158,23 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
       if (error) throw error;
 
       setSubmission((prev: any) => ({ ...prev, ...updates }));
-      Alert.alert('Status Updated', `Pitch status changed to ${newStatus.replace(/_/g, ' ').toUpperCase()}.`);
+      showToast({
+        type: 'success',
+        message: `Pitch status changed to ${newStatus.replace(/_/g, ' ').toUpperCase()}.`,
+        duration: 5000,
+        action: previousStatus && previousStatus !== newStatus ? {
+          label: 'Undo',
+          onPress: async () => {
+            const { error: undoError } = await (getSupabaseClient().from('pitch_submissions') as any)
+              .update({ status: previousStatus })
+              .eq('id', submissionId);
+            if (undoError) { Alert.alert('Error', friendlyError(undoError, 'Could not undo.')); return; }
+            setSubmission((prev: any) => ({ ...prev, status: previousStatus }));
+          },
+        } : undefined,
+      });
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update status.');
+      Alert.alert('Error', friendlyError(err, 'Failed to update status.'));
     } finally {
       setUpdating(false);
     }
@@ -115,13 +182,21 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={ORANGE} />
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+        <Header title="Review Pitch Submission" showLogo={false} onBack={() => navigation.goBack()} />
+        <ScreenSkeleton variant="detail" />
       </View>
     );
   }
 
-  if (!submission) return null;
+  if (!submission) {
+    return (
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+        <Header title="Review Pitch Submission" showLogo={false} onBack={() => navigation.goBack()} />
+        <LoadErrorState onRetry={fetchDetail} />
+      </View>
+    );
+  }
 
   const writerName = submission.profiles?.full_name || submission.profiles?.username || 'Writer';
 
@@ -133,8 +208,8 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
         onBack={() => navigation.goBack()}
       />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <TabletContainer maxWidth={720}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <TabletContainer maxWidth={920}>
           {/* Confidential Banner */}
           <View style={styles.confidentialBanner}>
             <Icon name="shield" size={14} color="#D97706" />
@@ -238,6 +313,23 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
             </>
           ) : null}
 
+          {/* Attachments */}
+          {(submission.treatment_url || submission.lookbook_url || submission.full_deck_url || (submission.attachment_paths || []).length > 0) && (
+            <>
+              <Text style={[styles.sectionHeader, { color: themeColors.textMuted }]}>ATTACHMENTS</Text>
+              {[
+                submission.full_deck_url ? { ref: submission.full_deck_url, label: 'Full deck (requested)' } : null,
+                submission.treatment_url ? { ref: submission.treatment_url, label: 'Treatment / pitch deck' } : null,
+                submission.lookbook_url ? { ref: submission.lookbook_url, label: 'Lookbook' } : null,
+                ...(submission.attachment_paths || []).map((ref: string, i: number) => ({ ref, label: "Writer's file: " + attachmentLabel(ref, i) })),
+              ].filter(Boolean).map((a: any) => (
+                <TouchableOpacity key={a.ref} onPress={() => openRef(a.ref)} accessibilityRole="link" style={{ minHeight: 44, justifyContent: 'center' }}>
+                  <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 14 }}>{a.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+
           {/* Legal & Guild Verification */}
           <Text style={[styles.sectionHeader, { color: themeColors.textMuted }]}>IP & GUILD DECLARATIONS</Text>
           <View
@@ -285,8 +377,8 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
                     },
                     active && styles.actionBtnActive,
                   ]}
-                  onPress={() => handleUpdateStatus(act.value)}
-                  disabled={updating}
+                  onPress={() => requestStatus(act)}
+                  disabled={updating || submission.status === 'withdrawn'}
                 >
                   <Text style={[styles.actionBtnText, { color: act.color }]}>
                     {act.label} {active ? '✓' : ''}
@@ -295,6 +387,29 @@ export const PitchReviewDetailScreen = ({ route, navigation }: { route: any; nav
               );
             })}
           </View>
+
+          {!!ownerId && submission.status !== 'withdrawn' && submission.submitter_id !== ownerId && (
+            <ReviewNotesPanel submissionId={submission.id} ownerId={ownerId} initialFeedback={submission.feedback} />
+          )}
+
+          <View style={{ marginBottom: 30, gap: 4 }}>
+            {!!submission.nda_signature && (
+              <TouchableOpacity onPress={shareNdaRecord} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }}>
+                <Text style={{ fontWeight: '700', color: themeColors.textSecondary }}>Share the NDA record</Text>
+              </TouchableOpacity>
+            )}
+            {!!ownerId && submission.submitter_id !== ownerId && (
+              <>
+                <TouchableOpacity onPress={() => setReportOpen(true)} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }}>
+                  <Text style={{ fontWeight: '700', color: themeColors.textSecondary }}>Report this pitch</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={confirmBlock} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }}>
+                  <Text style={{ fontWeight: '700', color: '#DC2626' }}>Block this writer</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+          <ReportModal visible={reportOpen} onClose={() => setReportOpen(false)} targetTitle="this pitch" targetType="pitch_submission" targetId={submission.id} />
         </TabletContainer>
       </ScrollView>
     </View>
@@ -312,7 +427,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    padding: 16,
+    padding: isTabletDevice ? 24 : 16,
+    paddingBottom: isTabletDevice ? 72 : 40,
   },
   confidentialBanner: {
     flexDirection: 'row',
@@ -328,13 +444,13 @@ const styles = StyleSheet.create({
   },
   confidentialText: {
     color: '#D97706',
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 26 : 20,
+    fontWeight: '700',
     color: INK,
     marginBottom: 4,
   },
@@ -360,7 +476,7 @@ const styles = StyleSheet.create({
   directPitchText: {
     color: '#D97706',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   writerCard: {
     flexDirection: 'row',
@@ -369,7 +485,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 14,
-    padding: 12,
+    padding: isTabletDevice ? 16 : 12,
     gap: 10,
     marginBottom: 16,
   },
@@ -384,11 +500,11 @@ const styles = StyleSheet.create({
   writerAvatarText: {
     color: ORANGE,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   writerName: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   writerCraft: {
@@ -397,8 +513,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   sectionHeader: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 14,
@@ -414,19 +530,19 @@ const styles = StyleSheet.create({
   },
   quoteText: {
     color: INK,
-    fontSize: 14,
+    fontSize: isTabletDevice ? 16 : 14,
     fontStyle: 'italic',
-    lineHeight: 20,
+    lineHeight: isTabletDevice ? 24 : 20,
   },
   bodyText: {
     color: '#334155',
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: isTabletDevice ? 15 : 14,
+    lineHeight: isTabletDevice ? 24 : 21,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
-    padding: 12,
+    padding: isTabletDevice ? 18 : 12,
     marginBottom: 10,
   },
   ipBox: {
@@ -445,7 +561,7 @@ const styles = StyleSheet.create({
   },
   ipText: {
     color: '#15803D',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   actionGrid: {
@@ -457,8 +573,8 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: isTabletDevice ? 18 : 12,
+    paddingVertical: isTabletDevice ? 12 : 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -466,7 +582,7 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   actionBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 13 : 12,
+    fontWeight: '700',
   },
 });

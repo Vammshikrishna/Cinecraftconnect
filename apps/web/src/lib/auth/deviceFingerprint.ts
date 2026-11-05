@@ -25,12 +25,15 @@ export const collectDeviceMetadata = async (): Promise<DeviceFingerprint> => {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
   let browserName = 'Unknown Browser';
   if (ua.includes('Chrome')) browserName = 'Chrome';
+  if (ua.includes('Edg/')) browserName = 'Edge';
+  if (ua.includes('OPR/')) browserName = 'Opera';
   if (ua.includes('Firefox')) browserName = 'Firefox';
   if (ua.includes('Safari') && !ua.includes('Chrome')) browserName = 'Safari';
 
   return {
     deviceId,
-    deviceName: /Mobi|Android/i.test(ua) ? 'Mobile Browser' : 'Desktop Browser',
+    // "Chrome on Windows": a person can tell their own devices apart in Settings > Where you are logged in
+    deviceName: `${browserName === 'Unknown Browser' ? 'Browser' : browserName} on ${/Android/i.test(ua) ? 'Android' : /iPhone|iPad|iPod/i.test(ua) ? 'iOS' : /Windows/i.test(ua) ? 'Windows' : /Mac OS X|Macintosh/i.test(ua) ? 'macOS' : /Linux|X11/i.test(ua) ? 'Linux' : 'web'}${/Mobi/i.test(ua) ? ' (mobile)' : ''}`,
     platform: 'web',
     osVersion: typeof navigator !== 'undefined' ? navigator.platform : 'Unknown',
     browserInfo: browserName,

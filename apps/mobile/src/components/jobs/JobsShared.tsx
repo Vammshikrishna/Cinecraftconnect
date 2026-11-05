@@ -108,7 +108,7 @@ export const RejectModal = ({
               <Text style={{ color: themeColors.textPrimary, fontWeight: '700' }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[s.dialogBtn, { backgroundColor: '#DC2626' }]} onPress={() => onConfirm(reason === 'Other' ? other : reason)}>
-              <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Reject candidate</Text>
+              <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Reject candidate</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -133,11 +133,11 @@ export const addInterviewToCalendar = (opts: { title: string; startsAt: string; 
 
 const s = StyleSheet.create({
   pill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, alignSelf: 'flex-start' },
-  pillText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6 },
+  pillText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.6 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   dialog: { width: '100%', maxWidth: 420, borderRadius: 20, borderWidth: 1, padding: 18, gap: 8 },
-  dialogTitle: { fontSize: 17, fontWeight: '800' },
-  dialogSub: { fontSize: 12.5, marginBottom: 4 },
+  dialogTitle: { fontSize: 18, fontWeight: '700' },
+  dialogSub: { fontSize: 12, marginBottom: 4 },
   reasonRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, height: 42, fontSize: 13 },
   dialogActions: { flexDirection: 'row', gap: 10, marginTop: 8 },

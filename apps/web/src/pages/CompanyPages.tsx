@@ -22,7 +22,7 @@ const CompanyPages = () => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState({ verifiedOnly: false, companySize: '' });
   
-  const { data: rawPages = [], isLoading } = useCompanyPages(searchQuery);
+  const { data: rawPages = [], isLoading, isError, refetch } = useCompanyPages(searchQuery);
   
   // Apply local filters
   const pages = rawPages.filter(page => {
@@ -37,13 +37,13 @@ const CompanyPages = () => {
   const { isInternal } = useAppRole();
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/30">
+    <div className="min-h-dvh bg-background selection:bg-primary/30">
       {/* Background Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
+      <main className="max-w-[1560px] mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
         <PageHeader 
           title="Companies" 
           subtitle="Explore film studios, production houses, and equipment rentals" 
@@ -51,7 +51,7 @@ const CompanyPages = () => {
           actionsAtTop={true}
           actions={
             (isStudio && !isInternal) && (
-                <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
+                <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition shrink-0 text-sm">
                   <Plus size={18} strokeWidth={3} />
                   <span className="hidden xs:inline">Create a Page</span>
                   <span className="xs:hidden">Create</span>
@@ -113,7 +113,7 @@ const CompanyPages = () => {
               <TrendingUp className="h-6 w-6 text-primary" />
               <h2 className="text-2xl font-black tracking-tight uppercase">Featured Organizations</h2>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-6">
               {pages
                 .filter(p => p.is_verified)
                 .slice(0, 4)
@@ -133,10 +133,16 @@ const CompanyPages = () => {
             </h2>
           </div>
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-6">
               {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
                 <PageSkeleton key={i} />
               ))}
+            </div>
+          ) : isError && rawPages.length === 0 ? (
+            <div role="alert" className="text-center py-24">
+              <h3 className="text-2xl font-black mb-2">Could not load companies</h3>
+              <p className="text-muted-foreground mb-6">Check your connection and try again.</p>
+              <Button variant="outline" onClick={() => refetch()}>Try again</Button>
             </div>
           ) : pages.length === 0 ? (
             <div className="text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
@@ -157,7 +163,7 @@ const CompanyPages = () => {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-6">
               {pages.map(page => (
                 <CompanyPageCard key={page.id} page={page} />
               ))}

@@ -315,6 +315,7 @@ export function l1PreloadAccountCache(account: {
   avatarUrl: string;
   accountType: string;
   email: string;
+  onboardingCompleted?: boolean;
 }): void {
   // Pre-warm the profile cache key used by ProfileScreen
   const skeletonProfile = {
@@ -325,7 +326,8 @@ export function l1PreloadAccountCache(account: {
     account_type: account.accountType,
     email: account.email,
     is_verified: false,
-    onboarding_completed: true,
+    // real flag when known; accounts saved before the field existed count as finished
+    onboarding_completed: account.onboardingCompleted !== false,
     is_banned: false,
   };
   if (!l1MemoryCache.has(`profile_${account.userId}`)) {
@@ -351,6 +353,7 @@ export function warmAllSavedAccountCaches(accounts: Array<{
   avatarUrl: string;
   accountType: string;
   email: string;
+  onboardingCompleted?: boolean;
 }>): void {
   for (const account of accounts) {
     // Only populate if not already in cache (avoid overwriting a freshly-fetched profile)
@@ -363,7 +366,7 @@ export function warmAllSavedAccountCaches(accounts: Array<{
         account_type: account.accountType,
         email: account.email,
         is_verified: false,
-        onboarding_completed: true,
+        onboarding_completed: account.onboardingCompleted !== false,
         is_banned: false,
       });
     }

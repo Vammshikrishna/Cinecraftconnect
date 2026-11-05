@@ -63,6 +63,8 @@ Deno.serve(async (req: Request) => {
         title: name,
         description,
         room_type,
+        // A private room must not be public: without this the column default made every new room public.
+        is_public: room_type === "public",
         creator_id: user.id,
       })
       .select()

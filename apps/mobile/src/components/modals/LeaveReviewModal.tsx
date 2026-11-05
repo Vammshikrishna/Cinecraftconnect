@@ -14,6 +14,7 @@ import {
 import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 
@@ -78,17 +79,17 @@ export const LeaveReviewModal: React.FC<LeaveReviewModalProps> = ({
       onClose();
       Alert.alert('Review Submitted! ⭐', 'Thank you for rating and reviewing.');
     } catch (e: any) {
-      Alert.alert('Failed to Submit Review', e.message || 'Could not submit review. Please try again.');
+      Alert.alert('Failed to Submit Review', friendlyError(e, 'Could not submit review. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
-  const renderStars = (currentVal: number, setVal: (v: number) => void) => {
+  const renderStars = (currentVal: number, setVal: (v: number) => void, name: string) => {
     return (
       <View style={styles.starsRow}>
         {[1, 2, 3, 4, 5].map((star) => (
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${name} rating: ${star} out of 5`} accessibilityState={{ selected: star === currentVal }}
             key={star}
             onPress={() => setVal(star)}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
@@ -118,8 +119,8 @@ export const LeaveReviewModal: React.FC<LeaveReviewModalProps> = ({
                   <Text style={[styles.title, { color: themeColors.textPrimary }]}>Rate & Review Item</Text>
                   <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>Share your booking & gear condition feedback</Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -127,7 +128,7 @@ export const LeaveReviewModal: React.FC<LeaveReviewModalProps> = ({
                 {/* OVERALL RATING */}
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>OVERALL EXPERIENCE RATING *</Text>
                 <View style={[styles.ratingBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                  {renderStars(rating, setRating)}
+                  {renderStars(rating, setRating, 'Overall')}
                   <Text style={[styles.ratingScoreText, { color: themeColors.textPrimary }]}>{rating} / 5 Stars</Text>
                 </View>
 
@@ -136,7 +137,7 @@ export const LeaveReviewModal: React.FC<LeaveReviewModalProps> = ({
                 {/* CONDITION RATING */}
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>CONDITION ACCURACY RATING *</Text>
                 <View style={[styles.ratingBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                  {renderStars(conditionRating, setConditionRating)}
+                  {renderStars(conditionRating, setConditionRating, 'Condition')}
                   <Text style={[styles.ratingScoreText, { color: themeColors.textPrimary }]}>
                     {conditionRating} / 5 ({conditionRating >= 4 ? 'Matches Description' : 'Discrepancies Noted'})
                   </Text>
@@ -191,6 +192,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     maxHeight: '90%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -206,16 +210,16 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 6,
@@ -234,7 +238,7 @@ const styles = StyleSheet.create({
   },
   ratingScoreText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   input: {
     borderWidth: 1,
@@ -258,8 +262,8 @@ const styles = StyleSheet.create({
   },
   submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

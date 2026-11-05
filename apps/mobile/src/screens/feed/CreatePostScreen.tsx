@@ -1,5 +1,17 @@
 import { CachedImage } from '../../components/common/CachedImage';
 import { orTerm } from '../../utils/postgrest';
+import { MentionInput } from '../../components/common/MentionInput';
+import { type MentionUser } from '../../utils/mentions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinkPreviewCard } from '../../components/feed/PostExtras';
+import {
+  extractHashtags, buildMediaItems, mediaColumns, mediaSizeFields, checkPost, describePostError, normalizeCategory, isVideoMedia,
+  geocodeSearch, geocodeReverse,
+  schedulePresets, checkSchedule, formatSchedule, inviteCollaborators, COLLAB_MAX,
+  firstUrl, fetchLinkPreview, searchGifs, GIF_CREDIT, type GifItem, type LinkPreview,
+  emptyPollDraft, checkPollDraft, pollDraftInUse, attachPoll, POLL_DURATIONS, POLL_MAX_OPTIONS, POLL_OPTION_MAX, POLL_QUESTION_MAX, type PollDraft,
+  POST_MEDIA_MAX, POST_VIDEO_MAX_SECONDS, POST_ALT_TEXT_MAX, POST_CAPTION_MAX, POST_CATEGORIES, POST_AUDIENCES, normalizeAudience,
+} from '@cinecraft/core';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -7,6 +19,7 @@ import {
   TextInput,
   StyleSheet,
   Alert,
+  DeviceEventEmitter,
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
@@ -15,8 +28,7 @@ import {
   ActivityIndicator,
   Modal,
   Switch,
-  Dimensions,
-  PanResponder,
+  useWindowDimensions,
   InteractionManager,
 } from 'react-native';
 import { pickAttachments } from '../../services/attachmentPicker';
@@ -24,33 +36,23 @@ import DocumentPicker from 'react-native-document-picker';
 // @ts-ignore
 import { Video } from 'react-native-video-compressor';
 import { uploadMediaPipeline } from '../../services/mediaPipeline';
-import { captureRef } from 'react-native-view-shot';
+import { PhotoEditor } from '../../components/create/PhotoEditor';
+import { renderPhoto, photoInfo, photoEditingAvailable, releasePhoto, videoEditingAvailable, videoInfo, trimVideo, type VideoEdit } from '../../services/photoRender';
+import { VideoTrimmer } from '../../components/create/VideoTrimmer';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
+import { JobShareCard } from '../../components/chat/JobShareCard';
 import { getSupabaseClient } from '@cinecraft/api';
-import { ENV } from '../../config/env';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useAccountType } from '../../hooks/useAccountType';
+import { friendlyError, defaultRecipe, type PhotoRecipe } from '@cinecraft/core';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ORANGE = '#FF4B33';
 const BLUE_BTN = '#1D72F2';
-const INK = '#0D0D0D';
 
 type Step = 'select' | 'preview' | 'details';
-type EditToolMode = 'main' | 'text' | 'filter' | 'adjust' | 'ratio';
 
-const CRAFT_OPTIONS = [
-  'General',
-  'Direction',
-  'Cinematography',
-  'Screenwriting',
-  'Acting',
-  'Editing',
-  'Sound Design',
-  'VFX & CGI',
-  'Production',
-  'Music & Score',
-];
+const CRAFT_OPTIONS: string[] = [...POST_CATEGORIES];
 
 const POPULAR_LOCATIONS = [
   'Film City, Mumbai',
@@ -80,412 +82,66 @@ export interface TextOverlayItem {
   y: number; // Top percentage (0 - 100)
 }
 
-const FILTERS = [
-  { id: 'Normal', label: 'Normal', color: 'transparent', maxOpacity: 0, initial: 'N' },
-  { id: 'Clarendon', label: 'Clarendon', color: '#2563EB', maxOpacity: 0.38, initial: 'C' },
-  { id: 'Gingham', label: 'Gingham', color: '#D97706', maxOpacity: 0.35, initial: 'G' },
-  { id: 'Moon', label: 'Moon (B&W)', color: '#000000', maxOpacity: 0.85, initial: 'M' },
-  { id: 'Lark', label: 'Lark', color: '#059669', maxOpacity: 0.32, initial: 'L' },
-  { id: 'Reyes', label: 'Reyes', color: '#DB2777', maxOpacity: 0.32, initial: 'R' },
-  { id: 'Juno', label: 'Juno', color: '#7C3AED', maxOpacity: 0.38, initial: 'J' },
-  { id: 'Slumber', label: 'Slumber', color: '#374151', maxOpacity: 0.48, initial: 'S' },
-  { id: 'Crema', label: 'Crema', color: '#F59E0B', maxOpacity: 0.38, initial: 'C' },
-  { id: 'CineGold', label: 'CineGold 35mm', color: '#B45309', maxOpacity: 0.42, initial: 'CG' },
-  { id: 'CyberTeal', label: 'CyberTeal Sci-Fi', color: '#0891B2', maxOpacity: 0.42, initial: 'CT' },
-  { id: 'Monolith', label: 'Monolith Noir', color: '#111827', maxOpacity: 0.82, initial: 'MN' },
-];
-
-const ADJUST_CONFIGS: Record<string, { label: string; icon: string; min: number; max: number; defaultVal: number }> = {
-  brightness: { label: 'Brightness', icon: 'sun', min: -50, max: 50, defaultVal: 0 },
-  contrast: { label: 'Contrast', icon: 'sliders', min: -50, max: 50, defaultVal: 0 },
-  saturate: { label: 'Saturation', icon: 'droplets', min: -50, max: 50, defaultVal: 0 },
-  warmth: { label: 'Warmth', icon: 'thermometer', min: -50, max: 50, defaultVal: 0 },
-  vignette: { label: 'Vignette', icon: 'circle', min: 0, max: 100, defaultVal: 0 },
-  fade: { label: 'Fade', icon: 'cloud', min: 0, max: 100, defaultVal: 0 },
-  sharpen: { label: 'Sharpen / Lux', icon: 'sparkles', min: 0, max: 100, defaultVal: 0 },
-  structure: { label: 'Structure', icon: 'crop', min: 0, max: 100, defaultVal: 0 },
-  colour: { label: 'Color Tint', icon: 'palette', min: -50, max: 50, defaultVal: 0 },
-  sepia: { label: 'Sepia', icon: 'film', min: 0, max: 100, defaultVal: 0 },
-};
-
-// -------------------------------------------------------------
-// Interactive Touch Slider Component (Ultra-Sleek & Continuous)
-// -------------------------------------------------------------
-interface TouchSliderProps {
-  min: number;
-  max: number;
-  value: number;
-  onChange: (val: number) => void;
-  label?: string;
-  unit?: string;
-}
-
-const TouchSlider: React.FC<TouchSliderProps> = ({ min, max, value, onChange, label, unit = '' }) => {
-  const isDragging = useRef(false);
-  const startVal = useRef(value);
-  const [trackWidth, setTrackWidth] = useState(SCREEN_WIDTH - 64);
-  const [displayVal, setDisplayVal] = useState(value);
-
-  useEffect(() => {
-    if (!isDragging.current) {
-      setDisplayVal(value);
-      startVal.current = value;
-    }
-  }, [value]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt) => {
-        isDragging.current = true;
-        startVal.current = displayVal;
-        const locX = evt.nativeEvent.locationX;
-        if (typeof locX === 'number' && trackWidth > 0) {
-          const ratio = Math.max(0, Math.min(1, locX / trackWidth));
-          const computed = Math.round(min + ratio * (max - min));
-          startVal.current = computed;
-          setDisplayVal(computed);
-          onChange(computed);
-        }
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        if (trackWidth > 0) {
-          const deltaVal = (gestureState.dx / trackWidth) * (max - min);
-          const computed = Math.round(Math.max(min, Math.min(max, startVal.current + deltaVal)));
-          setDisplayVal(computed);
-          onChange(computed);
-        }
-      },
-      onPanResponderRelease: () => {
-        isDragging.current = false;
-      },
-      onPanResponderTerminate: () => {
-        isDragging.current = false;
-      },
-    })
-  ).current;
-
-  const currentPct = Math.max(0, Math.min(100, (((displayVal ?? min) - min) / Math.max(1, max - min)) * 100));
-
-  return (
-    <View style={sliderStyles.container}>
-      <View style={sliderStyles.headerRow}>
-        <View style={sliderStyles.labelWrapper}>
-          <View style={sliderStyles.activeDot} />
-          {label ? <Text style={sliderStyles.label}>{label}</Text> : null}
-        </View>
-        <View style={sliderStyles.valBadge}>
-          <Text style={sliderStyles.valText}>
-            {(displayVal ?? 0) > 0 && min < 0 ? `+${displayVal}` : (displayVal ?? 0)}
-            {unit}
-          </Text>
-        </View>
-      </View>
-
-      <View
-        style={sliderStyles.trackWrapper}
-        onLayout={(e) => {
-          const w = e.nativeEvent.layout.width;
-          if (w > 0) setTrackWidth(w);
-        }}
-        {...panResponder.panHandlers}
-      >
-        <View style={sliderStyles.trackBg} pointerEvents="none">
-          <View style={[sliderStyles.trackFill, { width: `${currentPct}%` }]} />
-          {min < 0 && <View style={sliderStyles.centerTick} />}
-        </View>
-        <View style={[sliderStyles.thumb, { left: `${currentPct}%` }]} pointerEvents="none" />
-      </View>
-    </View>
-  );
-};
-
-const sliderStyles = StyleSheet.create({
-  container: {
-    width: '100%',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  labelWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: ORANGE,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#F1F5F9',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-  },
-  valBadge: {
-    backgroundColor: 'rgba(255, 107, 0, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 0, 0.4)',
-  },
-  valText: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: ORANGE,
-    minWidth: 36,
-    textAlign: 'center',
-  },
-  trackWrapper: {
-    height: 38,
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  trackBg: {
-    height: 6,
-    backgroundColor: '#1E293B',
-    borderRadius: 3,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  trackFill: {
-    height: '100%',
-    backgroundColor: ORANGE,
-    borderRadius: 3,
-  },
-  centerTick: {
-    position: 'absolute',
-    left: '50%',
-    top: 0,
-    bottom: 0,
-    width: 2,
-    backgroundColor: '#64748B',
-  },
-  thumb: {
-    position: 'absolute',
-    top: 7,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: ORANGE,
-    marginLeft: -12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-  },
-});
-
-// -------------------------------------------------------------
-// DRAGGABLE TEXT OVERLAY ITEM COMPONENT
-// -------------------------------------------------------------
-interface DraggableTextOverlayItemProps {
-  item: TextOverlayItem;
-  canvasWidth: number;
-  canvasHeight: number;
-  onUpdatePosition: (id: string, x: number, y: number) => void;
-  onSelect: (item: TextOverlayItem) => void;
-  onDelete: (id: string) => void;
-  isBaking: boolean;
-}
-
-const DraggableTextOverlayItem: React.FC<DraggableTextOverlayItemProps> = ({
-  item,
-  canvasWidth,
-  canvasHeight,
-  onUpdatePosition,
-  onSelect,
-  onDelete,
-  isBaking,
-}) => {
-  const itemRef = useRef(item);
-  itemRef.current = item;
-  const startPos = useRef({ x: item.x, y: item.y });
-  const hasMoved = useRef(false);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        startPos.current = { x: itemRef.current.x, y: itemRef.current.y };
-        hasMoved.current = false;
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        if (Math.abs(gestureState.dx) > 3 || Math.abs(gestureState.dy) > 3) {
-          hasMoved.current = true;
-        }
-        const dxPct = (gestureState.dx / canvasWidth) * 100;
-        const dyPct = (gestureState.dy / canvasHeight) * 100;
-
-        const newX = Math.max(5, Math.min(85, startPos.current.x + dxPct));
-        const newY = Math.max(5, Math.min(85, startPos.current.y + dyPct));
-
-        onUpdatePosition(itemRef.current.id, newX, newY);
-      },
-      onPanResponderRelease: () => {
-        if (!hasMoved.current) {
-          onSelect(itemRef.current);
-        }
-      },
-    })
-  ).current;
-
-  const isNeon = item.fontStyle === 'neon' || item.bgColor === 'neon';
-  const isTypewriter = item.fontStyle === 'typewriter';
-  const isSerif = item.fontStyle === 'serif';
-  const isStrong = item.fontStyle === 'strong';
-
-  let computedBg = item.bgColor;
-  if (item.bgColor === 'solid') computedBg = item.color === '#FFFFFF' ? '#000000' : '#FFFFFF';
-  else if (item.bgColor === 'glass') computedBg = 'rgba(0,0,0,0.65)';
-  else if (item.bgColor === 'neon') computedBg = 'rgba(0,0,0,0.80)';
-
-  return (
-    <View
-      {...panResponder.panHandlers}
-      style={[
-        draggableStyles.overlayWrapper,
-        {
-          left: `${item.x}%`,
-          top: `${item.y}%`,
-          backgroundColor: computedBg,
-          borderColor: isNeon ? item.color : 'transparent',
-          borderWidth: isNeon ? 1.5 : 0,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          draggableStyles.overlayText,
-          {
-            color: item.color,
-            fontSize: item.fontSize,
-            textAlign: item.align || 'center',
-            fontFamily: isTypewriter ? 'monospace' : isSerif ? 'serif' : undefined,
-            fontWeight: isStrong ? '900' : isSerif ? '600' : '800',
-            fontStyle: isSerif ? 'italic' : 'normal',
-            textTransform: isStrong ? 'uppercase' : 'none',
-            letterSpacing: isStrong ? 1.5 : 0.5,
-            textShadowColor: isNeon ? item.color : computedBg === 'transparent' ? 'rgba(0,0,0,0.9)' : 'transparent',
-            textShadowRadius: isNeon ? 10 : computedBg === 'transparent' ? 4 : 0,
-          },
-        ]}
-      >
-        {item.text}
-      </Text>
-
-      {!isBaking && (
-        <TouchableOpacity
-          style={draggableStyles.deleteBtn}
-          onPress={() => onDelete(item.id)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Icon name="x" size={10} color="#FFFFFF" />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-};
-
-const draggableStyles = StyleSheet.create({
-  overlayWrapper: {
-    position: 'absolute',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ translateX: -24 }, { translateY: -14 }],
-    zIndex: 30,
-    elevation: 6,
-  },
-  overlayText: {
-    textAlign: 'center',
-  },
-  deleteBtn: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-  },
-});
-
 // -------------------------------------------------------------
 // MAIN CREATE POST SCREEN COMPONENT
 // -------------------------------------------------------------
 export const CreatePostScreen = ({ route, navigation }: { route: any; navigation: any }) => {
-  const { themeColors, isDark } = useUserSettings();
+  const { themeColors } = useUserSettings();
+  // sizes follow the live window (rotation, split screen), never a width measured once at start-up
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isTablet = Math.min(winW, winH) >= 600;
   const editPostId = route?.params?.editPostId;
-  const [step, setStep] = useState<Step>(editPostId ? 'details' : 'select');
-  const [editMode, setEditMode] = useState<EditToolMode>('main');
+  // a job shared to the feed arrives here with its card details: the post opens at the details step with the card attached
+  const sharedJob = route?.params?.sharedJob;
+  // Fan accounts follow and react but do not publish posts (the database refuses it too): leave the composer.
+  const { isFan, loading: accountTypeLoading } = useAccountType();
+  useEffect(() => {
+    if (isFan && !accountTypeLoading) {
+      Alert.alert('Not available', 'Fan accounts cannot create posts. Switch to a creator or studio account to post.');
+      navigation.goBack();
+    }
+  }, [isFan, accountTypeLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [step, setStep] = useState<Step>(editPostId || sharedJob ? 'details' : 'select');
+  const [jobSharePart, setJobSharePart] = useState<string | null>(() => (sharedJob && !editPostId ? JSON.stringify(sharedJob) : null));
+  const jobShareData = React.useMemo(() => { try { return jobSharePart ? JSON.parse(jobSharePart) : null; } catch { return null; } }, [jobSharePart]);
 
   // Media state
   const [mediaUrls, setMediaUrls] = useState<string[]>([]);
-  const canvasViewRef = useRef<View>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [mediaInput, setMediaInput] = useState('');
-  const [showMediaInput, setShowMediaInput] = useState(false);
+  // what each uploaded file is (taken from the file itself, never guessed from the web address)
+  const kindsRef = useRef<Record<string, 'image' | 'video'>>({});
+  const isVideoUrl = (u?: string) => !!u && (kindsRef.current[u] ? kindsRef.current[u] === 'video' : isVideoMedia(u));
+  const [altTexts, setAltTexts] = useState<Record<string, string>>({});
+  const sharedRef = useRef(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [uploadingProgressText, setUploadingProgressText] = useState('');
 
-  // Editor states (Exact Web & Instagram Parity)
-  const [aspectRatio, setAspectRatio] = useState<'1:1' | '4:5' | '16:9' | '9:16' | '3:2' | 'free' | 'original'>('original');
-  const [naturalAspectRatio, setNaturalAspectRatio] = useState<number>(1);
-  const [zoomLevel, setZoomLevel] = useState<number>(100);
-  const [photoPan, setPhotoPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [photoRotation, setPhotoRotation] = useState<number>(0);
-  const [photoFlipH, setPhotoFlipH] = useState<boolean>(false);
-  const [selectedFilter, setSelectedFilter] = useState<string>('Normal');
-  const [filterIntensity, setFilterIntensity] = useState<number>(100);
-  const [activeAdjustTool, setActiveAdjustTool] = useState<string>('brightness');
-  const [adjustments, setAdjustments] = useState<Record<string, number>>({
-    brightness: 0,
-    contrast: 0,
-    saturate: 0,
-    warmth: 0,
-    vignette: 0,
-    fade: 0,
-    sharpen: 0,
-    structure: 0,
-    colour: 0,
-    sepia: 0,
-  });
-
-  // Text overlay states & dragging (Instagram Style)
-  const [textOverlays, setTextOverlays] = useState<TextOverlayItem[]>([]);
-  const [overlayInputText, setOverlayInputText] = useState('');
-  const [overlayColor, setOverlayColor] = useState<string>('#FFFFFF');
-  const [overlayBg, setOverlayBg] = useState<string>('transparent');
-  const [overlayStyle, setOverlayStyle] = useState<'modern' | 'neon' | 'typewriter' | 'strong' | 'serif'>('modern');
-  const [overlayAlign, setOverlayAlign] = useState<'left' | 'center' | 'right'>('center');
-  const [overlayFontSize, setOverlayFontSize] = useState<number>(20);
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  // New photos stay on this phone while they are edited and are uploaded once, when the post is shared.
+  const [recipes, setRecipes] = useState<Record<string, PhotoRecipe>>({});
+  const [videoEdits, setVideoEdits] = useState<Record<string, VideoEdit>>({}); // the part of each video to keep, and its sound
+  // a photo on this phone (the key is its file address): passthrough means it is posted as it is (a GIF)
+  const localRef = useRef<Record<string, { passthrough: boolean; name?: string; type?: string }>>({});
+  const sizeRef = useRef<Record<string, { width: number; height: number }>>({}); // shown size of each new picture/video (saved on the post so cards are the right shape)
+  const finalsRef = useRef<Record<string, { uri: string; sig: string; mime: string }>>({}); // the finished picture of each edited photo
+  const rawItemsRef = useRef<Record<string, any>>({}); // a post being edited keeps what it was saved with
+  const [unreadable, setUnreadable] = useState<Record<string, boolean>>({});
 
   // Details state
   const [content, setContent] = useState('');
   const [selectedCraft, setSelectedCraft] = useState('General');
+  const [audience, setAudience] = useState<string>('public');
+  const [poll, setPoll] = useState<PollDraft | null>(null); // null = no poll on this post
+  const [scheduleOn, setScheduleOn] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState<Date | null>(null);
+  const [collabs, setCollabs] = useState<TaggedUser[]>([]);
+  const [collabQuery, setCollabQuery] = useState('');
+  const [collabResults, setCollabResults] = useState<TaggedUser[]>([]);
+  const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null);
+  const [dismissedLink, setDismissedLink] = useState<string | null>(null);
+  const [gifOpen, setGifOpen] = useState(false);
+  const [gifQuery, setGifQuery] = useState('');
+  const [gifs, setGifs] = useState<GifItem[]>([]);
+  const [gifState, setGifState] = useState<'idle' | 'loading' | 'error' | 'off'>('idle');
   const [location, setLocation] = useState('');
   const [showLocations, setShowLocations] = useState(false);
 
@@ -500,10 +156,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&addressdetails=1`
-            );
-            const data = await res.json();
+            const data = await geocodeReverse(getSupabaseClient(), pos.coords.latitude, pos.coords.longitude);
             if (data && data.address) {
               const city =
                 data.address.city ||
@@ -544,10 +197,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
     const timer = setTimeout(async () => {
       setIsSearchingLocation(true);
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&limit=6&addressdetails=1`
-        );
-        const data = await res.json();
+        const data = await geocodeSearch(getSupabaseClient(), location);
         if (Array.isArray(data)) {
           const parsed = data
             .map((item: any) => {
@@ -588,6 +238,148 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
 
   const [loading, setLoading] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const [pickedMentions, setPickedMentions] = useState<Record<string, MentionUser>>({});
+
+  // people to credit: search by name or @username, never yourself or people you blocked
+  useEffect(() => {
+    if (!collabQuery.trim()) { setCollabResults([]); return; }
+    const t = setTimeout(async () => {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.from('profiles').select('id, username, full_name, avatar_url').or(`username.ilike.%${orTerm(collabQuery)}%,full_name.ilike.%${orTerm(collabQuery)}%`).limit(8);
+      const { data: sess } = await supabase.auth.getSession();
+      const me = sess?.session?.user?.id;
+      let blocked = new Set<string>();
+      if (me) {
+        const { data: b } = await (supabase as any).from('blocked_users').select('blocked_user_id').eq('user_id', me);
+        blocked = new Set((b || []).map((x: any) => x.blocked_user_id));
+      }
+      setCollabResults(((data || []) as TaggedUser[]).filter((u) => u.id !== me && !blocked.has(u.id) && !collabs.some((c) => c.id === u.id)));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [collabQuery, collabs]);
+
+  // a card for the first link in the caption (fetched by the server; you can remove it)
+  useEffect(() => {
+    const url = firstUrl(content);
+    if (!url) { setLinkPreview(null); return; }
+    if (linkPreview?.url === url || dismissedLink === url) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const preview = await fetchLinkPreview(getSupabaseClient(), url);
+      if (!cancelled) setLinkPreview(preview);
+    }, 700);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [content]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // GIF search (empty box = trending)
+  useEffect(() => {
+    if (!gifOpen) return;
+    let cancelled = false;
+    setGifState('loading');
+    const t = setTimeout(async () => {
+      const res = await searchGifs(getSupabaseClient(), gifQuery);
+      if (cancelled) return;
+      if (res.ok) { setGifs(res.items); setGifState('idle'); }
+      else { setGifs([]); setGifState((res as any).reason === 'not_configured' ? 'off' : 'error'); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [gifOpen, gifQuery]);
+
+  const addGif = (g: GifItem) => {
+    if (mediaUrls.length >= POST_MEDIA_MAX) {
+      Alert.alert('Limit reached', `You can add up to ${POST_MEDIA_MAX} photos, videos or GIFs.`);
+      return;
+    }
+    kindsRef.current[g.url] = 'image';
+    setAltTexts((prev) => ({ ...prev, [g.url]: g.title }));
+    setMediaUrls((prev) => [...prev, g.url]);
+    setGifOpen(false);
+    if (step === 'select') setStep('preview');
+  };
+
+  // ── draft: kept on this device until the post is shared or discarded ──
+  const draftKey = `create_post_draft_${userProfile?.id || 'me'}`;
+  const draftReady = useRef(false);
+  const saveDraftNow = () => {
+    if (editPostId || sharedRef.current) return;
+    if (!content.trim() && mediaUrls.length === 0) return;
+    AsyncStorage.setItem(draftKey, JSON.stringify({
+      content, mediaUrls, kinds: kindsRef.current, recipes, videoEdits, locals: localRef.current, location, taggedUsers, category: selectedCraft, audience, disableComments, hideLikes, altTexts, savedAt: Date.now(),
+    })).catch(() => { });
+  };
+  const clearDraft = () => { AsyncStorage.removeItem(draftKey).catch(() => { }); };
+  const discardDraftFiles = (urls?: string[]) => {
+    const paths = (urls || []).map((u) => storagePathOf(u)).filter(Boolean) as string[];
+    if (paths.length > 0) getSupabaseClient().storage.from('portfolios').remove(paths).catch(() => { });
+  };
+  const restoreDraft = async (d: any) => {
+    setContent(d.content || '');
+    setLocation(d.location || '');
+    setTaggedUsers(Array.isArray(d.taggedUsers) ? d.taggedUsers : []);
+    setSelectedCraft(d.category || 'General');
+    setAudience(normalizeAudience(d.audience));
+    setDisableComments(!!d.disableComments);
+    setHideLikes(!!d.hideLikes);
+    setAltTexts(d.altTexts || {});
+    kindsRef.current = { ...(d.kinds || {}) };
+    // photos kept on this phone come back with their edits; one that is gone (storage was cleared) is dropped
+    const locals = d.locals || {};
+    const wanted: string[] = Array.isArray(d.mediaUrls) ? d.mediaUrls : [];
+    const urls: string[] = [];
+    const nextRecipes: Record<string, PhotoRecipe> = {};
+    const nextVideoEdits: Record<string, VideoEdit> = {};
+    for (const u of wanted) {
+      if (locals[u]) {
+        try { if (d.kinds?.[u] === 'video') await videoInfo(u); else await photoInfo(u); } catch { continue; }
+        localRef.current[u] = locals[u];
+        if (d.recipes?.[u]) nextRecipes[u] = d.recipes[u];
+        if (d.videoEdits?.[u]) nextVideoEdits[u] = d.videoEdits[u];
+      }
+      urls.push(u);
+    }
+    setRecipes(nextRecipes);
+    setVideoEdits(nextVideoEdits);
+    setMediaUrls(urls);
+    setStep(urls.length > 0 ? 'preview' : 'details');
+  };
+  // offer a saved draft once
+  useEffect(() => {
+    if (editPostId || !userProfile?.id) { return; }
+    let alive = true;
+    AsyncStorage.getItem(`create_post_draft_${userProfile.id}`).then((rawDraft) => {
+      if (!alive) return;
+      if (!rawDraft) { draftReady.current = true; return; }
+      try {
+        const d = JSON.parse(rawDraft);
+        if (!d || (!d.content && !(Array.isArray(d.mediaUrls) && d.mediaUrls.length))) { draftReady.current = true; return; }
+        Alert.alert('Continue your draft?', 'You have an unfinished post on this device.', [
+          { text: 'Discard', style: 'destructive', onPress: () => { discardDraftFiles(d.mediaUrls); clearDraft(); draftReady.current = true; } },
+          { text: 'Continue', onPress: () => { restoreDraft(d); draftReady.current = true; } },
+        ], { cancelable: false });
+      } catch { draftReady.current = true; }
+    }).catch(() => { draftReady.current = true; });
+    return () => { alive = false; };
+  }, [userProfile?.id, editPostId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // save as you go
+  useEffect(() => {
+    if (!draftReady.current) return;
+    const t = setTimeout(saveDraftNow, 800);
+    return () => clearTimeout(t);
+  }, [content, mediaUrls, location, taggedUsers, selectedCraft, audience, disableComments, hideLikes, altTexts, recipes, videoEdits]); // eslint-disable-line react-hooks/exhaustive-deps
+  // never lose work by pressing Back
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      if (editPostId || sharedRef.current || loading) return;
+      if (!content.trim() && mediaUrls.length === 0) return;
+      e.preventDefault();
+      Alert.alert('Leave this post?', 'You can keep it as a draft on this device, or discard it.', [
+        { text: 'Keep editing', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => { discardDraftFiles(mediaUrls); clearDraft(); sharedRef.current = true; navigation.dispatch(e.data.action); } },
+        { text: 'Save draft', onPress: () => { saveDraftNow(); sharedRef.current = true; navigation.dispatch(e.data.action); } },
+      ]);
+    });
+    return unsubscribe;
+  }, [navigation, content, mediaUrls, location, taggedUsers, selectedCraft, disableComments, hideLikes, altTexts, editPostId, loading, userProfile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let active = true;
@@ -623,8 +415,32 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
 
           if (!error && post && active) {
             const p: any = post;
-            setContent(p.content || '');
-            if (p.location) setLocation(p.location);
+            // a post that carries a shared job keeps its card: only the words are edited here
+            const rawContent = String(p.content || '');
+            if (rawContent.includes('JOB_SHARE::')) {
+              setContent(rawContent.split('JOB_SHARE::')[0].trim());
+              setJobSharePart(rawContent.split('JOB_SHARE::').pop()!.trim());
+            } else {
+              setContent(rawContent);
+            }
+            const first: any = Array.isArray(p.media_items) && p.media_items[0] && typeof p.media_items[0] === 'object' ? p.media_items[0] : {};
+            setLocation(first.location || p.location || '');
+            setTaggedUsers(Array.isArray(first.tagged_users) ? first.tagged_users : (Array.isArray(p.tagged_users) ? p.tagged_users : []));
+            setDisableComments(!!first.comments_disabled);
+            setHideLikes(!!first.hide_likes);
+            if (p.category) setSelectedCraft(p.category);
+            setAudience(normalizeAudience(p.audience));
+            if (p.link_preview) { setLinkPreview(p.link_preview); setDismissedLink(p.link_preview.url); }
+            const altMap: Record<string, string> = {};
+            (Array.isArray(p.media_items) ? p.media_items : []).forEach((m: any) => {
+              if (m && typeof m === 'object' && m.url) {
+                if (m.type === 'video' || m.type === 'image') kindsRef.current[m.url] = m.type;
+                if (m.alt) altMap[m.url] = String(m.alt);
+              }
+            });
+            setAltTexts(altMap);
+            rawItemsRef.current = {};
+            (Array.isArray(p.media_items) ? p.media_items : []).forEach((m: any) => { if (m && typeof m === 'object' && m.url) rawItemsRef.current[m.url] = m; });
             if (p.page_id) setSelectedPageId(p.page_id);
 
             let urls: string[] = [];
@@ -636,7 +452,6 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
             const cleanUrls = urls.filter(Boolean);
             setMediaUrls(cleanUrls);
             if (cleanUrls.length > 0) setStep('details');
-            if (Array.isArray(p.tagged_users)) setTaggedUsers(p.tagged_users);
           }
           if (active) setLoadingEdit(false);
         }
@@ -658,25 +473,58 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
 
       if (!results || results.length === 0) return;
 
-      setIsUploadingMedia(true);
-      const supabase = getSupabaseClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const uploadedUrls: string[] = [];
+      if (mediaUrls.length + results.length > POST_MEDIA_MAX) {
+        Alert.alert('Too many files', `You can add up to ${POST_MEDIA_MAX} photos or videos to a post.`);
+        return;
+      }
 
+      setIsUploadingMedia(true);
+      const uploaded: { url: string; kind: 'image' | 'video' }[] = [];
+      const failed: string[] = [];
+
+      // one file at a time; a problem with one file never throws away the others
       for (let i = 0; i < results.length; i++) {
         const file = results[i];
         setUploadingProgressText(`Processing file ${i + 1} of ${results.length}...`);
 
         try {
-          const uploaded = await uploadMediaPipeline(
-            {
-              uri: file.uri,
-              name: file.name,
-              type: file.type,
-              size: file.size,
-            },
+          const isImg = (file.type || '').startsWith('image/') || /\.(jpe?g|png|webp|heic|gif)$/i.test(file.name || '');
+          const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name || '');
+          const isVid = (file.type || '').startsWith('video/') || /\.(mp4|mov|mkv|webm|avi|3gp)$/i.test(file.name || '');
+          if (isVid && videoEditingAvailable()) {
+            try {
+              // a video stays here too: it is cut when you tap Next and uploaded once when the post is shared
+              const vinfo = await videoInfo(file.uri);
+              if (vinfo.width > 0 && vinfo.height > 0) sizeRef.current[file.uri] = { width: vinfo.width, height: vinfo.height };
+              localRef.current[file.uri] = { passthrough: false, name: file.name || 'video.mp4', type: file.type || 'video/mp4' };
+              uploaded.push({ url: file.uri, kind: 'video' });
+              continue;
+            } catch (vidErr) {
+              console.warn('[CreatePostScreen] Video cannot be edited, adding it as it is:', vidErr);
+            }
+          }
+          if (isImg && isGif) {
+            // a GIF is posted as it is (so it keeps moving), uploaded when the post is shared
+            localRef.current[file.uri] = { passthrough: true, name: file.name || 'animation.gif', type: 'image/gif' };
+            if (file.width && file.height) sizeRef.current[file.uri] = { width: file.width, height: file.height };
+            uploaded.push({ url: file.uri, kind: 'image' });
+            continue;
+          }
+          if (isImg && photoEditingAvailable()) {
+            try {
+              // a working copy (at most 1600 px, camera rotation applied): edited here, uploaded once when the post is shared
+              setUploadingProgressText(`Preparing photo ${i + 1} of ${results.length}...`);
+              const work = await renderPhoto(file.uri, defaultRecipe(), { maxEdge: 1600, withText: false, format: 'jpeg', quality: 92 });
+              localRef.current[work.uri] = { passthrough: false };
+              if (work.width > 0 && work.height > 0) sizeRef.current[work.uri] = { width: work.width, height: work.height };
+              uploaded.push({ url: work.uri, kind: 'image' });
+              continue;
+            } catch (prepErr) {
+              console.warn('[CreatePostScreen] Photo cannot be edited, adding it as it is:', prepErr);
+            }
+          }
+          const out = await uploadMediaPipeline(
+            { uri: file.uri, name: file.name, type: file.type, size: file.size },
             {
               bucket: 'portfolios',
               folder: 'posts',
@@ -685,25 +533,33 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
               },
             }
           );
-
-          if (uploaded?.url) {
-            uploadedUrls.push(uploaded.url);
+          if (out?.url && (out.type === 'image' || out.type === 'video')) {
+            uploaded.push({ url: out.url, kind: out.type });
+            if (file.width && file.height) sizeRef.current[out.url] = { width: file.width, height: file.height };
+          } else {
+            failed.push(file.name || `file ${i + 1}`);
           }
         } catch (err: any) {
           console.warn('[CreatePostScreen] Upload failed for file:', err);
+          failed.push(`${file.name || `file ${i + 1}`}${err?.message ? ` (${err.message})` : ''}`);
         }
       }
 
-      if (uploadedUrls.length > 0) {
-        setMediaUrls((prev) => [...prev, ...uploadedUrls]);
+      if (uploaded.length > 0) {
+        uploaded.forEach((u) => { kindsRef.current[u.url] = u.kind; });
+        setMediaUrls((prev) => [...prev, ...uploaded.map((u) => u.url)]);
         setStep('preview');
-      } else {
-        Alert.alert('Upload Failed', 'Could not upload selected files. Please try again.');
+      }
+      if (failed.length > 0) {
+        Alert.alert(
+          uploaded.length === 0 ? 'Upload failed' : `${failed.length} file${failed.length > 1 ? 's' : ''} could not be added`,
+          failed.slice(0, 3).join('\n')
+        );
       }
     } catch (err: any) {
       if (!DocumentPicker.isCancel(err)) {
         console.warn('Pick files error:', err);
-        Alert.alert('Upload Error', err.message || 'Failed to select media');
+        Alert.alert('Upload Error', friendlyError(err, 'Failed to select media'));
       }
     } finally {
       setIsUploadingMedia(false);
@@ -726,7 +582,15 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
           .select('id, username, full_name, avatar_url')
           .or(`username.ilike.%${orTerm(tagQuery)}%,full_name.ilike.%${orTerm(tagQuery)}%`)
           .limit(10);
-        if (data) setSearchResults(data as TaggedUser[]);
+        // never offer yourself or people you blocked
+        const { data: sess } = await supabase.auth.getSession();
+        const me = sess?.session?.user?.id;
+        let blocked = new Set<string>();
+        if (me) {
+          const { data: b } = await (supabase as any).from('blocked_users').select('blocked_user_id').eq('user_id', me);
+          blocked = new Set((b || []).map((x: any) => x.blocked_user_id));
+        }
+        if (data) setSearchResults((data as TaggedUser[]).filter((u) => u.id !== me && !blocked.has(u.id)));
       } catch (err) {
         console.warn('Search profiles error:', err);
       } finally {
@@ -737,93 +601,25 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
     return () => clearTimeout(delayTimer);
   }, [tagQuery]);
 
-  const handleAddMediaUrl = () => {
-    if (!mediaInput.trim()) return;
-    const url = mediaInput.trim();
-    setMediaUrls((prev) => [...prev, url]);
-    setMediaInput('');
-    setShowMediaInput(false);
-    if (step === 'select') setStep('preview');
-  };
-
-  const handleAddDefaultDemoMedia = () => {
-    const demoPhotos = [
-      'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800',
-      'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=800',
-      'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800',
-    ];
-    setMediaUrls(demoPhotos);
-    setStep('preview');
+  const storagePathOf = (url: string): string | null => {
+    const part = String(url || '').split('/portfolios/')[1];
+    return part ? decodeURIComponent(part.split('?')[0]) : null;
   };
 
   const handleRemoveMedia = (idx: number) => {
-    setMediaUrls((prev) => {
-      const next = prev.filter((_, i) => i !== idx);
-      if (next.length === 0) setStep('select');
-      return next;
-    });
-    if (activeIndex >= mediaUrls.length - 1) {
-      setActiveIndex(Math.max(0, mediaUrls.length - 2));
+    const removedUrl = mediaUrls[idx];
+    if (removedUrl) {
+      delete localRef.current[removedUrl];
+      delete finalsRef.current[removedUrl];
+      setRecipes((prev) => { const n = { ...prev }; delete n[removedUrl]; return n; });
+      setVideoEdits((prev) => { const n = { ...prev }; delete n[removedUrl]; return n; });
+      const path = !editPostId ? storagePathOf(removedUrl) : null; // a video removed before posting is not kept in storage
+      if (path) getSupabaseClient().storage.from('portfolios').remove([path]).catch(() => { });
     }
-  };
-
-  const handleSaveTextOverlay = () => {
-    if (!overlayInputText.trim()) return;
-    if (editingTextId) {
-      setTextOverlays((prev) =>
-        prev.map((o) =>
-          o.id === editingTextId
-            ? {
-                ...o,
-                text: overlayInputText.trim(),
-                color: overlayColor,
-                bgColor: overlayBg,
-                fontSize: overlayFontSize,
-                fontStyle: overlayStyle,
-                align: overlayAlign,
-              }
-            : o
-        )
-      );
-      setEditingTextId(null);
-    } else {
-      const newItem: TextOverlayItem = {
-        id: Date.now().toString(),
-        text: overlayInputText.trim(),
-        color: overlayColor,
-        bgColor: overlayBg,
-        fontSize: overlayFontSize,
-        fontStyle: overlayStyle,
-        align: overlayAlign,
-        x: 50,
-        y: 50,
-      };
-      setTextOverlays((prev) => [...prev, newItem]);
-    }
-    setOverlayInputText('');
-  };
-
-  const handleSelectTextOverlay = (item: TextOverlayItem) => {
-    setEditingTextId(item.id);
-    setOverlayInputText(item.text);
-    setOverlayColor(item.color);
-    setOverlayBg(item.bgColor);
-    setOverlayFontSize(item.fontSize);
-    if (item.fontStyle) setOverlayStyle(item.fontStyle);
-    if (item.align) setOverlayAlign(item.align);
-    setEditMode('text');
-  };
-
-  const handleRemoveTextOverlay = (id: string) => {
-    setTextOverlays((prev) => prev.filter((t) => t.id !== id));
-    if (editingTextId === id) {
-      setEditingTextId(null);
-      setOverlayInputText('');
-    }
-  };
-
-  const handleUpdateTextPosition = (id: string, x: number, y: number) => {
-    setTextOverlays((prev) => prev.map((item) => (item.id === id ? { ...item, x, y } : item)));
+    const next = mediaUrls.filter((_, i) => i !== idx);
+    setMediaUrls(next);
+    if (next.length === 0) { setStep('select'); setActiveIndex(0); return; }
+    setActiveIndex((a) => Math.max(0, Math.min(idx < a ? a - 1 : a, next.length - 1)));
   };
 
   const handleTagUser = (user: TaggedUser) => {
@@ -840,183 +636,193 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
 
   const [isBakingMedia, setIsBakingMedia] = useState(false);
 
-  const handleProceedFromPreview = async () => {
-    const isAdjusted = Object.values(adjustments).some((val) => val !== 0);
-    const hasEdits =
-      selectedFilter !== 'Normal' ||
-      textOverlays.length > 0 ||
-      isAdjusted ||
-      zoomLevel !== 100 ||
-      photoRotation !== 0 ||
-      photoFlipH ||
-      photoPan.x !== 0 ||
-      photoPan.y !== 0 ||
-      aspectRatio !== 'original';
-
-    // If edits were made, capture and upload the baked image directly to Supabase storage
-    if (hasEdits && canvasViewRef.current && mediaUrls[activeIndex] && !mediaUrls[activeIndex].includes('video')) {
-      try {
-        setIsBakingMedia(true);
-        // Wait 150ms for UI frame paint to hide any deletion handles
-        await new Promise((resolve) => setTimeout(resolve, 150));
-
-        const capturedUri = await captureRef(canvasViewRef, {
-          format: 'jpg',
-          quality: 0.95,
-          result: 'tmpfile',
-        });
-
-        if (capturedUri) {
-          const supabase = getSupabaseClient();
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-
-          const sanitized = `baked_${Date.now()}.jpg`;
-          const storagePath = `baked/${user?.id || 'anon'}/${sanitized}`;
-
-          const formData = new FormData();
-          formData.append('file', {
-            uri: capturedUri.startsWith('file://') ? capturedUri : `file://${capturedUri}`,
-            name: sanitized,
-            type: 'image/jpeg',
-          } as any);
-
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData?.session?.access_token;
-          const uploadUrl = `${ENV.SUPABASE_URL}/storage/v1/object/portfolios/${storagePath}`;
-
-          const headers: Record<string, string> = {
-            apikey: ENV.SUPABASE_ANON_KEY,
-            'x-upsert': 'true',
-          };
-          if (token) headers['Authorization'] = `Bearer ${token}`;
-
-          const res = await fetch(uploadUrl, {
-            method: 'POST',
-            headers,
-            body: formData,
-          });
-
-          if (res.ok) {
-            const { data: pubData } = supabase.storage.from('portfolios').getPublicUrl(storagePath);
-            if (pubData?.publicUrl) {
-              const bakedUrl = pubData.publicUrl;
-              console.log('[MobileBake] Baked Image successfully uploaded:', bakedUrl);
-              setMediaUrls((prev) => {
-                const copy = [...prev];
-                copy[activeIndex] = bakedUrl;
-                return copy;
-              });
-              // Reset adjustments since they are now permanently baked into the image
-              setSelectedFilter('Normal');
-              setTextOverlays([]);
-              setAdjustments({
-                brightness: 0,
-                contrast: 0,
-                saturate: 0,
-                warmth: 0,
-                vignette: 0,
-                fade: 0,
-                sharpen: 0,
-                structure: 0,
-                colour: 0,
-                sepia: 0,
-              });
-              setZoomLevel(100);
-              setPhotoRotation(0);
-              setPhotoFlipH(false);
-              setPhotoPan({ x: 0, y: 0 });
+  /** finishes every new photo (turn, crop, colour, text, resize) so it is ready to preview and upload; false if something failed */
+  const prepareMedia = async (): Promise<boolean> => {
+    const targets = mediaUrls.filter((u) => localRef.current[u] && !localRef.current[u].passthrough);
+    if (targets.length === 0) return true;
+    setIsBakingMedia(true);
+    try {
+      for (const u of targets) {
+        if (isVideoUrl(u)) {
+          const edit = videoEdits[u];
+          const sig = JSON.stringify(edit || null);
+          if (finalsRef.current[u]?.sig === sig) continue;
+          if (edit) {
+            if (edit.end - edit.start > POST_VIDEO_MAX_SECONDS + 0.5) {
+              Alert.alert('This video is too long', 'Videos can be up to 3:59. Drag the handles to keep a shorter part.');
+              return false;
+            }
+            if (edit.mute || edit.start > 0.1 || edit.end < edit.duration - 0.1) {
+              const out = await trimVideo(u, edit.start * 1000, edit.end * 1000, edit.mute);
+              finalsRef.current[u] = { uri: out.uri, sig, mime: out.mime };
             }
           } else {
-            console.error('[MobileBake] Storage upload error status:', res.status);
+            const info = await videoInfo(u);
+            if (info.duration / 1000 > POST_VIDEO_MAX_SECONDS + 0.5) {
+              Alert.alert('This video is too long', 'Videos can be up to 3:59. Open it and drag the handles to keep a shorter part.');
+              return false;
+            }
           }
+          continue;
         }
-      } catch (bakeErr) {
-        console.error('[MobileBake] Error capturing view shot:', bakeErr);
-      } finally {
-        setIsBakingMedia(false);
+        const recipe = recipes[u] || defaultRecipe();
+        const sig = JSON.stringify(recipe);
+        if (finalsRef.current[u]?.sig === sig) continue;
+        const out = await renderPhoto(u, recipe, { maxEdge: 1440, format: 'webp', quality: 85 });
+        finalsRef.current[u] = { uri: out.uri, sig, mime: out.mime };
+        if (out.width > 0 && out.height > 0) sizeRef.current[u] = { width: out.width, height: out.height };
       }
+      return true;
+    } catch (err: any) {
+      Alert.alert('Could not prepare your photos', friendlyError(err, 'Please try again.'));
+      return false;
+    } finally {
+      setIsBakingMedia(false);
     }
-
-    setStep('details');
   };
 
+  const handleProceedFromPreview = async () => {
+    if (await prepareMedia()) setStep('details');
+  };
+
+  /** what to show for an item: the finished picture if it has one */
+  const previewOf = (u: string) => finalsRef.current[u]?.uri || u;
+
   const handleSubmit = async () => {
-    if (!content.trim() && mediaUrls.length === 0) {
-      Alert.alert('Empty Post', 'Please write a caption or attach media before sharing.');
+    const pollInUse = !editPostId && pollDraftInUse(poll);
+    const check = checkPost({ caption: content, mediaCount: mediaUrls.length, busy: isUploadingMedia || isBakingMedia, hasPoll: pollInUse || !!jobSharePart });
+    if (!check.ok) {
+      Alert.alert('Cannot post yet', check.message);
       return;
     }
+    if (!editPostId && scheduleOn) {
+      const sc = checkSchedule(scheduleAt);
+      if (!sc.ok) { Alert.alert('Check the schedule', sc.message); return; }
+    }
+    if (pollInUse) {
+      const pc = checkPollDraft(poll!);
+      if (!pc.ok) {
+        Alert.alert('Check your poll', pc.message);
+        return;
+      }
+    }
+    if (loading) return;
 
     setLoading(true);
+    let scheduledMessage = '';
+    const uploadedPaths: string[] = [];
     try {
       const supabase = getSupabaseClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: sessionData } = await supabase.auth.getSession();
+      const user = sessionData?.session?.user;
       if (!user?.id) {
         throw new Error('Please sign in to share a post.');
       }
 
-      const mediaItemsFormatted = mediaUrls.map((url: string) => {
-        const isVideo = url.endsWith('.mp4') || url.includes('video');
-        return {
-          url,
-          type: isVideo ? 'video' : 'image',
-          zoom: zoomLevel,
-          pan: { x: 0, y: 0 },
-          crop: null,
-          aspectRatio: aspectRatio,
-          filter: 'none',
-          location: location.trim() || undefined,
-          tagged_users: taggedUsers,
-          comments_disabled: disableComments,
-          hide_likes: hideLikes,
-        };
+      // new photos: finish them, then upload only the finished pictures (the photo as picked never leaves this phone)
+      if (mediaUrls.some((u) => localRef.current[u])) {
+        if (!(await prepareMedia())) { setLoading(false); return; }
+      }
+      const items: any[] = [];
+      for (let i = 0; i < mediaUrls.length; i++) {
+        const url = mediaUrls[i];
+        let finalUrl = url;
+        const local = localRef.current[url];
+        if (local) {
+          setUploadingProgressText(mediaUrls.length > 1 ? `Uploading ${i + 1} of ${mediaUrls.length}...` : 'Uploading...');
+          const fin = finalsRef.current[url];
+          const out = isVideoUrl(url)
+            ? await uploadMediaPipeline({ uri: fin ? fin.uri : url, name: fin ? 'video.mp4' : (local.name || 'video.mp4'), type: fin ? fin.mime : (local.type || 'video/mp4') }, { bucket: 'portfolios', folder: 'posts' })
+            : fin && !local.passthrough
+            ? await uploadMediaPipeline({ uri: fin.uri, name: fin.mime === 'image/jpeg' ? 'photo.jpg' : 'photo.webp', type: fin.mime }, { bucket: 'portfolios', folder: 'posts', skipCompress: true })
+            : await uploadMediaPipeline({ uri: url, name: local.name || 'photo.jpg', type: local.type || 'image/jpeg' }, { bucket: 'portfolios', folder: 'posts' });
+          finalUrl = out.url;
+          const path = storagePathOf(finalUrl);
+          if (path) uploadedPaths.push(path);
+        }
+        const alt = (altTexts[url] || '').trim().slice(0, POST_ALT_TEXT_MAX);
+        // a post being edited keeps whatever it was saved with (nothing is replaced by defaults)
+        const raw = editPostId ? rawItemsRef.current[url] : null;
+        const base: any = raw ? { ...raw } : {};
+        delete base.alt;
+        // the shown size: known from picking/editing, else read now (a restored draft); a post being edited keeps the size it had
+        let size = sizeRef.current[url];
+        if (!size && local) {
+          try {
+            if (isVideoUrl(url)) {
+              if (videoEditingAvailable()) { const vi = await videoInfo(url); size = { width: vi.width, height: vi.height }; }
+            } else if (photoEditingAvailable()) {
+              size = await photoInfo(finalsRef.current[url]?.uri || url);
+            }
+          } catch { /* a post without a saved size is still shown correctly (measured by the reader) */ }
+        }
+        items.push({ ...base, ...(size ? mediaSizeFields(size.width, size.height) : {}), url: finalUrl, type: isVideoUrl(url) ? 'video' : 'image', ...(alt ? { alt } : {}) });
+      }
+
+      // details (place, tagged people, comment/like switches) ride on the first item; a text post gets a details-only item
+      const mediaItemsFormatted = buildMediaItems(items, {
+        location,
+        tagged_users: taggedUsers as any,
+        comments_disabled: disableComments,
+        hide_likes: hideLikes,
       });
 
-      let finalContent = content.trim();
-      if (location.trim() && mediaUrls.length === 0) {
-        finalContent = `${finalContent}\n\n📍 ${location.trim()}`;
-      }
-
-      const tagsArray: string[] = [];
-      if (selectedCraft && selectedCraft !== 'General') {
-        tagsArray.push(selectedCraft);
-      }
-
-      const mediaUrlsArray = mediaUrls.map((m: any) => (typeof m === 'string' ? m : m.url));
-
       const payload: any = {
-        author_id: user.id,
-        content: finalContent,
-        media_type: mediaUrls[0]?.includes('video') ? 'video' : 'image',
+        content: jobSharePart ? (content.trim() ? `${content.trim()}\n\nJOB_SHARE::${jobSharePart}` : `JOB_SHARE::${jobSharePart}`) : content.trim(),
+        ...mediaColumns(items),
         media_items: mediaItemsFormatted,
-        media_urls: mediaUrlsArray,
-        media_url: mediaUrlsArray[0] || null,
         page_id: selectedPageId === 'user' ? null : selectedPageId,
-        tags: tagsArray,
+        tags: extractHashtags(content), // real hashtags, same as the web app
+        category: normalizeCategory(selectedCraft), // the topic is a separate field
+        audience: normalizeAudience(audience), // who can see it (enforced by the database)
+        link_preview: linkPreview && content.includes(linkPreview.url) ? linkPreview : null,
         updated_at: new Date().toISOString(),
       };
 
       if (editPostId) {
         const { error } = await supabase.from('posts').update(payload).eq('id', editPostId);
         if (error) throw error;
-        Alert.alert('Post Updated! ✨', 'Your post changes have been published.', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
       } else {
-        const { error } = await supabase.from('posts').insert(payload);
+        const scheduledIso = scheduleOn && scheduleAt ? scheduleAt.toISOString() : null;
+        const { data: created, error } = await supabase.from('posts').insert({ ...payload, author_id: user.id, scheduled_at: scheduledIso }).select('id').single();
         if (error) throw error;
-        Alert.alert('Post Published! 🎬', 'Your update is now live on CineCraft.', [
-          { text: 'View Feed', onPress: () => navigation.goBack() },
-        ]);
+        if (pollInUse && created?.id) {
+          try {
+            await attachPoll(supabase, (created as any).id, poll!);
+          } catch (pollErr: any) {
+            await supabase.from('posts').delete().eq('id', (created as any).id); // do not leave a post without the poll the author asked for
+            throw new Error(`Your post was not published because the poll could not be added: ${pollErr?.message || 'please try again'}`);
+          }
+        }
+        if (collabs.length > 0 && (created as any)?.id) {
+          try {
+            await inviteCollaborators(supabase, (created as any).id, collabs.map((c) => c.id));
+          } catch (collabErr: any) {
+            Alert.alert('Posted, but the invitations were not sent', collabErr?.message || 'Please try again from the post.');
+          }
+        }
+        // @mentions in a post are recorded and notified by the posts trigger notify_post_mentions (part_aq_posts.sql), so none are inserted here (that would notify twice)
+        if (scheduledIso) scheduledMessage =`Your post will go live ${formatSchedule(scheduledIso)}.`;
       }
+
+      sharedRef.current = true;
+      clearDraft();
+      // the temporary pictures made while editing are no longer needed
+      Object.keys(finalsRef.current).forEach((u) => releasePhoto(finalsRef.current[u].uri));
+      Object.keys(localRef.current).forEach((u) => { if (!localRef.current[u].passthrough) releasePhoto(u); });
+      DeviceEventEmitter.emit('Feed.postCreated'); // the feed refreshes itself
+      Alert.alert(
+        editPostId ? 'Post updated' : (scheduledMessage ? 'Scheduled' : 'Posted'),
+        editPostId ? 'Your changes are live.' : (scheduledMessage || 'Your post is live.'),
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
     } catch (err: any) {
-      Alert.alert('Failed to Share', err.message || 'An unexpected error occurred.');
+      // pictures uploaded for a post that was not saved are removed again
+      if (uploadedPaths.length > 0) getSupabaseClient().storage.from('portfolios').remove(uploadedPaths).catch(() => { });
+      Alert.alert('Could not post', describePostError(err));
     } finally {
       setLoading(false);
+      setUploadingProgressText('');
     }
   };
 
@@ -1028,286 +834,63 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
   const activeAuthorAvatar =
     selectedPageId === 'user' ? userProfile?.avatar_url : myPages.find((p) => p.id === selectedPageId)?.logo_url;
 
+  const gifPicker = (
+    <Modal visible={gifOpen} animationType="slide" onRequestClose={() => setGifOpen(false)}>
+      <View style={{ flex: 1, backgroundColor: themeColors.bgScreen, paddingTop: Platform.OS === 'ios' ? 54 : 24 }}>
+        <View style={{ flex: 1, width: '100%', maxWidth: isTablet ? 760 : undefined, alignSelf: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 }}>
+          <TextInput
+            style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, color: themeColors.textPrimary, borderColor: themeColors.border, backgroundColor: themeColors.inputBg }}
+            placeholder="Search GIFs"
+            placeholderTextColor={themeColors.textMuted}
+            value={gifQuery}
+            onChangeText={setGifQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel="Search GIFs"
+          />
+          <TouchableOpacity onPress={() => setGifOpen(false)} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }} accessibilityRole="button" accessibilityLabel="Close GIF picker">
+            <Text style={{ color: ORANGE, fontWeight: '700' }}>Close</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 8, flexDirection: 'row', flexWrap: 'wrap' }}>
+          {gifState === 'loading' && <Text style={{ width: '100%', textAlign: 'center', padding: 24, color: themeColors.textSecondary }}>Loading…</Text>}
+          {gifState === 'off' && <Text style={{ width: '100%', textAlign: 'center', padding: 24, color: themeColors.textSecondary }}>GIFs are not set up yet.</Text>}
+          {gifState === 'error' && <Text style={{ width: '100%', textAlign: 'center', padding: 24, color: themeColors.textSecondary }}>Could not load GIFs. Try again in a moment.</Text>}
+          {gifState === 'idle' && gifs.length === 0 && <Text style={{ width: '100%', textAlign: 'center', padding: 24, color: themeColors.textSecondary }}>No GIFs found.</Text>}
+          {gifState === 'idle' && gifs.map((g) => (
+            <TouchableOpacity key={g.id} onPress={() => addGif(g)} style={{ width: isTablet ? '25%' : '33.33%', padding: 3 }} accessibilityRole="button" accessibilityLabel={g.title}>
+              <Image source={{ uri: g.preview }} style={{ width: '100%', aspectRatio: 1, borderRadius: 8 }} resizeMode="cover" />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <Text style={{ textAlign: 'right', paddingHorizontal: 12, paddingBottom: 12, fontSize: 12, color: themeColors.textSecondary }}>{GIF_CREDIT}</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+
   if (loadingEdit) {
     return (
-      <View style={styles.loadingCenter}>
+      <View style={[styles.loadingCenter, { backgroundColor: themeColors.bgScreen }]}>
         <ActivityIndicator size="large" color={ORANGE} />
-        <Text style={styles.loadingText}>Loading post details...</Text>
+        <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Loading post details...</Text>
       </View>
     );
   }
 
-  // Measure natural dimensions of active media for dynamic aspect ratio
-  useEffect(() => {
-    if (mediaUrls[activeIndex] && !mediaUrls[activeIndex].includes('video')) {
-      Image.getSize(
-        mediaUrls[activeIndex],
-        (width, height) => {
-          if (width > 0 && height > 0) {
-            setNaturalAspectRatio(width / height);
-          }
-        },
-        () => {}
-      );
-    }
-  }, [mediaUrls, activeIndex]);
-
-  // Calculate container aspect ratio height for Step 2 Instagram Editor (matches Web exact ratios)
-  const previewHeight =
-    aspectRatio === '1:1'
-      ? SCREEN_WIDTH
-      : aspectRatio === '4:5'
-      ? (SCREEN_WIDTH * 5) / 4
-      : aspectRatio === '16:9'
-      ? (SCREEN_WIDTH * 9) / 16
-      : aspectRatio === '9:16'
-      ? Math.min(SCREEN_HEIGHT * 0.58, (SCREEN_WIDTH * 16) / 9)
-      : aspectRatio === '3:2'
-      ? (SCREEN_WIDTH * 2) / 3
-      : aspectRatio === 'free'
-      ? SCREEN_WIDTH * 1.05
-      : SCREEN_WIDTH / Math.min(Math.max(naturalAspectRatio || 1, 0.75), 1.91);
-
-  // Selected filter config & intensity opacity
-  const activeFilterConfig = FILTERS.find((f) => f.id === selectedFilter) || FILTERS[0];
-  const filterOpacity = Math.max(
-    0,
-    Math.min(1, ((filterIntensity ?? 80) / 100) * (activeFilterConfig?.maxOpacity ?? 0.4))
-  );
-
-  // Adjustment calculation variables
-  const brightnessVal = Number.isFinite(adjustments.brightness) ? adjustments.brightness : 0;
-  const contrastVal = Number.isFinite(adjustments.contrast) ? adjustments.contrast : 0;
-  const saturateVal = Number.isFinite(adjustments.saturate) ? adjustments.saturate : 0;
-  const warmthVal = Number.isFinite(adjustments.warmth) ? adjustments.warmth : 0;
-  const vignetteVal = Math.max(0, Number.isFinite(adjustments.vignette) ? adjustments.vignette : 0);
-  const fadeVal = Math.max(0, Number.isFinite(adjustments.fade) ? adjustments.fade : 0);
-  const sharpenVal = Math.max(0, Number.isFinite(adjustments.sharpen) ? adjustments.sharpen : 0);
-  const structureVal = Math.max(0, Number.isFinite(adjustments.structure) ? adjustments.structure : 0);
-  const colourVal = Number.isFinite(adjustments.colour) ? adjustments.colour : 0;
-  const sepiaVal = Math.max(0, Number.isFinite(adjustments.sepia) ? adjustments.sepia : 0);
-
-  // Photo pan responder for free crop and positioning (smooth 1:1 gesture physics)
-  const photoPanRef = useRef(photoPan);
-  photoPanRef.current = photoPan;
-  const startPhotoPan = useRef({ x: 0, y: 0 });
-
-  const photoPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => editMode === 'ratio' || zoomLevel > 100,
-      onMoveShouldSetPanResponder: (evt, gestureState) =>
-        (editMode === 'ratio' || zoomLevel > 100) && (Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2),
-      onPanResponderGrant: () => {
-        startPhotoPan.current = { ...photoPanRef.current };
-      },
-      onPanResponderMove: (evt, gestureState) => {
-        setPhotoPan({
-          x: Math.round(startPhotoPan.current.x + gestureState.dx),
-          y: Math.round(startPhotoPan.current.y + gestureState.dy),
-        });
-      },
-    })
-  ).current;
-
-  // -------------------------------------------------------------
-  // CANVAS RENDERER
-  // -------------------------------------------------------------
-  const renderCanvasContent = () => (
-    <View
-      ref={canvasViewRef}
-      collapsable={false}
-      style={[styles.canvasArea, { height: previewHeight }]}
-      {...photoPanResponder.panHandlers}
-    >
-      {mediaUrls[activeIndex] ? (
-        <Image
-          source={{ uri: mediaUrls[activeIndex] }}
-          style={[
-            styles.canvasImage,
-            {
-              transform: [
-                { translateX: photoPan.x },
-                { translateY: photoPan.y },
-                { scale: zoomLevel / 100 },
-                { rotate: `${photoRotation}deg` },
-                { scaleX: photoFlipH ? -1 : 1 },
-              ],
-            },
-          ]}
-          resizeMode={aspectRatio === 'original' ? 'contain' : 'cover'}
-        />
-      ) : (
-        <View style={styles.canvasEmptyFallback}>
-          <Icon name="image" size={40} color="#64748B" />
-        </View>
-      )}
-
-      {/* LIVE OVERLAY FILTER LAYER */}
-      {activeFilterConfig && activeFilterConfig.id !== 'Normal' && filterOpacity > 0 && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            { backgroundColor: activeFilterConfig.color, opacity: filterOpacity },
-          ]}
-        />
-      )}
-
-      {/* LIVE BRIGHTNESS OVERLAY */}
-      {brightnessVal !== 0 && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: brightnessVal > 0 ? '#FFFFFF' : '#000000',
-              opacity: Math.min(0.48, Math.abs(brightnessVal) / 100),
-            },
-          ]}
-        />
-      )}
-
-      {/* LIVE CONTRAST OVERLAY */}
-      {contrastVal !== 0 && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: contrastVal > 0 ? '#000000' : '#808080',
-              opacity: Math.min(0.35, Math.abs(contrastVal) / 140),
-            },
-          ]}
-        />
-      )}
-
-      {/* LIVE SATURATION / VIBRANCE OVERLAY */}
-      {saturateVal !== 0 && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: saturateVal < 0 ? '#334155' : '#FF6B00',
-              opacity: Math.min(0.38, Math.abs(saturateVal) / 140),
-            },
-          ]}
-        />
-      )}
-
-      {/* LIVE WARMTH / SEPIA TINT */}
-      {(warmthVal !== 0 || sepiaVal > 0) && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: sepiaVal > 0 ? '#78350F' : warmthVal > 0 ? '#F59E0B' : '#0284C7',
-              opacity: Math.min(0.5, Math.max(Math.abs(warmthVal) / 130, sepiaVal / 130)),
-            },
-          ]}
-        />
-      )}
-
-      {/* LIVE COLOR TINT LAYER */}
-      {colourVal !== 0 && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: colourVal > 0 ? '#EC4899' : '#06B6D4',
-              opacity: Math.min(0.4, Math.abs(colourVal) / 130),
-            },
-          ]}
-        />
-      )}
-
-      {/* LIVE FADE / MATTE OVERLAY */}
-      {fadeVal > 0 && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              backgroundColor: '#FAF5FF',
-              opacity: (fadeVal / 100) * 0.32,
-            },
-          ]}
-        />
-      )}
-
-      {/* LIVE VIGNETTE BORDER */}
-      {vignetteVal > 0 && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFillObject,
-            {
-              borderWidth: Math.min(52, vignetteVal * 0.95),
-              borderColor: 'rgba(0,0,0,0.75)',
-            },
-          ]}
-        />
-      )}
-
-      {/* RULE OF THIRDS GRID (Visible during Ratio/Crop and Adjust Mode) */}
-      {(editMode === 'adjust' || editMode === 'ratio') && !isBakingMedia && (
-        <View style={styles.gridOverlay} pointerEvents="none">
-          <View style={styles.gridRow}>
-            <View style={styles.gridCell} />
-            <View style={styles.gridCell} />
-            <View style={styles.gridCell} />
-          </View>
-          <View style={styles.gridRow}>
-            <View style={styles.gridCell} />
-            <View style={styles.gridCell} />
-            <View style={styles.gridCell} />
-          </View>
-          <View style={styles.gridRow}>
-            <View style={styles.gridCell} />
-            <View style={styles.gridCell} />
-            <View style={styles.gridCell} />
-          </View>
-        </View>
-      )}
-
-      {/* DRAGGABLE & MOVABLE TEXT OVERLAYS LAYER */}
-      {textOverlays.map((item) => (
-        <DraggableTextOverlayItem
-          key={item.id}
-          item={item}
-          canvasWidth={SCREEN_WIDTH}
-          canvasHeight={previewHeight}
-          onUpdatePosition={handleUpdateTextPosition}
-          onSelect={handleSelectTextOverlay}
-          onDelete={handleRemoveTextOverlay}
-          isBaking={isBakingMedia}
-        />
-      ))}
-
-      {/* Multiple media counter badge */}
-      {mediaUrls.length > 1 && !isBakingMedia && (
-        <View style={styles.mediaIndexBadge}>
-          <Text style={styles.mediaIndexBadgeText}>
-            {activeIndex + 1}/{mediaUrls.length}
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: themeColors.bgScreen }]}
     >
       {/* STEP 1: SELECT MEDIA */}
       {step === 'select' && (
         <View style={[styles.stepSelectContainer, { backgroundColor: themeColors.bgScreen }]}>
           <Header title="New Post" showLogo={false} onBack={() => navigation.goBack()} />
 
-          <View style={styles.selectBody}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.selectBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={isTablet ? [styles.selectCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }] : styles.selectInner}>
             <View style={[styles.uploadCloudIconBox, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
               <Icon name="upload" size={48} color={ORANGE} />
             </View>
@@ -1317,7 +900,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
 
             {/* Native Gallery / File Upload Button */}
             <TouchableOpacity
-              style={[styles.uploadGalleryBtn, isUploadingMedia && styles.btnDisabled]}
+              style={[styles.uploadGalleryBtn, isTablet && { alignSelf: 'stretch' }, isUploadingMedia && styles.btnDisabled]}
               onPress={handlePickLocalFiles}
               disabled={isUploadingMedia}
             >
@@ -1334,605 +917,106 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
               )}
             </TouchableOpacity>
 
-            {/* Secondary: Paste URL Button */}
             <TouchableOpacity
-              style={[styles.selectMediaBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-              onPress={() => setShowMediaInput(!showMediaInput)}
+              onPress={() => setStep('details')}
+              disabled={isUploadingMedia}
+              style={{ minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Write a text post or poll"
             >
-              <Text style={[styles.selectMediaBtnText, { color: themeColors.textPrimary }]}>Paste Media URL</Text>
+              <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 14 }}>or write a text post or poll</Text>
             </TouchableOpacity>
 
-            {/* Demo Production Photos */}
-            <TouchableOpacity style={[styles.demoPhotosBtn, { backgroundColor: themeColors.chipBg }]} onPress={handleAddDefaultDemoMedia}>
-              <Text style={[styles.demoPhotosBtnText, { color: themeColors.textSecondary }]}>Use Demo Production Photos ✨</Text>
-            </TouchableOpacity>
-
-            {showMediaInput && (
-              <View style={styles.urlInputBox}>
-                <TextInput
-                  style={[styles.urlInput, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
-                  placeholder="https://images.unsplash.com/photo-..."
-                  placeholderTextColor={themeColors.textMuted}
-                  value={mediaInput}
-                  onChangeText={setMediaInput}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity style={styles.addUrlBtn} onPress={handleAddMediaUrl}>
-                  <Text style={styles.addUrlBtnText}>Add</Text>
-                </TouchableOpacity>
-              </View>
-            )}
           </View>
+          </ScrollView>
         </View>
       )}
 
-      {/* STEP 2: INSTAGRAM-STYLE CINEMA STUDIO EDITOR */}
-      {step === 'preview' && (
-        <View style={[styles.editorStepContainer, { backgroundColor: themeColors.bgScreen }]}>
-          {/* Top Bar */}
-          <View style={[styles.editorTopBar, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
-            <TouchableOpacity
-              onPress={() => {
-                if (editMode !== 'main') setEditMode('main');
-                else setStep('select');
-              }}
-              style={{ padding: 4 }}
-            >
-              <Icon name="arrow-left" size={22} color={themeColors.textPrimary} />
-            </TouchableOpacity>
-            <Text style={[styles.editorTopTitle, { color: themeColors.textPrimary }]}>
-              {editMode === 'text'
-                ? 'Text Studio'
-                : editMode === 'filter'
-                ? 'Cinema Filters'
-                : editMode === 'adjust'
-                ? 'Adjustments'
-                : editMode === 'ratio'
-                ? 'Crop & Framing'
-                : 'Edit Photo'}
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                if (editMode !== 'main') setEditMode('main');
-                else handleProceedFromPreview();
-              }}
-              style={{ padding: 4 }}
-            >
-              <Text style={styles.editorTopDoneText}>
-                {editMode !== 'main' ? 'Done' : 'Next'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Centered Main Image Canvas */}
-          {renderCanvasContent()}
-
-          {/* SUB-MENU DRAWER (Exclusive Tool Drawer - Hides Bottom Toolbars) */}
-          {editMode !== 'main' && (
-            <View style={[styles.subMenuDrawer, { backgroundColor: themeColors.bgCard, borderTopColor: themeColors.border }]}>
-              <View style={[styles.drawerHandleBar, { backgroundColor: themeColors.divider }]} />
-
-              {/* 1. FILTER SUB-MENU WITH LIVE STRENGTH SLIDER */}
-              {editMode === 'filter' && (
-                <View style={styles.filterMenuContent}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-                    {FILTERS.map((f) => {
-                      const isSelected = selectedFilter === f.id;
-                      return (
-                        <TouchableOpacity
-                          key={f.id}
-                          style={[styles.filterCard, isSelected && styles.filterCardActive]}
-                          onPress={() => {
-                            setSelectedFilter(f.id);
-                          }}
-                        >
-                          <View style={[styles.filterThumbBox, isSelected && styles.filterThumbBoxActive]}>
-                            {mediaUrls[activeIndex] && (
-                              <CachedImage uri={mediaUrls[activeIndex]} style={styles.fullImg} />
-                            )}
-                            {f.id !== 'Normal' && (
-                              <View
-                                style={[
-                                  StyleSheet.absoluteFillObject,
-                                  { backgroundColor: f.color, opacity: f.maxOpacity },
-                                ]}
-                              />
-                            )}
-                            {isSelected && <View style={styles.filterActivePill} />}
-                          </View>
-                          <Text style={[styles.filterLabel, isSelected && styles.filterLabelActive]}>
-                            {f.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-
-                  {/* Filter Intensity Slider */}
-                  {selectedFilter !== 'Normal' && (
-                    <View style={styles.sliderContainerBox}>
-                      <TouchSlider
-                        min={0}
-                        max={100}
-                        value={filterIntensity}
-                        onChange={setFilterIntensity}
-                        label={`${selectedFilter} Strength`}
-                        unit="%"
-                      />
-                    </View>
-                  )}
-
-                  {/* Apply / Cancel Footer */}
-                  <View style={styles.drawerBottomDoneRow}>
-                    <TouchableOpacity
-                      style={styles.drawerCancelBtn}
-                      onPress={() => {
-                        setSelectedFilter('Normal');
-                        setFilterIntensity(100);
-                        setEditMode('main');
-                      }}
-                    >
-                      <Text style={styles.drawerCancelBtnText}>Reset</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.drawerApplyBtn}
-                      onPress={() => setEditMode('main')}
-                    >
-                      <Icon name="check" size={16} color="#FFFFFF" />
-                      <Text style={styles.drawerApplyBtnText}>Apply</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {/* 2. ADJUSTMENTS SUB-MENU WITH 10 PRO TOOLS & TOUCH SLIDER */}
-              {editMode === 'adjust' && (
-                <View style={styles.adjustMenuContent}>
-                  {/* Tool selection chips scroll */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.adjustToolsScroll}>
-                    {Object.entries(ADJUST_CONFIGS).map(([key, config]) => {
-                      const isSelected = activeAdjustTool === key;
-                      const hasVal = (adjustments[key] || 0) !== 0;
-                      return (
-                        <TouchableOpacity
-                          key={key}
-                          style={[
-                            styles.adjustToolChip,
-                            isSelected && styles.adjustToolChipActive,
-                            hasVal && !isSelected && styles.adjustToolChipHasValue,
-                          ]}
-                          onPress={() => setActiveAdjustTool(key)}
-                        >
-                          <Icon
-                            name={config.icon}
-                            size={16}
-                            color={isSelected ? '#FFFFFF' : hasVal ? ORANGE : '#94A3B8'}
-                          />
-                          <Text
-                            style={[
-                              styles.adjustToolChipText,
-                              isSelected && styles.adjustToolChipTextActive,
-                              hasVal && !isSelected && { color: ORANGE },
-                            ]}
-                          >
-                            {config.label}
-                          </Text>
-                          {hasVal && <View style={styles.toolValueDot} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-
-                  {/* Active Tool Slider */}
-                  <View style={styles.sliderContainerBox}>
-                    {(() => {
-                      const config = ADJUST_CONFIGS[activeAdjustTool] || ADJUST_CONFIGS.brightness;
-                      const curVal = adjustments[activeAdjustTool] || 0;
-                      return (
-                        <TouchSlider
-                          min={config.min}
-                          max={config.max}
-                          value={curVal}
-                          onChange={(val) =>
-                            setAdjustments((prev) => ({
-                              ...prev,
-                              [activeAdjustTool]: val,
-                            }))
-                          }
-                          label={config.label}
-                          unit={activeAdjustTool === 'vignette' || activeAdjustTool === 'fade' ? '%' : ''}
-                        />
-                      );
-                    })()}
-                  </View>
-
-                  {/* Reset Tool / Reset All */}
-                  <View style={styles.adjustActionsRow}>
-                    <TouchableOpacity
-                      style={styles.adjustActionBtn}
-                      onPress={() =>
-                        setAdjustments((prev) => ({
-                          ...prev,
-                          [activeAdjustTool]: 0,
-                        }))
-                      }
-                    >
-                      <Text style={[styles.adjustActionBtnText, { color: themeColors.textSecondary }]}>Reset Tool</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.adjustActionBtn}
-                      onPress={() =>
-                        setAdjustments({
-                          brightness: 0,
-                          contrast: 0,
-                          saturate: 0,
-                          warmth: 0,
-                          vignette: 0,
-                          fade: 0,
-                          sharpen: 0,
-                          structure: 0,
-                          colour: 0,
-                          sepia: 0,
-                        })
-                      }
-                    >
-                      <Text style={[styles.adjustActionBtnText, { color: '#EF4444' }]}>Reset All</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Apply / Cancel Footer */}
-                  <View style={styles.drawerBottomDoneRow}>
-                    <TouchableOpacity
-                      style={[styles.drawerCancelBtn, { backgroundColor: themeColors.chipBg }]}
-                      onPress={() => setEditMode('main')}
-                    >
-                      <Text style={[styles.drawerCancelBtnText, { color: themeColors.textSecondary }]}>Done</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.drawerApplyBtn}
-                      onPress={() => setEditMode('main')}
-                    >
-                      <Icon name="check" size={16} color="#FFFFFF" />
-                      <Text style={styles.drawerApplyBtnText}>Apply</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {/* 3. INSTAGRAM-GRADE TEXT OVERLAYS SUB-MENU */}
-              {editMode === 'text' && (
-                <View style={styles.textMenuContent}>
-                  {/* Text Input Row */}
-                  <View style={styles.textInputRow}>
-                    <TextInput
-                      style={[styles.textOverlayInput, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
-                      placeholder="Type text overlay..."
-                      placeholderTextColor={themeColors.textMuted}
-                      value={overlayInputText}
-                      onChangeText={setOverlayInputText}
-                    />
-                    <TouchableOpacity style={styles.textSaveBtn} onPress={handleSaveTextOverlay}>
-                      <Text style={styles.textSaveBtnText}>{editingTextId ? 'Update' : 'Add'}</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Typography Font Style Pills */}
-                  <View style={styles.textStylesRow}>
-                    {(['modern', 'neon', 'typewriter', 'strong', 'serif'] as const).map((st) => (
-                      <TouchableOpacity
-                        key={st}
-                        style={[styles.textStylePill, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }, overlayStyle === st && styles.textStylePillActive]}
-                        onPress={() => setOverlayStyle(st)}
-                      >
-                        <Text style={[styles.textStylePillText, { color: themeColors.textSecondary }, overlayStyle === st && styles.textStylePillTextActive]}>
-                          {st.toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  {/* Background Mode & Alignment Controls */}
-                  <View style={styles.textControlBarRow}>
-                    {/* Bg Mode Switcher */}
-                    <TouchableOpacity
-                      style={[styles.bgToggleBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                      onPress={() =>
-                        setOverlayBg((prev) =>
-                          prev === 'transparent'
-                            ? 'solid'
-                            : prev === 'solid'
-                            ? 'glass'
-                            : prev === 'glass'
-                            ? 'neon'
-                            : 'transparent'
-                        )
-                      }
-                    >
-                      <Text style={[styles.bgToggleBtnText, { color: themeColors.textPrimary }]}>
-                        Bg: {overlayBg === 'transparent' ? 'None' : overlayBg === 'solid' ? 'Solid' : overlayBg === 'glass' ? 'Glass' : 'Neon'}
-                      </Text>
-                    </TouchableOpacity>
-
-                    {/* Alignment Switcher */}
-                    <TouchableOpacity
-                      style={[styles.alignToggleBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                      onPress={() =>
-                        setOverlayAlign((prev) =>
-                          prev === 'center' ? 'left' : prev === 'left' ? 'right' : 'center'
-                        )
-                      }
-                    >
-                      <Icon
-                        name={overlayAlign === 'left' ? 'align-left' : overlayAlign === 'right' ? 'align-right' : 'align-center'}
-                        size={16}
-                        color={themeColors.textPrimary}
-                      />
-                    </TouchableOpacity>
-
-                    {/* Font Size Pills */}
-                    <View style={styles.fontSizesGroup}>
-                      {[
-                        { label: 'S', size: 14 },
-                        { label: 'M', size: 20 },
-                        { label: 'L', size: 26 },
-                        { label: 'XL', size: 34 },
-                      ].map((sz) => (
-                        <TouchableOpacity
-                          key={sz.label}
-                          style={[
-                            styles.fontSizeBtn,
-                            { backgroundColor: themeColors.chipBg, borderColor: themeColors.border },
-                            overlayFontSize === sz.size && styles.fontSizeBtnActive,
-                          ]}
-                          onPress={() => setOverlayFontSize(sz.size)}
-                        >
-                          <Text
-                            style={[
-                              styles.fontSizeBtnText,
-                              { color: themeColors.textSecondary },
-                              overlayFontSize === sz.size && styles.fontSizeBtnTextActive,
-                            ]}
-                          >
-                            {sz.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  {/* 12 Instagram-Grade Color Palette */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorsScroll}>
-                    {[
-                      { color: '#FFFFFF', name: 'White' },
-                      { color: '#000000', name: 'Black' },
-                      { color: '#FF6B00', name: 'Orange' },
-                      { color: '#FACC15', name: 'Yellow' },
-                      { color: '#22C55E', name: 'Green' },
-                      { color: '#06B6D4', name: 'Cyan' },
-                      { color: '#3B82F6', name: 'Blue' },
-                      { color: '#8B5CF6', name: 'Purple' },
-                      { color: '#EC4899', name: 'Pink' },
-                      { color: '#EF4444', name: 'Red' },
-                      { color: '#14B8A6', name: 'Teal' },
-                      { color: '#EAB308', name: 'Gold' },
-                    ].map((item) => (
-                      <TouchableOpacity
-                        key={item.color}
-                        style={[
-                          styles.colorDot,
-                          { backgroundColor: item.color },
-                          overlayColor === item.color && styles.colorDotActive,
-                        ]}
-                        onPress={() => setOverlayColor(item.color)}
-                      />
-                    ))}
-                  </ScrollView>
-
-                  <Text style={styles.dragHintText}>💡 Drag text on photo to position • Tap text to edit</Text>
-
-                  {/* Apply / Cancel Footer */}
-                  <View style={styles.drawerBottomDoneRow}>
-                    <TouchableOpacity
-                      style={[styles.drawerCancelBtn, { backgroundColor: themeColors.chipBg }]}
-                      onPress={() => setEditMode('main')}
-                    >
-                      <Text style={[styles.drawerCancelBtnText, { color: themeColors.textSecondary }]}>Done</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.drawerApplyBtn}
-                      onPress={() => setEditMode('main')}
-                    >
-                      <Icon name="check" size={16} color="#FFFFFF" />
-                      <Text style={styles.drawerApplyBtnText}>Apply</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {/* 4. FREE CROP & FRAMING SUB-MENU */}
-              {editMode === 'ratio' && (
-                <View style={styles.ratioMenuContent}>
-                  {/* Aspect Ratio Presets (with Free Crop) */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ratioScroll}>
-                    {(
-                      [
-                        { id: 'free', label: 'Free' },
-                        { id: 'original', label: 'Original' },
-                        { id: '1:1', label: '1:1 Square' },
-                        { id: '4:5', label: '4:5 Portrait' },
-                        { id: '16:9', label: '16:9 Cinema' },
-                        { id: '9:16', label: '9:16 Story' },
-                        { id: '3:2', label: '3:2 Photo' },
-                      ] as const
-                    ).map((r) => (
-                      <TouchableOpacity
-                        key={r.id}
-                        style={[styles.ratioBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }, aspectRatio === r.id && styles.ratioBtnActive]}
-                        onPress={() => setAspectRatio(r.id)}
-                      >
-                        <Text style={[styles.ratioBtnText, { color: themeColors.textSecondary }, aspectRatio === r.id && styles.ratioBtnTextActive]}>
-                          {r.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-
-                  {/* Quick Transform Tool Bar (Rotate, Flip, Reset) */}
-                  <View style={styles.cropTransformRow}>
-                    <TouchableOpacity
-                      style={[styles.cropActionChip, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                      onPress={() => setPhotoRotation((prev) => (prev + 90) % 360)}
-                    >
-                      <Icon name="rotate-cw" size={16} color={themeColors.textPrimary} />
-                      <Text style={[styles.cropActionChipText, { color: themeColors.textPrimary }]}>Rotate 90°</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.cropActionChip, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                      onPress={() => setPhotoFlipH((prev) => !prev)}
-                    >
-                      <Icon name="flip-horizontal" size={16} color={themeColors.textPrimary} />
-                      <Text style={[styles.cropActionChipText, { color: themeColors.textPrimary }]}>Flip H</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.cropActionChip, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                      onPress={() => {
-                        setPhotoPan({ x: 0, y: 0 });
-                        setPhotoRotation(0);
-                        setPhotoFlipH(false);
-                        setZoomLevel(100);
-                        setAspectRatio('original');
-                      }}
-                    >
-                      <Text style={[styles.cropActionChipText, { color: '#EF4444' }]}>Reset</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Image Zoom Slider */}
-                  <View style={styles.sliderContainerBox}>
-                    <TouchSlider
-                      min={100}
-                      max={250}
-                      value={zoomLevel}
-                      onChange={setZoomLevel}
-                      label="Crop Zoom"
-                      unit="%"
-                    />
-                  </View>
-
-                  <Text style={[styles.dragHintText, { color: themeColors.textSecondary }]}>💡 Touch and drag photo on canvas to pan & frame</Text>
-
-                  {/* Apply / Cancel Footer */}
-                  <View style={styles.drawerBottomDoneRow}>
-                    <TouchableOpacity
-                      style={[styles.drawerCancelBtn, { backgroundColor: themeColors.chipBg }]}
-                      onPress={() => setEditMode('main')}
-                    >
-                      <Text style={[styles.drawerCancelBtnText, { color: themeColors.textSecondary }]}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.drawerApplyBtn}
-                      onPress={() => setEditMode('main')}
-                    >
-                      <Icon name="check" size={16} color="#FFFFFF" />
-                      <Text style={styles.drawerApplyBtnText}>Apply Framing</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* MAIN TOOLBAR ICONS (Visible ONLY in Main Mode) */}
-          {editMode === 'main' && (
-            <View style={[styles.toolsRowContainer, { backgroundColor: themeColors.bgCard, borderTopColor: themeColors.border }]}>
-              <TouchableOpacity
-                style={styles.toolIconBtn}
-                onPress={() => setEditMode('text')}
-              >
-                <View style={[styles.toolIconCircle, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                  <Icon name="type" size={20} color={themeColors.textPrimary} />
-                </View>
-                <Text style={[styles.toolIconLabel, { color: themeColors.textSecondary }]}>Text</Text>
+      {/* STEP 2: EDIT THE PHOTO (it stays on this phone until the post is shared) */}
+      {step === 'preview' && (() => {
+        const url = mediaUrls[Math.min(activeIndex, Math.max(0, mediaUrls.length - 1))];
+        const local = url ? localRef.current[url] : undefined;
+        const canEdit = !!url && !!local && !local.passthrough && !unreadable[url] && !isVideoUrl(url) && photoEditingAvailable();
+        return (
+          <View style={[styles.editorStepContainer, { backgroundColor: themeColors.bgScreen }]}>
+          <View style={[styles.editorColumn, isTablet && styles.editorColumnTablet, isTablet && { borderColor: themeColors.border, backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.editorTopBar, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setStep('select')} style={{ padding: 4 }}>
+                <Icon name="arrow-left" size={22} color={themeColors.textPrimary} />
               </TouchableOpacity>
-
+              <Text style={[styles.editorTopTitle, { color: themeColors.textPrimary }]}>{isVideoUrl(url) ? 'Edit video' : 'Edit photo'}</Text>
               <TouchableOpacity
-                style={styles.toolIconBtn}
-                onPress={() => setEditMode('filter')}
+                accessibilityRole="button"
+                style={[styles.nextStepBlueBtn, { backgroundColor: ORANGE, minHeight: 40, justifyContent: 'center' }, (isBakingMedia || mediaUrls.length === 0) && styles.btnDisabled]}
+                onPress={handleProceedFromPreview}
+                disabled={isBakingMedia || mediaUrls.length === 0}
               >
-                <View style={[styles.toolIconCircle, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                  <Icon name="aperture" size={20} color={themeColors.textPrimary} />
-                </View>
-                <Text style={[styles.toolIconLabel, { color: themeColors.textSecondary }]}>Filter</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.toolIconBtn}
-                onPress={() => setEditMode('adjust')}
-              >
-                <View style={[styles.toolIconCircle, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                  <Icon name="sliders" size={20} color={themeColors.textPrimary} />
-                </View>
-                <Text style={[styles.toolIconLabel, { color: themeColors.textSecondary }]}>Edit</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.toolIconBtn}
-                onPress={() => setEditMode('ratio')}
-              >
-                <View style={[styles.toolIconCircle, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                  <Icon name="crop" size={20} color={themeColors.textPrimary} />
-                </View>
-                <Text style={[styles.toolIconLabel, { color: themeColors.textSecondary }]}>Ratio</Text>
+                {isBakingMedia ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.nextStepBlueBtnText}>Next</Text>}
               </TouchableOpacity>
             </View>
-          )}
 
-          {/* BOTTOM THUMBNAILS & NEXT STEP ACTION BAR (Visible ONLY in Main Mode) */}
-          {editMode === 'main' && (
-            <View style={[styles.editorBottomActionBar, { backgroundColor: themeColors.bgCard, borderTopColor: themeColors.border }]}>
+            {/* all items in this post */}
+            <View style={[styles.editorBottomActionBar, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border, borderTopWidth: 0, borderBottomWidth: StyleSheet.hairlineWidth }]}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbsScroll}>
-                {mediaUrls.map((url, idx) => (
+                {mediaUrls.map((u, idx) => (
                   <TouchableOpacity
-                    key={idx}
+                    key={u}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Item ${idx + 1} of ${mediaUrls.length}`}
                     style={[styles.thumbCard, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }, activeIndex === idx && styles.thumbCardActive]}
                     onPress={() => setActiveIndex(idx)}
                   >
-                    <CachedImage uri={url} style={styles.fullImg} />
-                    <TouchableOpacity
-                      style={styles.thumbDeleteBadge}
-                      onPress={() => handleRemoveMedia(idx)}
-                    >
-                      <Icon name="x" size={10} color="#FFFFFF" />
+                    {isVideoUrl(u) ? (
+                      <View style={[styles.fullImg, { alignItems: 'center', justifyContent: 'center' }]}><Icon name="video" size={18} color={themeColors.iconSecondary} /></View>
+                    ) : (
+                      <Image source={{ uri: previewOf(u) }} style={styles.fullImg} resizeMode="cover" />
+                    )}
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove item ${idx + 1}`} style={styles.thumbDeleteBadge} onPress={() => handleRemoveMedia(idx)}>
+                      <View style={styles.thumbDeleteDot}><Icon name="x" size={10} color="#FFFFFF" /></View>
                     </TouchableOpacity>
                   </TouchableOpacity>
                 ))}
-
-                {mediaUrls.length < 10 && (
-                  <TouchableOpacity style={[styles.addMoreMediaThumbBtn, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]} onPress={handlePickLocalFiles}>
+                {mediaUrls.length < POST_MEDIA_MAX && (
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add more photos or videos" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={[styles.addMoreMediaThumbBtn, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]} onPress={handlePickLocalFiles}>
                     <Icon name="plus" size={20} color={themeColors.textPrimary} />
                   </TouchableOpacity>
                 )}
               </ScrollView>
-
-              <TouchableOpacity
-                style={[styles.nextStepBlueBtn, isBakingMedia && styles.btnDisabled]}
-                onPress={handleProceedFromPreview}
-                disabled={isBakingMedia}
-              >
-                {isBakingMedia ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.nextStepBlueBtnText}>Next</Text>
-                )}
-              </TouchableOpacity>
             </View>
-          )}
-        </View>
-      )}
+
+            {!url ? null : (local && isVideoUrl(url) && !unreadable[url] && videoEditingAvailable()) ? (
+              <VideoTrimmer
+                key={url}
+                uri={url}
+                edit={videoEdits[url]}
+                onChange={(e) => setVideoEdits((prev) => ({ ...prev, [url]: e }))}
+                onUnreadable={() => setUnreadable((prev) => ({ ...prev, [url]: true }))}
+              />
+            ) : canEdit ? (
+              <PhotoEditor
+                key={url}
+                sourceUri={url}
+                prepared
+                recipe={recipes[url] || defaultRecipe()}
+                onChange={(r) => setRecipes((prev) => ({ ...prev, [url]: r }))}
+                onUnreadable={() => setUnreadable((prev) => ({ ...prev, [url]: true }))}
+              />
+            ) : (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: '#000000' }}>
+                {isVideoUrl(url) ? (
+                  <Icon name="video" size={48} color="#FFFFFF" />
+                ) : (
+                  <Image source={{ uri: url }} style={{ width: '100%', flex: 1 }} resizeMode="contain" accessibilityLabel="Preview" />
+                )}
+                <Text style={{ color: '#FFFFFFB3', fontSize: 12, marginTop: 10, textAlign: 'center' }}>
+                  {isVideoUrl(url) ? 'Videos are posted as they are.' : local?.passthrough ? 'GIFs are posted as they are, so they keep moving.' : 'This picture is posted as it is.'}
+                </Text>
+              </View>
+            )}
+          </View>
+          </View>
+        );
+      })()}
 
       {/* STEP 3: DETAILS & CAPTION SCREEN */}
       {step === 'details' && (
@@ -1941,7 +1025,9 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
             showLogo={false}
             title={editPostId ? 'Edit Info' : 'New Post'}
             onBack={() => {
-              if (mediaUrls.length > 0 && !editPostId) setStep('preview');
+              if (sharedJob && !editPostId) navigation.goBack();
+              else if (mediaUrls.length > 0 && !editPostId) setStep('preview');
+              else if (!editPostId) setStep('select');
               else navigation.goBack();
             }}
             rightAction={
@@ -1959,7 +1045,14 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
             }
           />
 
-          <ScrollView style={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            style={styles.scrollContent}
+            contentContainerStyle={{ alignItems: 'center', paddingBottom: 40 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+          <View style={[styles.detailsColumn, isTablet && styles.detailsColumnTablet]}>
             {/* Author Metadata Row with Page Switcher */}
             <View style={styles.authorRow}>
               <View style={styles.avatarCircle}>
@@ -1980,7 +1073,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
                   onPress={() => setShowPageSelector(!showPageSelector)}
                 >
                   <Text style={[styles.authorName, { color: themeColors.textPrimary }]}>{activeAuthorName}</Text>
-                  <Icon name="chevron-down" size={14} color={themeColors.textSecondary} />
+                  <Icon name="chevron-down" size={14} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
 
                 <Text style={[styles.authorCraft, { color: themeColors.textSecondary }]}>
@@ -2028,22 +1121,191 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
             )}
 
             {/* Main Text Content Input with Side Media Preview */}
-            <View style={[styles.captionRowWithMedia, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-              <TextInput
-                style={[styles.textInputFlex, { color: themeColors.textPrimary }]}
-                placeholder="Write a caption or production notes..."
+            <View style={[styles.captionRowWithMedia, isTablet && { minHeight: 150 }, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+              <MentionInput
+                containerStyle={{ flex: 1 }}
+                onMentionSelected={(u) => setPickedMentions((p) => ({ ...p, [u.id]: u }))}
+                style={[styles.textInputFlex, isTablet && { fontSize: 16 }, { color: themeColors.textPrimary }]}
+                placeholder={jobSharePart ? 'Why is this job worth sharing? Tell people who it is for.' : 'Write a caption or production notes...'}
                 placeholderTextColor={themeColors.textMuted}
                 multiline
                 value={content}
                 onChangeText={setContent}
+                maxLength={POST_CAPTION_MAX}
+                accessibilityLabel="Caption"
                 autoFocus
               />
               {mediaUrls[0] && (
-                <View style={styles.sideMediaPreview}>
-                  <CachedImage uri={mediaUrls[0]} style={styles.fullImg} />
+                <View style={[styles.sideMediaPreview, isTablet && { width: 104, height: 130 }]}>
+                  <CachedImage uri={previewOf(mediaUrls[0])} style={styles.fullImg} />
                 </View>
               )}
             </View>
+
+            <Text style={{ alignSelf: 'flex-end', marginRight: 4, marginTop: 4, fontSize: 12, color: content.length >= POST_CAPTION_MAX ? '#DC2626' : themeColors.textSecondary }}>
+              {content.length} / {POST_CAPTION_MAX}
+            </Text>
+
+            {/* The job being shared (like attaching a link in a LinkedIn post) */}
+            {!!jobShareData && (
+              <View pointerEvents="none" style={{ marginTop: 12, borderWidth: 1, borderColor: themeColors.border, borderRadius: 16, overflow: 'hidden' }} accessibilityLabel="The job that will be shared">
+                <JobShareCard
+                  jobId={jobShareData.id || jobShareData.jobId || ''}
+                  title={jobShareData.title}
+                  company={jobShareData.company}
+                  location={jobShareData.location}
+                  salary={jobShareData.salary}
+                  type={jobShareData.type}
+                  logoUrl={jobShareData.logoUrl || jobShareData.logo_url}
+                  description={jobShareData.description}
+                  compact={true}
+                />
+              </View>
+            )}
+
+            {/* Add to your post */}
+            <View style={{ marginTop: 14, marginBottom: 10, width: '100%' }}>
+              <Text style={[styles.sectionLabel, { color: themeColors.textSecondary, marginBottom: 8 }]}>ADD TO YOUR POST</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {([
+                  { key: 'gif', label: 'GIF', on: false, disabled: isUploadingMedia || mediaUrls.length >= POST_MEDIA_MAX, show: true, press: () => setGifOpen(true), a11y: 'Add a GIF' },
+                  { key: 'poll', label: 'Poll', on: !!poll, disabled: false, show: !editPostId, press: () => setPoll(poll ? null : emptyPollDraft()), a11y: poll ? 'Remove the poll' : 'Add a poll' },
+                  { key: 'schedule', label: 'Schedule', on: scheduleOn, disabled: false, show: !editPostId, press: () => { setScheduleOn(!scheduleOn); if (!scheduleOn && !scheduleAt) setScheduleAt(schedulePresets()[0].at); }, a11y: scheduleOn ? 'Post now instead of scheduling' : 'Schedule the post' },
+                ]).filter((c) => c.show).map((c) => (
+                  <TouchableOpacity
+                    key={c.key}
+                    onPress={c.press}
+                    disabled={c.disabled}
+                    accessibilityRole="button"
+                    accessibilityLabel={c.a11y}
+                    accessibilityState={{ selected: c.on, disabled: c.disabled }}
+                    style={{ minHeight: 44, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: c.on ? themeColors.primary : themeColors.chipBg, borderColor: c.on ? themeColors.primary : themeColors.border, opacity: c.disabled ? 0.5 : 1 }}
+                  >
+                    <Text style={{ fontWeight: '700', fontSize: 14, color: c.on ? themeColors.onPrimary : themeColors.textPrimary }}>{c.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Poll builder (new posts only) */}
+            {!editPostId && !!poll && (
+              <View style={{ marginTop: 14, width: '100%', borderWidth: 1, borderRadius: 18, padding: 14, gap: 10, borderColor: themeColors.border, backgroundColor: themeColors.bgCard }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: themeColors.textPrimary }}>Poll</Text>
+                    <Text style={{ fontSize: 12, color: themeColors.textSecondary }}>Ask your connections to vote: 2 to {POLL_MAX_OPTIONS} options.</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setPoll(null)} accessibilityRole="button" accessibilityLabel="Remove the poll" style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="x" size={18} color={themeColors.iconSecondary} />
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={{ minHeight: 48, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, color: themeColors.textPrimary, borderColor: themeColors.border, backgroundColor: themeColors.inputBg }}
+                  placeholder="Ask a question (optional)"
+                  placeholderTextColor={themeColors.textMuted}
+                  value={poll.question}
+                  onChangeText={(t2) => setPoll({ ...poll, question: t2 })}
+                  maxLength={POLL_QUESTION_MAX}
+                  accessibilityLabel="Poll question"
+                />
+                {poll.options.map((opt, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: themeColors.textMuted }} />
+                    <TextInput
+                      style={{ flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, color: themeColors.textPrimary, borderColor: themeColors.border, backgroundColor: themeColors.inputBg }}
+                      placeholder={`Option ${i + 1}`}
+                      placeholderTextColor={themeColors.textMuted}
+                      value={opt}
+                      onChangeText={(t2) => setPoll({ ...poll, options: poll.options.map((o, j) => (j === i ? t2 : o)) })}
+                      maxLength={POLL_OPTION_MAX}
+                      accessibilityLabel={`Poll option ${i + 1}`}
+                    />
+                    {poll.options.length > 2 && (
+                      <TouchableOpacity
+                        onPress={() => setPoll({ ...poll, options: poll.options.filter((_, j) => j !== i) })}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove option ${i + 1}`}
+                        style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <Icon name="x" size={16} color={themeColors.iconSecondary} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+                {poll.options.length < POLL_MAX_OPTIONS && (
+                  <TouchableOpacity
+                    onPress={() => setPoll({ ...poll, options: [...poll.options, ''] })}
+                    accessibilityRole="button"
+                    style={{ minHeight: 46, borderWidth: 1, borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderColor: themeColors.border }}
+                  >
+                    <Text style={{ color: themeColors.primary, fontWeight: '700' }}>+ Add option  <Text style={{ color: themeColors.textMuted, fontWeight: '400' }}>({poll.options.length}/{POLL_MAX_OPTIONS})</Text></Text>
+                  </TouchableOpacity>
+                )}
+                <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.6, color: themeColors.textSecondary }}>POLL LENGTH</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {POLL_DURATIONS.map((d) => {
+                    const on = poll.durationId === d.id;
+                    return (
+                      <TouchableOpacity
+                        key={d.id}
+                        onPress={() => setPoll({ ...poll, durationId: d.id })}
+                        style={{ paddingHorizontal: 16, minHeight: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? themeColors.textPrimary : themeColors.chipBg, borderColor: on ? themeColors.textPrimary : themeColors.border }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: on }}
+                      >
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: on ? themeColors.bgScreen : themeColors.textSecondary }}>{d.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Schedule panel (new posts only) */}
+            {!editPostId && scheduleOn && (
+              <View style={{ marginTop: 14, width: '100%', borderWidth: 1, borderRadius: 18, padding: 14, gap: 10, borderColor: themeColors.border, backgroundColor: themeColors.bgCard }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: themeColors.textPrimary }}>Publish later</Text>
+                <Text style={{ fontSize: 12, color: themeColors.textSecondary }}>
+                  {scheduleAt ? `Goes live ${formatSchedule(scheduleAt)}. Only you see it until then.` : 'Choose a time up to 90 days ahead.'}
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {schedulePresets().map((pr) => {
+                    const on = scheduleAt?.getTime() === pr.at.getTime();
+                    return (
+                      <TouchableOpacity key={pr.id} onPress={() => setScheduleAt(pr.at)} style={{ paddingHorizontal: 16, minHeight: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? themeColors.textPrimary : themeColors.chipBg, borderColor: on ? themeColors.textPrimary : themeColors.border }} accessibilityRole="button" accessibilityState={{ selected: on }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: on ? themeColors.bgScreen : themeColors.textSecondary }}>{pr.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {([['Day', 24 * 60], ['Time', 60]] as [string, number][]).map(([label, minutes]) => (
+                  <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ width: 44, color: themeColors.textSecondary, fontWeight: '700' }}>{label}</Text>
+                    <TouchableOpacity onPress={() => scheduleAt && setScheduleAt(new Date(scheduleAt.getTime() - minutes * 60_000))} style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center', justifyContent: 'center' }} accessibilityRole="button" accessibilityLabel={`Earlier by one ${label.toLowerCase()}`}>
+                      <Text style={{ fontSize: 20, color: themeColors.textPrimary }}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={{ flex: 1, textAlign: 'center', color: themeColors.textPrimary, fontWeight: '700' }}>{scheduleAt ? formatSchedule(scheduleAt) : ''}</Text>
+                    <TouchableOpacity onPress={() => scheduleAt && setScheduleAt(new Date(scheduleAt.getTime() + minutes * 60_000))} style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center', justifyContent: 'center' }} accessibilityRole="button" accessibilityLabel={`Later by one ${label.toLowerCase()}`}>
+                      <Text style={{ fontSize: 20, color: themeColors.textPrimary }}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {!!linkPreview && (
+              <View style={{ marginTop: 8 }}>
+                <LinkPreviewCard preview={linkPreview} />
+                <TouchableOpacity
+                  onPress={() => { setDismissedLink(linkPreview.url); setLinkPreview(null); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove link preview"
+                  style={{ position: 'absolute', right: 20, top: 6, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Icon name="x" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Tagged People Pills */}
             {taggedUsers.length > 0 && (
@@ -2062,9 +1324,100 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
               </View>
             )}
 
-            {/* Craft Selector Pills */}
+            {/* Alt text: a description for people who cannot see the photo */}
+            {mediaUrls.length > 0 && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionLabel, { color: themeColors.textSecondary }]}>ALT TEXT (FOR SCREEN READERS)</Text>
+                {mediaUrls.map((u, i) => (
+                  <View key={u} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    {isVideoUrl(u) ? (
+                      <View style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: themeColors.chipBg, alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="video" size={18} color={themeColors.iconSecondary} />
+                      </View>
+                    ) : (
+                      <CachedImage uri={previewOf(u)} style={{ width: 44, height: 44, borderRadius: 8 }} />
+                    )}
+                    <TextInput
+                      style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, color: themeColors.textPrimary, borderColor: themeColors.border, backgroundColor: themeColors.inputBg }}
+                      placeholder={`Describe item ${i + 1}`}
+                      placeholderTextColor={themeColors.textMuted}
+                      value={altTexts[u] || ''}
+                      onChangeText={(t) => setAltTexts((prev) => ({ ...prev, [u]: t }))}
+                      maxLength={POST_ALT_TEXT_MAX}
+                      accessibilityLabel={`Alt text for item ${i + 1}`}
+                    />
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Who can see it */}
             <View style={styles.section}>
-              <Text style={[styles.sectionLabel, { color: themeColors.textSecondary }]}>TAG CRAFT / CATEGORY</Text>
+              <Text style={[styles.sectionLabel, { color: themeColors.textSecondary }]}>AUDIENCE</Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                {POST_AUDIENCES.map((a) => {
+                  const on = audience === a.id;
+                  return (
+                    <TouchableOpacity
+                      key={a.id}
+                      onPress={() => setAudience(a.id)}
+                      style={[{ paddingHorizontal: 16, minHeight: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: themeColors.chipBg, borderColor: themeColors.border }, on && { backgroundColor: ORANGE, borderColor: ORANGE }]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      accessibilityLabel={`${a.label}. ${a.description}`}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: on ? '#FFFFFF' : themeColors.textSecondary }}>{a.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={{ marginTop: 6, fontSize: 12, color: themeColors.textSecondary }}>{POST_AUDIENCES.find((a) => a.id === audience)?.description}</Text>
+            </View>
+
+            {/* Collaborators (new posts only) */}
+            {!editPostId && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionLabel, { color: themeColors.textSecondary, marginBottom: 2 }]}>COLLABORATORS</Text>
+                <Text style={{ fontSize: 12, color: themeColors.textSecondary, marginBottom: 8 }}>Credit up to {COLLAB_MAX} people. They are shown on the post only after they accept.</Text>
+                {collabs.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    {collabs.map((c) => (
+                      <TouchableOpacity key={c.id} onPress={() => setCollabs((prev) => prev.filter((x) => x.id !== c.id))} style={[styles.taggedPill, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]} accessibilityRole="button" accessibilityLabel={`Remove ${c.username || c.full_name}`}>
+                        <Text style={styles.taggedPillText}>@{c.username || c.full_name}</Text>
+                        <Icon name="x" size={12} color={ORANGE} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {collabs.length < COLLAB_MAX && (
+                  <>
+                    <TextInput
+                      style={{ minHeight: 44, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, color: themeColors.textPrimary, borderColor: themeColors.border, backgroundColor: themeColors.inputBg }}
+                      placeholder="Search people to credit"
+                      placeholderTextColor={themeColors.textMuted}
+                      value={collabQuery}
+                      onChangeText={setCollabQuery}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      accessibilityLabel="Search people to credit"
+                    />
+                    {collabResults.map((u) => (
+                      <TouchableOpacity key={u.id} onPress={() => { setCollabs((prev) => [...prev, u]); setCollabQuery(''); setCollabResults([]); }} style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }} accessibilityRole="button">
+                        {u.avatar_url ? <CachedImage uri={u.avatar_url} style={{ width: 32, height: 32, borderRadius: 16 }} /> : <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: themeColors.chipBg }} />}
+                        <View>
+                          <Text style={{ color: themeColors.textPrimary, fontWeight: '600' }}>{u.full_name || u.username}</Text>
+                          <Text style={{ color: themeColors.textSecondary, fontSize: 12 }}>@{u.username}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* Category */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, { color: themeColors.textSecondary }]}>CATEGORY</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillsRow}>
                 {CRAFT_OPTIONS.map((c) => {
                   const isSelected = selectedCraft === c;
@@ -2095,7 +1448,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
                     {location ? `Location: ${location}` : 'Add Production Location'}
                   </Text>
                 </View>
-                <Icon name={showLocations ? 'chevron-up' : 'chevron-down'} size={16} color={themeColors.textSecondary} />
+                <Icon name={showLocations ? 'chevron-up' : 'chevron-down'} size={16} color={themeColors.iconSecondary} />
               </TouchableOpacity>
 
               {showLocations && (
@@ -2163,7 +1516,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
                   <Icon name="settings" size={16} color={themeColors.textPrimary} />
                   <Text style={[styles.locationLabel, { color: themeColors.textPrimary }]}>Advanced Options</Text>
                 </View>
-                <Icon name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={16} color={themeColors.textSecondary} />
+                <Icon name={showAdvanced ? 'chevron-up' : 'chevron-down'} size={16} color={themeColors.iconSecondary} />
               </TouchableOpacity>
 
               {showAdvanced && (
@@ -2172,6 +1525,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
                     <Text style={[styles.switchLabel, { color: themeColors.textPrimary }]}>Hide Like & View Counts</Text>
                     <Switch
                       value={hideLikes}
+                      accessibilityLabel="Hide Like & View Counts"
                       onValueChange={setHideLikes}
                       trackColor={{ false: themeColors.border, true: ORANGE }}
                     />
@@ -2180,6 +1534,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
                     <Text style={[styles.switchLabel, { color: themeColors.textPrimary }]}>Turn Off Commenting</Text>
                     <Switch
                       value={disableComments}
+                      accessibilityLabel="Turn Off Commenting"
                       onValueChange={setDisableComments}
                       trackColor={{ false: themeColors.border, true: ORANGE }}
                     />
@@ -2203,6 +1558,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
                 <Text style={[styles.toolBtnText, { color: themeColors.textSecondary }]}>Location</Text>
               </TouchableOpacity>
             </View>
+          </View>
           </ScrollView>
         </View>
       )}
@@ -2213,21 +1569,31 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Tag People</Text>
-              <TouchableOpacity onPress={() => setShowTagModal(false)}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setShowTagModal(false)}>
                 <Icon name="x" size={20} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
 
             <View style={styles.modalSearchBox}>
-              <Icon name="search" size={16} color="#94A3B8" />
-              <TextInput
+              <Icon name="search" size={16} color={themeColors.iconMuted} />
+              <TextInput returnKeyType="search" accessibilityLabel="Search by name or @username"
                 style={styles.modalInput}
                 placeholder="Search by name or @username..."
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={themeColors.textMuted}
                 value={tagQuery}
                 onChangeText={setTagQuery}
                 autoFocus
               />
+              {tagQuery ? (
+                <TouchableOpacity
+                  onPress={() => setTagQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Icon name="x" size={16} color={themeColors.iconMuted} />
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             {isSearchingUsers ? (
@@ -2263,6 +1629,7 @@ export const CreatePostScreen = ({ route, navigation }: { route: any; navigation
           </View>
         </View>
       </Modal>
+      {gifPicker}
     </KeyboardAvoidingView>
   );
 };
@@ -2296,6 +1663,7 @@ const styles = StyleSheet.create({
   flexRowCenter: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
   },
   btnDisabled: {
@@ -2308,10 +1676,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
   },
   selectBody: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
+    paddingVertical: 24,
+  },
+  selectInner: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  selectCard: {
+    width: '100%',
+    maxWidth: 560,
+    alignItems: 'center',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 40,
+    paddingVertical: 44,
   },
   uploadCloudIconBox: {
     width: 90,
@@ -2325,14 +1707,14 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   selectTitle: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#FFFFFF',
     fontFamily: 'Lora-Bold',
     marginBottom: 8,
   },
   selectSub: {
-    fontSize: 13.5,
+    fontSize: 14,
     color: '#94A3B8',
     textAlign: 'center',
     marginBottom: 28,
@@ -2351,8 +1733,8 @@ const styles = StyleSheet.create({
   },
   uploadGalleryBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   selectMediaBtn: {
@@ -2366,7 +1748,7 @@ const styles = StyleSheet.create({
   },
   selectMediaBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   demoPhotosBtn: {
@@ -2377,7 +1759,7 @@ const styles = StyleSheet.create({
   },
   demoPhotosBtnText: {
     color: '#94A3B8',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   urlInputBox: {
@@ -2405,7 +1787,7 @@ const styles = StyleSheet.create({
   },
   addUrlBtnText: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
     fontSize: 13,
   },
 
@@ -2413,7 +1795,19 @@ const styles = StyleSheet.create({
   editorStepContainer: {
     flex: 1,
     backgroundColor: '#090D16',
-    justifyContent: 'space-between',
+  },
+  // phones: the editor fills the screen. tablets: a centred card, so the toolbars and the photo share one column
+  editorColumn: {
+    flex: 1,
+    width: '100%',
+  },
+  editorColumnTablet: {
+    maxWidth: 1000,
+    alignSelf: 'center',
+    marginVertical: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
   editorTopBar: {
     height: 52,
@@ -2427,18 +1821,20 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   editorTopTitle: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.3,
   },
   editorTopDoneText: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: ORANGE,
   },
   canvasArea: {
-    width: SCREEN_WIDTH,
+    width: '100%', // follows the window (it used to be fixed at the size measured when the app started)
+    maxWidth: 760,
+    alignSelf: 'center',
     backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2468,8 +1864,8 @@ const styles = StyleSheet.create({
   },
   mediaIndexBadgeText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   floatingRatioPill: {
     position: 'absolute',
@@ -2493,8 +1889,8 @@ const styles = StyleSheet.create({
   },
   floatingRatioBtnText: {
     color: '#94A3B8',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   floatingRatioBtnTextActive: {
     color: '#000000',
@@ -2575,14 +1971,14 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   filterLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
     marginTop: 6,
   },
   filterLabelActive: {
     color: ORANGE,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   sliderContainerBox: {
     paddingHorizontal: 6,
@@ -2639,7 +2035,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   adjustActionBtnText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
   },
@@ -2660,7 +2056,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     color: '#FFFFFF',
-    fontSize: 13.5,
+    fontSize: 14,
     borderWidth: 1,
     borderColor: '#334155',
   },
@@ -2672,7 +2068,7 @@ const styles = StyleSheet.create({
   },
   textSaveBtnText: {
     color: '#FFFFFF',
-    fontWeight: '900',
+    fontWeight: '700',
     fontSize: 13,
   },
   textStylesRow: {
@@ -2695,8 +2091,8 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   textStylePillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     letterSpacing: 0.3,
   },
@@ -2719,12 +2115,12 @@ const styles = StyleSheet.create({
   },
   bgToggleBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   alignToggleBtn: {
     width: 34,
-    height: 34,
+    height: 44,
     borderRadius: 10,
     backgroundColor: '#1E293B',
     alignItems: 'center',
@@ -2750,8 +2146,8 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   fontSizeBtnText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
   },
   fontSizeBtnTextActive: {
@@ -2773,7 +2169,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.2 }],
   },
   dragHintText: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: '#94A3B8',
     textAlign: 'center',
     marginTop: 2,
@@ -2795,7 +2191,7 @@ const styles = StyleSheet.create({
   },
   drawerCancelBtnText: {
     color: '#94A3B8',
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   drawerApplyBtn: {
@@ -2809,8 +2205,8 @@ const styles = StyleSheet.create({
   },
   drawerApplyBtnText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // ---------------- RATIO & CROP MENU ----------------
@@ -2836,8 +2232,8 @@ const styles = StyleSheet.create({
   },
   ratioBtnText: {
     color: '#94A3B8',
-    fontSize: 11.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   ratioBtnTextActive: {
     color: '#FFFFFF',
@@ -2862,8 +2258,8 @@ const styles = StyleSheet.create({
   },
   cropActionChipText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // ---------------- TOOLBAR ICONS ROW ----------------
@@ -2900,13 +2296,13 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   toolIconLabel: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
   },
   toolIconLabelActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 
   // ---------------- BOTTOM THUMBNAILS & NEXT ----------------
@@ -2914,7 +2310,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 6,
     backgroundColor: '#090D16',
     borderTopWidth: 1,
     borderTopColor: '#1E293B',
@@ -2923,8 +2319,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   thumbCard: {
-    width: 48,
-    height: 56,
+    width: 44,
+    height: 44,
     borderRadius: 8,
     backgroundColor: '#1E293B',
     marginRight: 8,
@@ -2935,21 +2331,30 @@ const styles = StyleSheet.create({
   },
   thumbCardActive: {
     borderColor: ORANGE,
+    borderWidth: 2.5,
   },
+  // a 24 px touch area (inside the 44 px thumbnail, so it is not clipped) with a small round badge in its corner
   thumbDeleteBadge: {
     position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    top: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    padding: 2,
+  },
+  thumbDeleteDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.75)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   addMoreMediaThumbBtn: {
-    width: 48,
-    height: 56,
+    width: 44,
+    height: 44,
     borderRadius: 8,
     backgroundColor: '#1E293B',
     alignItems: 'center',
@@ -2968,14 +2373,21 @@ const styles = StyleSheet.create({
   },
   nextStepBlueBtnText: {
     color: '#FFFFFF',
-    fontWeight: '900',
+    fontWeight: '700',
     fontSize: 14,
   },
 
   // ---------------- STEP 3: DETAILS ----------------
   scrollContent: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  detailsColumn: {
+    width: '100%',
+  },
+  detailsColumnTablet: {
+    maxWidth: 820,
   },
   publishBtn: {
     backgroundColor: ORANGE,
@@ -2988,8 +2400,8 @@ const styles = StyleSheet.create({
   },
   publishBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '900',
+    fontSize: 14,
+    fontWeight: '700',
   },
   authorRow: {
     flexDirection: 'row',
@@ -3017,7 +2429,7 @@ const styles = StyleSheet.create({
   },
   avatarFallbackText: {
     color: '#FFFFFF',
-    fontWeight: '900',
+    fontWeight: '700',
     fontSize: 18,
   },
   authorMeta: {
@@ -3029,8 +2441,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   authorName: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   authorCraft: {
@@ -3047,8 +2459,8 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   pageSelectorHeader: {
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     marginBottom: 8,
     letterSpacing: 0.5,
@@ -3065,13 +2477,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#33415580',
   },
   pageItemText: {
-    fontSize: 13.5,
+    fontSize: 14,
     color: '#FFFFFF',
     fontWeight: '700',
   },
   pageItemTextActive: {
     color: ORANGE,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   captionRowWithMedia: {
     flexDirection: 'row',
@@ -3105,8 +2517,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   taggedLabel: {
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     marginRight: 4,
   },
@@ -3124,14 +2536,14 @@ const styles = StyleSheet.create({
   taggedPillText: {
     fontSize: 12,
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   section: {
     marginBottom: 16,
   },
   sectionLabel: {
-    fontSize: 11.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     marginBottom: 8,
     letterSpacing: 0.5,
@@ -3153,13 +2565,13 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   craftPillText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#94A3B8',
     fontWeight: '700',
   },
   craftPillTextActive: {
     color: '#FFFFFF',
-    fontWeight: '900',
+    fontWeight: '700',
   },
   locationHeaderRow: {
     flexDirection: 'row',
@@ -3172,7 +2584,7 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   locationLabel: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
   },
@@ -3195,7 +2607,7 @@ const styles = StyleSheet.create({
   },
   currentLocationBtnText: {
     color: ORANGE,
-    fontWeight: '900',
+    fontWeight: '700',
     fontSize: 13,
   },
   locationSearchInput: {
@@ -3216,7 +2628,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#334155',
   },
   locationItemText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#E2E8F0',
   },
   advancedOptionsBox: {
@@ -3234,7 +2646,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchLabel: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
   },
@@ -3258,7 +2670,7 @@ const styles = StyleSheet.create({
   },
   toolBtnText: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
 
@@ -3276,6 +2688,9 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
     borderTopWidth: 1,
     borderTopColor: '#334155',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -3284,8 +2699,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 17,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   modalSearchBox: {
@@ -3325,7 +2740,7 @@ const styles = StyleSheet.create({
   },
   userSearchFallback: {
     color: '#FFFFFF',
-    fontWeight: '900',
+    fontWeight: '700',
     textAlign: 'center',
     lineHeight: 40,
   },
@@ -3334,7 +2749,7 @@ const styles = StyleSheet.create({
   },
   userSearchName: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   userSearchSub: {

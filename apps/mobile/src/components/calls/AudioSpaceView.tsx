@@ -10,7 +10,7 @@ import {
   Animated,
   Easing,
   DeviceEventEmitter,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { getSupabaseClient } from '@cinecraft/api';
 import { Icon } from '../common/Icon';
@@ -29,6 +29,9 @@ import {
   setMicEnabled,
   spaceAction,
 } from '../../services/liveCall';
+import { calmLoop } from '../../utils/motion';
+import { useResponsive } from '../../hooks/useResponsive';
+import { useUserSettings } from '../../hooks/useUserSettings';
 
 // Same palette as the call screen so the two feel like one product.
 const DARK_BG = '#0F0F12';
@@ -41,7 +44,6 @@ const AMBER = '#F59E0B';
 const RED = '#EF4444';
 const PURPLE = '#7C3AED';
 const ORANGE = '#FF4B33';
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const EMOJIS = ['❤️', '👏', '🔥', '😂', '😮', '🎉', '👍', '🙏'];
 
@@ -70,6 +72,15 @@ const roleLabel = (p: LiveParticipant): string | null =>
 export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
   const live = useLiveCall();
   const { callState, updateCallState, endCall } = useGlobalCall();
+  const { width: winW, height: winH } = useWindowDimensions();
+  const { isTablet, isLandscape } = useResponsive();
+  const { themeColors: tc, isDark } = useUserSettings();
+  const glassBg = isDark ? GLASS_BG : 'rgba(15,23,42,0.05)';
+  const glassBorder = isDark ? GLASS_BORDER : tc.border;
+  const popBg = isDark ? 'rgba(24,24,28,0.97)' : 'rgba(255,255,255,0.98)';
+  const islandBg = isDark ? 'rgba(24,24,28,0.96)' : 'rgba(255,255,255,0.97)';
+  const stageCols = isTablet ? (isLandscape ? 4 : 3) : 2;
+  const listenerCols = isTablet ? (isLandscape ? 8 : 6) : 4;
   const [avatars, setAvatars] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<LiveParticipant | null>(null);
   const [showRequests, setShowRequests] = useState(false);
@@ -94,7 +105,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
       pulse.setValue(1);
       return;
     }
-    const loop = Animated.loop(
+    const loop = calmLoop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.35, duration: 1200, easing: Easing.out(Easing.ease), useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 1, duration: 0, useNativeDriver: true }),
@@ -108,7 +119,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
   const showEmoji = (emoji: string) => {
     const id = `${Date.now()}_${Math.random()}`;
     const anim = new Animated.Value(0);
-    const x = Math.floor(Math.random() * (SCREEN_WIDTH - 120)) + 40;
+    const x = Math.floor(Math.random() * (winW - 120)) + 40;
     setFloating((prev) => [...prev, { id, emoji, x, anim }]);
     Animated.timing(anim, { toValue: 1, duration: 1800, easing: Easing.out(Easing.ease), useNativeDriver: true }).start(() => {
       setFloating((prev) => prev.filter((e) => e.id !== id));
@@ -158,7 +169,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
   const connected = live.phase === 'connected';
   const statusText =
     live.phase === 'reconnecting' ? 'Reconnecting…' : connected ? formatCallDuration(callState.callDuration) : 'Joining…';
-  const statusColor = live.phase === 'reconnecting' ? AMBER : connected ? EMERALD : '#FDBA74';
+  const statusColor = live.phase === 'reconnecting' ? AMBER : connected ? EMERALD : isDark ? '#FDBA74' : '#C2410C';
 
   const act = async (action: SpaceAction, target?: LiveParticipant, mode?: SpeakingMode) => {
     setPicked(null);
@@ -198,7 +209,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
       <CachedImage uri={avatar} style={{ width: size, height: size, borderRadius: size / 2 }} />
     ) : (
       <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#4C2A9A', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: size * 0.4 }}>{initial}</Text>
+        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: size * 0.4 }}>{initial}</Text>
       </View>
     );
   };
@@ -209,11 +220,11 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
     return (
       <TouchableOpacity
         key={p.identity}
-        style={styles.stageCellWrap}
+        style={[styles.stageCellWrap, { width: `${100 / stageCols}%` }]}
         activeOpacity={manageable ? 0.8 : 1}
         onPress={() => manageable && setPicked(p)}
       >
-        <View style={[styles.stageCard, p.isSpeaking && styles.stageCardSpeaking]}>
+        <View style={[styles.stageCard, { backgroundColor: tc.bgCard, borderColor: glassBorder }, isTablet && { height: 210 }, p.isSpeaking && styles.stageCardSpeaking]}>
           {p.isSpeaking && (
             <>
               <Animated.View
@@ -226,7 +237,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
               />
             </>
           )}
-          <View style={[styles.avatarWrap, p.isSpeaking && styles.avatarWrapSpeaking]}>{renderAvatar(p, 72)}</View>
+          <View style={[styles.avatarWrap, p.isSpeaking && styles.avatarWrapSpeaking]}>{renderAvatar(p, isTablet ? 92 : 72)}</View>
 
           {badge ? (
             <View style={styles.roleBadge}>
@@ -234,9 +245,9 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
             </View>
           ) : null}
 
-          <View style={[styles.nameTag, p.isSpeaking && styles.nameTagSpeaking]}>
+          <View style={[styles.nameTag, { backgroundColor: isDark ? 'rgba(0,0,0,0.65)' : tc.chipBg, borderColor: glassBorder }, p.isSpeaking && styles.nameTagSpeaking]}>
             <Icon name={p.isMicOn ? 'mic' : 'mic-off'} size={11} color={p.isMicOn ? EMERALD : RED} />
-            <Text style={[styles.nameText, p.isSpeaking && { color: EMERALD }]} numberOfLines={1}>
+            <Text style={[styles.nameText, { color: tc.textPrimary }, p.isSpeaking && { color: EMERALD }]} numberOfLines={1}>
               {p.name}
               {p.isLocal ? ' (You)' : ''}
             </Text>
@@ -247,32 +258,32 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: tc.bgScreen }]}>
       {/* ── Header pills (same layout as the call screen) ─────────────────────────────────────────────────── */}
       <View style={styles.topHeader}>
         <TouchableOpacity
-          style={styles.pill}
+          style={[styles.pill, { backgroundColor: glassBg, borderColor: glassBorder }]}
           onPress={() => updateCallState({ isSpeakerOn: !callState.isSpeakerOn })}
           activeOpacity={0.8}
         >
-          <Icon name={callState.isSpeakerOn ? 'volume-2' : 'volume-x'} size={14} color={callState.isSpeakerOn ? EMERALD : '#94A3B8'} />
-          <Text style={[styles.pillText, callState.isSpeakerOn && { color: EMERALD }]}>
+          <Icon name={callState.isSpeakerOn ? 'volume-2' : 'volume-x'} size={14} color={callState.isSpeakerOn ? EMERALD : tc.iconSecondary} />
+          <Text style={[styles.pillText, { color: tc.textPrimary }, callState.isSpeakerOn && { color: EMERALD }]}>
             {callState.isSpeakerOn ? 'Speaker' : 'Earpiece'}
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.pill}>
+        <View style={[styles.pill, { backgroundColor: glassBg, borderColor: glassBorder }]}>
           <View style={[styles.statusDot, { backgroundColor: connected ? RED : statusColor }]} />
           <Text style={[styles.liveWord, !connected && { color: statusColor }]}>{connected ? 'LIVE' : ''}</Text>
           <Text style={[styles.pillText, { color: statusColor, fontVariant: ['tabular-nums'] }]}>{statusText}</Text>
         </View>
 
         {onExpand ? (
-          <TouchableOpacity style={styles.roundIcon} onPress={onExpand} activeOpacity={0.8}>
-            <Icon name="maximize-2" size={16} color="#FFFFFF" />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Full screen" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={[styles.roundIcon, { backgroundColor: glassBg, borderColor: glassBorder }]} onPress={onExpand} activeOpacity={0.8}>
+            <Icon name="maximize-2" size={16} color={tc.textPrimary} />
           </TouchableOpacity>
         ) : (
-          <View style={styles.roundIcon} />
+          <View style={[styles.roundIcon, { backgroundColor: glassBg, borderColor: glassBorder }]} />
         )}
       </View>
 
@@ -287,7 +298,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
                 left: item.x,
                 opacity: item.anim.interpolate({ inputRange: [0, 0.15, 0.75, 1], outputRange: [0, 1, 0.9, 0] }),
                 transform: [
-                  { translateY: item.anim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_HEIGHT * 0.5, 60] }) },
+                  { translateY: item.anim.interpolate({ inputRange: [0, 1], outputRange: [winH * 0.5, 60] }) },
                   { scale: item.anim.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.6, 1.25, 1] }) },
                 ],
               },
@@ -301,15 +312,15 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
       {/* Title + how people get on stage */}
       <View style={styles.titleRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, { color: tc.textPrimary }]} numberOfLines={1}>
             {roomName || 'Audio space'}
           </Text>
-          <Text style={styles.subtitle} numberOfLines={1}>
+          <Text style={[styles.subtitle, { color: tc.textSecondary }]} numberOfLines={1}>
             {live.speakingMode === 'open' ? 'Open mic · anyone can speak' : 'Raise your hand · the host approves speakers'}
           </Text>
         </View>
         {isManager && (
-          <View style={styles.modeSwitch}>
+          <View style={[styles.modeSwitch, { backgroundColor: tc.bgCard, borderColor: glassBorder }]}>
             {(['request', 'open'] as SpeakingMode[]).map((m) => (
               <TouchableOpacity
                 key={m}
@@ -317,7 +328,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
                 onPress={() => live.speakingMode !== m && void act('set_mode', undefined, m)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.modeChipText, live.speakingMode === m && { color: '#FFFFFF' }]}>
+                <Text style={[styles.modeChipText, { color: tc.textSecondary }, live.speakingMode === m && { color: '#FFFFFF' }]}>
                   {m === 'request' ? 'Raise hand' : 'Open mic'}
                 </Text>
               </TouchableOpacity>
@@ -328,18 +339,18 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.sectionRow}>
-          <Icon name="mic" size={11} color="#64748B" />
-          <Text style={styles.sectionLabel}>ON STAGE ({stage.length})</Text>
+          <Icon name="mic" size={11} color={tc.iconMuted} />
+          <Text style={[styles.sectionLabel, { color: tc.textMuted }]}>ON STAGE ({stage.length})</Text>
         </View>
         <View style={styles.stageGrid}>{stage.map(renderStageCard)}</View>
 
-        <View style={[styles.listenerCard]}>
+        <View style={[styles.listenerCard, { backgroundColor: tc.bgCard, borderColor: glassBorder }]}>
           <View style={styles.sectionRow}>
-            <Icon name="headphones" size={11} color="#64748B" />
-            <Text style={styles.sectionLabel}>LISTENERS ({listeners.length})</Text>
+            <Icon name="headphones" size={11} color={tc.iconMuted} />
+            <Text style={[styles.sectionLabel, { color: tc.textMuted }]}>LISTENERS ({listeners.length})</Text>
           </View>
           {listeners.length === 0 ? (
-            <Text style={styles.emptyText}>Nobody is listening yet. Share the room so people can join.</Text>
+            <Text style={[styles.emptyText, { color: tc.textMuted }]}>Nobody is listening yet. Share the room so people can join.</Text>
           ) : (
             <View style={styles.listenerWrap}>
               {listeners.map((p) => {
@@ -347,17 +358,17 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
                 return (
                   <TouchableOpacity
                     key={p.identity}
-                    style={styles.listenerCell}
+                    style={[styles.listenerCell, { width: `${100 / listenerCols}%` }]}
                     activeOpacity={manageable ? 0.7 : 1}
                     onPress={() => manageable && setPicked(p)}
                   >
-                    {renderAvatar(p, 44)}
+                    {renderAvatar(p, isTablet ? 56 : 44)}
                     {p.handRaised && (
                       <View style={styles.handBadge}>
-                        <Text style={{ fontSize: 11 }}>✋</Text>
+                        <Text style={{ fontSize: 12 }}>✋</Text>
                       </View>
                     )}
-                    <Text style={styles.listenerName} numberOfLines={1}>
+                    <Text style={[styles.listenerName, { color: tc.textSecondary }]} numberOfLines={1}>
                       {p.name}
                       {p.isLocal ? ' (You)' : ''}
                     </Text>
@@ -371,9 +382,9 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
 
       {/* Reaction picker (above the island) */}
       {showReactions && (
-        <View style={styles.reactionPopover}>
+        <View style={[styles.reactionPopover, { backgroundColor: popBg, borderColor: isDark ? glassBorder : '#CBD5E1', shadowColor: '#000', shadowOpacity: isDark ? 0.5 : 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 12 }]}>
           {EMOJIS.map((e) => (
-            <TouchableOpacity key={e} style={styles.reactionBtn} onPress={() => sendReaction(e)} activeOpacity={0.7}>
+            <TouchableOpacity key={e} style={[styles.reactionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F1F5F9', borderRadius: 22, marginHorizontal: 2 }]} onPress={() => sendReaction(e)} activeOpacity={0.7}>
               <Text style={styles.reactionEmoji}>{e}</Text>
             </TouchableOpacity>
           ))}
@@ -382,10 +393,10 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
 
       {/* ── Floating control island ───────────────────────────────────────────────────────────────────────── */}
       <View style={styles.bottomBarContainer}>
-        <View style={styles.island}>
+        <View style={[styles.island, { backgroundColor: islandBg, borderColor: glassBorder }, isTablet && { gap: 14, paddingHorizontal: 16, paddingVertical: 10 }]}>
           {live.canSpeak ? (
-            <TouchableOpacity
-              style={[styles.ctrlMain, live.isMicEnabled ? styles.ctrlMainLive : styles.ctrlMainMuted]}
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={[styles.ctrlMain, isTablet && styles.ctrlMainT, live.isMicEnabled ? styles.ctrlMainLive : styles.ctrlMainMuted]}
               onPress={() => void setMicEnabled(!live.isMicEnabled)}
               activeOpacity={0.85}
             >
@@ -393,7 +404,7 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.ctrlMain, live.handRaised ? styles.ctrlMainHand : styles.ctrlGlass]}
+              style={[styles.ctrlMain, isTablet && styles.ctrlMainT, live.handRaised ? styles.ctrlMainHand : [styles.ctrlGlass, { backgroundColor: glassBg, borderColor: glassBorder }]]}
               onPress={() => void raiseHand(!live.handRaised)}
               activeOpacity={0.85}
             >
@@ -406,15 +417,15 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
               style={styles.stepDownBtn}
               onPress={() => spaceAction('demote', { targetUserId: live.participants.find((p) => p.isLocal)?.identity })}
             >
-              <Text style={styles.stepDownText}>Step down</Text>
+              <Text style={[styles.stepDownText, { color: tc.textSecondary }]}>Step down</Text>
             </TouchableOpacity>
           )}
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: tc.border }]} />
 
           {isManager && (
-            <TouchableOpacity style={styles.ctrlIcon} onPress={() => setShowRequests(true)} activeOpacity={0.8}>
-              <Icon name="users" size={18} color="#E2E8F0" />
+            <TouchableOpacity style={[styles.ctrlIcon, { backgroundColor: glassBg, borderColor: glassBorder }, isTablet && styles.ctrlIconT]} onPress={() => setShowRequests(true)} activeOpacity={0.8}>
+              <Icon name="users" size={18} color={tc.textPrimary} />
               {hands.length > 0 && (
                 <View style={styles.countBadge}>
                   <Text style={styles.countBadgeText}>{hands.length}</Text>
@@ -423,17 +434,17 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            style={[styles.ctrlIcon, showReactions && styles.ctrlIconActive]}
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Emoji" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={[styles.ctrlIcon, { backgroundColor: glassBg, borderColor: glassBorder }, isTablet && styles.ctrlIconT, showReactions && styles.ctrlIconActive]}
             onPress={() => setShowReactions((v) => !v)}
             activeOpacity={0.8}
           >
-            <Icon name="smile" size={18} color={showReactions ? ORANGE : '#E2E8F0'} />
+            <Icon name="smile" size={18} color={showReactions ? ORANGE : tc.textPrimary} />
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: tc.border }]} />
 
-          <TouchableOpacity style={styles.endBtn} onPress={leave} activeOpacity={0.85}>
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={[styles.endBtn, isTablet && styles.ctrlMainT]} onPress={leave} activeOpacity={0.85}>
             <Icon name={isHost ? 'x' : 'log-out'} size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
@@ -442,16 +453,16 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
       {/* ── Manage one person ─────────────────────────────────────────────────────────────────────────────── */}
       <Modal visible={!!picked} transparent animationType="fade" onRequestClose={() => setPicked(null)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setPicked(null)}>
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { backgroundColor: tc.bgScreen, borderColor: glassBorder }]}>
             {picked && (
               <>
                 <View style={styles.sheetHeader}>
                   {renderAvatar(picked, 42)}
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.sheetName} numberOfLines={1}>
+                    <Text style={[styles.sheetName, { color: tc.textPrimary }]} numberOfLines={1}>
                       {picked.name}
                     </Text>
-                    <Text style={styles.sheetRole}>{picked.role.toUpperCase()}</Text>
+                    <Text style={[styles.sheetRole, { color: tc.textMuted }]}>{picked.role.toUpperCase()}</Text>
                   </View>
                 </View>
                 {!isOnStage(picked) && <SheetButton label="Invite to speak" icon="mic" onPress={() => act('promote', picked)} />}
@@ -475,15 +486,15 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
       {/* ── Raised hands ──────────────────────────────────────────────────────────────────────────────────── */}
       <Modal visible={showRequests} transparent animationType="fade" onRequestClose={() => setShowRequests(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowRequests(false)}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Requests to speak ({hands.length})</Text>
+          <View style={[styles.sheet, { backgroundColor: tc.bgScreen, borderColor: glassBorder }]}>
+            <Text style={[styles.sheetTitle, { color: tc.textPrimary }]}>Requests to speak ({hands.length})</Text>
             {hands.length === 0 ? (
-              <Text style={styles.emptyText}>No raised hands right now.</Text>
+              <Text style={[styles.emptyText, { color: tc.textMuted }]}>No raised hands right now.</Text>
             ) : (
               hands.map((p) => (
                 <View key={p.identity} style={styles.requestRow}>
                   {renderAvatar(p, 38)}
-                  <Text style={[styles.sheetName, { flex: 1 }]} numberOfLines={1}>
+                  <Text style={[styles.sheetName, { color: tc.textPrimary, flex: 1 }]} numberOfLines={1}>
                     {p.name}
                   </Text>
                   <TouchableOpacity style={styles.approveBtn} onPress={() => act('promote', p)}>
@@ -499,10 +510,10 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
 
       {/* ── Connection lost → rejoin ──────────────────────────────────────────────────────────────────────── */}
       {live.phase === 'dropped' && (
-        <View style={styles.dropped}>
+        <View style={[styles.dropped, { backgroundColor: isDark ? 'rgba(15,15,18,0.95)' : 'rgba(248,250,252,0.97)' }]}>
           <Icon name="wifi-off" size={40} color={RED} />
-          <Text style={styles.droppedTitle}>Connection lost</Text>
-          <Text style={styles.droppedBody}>You were disconnected from the space. It may still be running — tap Rejoin.</Text>
+          <Text style={[styles.droppedTitle, { color: tc.textPrimary }]}>Connection lost</Text>
+          <Text style={[styles.droppedBody, { color: tc.textSecondary }]}>You were disconnected from the space. It may still be running — tap Rejoin.</Text>
           <TouchableOpacity style={styles.rejoinBtn} onPress={() => void rejoinLiveCall()}>
             <Text style={styles.rejoinText}>Rejoin space</Text>
           </TouchableOpacity>
@@ -515,12 +526,15 @@ export const AudioSpaceView = ({ roomName, onExpand }: Props) => {
   );
 };
 
-const SheetButton = ({ label, onPress, danger, icon }: { label: string; onPress: () => void; danger?: boolean; icon?: string }) => (
-  <TouchableOpacity style={styles.sheetBtn} onPress={onPress} activeOpacity={0.8}>
-    {icon ? <Icon name={icon} size={16} color={danger ? RED : '#E2E8F0'} /> : null}
-    <Text style={[styles.sheetBtnText, danger && { color: RED }]}>{label}</Text>
-  </TouchableOpacity>
-);
+const SheetButton = ({ label, onPress, danger, icon }: { label: string; onPress: () => void; danger?: boolean; icon?: string }) => {
+  const { themeColors: tc } = useUserSettings();
+  return (
+    <TouchableOpacity style={[styles.sheetBtn, { borderTopColor: tc.divider }]} onPress={onPress} activeOpacity={0.8}>
+      {icon ? <Icon name={icon} size={16} color={danger ? RED : tc.textPrimary} /> : null}
+      <Text style={[styles.sheetBtnText, { color: tc.textPrimary }, danger && { color: RED }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+};
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: DARK_BG },
@@ -538,24 +552,24 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   pillText: { color: '#E2E8F0', fontSize: 12, fontWeight: '700' },
-  liveWord: { color: RED, fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  liveWord: { color: RED, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
-  roundIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: GLASS_BG, borderColor: GLASS_BORDER, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  roundIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: GLASS_BG, borderColor: GLASS_BORDER, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 
   floatingLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 },
   floatingEmoji: { position: 'absolute', top: 0, fontSize: 44 },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 6, paddingBottom: 8, gap: 10 },
-  title: { color: '#FFFFFF', fontSize: 21, fontWeight: '800' },
+  title: { color: '#FFFFFF', fontSize: 20, fontWeight: '700' },
   subtitle: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
   modeSwitch: { flexDirection: 'row', backgroundColor: SURFACE, borderRadius: 16, padding: 3, borderColor: GLASS_BORDER, borderWidth: 1 },
   modeChip: { paddingHorizontal: 11, paddingVertical: 5, borderRadius: 13 },
   modeChipActive: { backgroundColor: PURPLE },
-  modeChipText: { color: '#94A3B8', fontSize: 11, fontWeight: '700' },
+  modeChipText: { color: '#94A3B8', fontSize: 12, fontWeight: '700' },
 
-  scrollContent: { paddingBottom: 110, paddingHorizontal: 12 },
+  scrollContent: { paddingBottom: 130, paddingHorizontal: 12 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, marginBottom: 8, paddingHorizontal: 4 },
-  sectionLabel: { color: '#64748B', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  sectionLabel: { color: '#64748B', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
 
   stageGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   stageCellWrap: { width: '50%', padding: 4 },
@@ -575,7 +589,7 @@ const styles = StyleSheet.create({
   avatarWrap: { padding: 3, borderRadius: 40, borderWidth: 2, borderColor: 'transparent' },
   avatarWrapSpeaking: { borderColor: EMERALD },
   roleBadge: { position: 'absolute', top: 9, left: 9, backgroundColor: PURPLE, borderRadius: 9, paddingHorizontal: 8, paddingVertical: 2 },
-  roleBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  roleBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700', letterSpacing: 0.8 },
   nameTag: {
     position: 'absolute',
     left: 8,
@@ -592,12 +606,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   nameTagSpeaking: { borderColor: 'rgba(16,185,129,0.55)' },
-  nameText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', flexShrink: 1 },
+  nameText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700', flexShrink: 1 },
 
   listenerCard: { marginTop: 14, backgroundColor: CARD_BG, borderRadius: 22, borderWidth: 1, borderColor: GLASS_BORDER, padding: 12, marginHorizontal: 4 },
   listenerWrap: { flexDirection: 'row', flexWrap: 'wrap' },
   listenerCell: { width: '25%', alignItems: 'center', paddingVertical: 8 },
-  listenerName: { color: '#CBD5E1', fontSize: 11, marginTop: 4, maxWidth: 70 },
+  listenerName: { color: '#CBD5E1', fontSize: 12, marginTop: 4, maxWidth: 84 },
   handBadge: { position: 'absolute', top: 4, right: 10, backgroundColor: '#FDE68A', borderRadius: 10, paddingHorizontal: 3 },
   emptyText: { color: '#64748B', fontSize: 13, paddingHorizontal: 4, paddingBottom: 4 },
 
@@ -613,7 +627,7 @@ const styles = StyleSheet.create({
     padding: 6,
     zIndex: 30,
   },
-  reactionBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  reactionBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   reactionEmoji: { fontSize: 24 },
 
   bottomBarContainer: { position: 'absolute', bottom: 14, left: 0, right: 0, alignItems: 'center', zIndex: 20 },
@@ -633,34 +647,36 @@ const styles = StyleSheet.create({
     elevation: 14,
   },
   ctrlMain: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  ctrlMainT: { width: 58, height: 58, borderRadius: 29 },
+  ctrlIconT: { width: 48, height: 48, borderRadius: 24 },
   ctrlMainLive: { backgroundColor: EMERALD },
   ctrlMainMuted: { backgroundColor: RED },
   ctrlMainHand: { backgroundColor: PURPLE },
   ctrlGlass: { backgroundColor: GLASS_BG, borderWidth: 1, borderColor: GLASS_BORDER },
-  ctrlIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: GLASS_BG, borderWidth: 1, borderColor: GLASS_BORDER },
+  ctrlIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: GLASS_BG, borderWidth: 1, borderColor: GLASS_BORDER },
   ctrlIconActive: { backgroundColor: 'rgba(255,75,51,0.18)', borderColor: 'rgba(255,75,51,0.45)' },
   divider: { width: 1, height: 22, backgroundColor: 'rgba(255,255,255,0.16)' },
   stepDownBtn: { paddingHorizontal: 8, paddingVertical: 6 },
   stepDownText: { color: '#94A3B8', fontWeight: '700', fontSize: 12 },
   endBtn: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DC2626', shadowColor: RED, shadowOpacity: 0.5, shadowRadius: 10, elevation: 6 },
   countBadge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  countBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
+  countBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: DARK_BG, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, borderColor: GLASS_BORDER, padding: 16, paddingBottom: 26 },
+  sheet: { backgroundColor: DARK_BG, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, borderColor: GLASS_BORDER, padding: 16, paddingBottom: 26, width: '100%', maxWidth: 640, alignSelf: 'center' },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-  sheetName: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  sheetRole: { color: '#64748B', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginTop: 2 },
-  sheetTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', marginBottom: 10 },
+  sheetName: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  sheetRole: { color: '#64748B', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginTop: 2 },
+  sheetTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginBottom: 10 },
   sheetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.1)' },
-  sheetBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
+  sheetBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
   requestRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   approveBtn: { backgroundColor: EMERALD, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7 },
-  approveText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12 },
+  approveText: { color: '#FFFFFF', fontWeight: '700', fontSize: 12 },
 
   dropped: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,15,18,0.95)', alignItems: 'center', justifyContent: 'center', padding: 28, zIndex: 60 },
-  droppedTitle: { color: '#FFFFFF', fontSize: 19, fontWeight: '800', marginTop: 14 },
+  droppedTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '700', marginTop: 14 },
   droppedBody: { color: '#94A3B8', fontSize: 13, textAlign: 'center', marginTop: 8, lineHeight: 19 },
   rejoinBtn: { marginTop: 20, backgroundColor: EMERALD, borderRadius: 26, paddingVertical: 12, paddingHorizontal: 36 },
-  rejoinText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  rejoinText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });

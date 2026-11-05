@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, TouchableOpacity, Platform, Dimensions, 
 import { useNavigation } from '@react-navigation/native';
 
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { getCurrentUserIdSync } from '../../services/offlineCache';
 
 interface AppLogoProps {
   showText?: boolean;
@@ -34,6 +35,11 @@ export const AppLogo: React.FC<AppLogoProps> = ({
     if (onPress) {
       onPress();
     } else if (navigation) {
+      // signed out (landing, login, register): the Feed is for members, so the logo leads back to the landing page
+      if (!getCurrentUserIdSync()) {
+        try { navigation.navigate('Landing'); } catch (e) { /* already there */ }
+        return;
+      }
       try {
         navigation.navigate('MainTabs', { screen: 'Feed' });
       } catch (e) {
@@ -54,7 +60,7 @@ export const AppLogo: React.FC<AppLogoProps> = ({
   const content = (
     <View style={styles.container}>
       <Image
-        source={require('../../assets/logo.jpg')}
+        source={require('../../assets/logo-512.png')}
         style={[styles.logoImage, { width: iconSize, height: iconSize, borderRadius: iconSize / 2 }]}
         resizeMode="contain"
       />

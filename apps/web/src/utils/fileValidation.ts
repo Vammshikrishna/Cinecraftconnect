@@ -10,7 +10,8 @@ export const FILE_SIZE_LIMITS = {
 
 // Allowed file types
 export const ALLOWED_FILE_TYPES = {
-  image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+  // SVG is deliberately not allowed: it can carry script when served inline.
+  image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
   video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
   file: [
     'application/pdf',
@@ -22,6 +23,32 @@ export const ALLOWED_FILE_TYPES = {
     'text/csv',
   ],
   audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm'],
+};
+
+/** Extensions that are never accepted, whatever MIME type the file claims (programs, scripts, installers, web pages, SVG). */
+export const BLOCKED_EXTENSIONS = [
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'msp', 'dll', 'sys', 'pif', 'cpl', 'lnk', 'reg', 'inf',
+  'js', 'mjs', 'cjs', 'jse', 'vbs', 'vbe', 'wsf', 'wsh', 'ps1', 'psm1', 'sh', 'bash', 'zsh', 'csh', 'php', 'phtml', 'py', 'pl', 'rb',
+  'jar', 'class', 'apk', 'aab', 'ipa', 'app', 'dmg', 'pkg', 'deb', 'rpm', 'appimage', 'bin', 'run', 'hta', 'gadget',
+  'html', 'htm', 'xhtml', 'shtml', 'svg', 'svgz', 'xml', 'xsl', 'swf',
+  'docm', 'xlsm', 'pptm',
+];
+
+/** The real extension is the last segment of the name; trailing dots and spaces are ignored (Windows drops them). */
+export const fileExtension = (name: string): string => {
+  const clean = String(name ?? '').replace(/[\s.]+$/g, '');
+  const i = clean.lastIndexOf('.');
+  return i < 0 ? '' : clean.slice(i + 1).toLowerCase();
+};
+
+/**
+ * Every dot-separated segment after the first is treated as an extension, so a double extension such as `name.exe.txt`
+ * is refused too (F-01). Normal names with dots (`my.script.v2.pdf`) still pass.
+ */
+export const hasBlockedExtension = (name: string): boolean => {
+  const clean = String(name ?? '').replace(/[\s.]+$/g, '');
+  const segments = clean.split('.').slice(1).map((seg) => seg.trim().toLowerCase());
+  return segments.some((seg) => BLOCKED_EXTENSIONS.includes(seg));
 };
 
 export const fileValidationSchema = z.object({
@@ -67,13 +94,9 @@ export const validateFile = (file: File): FileValidationResult => {
     };
   }
 
-  // Validate file name for security
-  const dangerousExtensions = ['.exe', '.bat', '.cmd', '.sh', '.php', '.js', '.jar'];
-  const hassDangerousExtension = dangerousExtensions.some(ext => 
-    file.name.toLowerCase().endsWith(ext)
-  );
-  
-  if (hassDangerousExtension) {
+  // Validate the file name for security. The declared MIME type comes from the browser (or the sender) and cannot be
+  // trusted on its own, so the real extension (the part after the LAST dot) is checked as well.
+  if (hasBlockedExtension(file.name)) {
     return {
       valid: false,
       error: 'File type not allowed for security reasons',

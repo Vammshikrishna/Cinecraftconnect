@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 
 import { supabase } from '@/integrations/supabase/client';
@@ -9,27 +10,38 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Check, ChevronRight, ChevronLeft, Star, Clapperboard, Building2 } from 'lucide-react';
+import { Loader2, Check, ChevronRight, ChevronLeft, Star, Clapperboard, Building2, X } from 'lucide-react';
+import { sanitizeUsername, USERNAME_MAX, USERNAME_STATUS_TEXT, friendlyError } from '@cinecraft/core';
+import { useUsernameCheck } from '@/hooks/useUsernameCheck';
 
 const CRAFT_OPTIONS = [
-    'Director', 'Producer', 'Actor', 'Cinematographer', 'Editor', 'Writer',
-    'Sound Designer', 'Production Designer', 'Costume Designer', 'Makeup Artist',
-    'VFX Artist', 'Composer', 'Gaffer', 'Grip', 'Other'
+    'Actor', 'Art Director', 'Boom Operator', 'Casting Director', 'Choreographer', 'Cinematographer', 'Colorist', 'Composer', 'Concept Artist',
+    'Costume Designer', 'Director', 'Editor', 'Executive Producer', 'First Assistant Camera (1st AC)', 'First Assistant Director (1st AD)',
+    'Foley Artist', 'Gaffer', 'Grip', 'Hair Stylist', 'Key Grip', 'Location Manager', 'Makeup Artist', 'Producer', 'Production Assistant (PA)',
+    'Production Designer', 'Production Manager', 'Production Sound Mixer', 'Prop Master', 'Screenwriter', 'Script Supervisor', 'Set Decorator',
+    'Sound Designer', 'Sound Editor', 'Special Effects (SFX) Supervisor', 'Storyboard Artist', 'Stunt Coordinator', 'VFX Artist', 'VFX Supervisor',
+    'Writer', 'Other'
 ];
 
 type AccountType = 'fan' | 'creator' | 'studio';
 
 export const ProfileCompletion = () => {
-    const { user, profile } = useAuth();
+    const { user, profile, signOut, refreshProfile } = useAuth();
     const { toast } = useToast();
-    const { push } = useAppNavigation();
+    const { push, replace } = useAppNavigation();
+    const queryClient = useQueryClient();
 
     // Step 0 = choose account type, 1 = basic info, 2 = optional details
     const [step, setStep] = useState(0);
+    const [loading, setLoading] = useState<null | 'skip' | 'complete'>(null);
 
-    // Redirect internal users who shouldn't be here
+    // Redirect internal users who shouldn't be here, and people who already finished onboarding
     useEffect(() => {
-        const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
+        const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin', 'finance'].includes(profile.role));
+        if (!isInternal && profile?.onboarding_completed && loading === null) {
+            push('/feed', { noScroll: true });
+            return;
+        }
         if (isInternal) {
             const destination = profile?.role === 'super_admin' ? '/super-admin' : 
                                profile?.role === 'admin' ? '/admin' : 
@@ -37,76 +49,117 @@ export const ProfileCompletion = () => {
             push(destination, { noScroll: true });
         }
     }, [profile, push]);
-    const [loading, setLoading] = useState(false);
-    const [checkingUsername, setCheckingUsername] = useState(false);
-    const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
     const [accountType, setAccountType] = useState<AccountType | null>(null);
     const [username, setUsername] = useState('');
     const [fullName, setFullName] = useState('');
     const [bio, setBio] = useState('');
-    const [craft, setCraft] = useState('');
+    // a visitor who picked their role on the landing page starts with it selected
+    const [craft, setCraft] = useState(() => {
+        try {
+            const r = sessionStorage.getItem('cc_landing_role');
+            return r && CRAFT_OPTIONS.includes(r) ? r : '';
+        } catch { return ''; }
+    });
     const [location, setLocation] = useState('');
     const [website, setWebsite] = useState('');
     const [phone, setPhone] = useState('');
 
-    const checkUsernameAvailability = async (value: string) => {
-        if (value.length < 3) { setUsernameAvailable(null); return; }
-        if (!/^[a-z0-9_]{3,20}$/.test(value)) { setUsernameAvailable(false); return; }
-        setCheckingUsername(true);
+    const usernameStatus = useUsernameCheck(username);
+
+    // Keep wizard progress across a refresh (this tab only; the phone number is deliberately not stored).
+    const draftKey = user?.id ? `profile_completion_draft_${user.id}` : null;
+    const [draftReady, setDraftReady] = useState(false);
+    useEffect(() => {
+        if (!draftKey) return;
         try {
-            const { data, error } = await supabase.from('profiles').select('username').eq('username', value.toLowerCase()).maybeSingle();
-            if (error) throw error;
-            setUsernameAvailable(!data);
-        } catch { setUsernameAvailable(null); } finally { setCheckingUsername(false); }
-    };
+            const d = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
+            if (d) {
+                if (d.accountType === 'fan' || d.accountType === 'creator' || d.accountType === 'studio') setAccountType(d.accountType);
+                if (typeof d.username === 'string') setUsername(d.username);
+                if (typeof d.fullName === 'string') setFullName(d.fullName);
+                if (typeof d.bio === 'string') setBio(d.bio);
+                if (typeof d.craft === 'string') setCraft(d.craft);
+                if (typeof d.location === 'string') setLocation(d.location);
+                if (typeof d.website === 'string') setWebsite(d.website);
+                if ([0, 1, 2].includes(d.step) && d.accountType) setStep(d.step);
+            }
+        } catch { /* storage unavailable or corrupt: start fresh */ }
+        setDraftReady(true);
+    }, [draftKey]);
+    useEffect(() => {
+        if (!draftKey || !draftReady) return;
+        try { sessionStorage.setItem(draftKey, JSON.stringify({ step, accountType, username, fullName, bio, craft, location, website })); } catch { /* ignore */ }
+    }, [draftKey, draftReady, step, accountType, username, fullName, bio, craft, location, website]);
 
-    const handleUsernameChange = (value: string) => {
-        const lowercase = value.toLowerCase();
-        setUsername(lowercase);
-        const timer = setTimeout(() => checkUsernameAvailability(lowercase), 500);
-        return () => clearTimeout(timer);
-    };
+    // sign-in with Google or Apple already gives us a name: start from it
+    useEffect(() => {
+        const meta: any = user?.user_metadata;
+        const known = profile?.full_name || meta?.full_name || meta?.name;
+        if (known) setFullName(prev => prev || String(known));
+    }, [user?.id, profile?.full_name]);
 
-    const handleNextStep = () => {
-        if (!username || !fullName) {
-            toast({ title: 'Error', description: 'Please fill in all required fields', variant: 'destructive' });
+    const handleNextStep = (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (!username.trim() || !fullName.trim()) {
+            toast({ title: 'Missing details', description: 'Please fill in your username and full name.', variant: 'destructive' });
             return;
         }
-        if (!usernameAvailable) {
-            toast({ title: 'Error', description: 'Please choose an available username', variant: 'destructive' });
+        if (usernameStatus !== 'available') {
+            toast({ title: 'Check your username', description: USERNAME_STATUS_TEXT[usernameStatus === 'checking' || usernameStatus === 'idle' ? 'checking' : usernameStatus], variant: 'destructive' });
             return;
         }
         setStep(2);
     };
 
-    const handleComplete = async () => {
+    const normalizeWebsite = (value: string) => {
+        const v = value.trim();
+        if (!v) return '';
+        return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+    };
+
+    /** skip = true saves only the required details and ignores anything typed on the optional step */
+    const handleComplete = async (skip = false) => {
         if (!user) return;
-        setLoading(true);
+        setLoading(skip ? 'skip' : 'complete');
         try {
             const updateData: any = {
                 username: username.toLowerCase(),
-                full_name: fullName,
+                full_name: fullName.trim(),
                 onboarding_completed: true,
                 account_type: accountType || 'fan',
             };
-            if (bio) updateData.bio = bio;
-            if (craft) updateData.craft = craft;
-            if (location) updateData.location = location;
-            if (website) updateData.website = website;
+            if (!skip) {
+                if (bio.trim()) updateData.bio = bio.trim();
+                if (craft) updateData.craft = craft;
+                if (location.trim()) updateData.location = location.trim();
+                if (website.trim()) updateData.website = normalizeWebsite(website);
+            }
 
             const { error } = await supabase.from('profiles').update(updateData).eq('id', user.id);
-            if (error) throw error;
-            if (phone) {
-                const { error: phoneError } = await (supabase as any).from('profile_private').upsert({ user_id: user.id, phone, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+            if (error) {
+                // someone took the username while this form was open: send them back to pick another
+                if ((error as any).code === '23505' || /duplicate|unique/i.test(error.message)) {
+                    setStep(1);
+                    toast({ title: 'Username just taken', description: 'Someone else claimed it a moment ago. Please choose another.', variant: 'destructive' });
+                    return;
+                }
+                throw error;
+            }
+            if (!skip && phone.trim()) {
+                const { error: phoneError } = await (supabase as any).from('profile_private').upsert({ user_id: user.id, phone: phone.trim(), updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
                 if (phoneError) console.warn('Could not save phone number:', phoneError.message);
             }
-            toast({ title: 'Success', description: 'Profile completed successfully!' });
-            window.location.href = '/feed';
+            try { if (draftKey) sessionStorage.removeItem(draftKey); } catch { /* ignore */ }
+            // load the finished profile into the app (so the onboarding gate lets us through), then go to the feed in place
+            await refreshProfile();
+            queryClient.invalidateQueries();
+            toast({ title: 'Profile complete', description: 'Welcome to CineCraft Connect.' });
+            replace('/feed');
         } catch (err: any) {
-            toast({ title: 'Error', description: err.message || 'Failed to complete profile', variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(err, 'Failed to complete profile'), variant: 'destructive' });
         } finally {
-            setLoading(false);
+            setLoading(null);
         }
     };
 
@@ -119,9 +172,9 @@ export const ProfileCompletion = () => {
                     <h1 className="text-3xl font-bold mb-2">Complete Your Profile</h1>
                     <p className="text-muted-foreground">Step {step + 1} of {totalSteps}</p>
                     {/* Progress bar */}
-                    <div className="mt-4 flex gap-1.5 justify-center">
+                    <div className="mt-4 flex gap-1.5 justify-center" role="progressbar" aria-valuemin={1} aria-valuemax={totalSteps} aria-valuenow={step + 1} aria-label="Profile setup progress">
                         {[0, 1, 2].map(s => (
-                            <div key={s} className={`h-1.5 rounded-full transition-all duration-300 ${s <= step ? 'bg-primary w-10' : 'bg-border w-6'}`} />
+                            <div key={s} className={`h-1.5 rounded-full transition duration-300 ${s <= step ? 'bg-primary w-10' : 'bg-border w-6'}`} />
                         ))}
                     </div>
                 </div>
@@ -133,15 +186,17 @@ export const ProfileCompletion = () => {
                         <div className="space-y-6">
                             <div className="text-center mb-2">
                                 <h2 className="text-xl font-bold mb-1">How will you use CineCraft?</h2>
-                                <p className="text-sm text-muted-foreground">Choose your account type — you can't change this later.</p>
+                                <p className="text-sm text-muted-foreground">Choose your account type — you can switch it later in Settings.</p>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div role="radiogroup" aria-label="Account type" className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 {/* Fan Card */}
                                 <button
                                     type="button"
+                                    role="radio"
+                                    aria-checked={accountType === 'fan'}
                                     onClick={() => setAccountType('fan')}
-                                    className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all duration-200 text-center
+                                    className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-[border-color,background-color,box-shadow] duration-200 text-center
                                         ${accountType === 'fan'
                                             ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
                                             : 'border-border bg-card hover:border-primary/50 hover:bg-muted/30'}`}
@@ -163,8 +218,10 @@ export const ProfileCompletion = () => {
                                 {/* Creator Card */}
                                 <button
                                     type="button"
+                                    role="radio"
+                                    aria-checked={accountType === 'creator'}
                                     onClick={() => setAccountType('creator')}
-                                    className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all duration-200 text-center
+                                    className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-[border-color,background-color,box-shadow] duration-200 text-center
                                         ${accountType === 'creator'
                                             ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
                                             : 'border-border bg-card hover:border-primary/50 hover:bg-muted/30'}`}
@@ -186,8 +243,10 @@ export const ProfileCompletion = () => {
                                 {/* Studio Card */}
                                 <button
                                     type="button"
+                                    role="radio"
+                                    aria-checked={accountType === 'studio'}
                                     onClick={() => setAccountType('studio')}
-                                    className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all duration-200 text-center
+                                    className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-[border-color,background-color,box-shadow] duration-200 text-center
                                         ${accountType === 'studio'
                                             ? 'border-primary bg-primary/10 shadow-lg shadow-primary/20'
                                             : 'border-border bg-card hover:border-primary/50 hover:bg-muted/30'}`}
@@ -207,8 +266,9 @@ export const ProfileCompletion = () => {
                                 </button>
                             </div>
 
+                            <div className="min-h-[64px]">
                             {accountType && (
-                                <div className={`rounded-lg p-3 text-xs border ${accountType === 'fan' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : accountType === 'studio' ? 'bg-primary/10 border-primary/30 text-primary/80' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}`}>
+                                <div className={`rounded-lg p-3 text-xs border ${accountType === 'fan' ? 'bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-300' : accountType === 'studio' ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-amber-500/10 border-amber-500/30 text-amber-800 dark:text-amber-300'}`}>
                                     {accountType === 'fan'
                                         ? '🎬 As a Fan you can like, comment, follow creators, rate content, and join public discussion spaces anonymously.'
                                         : accountType === 'studio'
@@ -216,6 +276,7 @@ export const ProfileCompletion = () => {
                                         : '🎥 As a Creator you get full access — posts, projects, analytics, private rooms, DMs to anyone, and a verified badge.'}
                                 </div>
                             )}
+                            </div>
 
                             <Button
                                 onClick={() => setStep(1)}
@@ -229,51 +290,69 @@ export const ProfileCompletion = () => {
 
                     {/* ── STEP 1: Basic Info ── */}
                     {step === 1 && (
-                        <div className="space-y-6">
+                        <form className="space-y-6" onSubmit={handleNextStep} noValidate>
                             <div>
                                 <Label htmlFor="username">Username *</Label>
                                 <div className="relative">
                                     <Input
                                         id="username"
                                         value={username}
-                                        onChange={(e) => handleUsernameChange(e.target.value)}
+                                        onChange={(e) => setUsername(sanitizeUsername(e.target.value))}
                                         placeholder="johndoe"
+                                        maxLength={USERNAME_MAX}
+                                        autoFocus
+                                        autoCapitalize="none"
+                                        autoCorrect="off"
+                                        spellCheck={false}
+                                        autoComplete="username"
+                                        aria-invalid={usernameStatus === 'taken' || usernameStatus === 'reserved'}
+                                        aria-describedby="username-status"
                                         className="pr-10"
                                     />
-                                    {checkingUsername && <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />}
-                                    {!checkingUsername && usernameAvailable === true && <Check className="absolute right-3 top-3 h-4 w-4 text-green-500" />}
+                                    <span className="absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true">
+                                        {usernameStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                                        {usernameStatus === 'available' && <Check className="h-4 w-4 text-green-600" />}
+                                        {(usernameStatus === 'taken' || usernameStatus === 'reserved') && <X className="h-4 w-4 text-destructive" />}
+                                    </span>
                                 </div>
-                                {username.length > 0 && (
-                                    <p className={`text-sm mt-1 ${usernameAvailable === true ? 'text-green-500' : usernameAvailable === false ? 'text-destructive' : 'text-muted-foreground'}`}>
-                                        {usernameAvailable === true ? '✓ Available' : usernameAvailable === false ? '✗ Not available or invalid format' : 'Use 3-20 lowercase letters, numbers, or underscores'}
-                                    </p>
-                                )}
+                                {/* one fixed-height line so the form never jumps while the status changes */}
+                                <p
+                                    id="username-status"
+                                    role="status"
+                                    aria-live="polite"
+                                    className={`text-sm mt-1 min-h-[1.25rem] ${
+                                        usernameStatus === 'available' ? 'text-green-600 dark:text-green-400'
+                                        : usernameStatus === 'taken' || usernameStatus === 'reserved' || usernameStatus === 'error' ? 'text-destructive'
+                                        : 'text-muted-foreground'}`}
+                                >
+                                    {usernameStatus === 'idle' && username.length === 0 ? USERNAME_STATUS_TEXT.idle : usernameStatus === 'idle' ? '' : USERNAME_STATUS_TEXT[usernameStatus]}
+                                </p>
                             </div>
 
                             <div>
                                 <Label htmlFor="fullName">Full Name *</Label>
-                                <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" />
+                                <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" maxLength={80} autoComplete="name" />
                                 {accountType === 'studio' && (
-                                    <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+                                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
                                         Please enter your individual name (e.g., Jane Doe), not your company name. You will create your company page later.
                                     </p>
                                 )}
                             </div>
 
                             <div className="flex gap-2">
-                                <Button variant="outline" onClick={() => setStep(0)} className="flex-1">
+                                <Button type="button" variant="outline" onClick={() => setStep(0)} className="flex-1">
                                     <ChevronLeft className="mr-2 h-4 w-4" /> Back
                                 </Button>
-                                <Button onClick={handleNextStep} className="flex-1" disabled={!username || !fullName || !usernameAvailable}>
+                                <Button type="submit" className="flex-1" disabled={!username || !fullName.trim() || usernameStatus !== 'available'}>
                                     Next <ChevronRight className="ml-2 h-4 w-4" />
                                 </Button>
                             </div>
-                        </div>
+                        </form>
                     )}
 
                     {/* ── STEP 2: Optional Details ── */}
                     {step === 2 && (
-                        <div className="space-y-6">
+                        <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleComplete(false); }}>
                             <div>
                                 <Label htmlFor="bio">Bio</Label>
                                 <Textarea id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell us about yourself..." maxLength={150} rows={3} />
@@ -295,36 +374,41 @@ export const ProfileCompletion = () => {
 
                             <div>
                                 <Label htmlFor="location">Location</Label>
-                                <Input id="location" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Los Angeles, CA" />
+                                <Input id="location" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Los Angeles, CA" autoComplete="address-level2" maxLength={100} />
                             </div>
 
                             <div>
                                 <Label htmlFor="website">Website</Label>
-                                <Input id="website" type="url" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://yourwebsite.com" />
+                                <Input id="website" type="url" inputMode="url" autoCapitalize="none" autoComplete="url" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="yourwebsite.com" />
                             </div>
 
                             <div>
                                 <Label htmlFor="phone">Phone Number</Label>
-                                <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 123-4567" />
+                                <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 123-4567" />
+                                <p className="text-xs text-muted-foreground mt-1">Private. Only used for account security, never shown on your profile.</p>
                             </div>
 
                             <div className="flex gap-2">
-                                <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
+                                <Button type="button" variant="outline" onClick={() => setStep(1)} disabled={!!loading} className="flex-1">
                                     <ChevronLeft className="mr-2 h-4 w-4" /> Back
                                 </Button>
-                                <Button variant="ghost" onClick={handleComplete} disabled={loading} className="flex-1">
-                                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Skip'}
+                                <Button type="button" variant="ghost" onClick={() => handleComplete(true)} disabled={!!loading} className="flex-1">
+                                    {loading === 'skip' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Skip for now'}
                                 </Button>
-                                <Button onClick={handleComplete} disabled={loading} className="flex-1">
-                                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Complete'}
+                                <Button type="submit" disabled={!!loading} className="flex-1">
+                                    {loading === 'complete' ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Complete'}
                                 </Button>
                             </div>
-                        </div>
+                        </form>
                     )}
                 </div>
 
                 <p className="text-center text-sm text-muted-foreground mt-4">
                     {step === 0 ? 'This determines your platform access level' : step === 1 ? 'Required fields are marked with *' : 'You can always update these later in settings'}
+                </p>
+                <p className="text-center text-xs text-muted-foreground mt-3">
+                    Signed in as {user?.email}.{' '}
+                    <button type="button" onClick={() => signOut()} className="underline underline-offset-2 hover:text-foreground">Use a different account</button>
                 </p>
             </div>
         </div>

@@ -7,6 +7,7 @@ import ReportDialog from '@/components/common/ReportDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { friendlyError } from '@cinecraft/core';
 
 const db = supabase as any;
 
@@ -53,7 +54,7 @@ export const AnnouncementItem = ({ row, onChanged, onEdit }: { row: Announcement
 
   const togglePin = async () => {
     const { error } = await db.from('announcements').update({ is_pinned: !row.is_pinned }).eq('id', row.id);
-    if (error) return toast({ title: row.is_pinned ? 'Could not unpin' : 'Could not pin', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: row.is_pinned ? 'Could not unpin' : 'Could not pin', description: friendlyError(error), variant: 'destructive' });
     toast({ title: row.is_pinned ? 'Unpinned' : 'Pinned to the top' });
     onChanged();
   };
@@ -75,7 +76,7 @@ export const AnnouncementItem = ({ row, onChanged, onEdit }: { row: Announcement
   if (row.is_system) {
     return (
       <div ref={ref} className="rounded-[2rem] border border-primary/30 bg-primary/5 p-6 space-y-3">
-        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary">
+        <div className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-primary">
           <Megaphone size={13} /> Platform news {row.unread && <span className="h-2 w-2 rounded-full bg-primary" />}
         </div>
         {row.image_url && <img loading="lazy" decoding="async" src={row.image_url} alt="" className="w-full max-h-60 object-cover rounded-2xl" />}
@@ -93,30 +94,29 @@ export const AnnouncementItem = ({ row, onChanged, onEdit }: { row: Announcement
 
   const cat = ANNOUNCEMENT_CATEGORIES.find((c) => c.value === row.category);
   const isMine = !!user && row.author_id === user.id;
+  // no chips = no empty strip at the top of the card
+  const hasChips = !!(row.is_pinned || row.unread || (cat && row.category !== 'general') || row.audience === 'followers' || row.audience === 'team' || row.scheduled || row.expired || row.expires_at || row.edited_at);
 
   return (
-    <div ref={ref} className="space-y-2">
-      {/* badges */}
-      <div className="flex flex-wrap items-center gap-2 px-1 min-h-[22px]">
-        {row.is_pinned && <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1"><Pin size={11} /> Pinned</span>}
-        {row.unread && <span className="h-2 w-2 rounded-full bg-primary" title="New" />}
-        {cat && row.category !== 'general' && (
-          <span className="text-[10px] font-black uppercase tracking-widest rounded-full px-2.5 py-0.5" style={{ color: cat.color, backgroundColor: `${cat.color}1f` }}>{cat.label}</span>
-        )}
-        {row.audience === 'followers' && <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1"><UserCheck size={11} /> Followers only</span>}
-        {row.audience === 'team' && <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Users size={11} /> Team only</span>}
-        {row.scheduled && <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500 flex items-center gap-1"><Clock size={11} /> Goes live {format(new Date(row.posted_at), 'd MMM, h:mm a')}</span>}
-        {row.expired && <span className="text-[10px] font-bold uppercase tracking-widest text-red-500">Expired</span>}
-        {!row.expired && row.expires_at && <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Until {format(new Date(row.expires_at), 'd MMM')}</span>}
-        {row.edited_at && <span className="text-[10px] text-muted-foreground">edited</span>}
-      </div>
-
-      {row.image_url && (
-        <img loading="lazy" decoding="async" src={row.image_url} alt="" className="w-full max-h-72 object-cover rounded-2xl border border-border/50" />
-      )}
-
+    <div ref={ref}>
+      {/* the chips and the picture now live inside the card (same order as the mobile app) */}
       <FeedAnnouncementCard
         isWidget={true}
+        autoHeight
+        coverUrl={row.image_url}
+        badges={hasChips ? <>
+        {row.is_pinned &&<span className="text-[12px] font-black uppercase tracking-widest text-primary flex items-center gap-1"><Pin size={11} /> Pinned</span>}
+        {row.unread && <span className="h-2 w-2 rounded-full bg-primary" title="New" />}
+        {cat && row.category !== 'general' && (
+          <span className="text-[12px] font-black uppercase tracking-widest rounded-full px-2.5 py-0.5" style={{ color: cat.color, backgroundColor: `${cat.color}1f` }}>{cat.label}</span>
+        )}
+        {row.audience === 'followers' && <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1"><UserCheck size={11} /> Followers only</span>}
+        {row.audience === 'team' && <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1"><Users size={11} /> Team only</span>}
+        {row.scheduled && <span className="text-[12px] font-bold uppercase tracking-widest text-amber-500 flex items-center gap-1"><Clock size={11} /> Goes live {format(new Date(row.posted_at), 'd MMM, h:mm a')}</span>}
+        {row.expired && <span className="text-[12px] font-bold uppercase tracking-widest text-red-500">Expired</span>}
+        {!row.expired && row.expires_at && <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">Until {format(new Date(row.expires_at), 'd MMM')}</span>}
+        {row.edited_at && <span className="text-[12px] text-muted-foreground">edited</span>}
+        </> : null}
         announcement={{
           id: row.id,
           title: row.title,

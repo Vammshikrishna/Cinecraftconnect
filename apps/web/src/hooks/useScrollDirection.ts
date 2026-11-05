@@ -1,28 +1,43 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 /**
- * Hook to detect scroll direction.
- * Returns 'up' when scrolling up, 'down' when scrolling down.
+ * Detects scroll direction for hide-on-scroll chrome.
+ * Direction lives in refs and React state is only set when the direction actually
+ * changes, so scrolling does not re-render the bars on every few pixels.
+ * Rubber-band overscroll (negative or past-the-end offsets) is clamped, and
+ * near the top the bars are always shown.
  */
-export function useScrollDirection() {
-  const [scrollDirection, setScrollDirection] = useState<'up' | 'down' | null>(null);
-  const [prevOffset, setPrevOffset] = useState(0);
+export function useScrollDirection(threshold = 8) {
+  const [direction, setDirection] = useState<'up' | 'down' | null>(null);
+  const last = useRef(0);
+  const dirRef = useRef<'up' | 'down' | null>(null);
+  const ticking = useRef(false);
 
   useEffect(() => {
-    const handleScroll = () => {
-      const currentOffset = window.pageYOffset;
-      const diff = currentOffset - prevOffset;
-
-      // Only change direction if we've scrolled more than a threshold (e.g. 5px)
-      if (Math.abs(diff) > 5) {
-        setScrollDirection(diff > 0 ? 'down' : 'up');
-        setPrevOffset(currentOffset);
+    last.current = window.scrollY;
+    const set = (next: 'up' | 'down') => {
+      if (dirRef.current !== next) {
+        dirRef.current = next;
+        setDirection(next);
       }
     };
+    const onScroll = () => {
+      if (ticking.current) return;
+      ticking.current = true;
+      requestAnimationFrame(() => {
+        ticking.current = false;
+        const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        const y = Math.max(0, Math.min(window.scrollY, max));
+        const delta = y - last.current;
+        if (Math.abs(delta) <= threshold) return;
+        last.current = y;
+        if (y < 64) set('up');
+        else set(delta > 0 ? 'down' : 'up');
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [threshold]);
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [prevOffset]);
-
-  return scrollDirection;
+  return direction;
 }

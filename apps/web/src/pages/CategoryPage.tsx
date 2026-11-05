@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/common/PageHeader';
-import { ChevronLeft, Loader2 } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import FeedRatingCard from '@/components/feed/FeedRatingCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import SEO from '@/components/common/SEO';
+import { isKnownCategory } from './RatingsRouteHelpers';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
 import {
   fetchTrending, fetchTopRated, fetchActionMovies, fetchComedyMovies,
   fetchIndianMovies, fetchIndianAction, fetchIndianComedy, fetchIndianHorror,
@@ -71,8 +74,9 @@ const CategoryPage = () => {
   const [hasMore, setHasMore] = useState(true);
   const [visibleCount, setVisibleCount] = useState(10); // Show 10 at a time
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const category = categoryId ? CATEGORY_MAP[categoryId] : null;
+  const category = isKnownCategory(CATEGORY_MAP, categoryId) ? CATEGORY_MAP[categoryId] : null;
 
   const observer = useRef<IntersectionObserver | null>(null);
   const lastElementRef = useCallback((node: HTMLDivElement | null) => {
@@ -201,7 +205,7 @@ const CategoryPage = () => {
     return () => {
       isSubscribed = false;
     };
-  }, [page, categoryId, user?.id]);
+  }, [page, categoryId, user?.id, reloadKey]);
 
   const handleRate = async (tmdbId: string, rating: number) => {
     if (!user) {
@@ -209,7 +213,8 @@ const CategoryPage = () => {
       return;
     }
 
-    // Optimistic update
+    // Optimistic update (remember the old value so a failed save can put it back)
+    const previousRating = items.find(i => i.id.toString() === tmdbId)?.user_rating ?? null;
     setItems(prev => prev.map(item => item.id.toString() === tmdbId ? { ...item, user_rating: rating } : item));
 
     try {
@@ -224,9 +229,9 @@ const CategoryPage = () => {
       });
 
       if (error) throw error;
-      toast({ title: "Rating saved", description: "Your rating has been updated." });
     } catch (error) {
       console.error("Error saving rating:", error);
+      setItems(prev => prev.map(item => item.id.toString() === tmdbId ? { ...item, user_rating: previousRating } : item));
       toast({ title: "Error", description: (error as any)?.message || "Failed to save rating.", variant: "destructive" });
     }
   };
@@ -234,36 +239,46 @@ const CategoryPage = () => {
   const visibleItemsList = items.slice(0, visibleCount);
 
   return (
-    <div className="min-h-screen bg-background pt-20 pb-36 selection:bg-primary/30">
+    <div className="min-h-dvh bg-background pt-20 pb-36 selection:bg-primary/30">
       {/* Background Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 md:px-8 relative z-10">
-        <div className="mb-8 sticky top-[56px] sm:top-[64px] z-20 bg-background/95 backdrop-blur-xl pt-4 pb-4 border-b border-border/50 -mx-4 px-4 md:-mx-8 md:px-8">
+      <SEO title={category?.title || 'Category not found'} description="Explore all available titles in this category." />
+      <div className="max-w-[1560px] mx-auto px-4 md:px-8 relative z-10">
+        <div className="sticky top-[56px] sm:top-[64px] z-20 bg-background/95 backdrop-blur-xl py-1 border-b border-border/50 -mx-4 px-4 md:-mx-8 md:px-8">
           <Button 
             variant="ghost" 
             onClick={() => navigate(-1)}
-            className="mb-4 hover:bg-secondary/50 -ml-2"
+            className="hover:bg-secondary/50 -ml-2"
           >
             <ChevronLeft className="h-5 w-5 mr-1" />
             Back
           </Button>
-          
+        </div>
+        <div className="mb-8 pt-4">
           <PageHeader 
-            title={category?.title || "Loading Category..."} 
-            subtitle="Explore all available titles in this category." 
+            title={category?.title || "Category not found"} 
+            subtitle={category ? "Explore all available titles in this category." : "This category does not exist."} 
           />
         </div>
 
         {!loading && items.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-            {errorMsg ? (
+            {!category ? (
+              <>
+                <h3 className="text-xl font-medium mb-2">Category not found</h3>
+                <p className="text-muted-foreground mb-6">We could not find that category.</p>
+                <Button onClick={() => navigate('/ratings')} variant="outline">
+                  <ChevronLeft className="mr-2 h-4 w-4" /> Back to ratings
+                </Button>
+              </>
+            ) : errorMsg ? (
               <>
                 <h3 className="text-xl font-bold mb-2 text-destructive">Network Error</h3>
                 <p className="text-muted-foreground mb-6 max-w-md">{errorMsg}</p>
-                <Button onClick={() => window.location.reload()} variant="outline">
+                <Button onClick={() => { setErrorMsg(null); setPage(1); setReloadKey(k => k + 1); }} variant="outline">
                   Try Again
                 </Button>
               </>
@@ -280,9 +295,7 @@ const CategoryPage = () => {
         )}
 
         {loading && page === 1 ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          </div>
+          <ScreenSkeleton variant="list" />
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
             {visibleItemsList.map((item, index) => {
@@ -333,9 +346,7 @@ const CategoryPage = () => {
         )}
 
         {(loadingMore || (visibleCount > items.length && hasMore)) && (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
+          <ScreenSkeleton variant="list" />
         )}
 
         {(!hasMore && visibleCount >= items.length) && items.length > 0 && (
@@ -344,11 +355,6 @@ const CategoryPage = () => {
           </div>
         )}
 
-        {items.length === 0 && !loading && (
-          <div className="col-span-full py-12 text-center text-muted-foreground">
-            No titles found in this category.
-          </div>
-        )}
       </div>
     </div>
   );

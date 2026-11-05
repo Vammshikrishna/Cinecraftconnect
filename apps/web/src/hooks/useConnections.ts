@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { friendlyError } from '@cinecraft/core';
 
 export interface Connection {
   id: string;
@@ -68,7 +69,7 @@ export const useConnections = () => {
       const mapped = ((rows || []) as any[]).map(r => {
         const other = {
           id: r.other_id, full_name: r.full_name, username: r.username, avatar_url: r.avatar_url,
-          cover_image_url: r.cover_image_url, bio: r.bio, location: r.location, craft: r.craft,
+          bio: r.bio, location: r.location, craft: r.craft,
           account_type: r.account_type, is_verified: r.is_verified,
         };
         const otherIsFollower = r.follower_id === r.other_id;
@@ -132,7 +133,7 @@ export const useConnections = () => {
       if (context?.previousData && user) {
         queryClient.setQueryData(['connections_manual', user.id], context.previousData);
       }
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
     }
   });
 
@@ -141,11 +142,29 @@ export const useConnections = () => {
       const { error } = await (supabase as any).rpc('ignore_connection_request', { p_id: id, p_ignore: ignore });
       if (error) throw error;
     },
-    onSuccess: () => {
+    // the request moves between lists at once; it goes back if the server refuses
+    onMutate: async ({ id, ignore }: { id: string; ignore: boolean }) => {
+      if (!user) return;
+      await queryClient.cancelQueries({ queryKey: ['connections_manual'] });
+      const previousData = queryClient.getQueryData(['connections_manual', user.id]);
+      queryClient.setQueryData(['connections_manual', user.id], (old: any) => {
+        if (!old) return old;
+        const from = ignore ? old.pendingRequests : old.ignoredRequests;
+        const item = from?.find((c: any) => c.id === id);
+        if (!item) return old;
+        const moved = { ...item, ignored_at: ignore ? new Date().toISOString() : null };
+        return ignore
+          ? { ...old, pendingRequests: old.pendingRequests.filter((c: any) => c.id !== id), ignoredRequests: [moved, ...(old.ignoredRequests || [])] }
+          : { ...old, ignoredRequests: old.ignoredRequests.filter((c: any) => c.id !== id), pendingRequests: [moved, ...(old.pendingRequests || [])] };
+      });
+      return { previousData };
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
     },
-    onError: (error: any) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    onError: (error: any, _vars: any, context: any) => {
+      if (context?.previousData && user) queryClient.setQueryData(['connections_manual', user.id], context.previousData);
+      toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
     }
   });
 
@@ -154,9 +173,31 @@ export const useConnections = () => {
       const { error } = await supabase.from('user_connections').update({ status }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    // accepting moves the person into My Network straight away
+    onMutate: async ({ id }: { id: string; status: 'accepted' }) => {
+      if (!user) return;
+      await queryClient.cancelQueries({ queryKey: ['connections_manual'] });
+      const previousData = queryClient.getQueryData(['connections_manual', user.id]);
+      queryClient.setQueryData(['connections_manual', user.id], (old: any) => {
+        if (!old) return old;
+        const item = [...(old.pendingRequests || []), ...(old.ignoredRequests || [])].find((c: any) => c.id === id);
+        if (!item) return old;
+        return {
+          ...old,
+          pendingRequests: old.pendingRequests?.filter((c: any) => c.id !== id),
+          ignoredRequests: old.ignoredRequests?.filter((c: any) => c.id !== id),
+          connections: [{ ...item, status: 'accepted' }, ...(old.connections || [])],
+        };
+      });
+      return { previousData };
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error: any, _vars: any, context: any) => {
+      if (context?.previousData && user) queryClient.setQueryData(['connections_manual', user.id], context.previousData);
+      toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
     }
   });
 
@@ -190,7 +231,7 @@ export const useConnections = () => {
       if (context?.previousData && user) {
         queryClient.setQueryData(['connections_manual', user.id], context.previousData);
       }
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
     }
   });
 
@@ -241,7 +282,13 @@ export const useConnections = () => {
     sentRequests: safeData?.sentRequests || [],
     ignoredRequests: safeData?.ignoredRequests || [],
     loading: safeLoading,
-    sendConnectionRequest: (userId: string, note?: string) => sendMutation.mutate({ userId, note }),
+    sendConnectionRequest: (userId: string, note?: string) => {
+      if (!userId || userId === user?.id) {
+        toast({ title: 'Error', description: 'You cannot connect with yourself.', variant: 'destructive' });
+        return;
+      }
+      sendMutation.mutate({ userId, note });
+    },
     ignoreRequest: (id: string) => ignoreMutation.mutate({ id, ignore: true }),
     unignoreRequest: (id: string) => ignoreMutation.mutate({ id, ignore: false }),
     acceptConnectionRequest: (id: string) => updateStatusMutation.mutate({ id, status: 'accepted' }),

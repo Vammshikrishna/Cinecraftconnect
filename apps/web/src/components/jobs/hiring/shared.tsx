@@ -30,7 +30,7 @@ export const StarRating = ({
 
 export const MatchBadge = ({ match, compact = false }: { match: MatchResult; compact?: boolean }) => (
   <span
-    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider border"
+    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-black uppercase tracking-wider border"
     style={{ color: matchColor(match.score), borderColor: `${matchColor(match.score)}55`, backgroundColor: `${matchColor(match.score)}18` }}
     title={match.reasons.join('\n') || 'No matching signals yet'}
   >
@@ -42,7 +42,7 @@ export const StageBadge = ({ status }: { status?: string | null }) => {
   const stage = getStage(status);
   return (
     <span
-      className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest"
+      className="inline-flex items-center rounded-full px-3 py-1 text-[12px] font-black uppercase tracking-widest"
       style={{ color: stage.color, backgroundColor: stage.tint }}
     >
       {stage.label}

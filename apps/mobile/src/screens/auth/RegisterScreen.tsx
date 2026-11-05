@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { E2EERecoveryPinModal } from '../../components/security/E2EERecoveryPinModal';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 import { ENV } from '../../config/env';
 
 // Configure Native Google Sign-In with Web Client ID
@@ -25,9 +26,10 @@ GoogleSignin.configure({
   webClientId: ENV.GOOGLE_WEB_CLIENT_ID,
 });
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const CREAM = '#F8F5F0';
 const INK = '#0D0D0D';
-const ORANGE = '#f97316';
+const ORANGE = '#FF4B33'; // matches themeColors.primary; only used by StyleSheet defaults overridden inline
 
 const GoogleSvg = () => (
   <Svg width={18} height={18} viewBox="0 0 48 48">
@@ -46,6 +48,8 @@ const AppleSvg = () => (
 
 export const RegisterScreen = ({ navigation }: { navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
+  const emailInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,14 +57,20 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollDown = () => { setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 250); };
 
   const handleRegister = async () => {
     if (!fullName.trim() || !email.trim() || !password) {
       setErrorMsg('Please fill in all registration fields.');
       return;
     }
-    if (password.length < 6) {
-      setErrorMsg('Password must be at least 6 characters.');
+    if (!EMAIL_RE.test(email.trim())) {
+      setErrorMsg('Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 8) {
+      setErrorMsg('Password must be at least 8 characters.');
       return;
     }
 
@@ -80,7 +90,10 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
       });
 
       if (error) {
-        setErrorMsg(error.message);
+        setErrorMsg(friendlyError(error, 'Could not create your account. Please try again.'));
+      } else if (data.user && !data.session) {
+        // email confirmation is switched on: there is no session yet, so tell the person instead of opening the app signed out
+        setErrorMsg('Account created. Please check your email and confirm your address, then sign in.');
       } else if (data.user) {
         // Let App.tsx global boot handle E2EE Keystore checking & setup
         navigation.reset({
@@ -89,7 +102,7 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
         });
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Registration failed.');
+      setErrorMsg(friendlyError(err, 'Registration failed.'));
     } finally {
       setLoading(false);
     }
@@ -126,7 +139,7 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
         });
 
         if (error) {
-          setErrorMsg(error.message);
+          setErrorMsg(friendlyError(error, 'Google sign-up failed.'));
         } else if (data.user) {
           navigation.reset({
             index: 0,
@@ -144,7 +157,7 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
         },
       });
       if (error) {
-        setErrorMsg(error.message || 'Apple sign-up failed.');
+        setErrorMsg(friendlyError(error, 'Apple sign-up failed.'));
       } else if (data?.url) {
         await Linking.openURL(data.url);
       }
@@ -159,7 +172,7 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
         setErrorMsg('Google Play Services not available or outdated on this device.');
         return;
       }
-      setErrorMsg(err.message || `${provider} sign-up failed.`);
+      setErrorMsg(friendlyError(err, `${provider} sign-up failed.`));
     } finally {
       setOauthLoading(null);
     }
@@ -167,7 +180,7 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <TabletContainer backgroundColor={themeColors.bgScreen} maxWidth={540}>
-      <ScrollView style={[styles.container, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets style={[styles.container, { backgroundColor: themeColors.bgScreen }]} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       {/* Brand Header */}
       <View style={styles.brandRow}>
         <AppLogo size="lg" textColor={isDark ? 'cream' : 'ink'} />
@@ -175,20 +188,13 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
 
       {/* Slug Eyebrow */}
       <View style={styles.slugRow}>
-        <View style={styles.slugDot} />
+        <View style={[styles.slugDot, { backgroundColor: themeColors.primary }]} />
         <Text style={[styles.slugText, { color: themeColors.textMuted }]}>INT. CREW ENTRY — CREATE ACCOUNT</Text>
       </View>
 
       {/* Heading */}
       <Text style={[styles.heading, { color: themeColors.textPrimary }]}>Join the network.</Text>
       <Text style={[styles.sub, { color: themeColors.textSecondary }]}>CREATE YOUR FREE CREATOR ACCOUNT</Text>
-
-      {/* Error Alert */}
-      {errorMsg ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{errorMsg}</Text>
-        </View>
-      ) : null}
 
       {/* OAuth Buttons */}
       <View style={styles.oauthContainer}>
@@ -236,6 +242,12 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
           placeholderTextColor={themeColors.textMuted}
           value={fullName}
           onChangeText={setFullName}
+          autoComplete="name"
+          textContentType="name"
+          maxLength={80}
+          returnKeyType="next"
+          onSubmitEditing={() => emailInputRef.current?.focus()}
+          blurOnSubmit={false}
           editable={!loading}
         />
       </View>
@@ -251,13 +263,22 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
+          ref={emailInputRef}
+          onFocus={scrollDown}
+          autoComplete="email"
+          textContentType="emailAddress"
+          autoCorrect={false}
+          maxLength={254}
+          returnKeyType="next"
+          onSubmitEditing={() => passwordInputRef.current?.focus()}
+          blurOnSubmit={false}
           editable={!loading}
         />
       </View>
 
       {/* Password */}
       <View style={styles.fieldGroup}>
-        <Text style={[styles.fieldLabel, { color: themeColors.textSecondary }]}>STAGE PASSCODE (MIN 6 CHARS)</Text>
+        <Text style={[styles.fieldLabel, { color: themeColors.textSecondary }]}>STAGE PASSCODE (MIN 8 CHARS)</Text>
         <View style={styles.passwordRow}>
           <TextInput
             style={[styles.underlineInput, { flex: 1, borderBottomWidth: 0, color: themeColors.textPrimary }]}
@@ -266,17 +287,33 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
+            ref={passwordInputRef}
+            onFocus={scrollDown}
+            autoComplete="new-password"
+            textContentType="newPassword"
+            autoCapitalize="none"
+            returnKeyType="go"
+            onSubmitEditing={handleRegister}
             editable={!loading}
           />
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.eyeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
             onPress={() => setShowPassword(!showPassword)}
           >
-            <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} color={themeColors.textSecondary} />
+            <Icon name={showPassword ? 'eye-off' : 'eye'} size={18} color={themeColors.iconSecondary} />
           </TouchableOpacity>
         </View>
         <View style={[styles.passwordUnderline, { backgroundColor: themeColors.border }]} />
       </View>
+
+      {/* Error Alert: sits under the fields so showing it never moves the field being typed in */}
+      {errorMsg ? (
+        <View style={[styles.errorBox, { backgroundColor: themeColors.danger + '1A', borderColor: themeColors.danger + '55' }]} accessibilityRole="alert" accessibilityLiveRegion="polite">
+          <Text style={[styles.errorText, { color: themeColors.danger }]}>{errorMsg}</Text>
+        </View>
+      ) : null}
 
       {/* Submit Button */}
       <TouchableOpacity
@@ -297,7 +334,7 @@ export const RegisterScreen = ({ navigation }: { navigation: any }) => {
         style={styles.toggleRow}
         onPress={() => navigation.navigate('Login')}
       >
-        <Text style={styles.toggleText}>→ ALREADY HAVE AN ACCOUNT? SIGN IN</Text>
+        <Text style={[styles.toggleText, { color: themeColors.primary }]}>→ ALREADY HAVE AN ACCOUNT? SIGN IN</Text>
       </TouchableOpacity>
 
       {/* Return to Home */}
@@ -318,9 +355,10 @@ const styles = StyleSheet.create({
     backgroundColor: CREAM,
   },
   content: {
+    flexGrow: 1,
     padding: 24,
     paddingTop: 48,
-    paddingBottom: 40,
+    paddingBottom: 260,
   },
   brandRow: {
     flexDirection: 'row',
@@ -341,9 +379,9 @@ const styles = StyleSheet.create({
   },
   slugText: {
     color: 'rgba(13, 13, 13, 0.4)',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 1.5,
+    letterSpacing: 0.3,
   },
   heading: {
     fontFamily: Platform.select({ ios: 'Georgia', android: 'serif' }),
@@ -355,9 +393,9 @@ const styles = StyleSheet.create({
   },
   sub: {
     color: 'rgba(13, 13, 13, 0.45)',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.5,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
     marginBottom: 24,
   },
   errorBox: {
@@ -420,18 +458,18 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     color: 'rgba(13, 13, 13, 0.35)',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1.5,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   fieldGroup: {
     marginBottom: 18,
   },
   fieldLabel: {
     color: 'rgba(13, 13, 13, 0.45)',
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 1.2,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
     marginBottom: 4,
   },
   underlineInput: {
@@ -468,7 +506,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: CREAM,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   toggleRow: {
@@ -477,9 +515,9 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     color: ORANGE,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   returnHomeTouch: {
     alignItems: 'center',
@@ -487,9 +525,9 @@ const styles = StyleSheet.create({
   },
   returnHomeText: {
     color: 'rgba(13, 13, 13, 0.4)',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });
 

@@ -67,7 +67,7 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
     return (
         <Link 
             to={`/content/${type}/${id}`}
-            className="block w-[220px] shrink-0 bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5 relative"
+            className="block w-[220px] shrink-0 bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5 relative"
         >
             <CornerBrackets />
             {/* Poster Image */}
@@ -87,7 +87,7 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
 
             {/* Content Details */}
             <div className="p-4 bg-white dark:bg-zinc-900">
-                <h3 className="font-serif text-zinc-900 dark:text-white font-bold text-[13px] tracking-tight mb-3">
+                <h3 className="font-serif text-zinc-900 dark:text-white font-bold text-sm tracking-tight mb-3">
                     {title}
                 </h3>
                 
@@ -96,11 +96,11 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
 
                 {/* Metadata Row: Language & Year */}
                 <div className="flex items-center justify-between mb-5">
-                    <div className="font-mono text-[7.5px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded">
-                        LANG // {metadata?.language || 'LOADING...'}
+                    <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded">
+                        {metadata?.language || 'LOADING...'}
                     </div>
-                    <div className="font-mono text-[7.5px] font-bold text-zinc-500 dark:text-zinc-400 tracking-widest bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded">
-                        YEAR // {metadata?.year || '....'}
+                    <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded">
+                        {metadata?.year || '....'}
                     </div>
                 </div>
 

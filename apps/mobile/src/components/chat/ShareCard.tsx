@@ -19,8 +19,23 @@ const CornerBrackets: React.FC<{ color?: string }> = ({ color = ORANGE }) => (
 );
 
 export interface ShareCardData {
-  type: 'post' | 'job' | 'project' | 'pitch' | 'marketplace' | 'profile' | 'room' | 'announcement' | 'vendor' | 'company';
+  type: 'post' | 'job' | 'project' | 'pitch' | 'marketplace' | 'profile' | 'room' | 'announcement' | 'vendor' | 'company' | 'content';
   id?: string;
+  // Room (DISCUSSION_SHARE) extras
+  memberCount?: number;
+  roomType?: string;
+  isActive?: boolean;
+  isPrivate?: boolean;
+  // Pitch (PITCH_SHARE) extras
+  format?: string;
+  compensation?: string;
+  budgetRange?: string;
+  deadline?: string;
+  // Content (CONTENT_SHARE) extras. `mediaType` is web's `type` ('movie' | 'tv'), kept apart because `type` is the card type.
+  poster_path?: string | null;
+  rating?: number;
+  overview?: string;
+  mediaType?: 'movie' | 'tv';
   title: string;
   subtitle?: string;
   imageUrl?: string;
@@ -40,6 +55,62 @@ export interface ShareCardData {
   logoUrl?: string;
   category?: string;
 }
+
+const asStr = (v: any): string | undefined => (typeof v === 'string' && v.trim() ? v : typeof v === 'number' ? String(v) : undefined);
+
+/**
+ * Turns a parsed *_SHARE payload (from web or mobile) into safe ShareCardData: widens the id fallback chain
+ * (roomId, pitchId...), never lets an object land in a Text field (web pitch payloads carry `author{}`), and maps
+ * web's CONTENT_SHARE `type: 'movie' | 'tv'` to `mediaType` when the card type is 'content'.
+ * Callers can use it as `normalizeShareCardData({ ...parsed, type: 'content' })` (web's own type is read from `type` when it is movie/tv).
+ */
+export const normalizeShareCardData = (raw: any): ShareCardData => {
+  const d: any = { ...(raw || {}) };
+  d.id = asStr(d.id) || asStr(d.roomId) || asStr(d.pitchId) || asStr(d.projectId) || asStr(d.postId) || asStr(d.jobId) || asStr(d.listingId) || asStr(d.userId);
+  d.title = asStr(d.title) || asStr(d.name) || '';
+  if (d.type === 'movie' || d.type === 'tv') {
+    d.mediaType = d.type;
+    d.type = 'content';
+  }
+  if (d.author && typeof d.author === 'object') {
+    d.author = {
+      username: asStr(d.author.username),
+      full_name: asStr(d.author.full_name) || asStr(d.author.name),
+      avatar_url: asStr(d.author.avatar_url),
+      is_verified: !!d.author.is_verified,
+    };
+  } else if (typeof d.author === 'string' && d.author) {
+    d.author = { full_name: d.author };
+  } else {
+    delete d.author;
+  }
+  for (const k of ['subtitle', 'description', 'badge', 'category', 'format', 'compensation', 'deadline', 'roomType', 'location', 'genre']) {
+    if (d[k] !== undefined && typeof d[k] !== 'string') {
+      d[k] = Array.isArray(d[k]) ? asStr(d[k][0]) : asStr(d[k]);
+    }
+  }
+  d.budgetRange = asStr(d.budgetRange) || asStr(d.budget_range);
+  if (d.memberCount === undefined && d.member_count !== undefined) d.memberCount = d.member_count;
+  if (typeof d.memberCount !== 'number') d.memberCount = Number(d.memberCount) || undefined;
+  if (d.type === 'pitch') {
+    if (!d.genre) d.genre = asStr(Array.isArray(d.genres) ? d.genres[0] : d.genres);
+    if (!d.subtitle) d.subtitle = d.description;
+  }
+  if (d.type === 'room') {
+    if (!d.badge) d.badge = d.category;
+    d.isPrivate = d.isPrivate ?? (d.roomType === 'private' || d.room_type === 'private');
+  }
+  if (d.type === 'content') {
+    d.rating = typeof d.rating === 'number' ? d.rating : Number(d.rating) || undefined;
+    d.overview = asStr(d.overview);
+    d.poster_path = asStr(d.poster_path) || null;
+    if (!d.subtitle) d.subtitle = d.overview;
+  }
+  return d as ShareCardData;
+};
+
+const tmdbPoster = (p?: string | null): string | undefined =>
+  !p ? undefined : p.startsWith('http') ? p : `https://image.tmdb.org/t/p/w342${p.startsWith('/') ? '' : '/'}${p}`;
 
 interface ShareCardProps {
   data: ShareCardData;
@@ -104,6 +175,12 @@ const CARD_CONFIG: Record<string, { icon: string; cta: string; label: string; gr
     label: 'VERIFIED VENDOR',
     gradientColors: ['#0A0A1E', '#1A1A3E'],
   },
+  content: {
+    icon: 'film',
+    cta: 'View Details',
+    label: 'FILM / SERIES',
+    gradientColors: ['#0A0A0A', '#1F1511'],
+  },
   company: {
     icon: 'building',
     cta: 'View Studio Page',
@@ -112,8 +189,9 @@ const CARD_CONFIG: Record<string, { icon: string; cta: string; label: string; gr
   },
 };
 
-export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, width }) => {
+export const ShareCard: React.FC<ShareCardProps> = ({ data: rawData, navigation, style, width }) => {
   const { themeColors, isDark } = useUserSettings();
+  const data = React.useMemo(() => normalizeShareCardData(rawData), [rawData]);
   const [liveData, setLiveData] = useState(data);
 
   // Self-healing: fetch live data from Supabase if we have an ID
@@ -146,7 +224,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
           case 'post': {
             const { data: post } = await supabase
               .from('posts')
-              .select('id, content, media_url, profiles(username, full_name, avatar_url, is_verified)')
+              .select('id, content, media_url, profiles:author_id(username, full_name, avatar_url, is_verified)')
               .eq('id', data.id)
               .maybeSingle();
             if (post) {
@@ -227,6 +305,64 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
             }
             break;
           }
+          case 'room': {
+            const { data: room } = await (supabase as any)
+              .from('discussion_rooms')
+              .select('title, description, room_type, member_count, room_categories(name)')
+              .eq('id', data.id)
+              .maybeSingle();
+            if (room) {
+              const cat = Array.isArray(room.room_categories) ? room.room_categories[0] : room.room_categories;
+              setLiveData(prev => ({
+                ...prev,
+                title: asStr(room.title) || prev.title,
+                subtitle: asStr(room.description) || prev.subtitle,
+                memberCount: typeof room.member_count === 'number' ? room.member_count : prev.memberCount,
+                badge: asStr(cat?.name) || prev.badge,
+                roomType: asStr(room.room_type) || prev.roomType,
+                isPrivate: room.room_type ? room.room_type === 'private' : prev.isPrivate,
+              }));
+            }
+            break;
+          }
+          case 'pitch': {
+            const { data: pitch } = await (supabase as any)
+              .from('pitch_calls')
+              .select('title, requirement_description, format, compensation, budget_range, deadline, genre')
+              .eq('id', data.id)
+              .maybeSingle();
+            if (pitch) {
+              setLiveData(prev => ({
+                ...prev,
+                title: asStr(pitch.title) || prev.title,
+                subtitle: asStr(pitch.requirement_description) || prev.subtitle,
+                format: asStr(pitch.format) || prev.format,
+                compensation: asStr(pitch.compensation) || prev.compensation,
+                budgetRange: asStr(pitch.budget_range) || prev.budgetRange,
+                deadline: asStr(pitch.deadline) || prev.deadline,
+                genre: asStr(pitch.genre?.[0]) || prev.genre,
+              }));
+            }
+            break;
+          }
+          case 'content': {
+            // Native cinema ids are uuids (contain '-'); TMDB ids are plain numbers and come with a poster_path.
+            if (!data.id.includes('-')) break;
+            const { data: film } = await (supabase as any)
+              .from('platform_cinema')
+              .select('title, poster_url, description')
+              .eq('id', data.id)
+              .maybeSingle();
+            if (film) {
+              setLiveData(prev => ({
+                ...prev,
+                title: asStr(film.title) || prev.title,
+                imageUrl: asStr(film.poster_url) || prev.imageUrl,
+                subtitle: asStr(film.description) || prev.subtitle,
+              }));
+            }
+            break;
+          }
         }
       } catch (err) {
         console.warn('ShareCard self-heal error:', err);
@@ -259,7 +395,17 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
         navigation.navigate('PublicProfile', { userId: data.id, creatorName: data.title, craft: liveData.craft || data.subtitle, avatarUrl: liveData.avatarUrl || data.avatarUrl });
         break;
       case 'room':
-        navigation.navigate('DiscussionRoomDetail', { roomId: data.id, roomTitle: data.title, category: data.badge });
+        navigation.navigate('DiscussionRoomDetail', { roomId: data.id, roomTitle: liveData.title || data.title, category: liveData.badge || data.badge });
+        break;
+      case 'content':
+        navigation.navigate('ContentDetail', {
+          contentId: data.id,
+          mediaType: data.mediaType || 'movie',
+          title: liveData.title || data.title,
+          posterPath: data.poster_path || undefined,
+          overview: liveData.overview || data.overview,
+          voteAverage: data.rating,
+        });
         break;
       case 'announcement':
         navigation.navigate('Announcements');
@@ -275,11 +421,11 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
 
   const displayTitle = liveData.title || data.title || 'Shared Item';
   const displaySubtitle = liveData.subtitle || data.subtitle;
-  const displayImage = liveData.imageUrl || data.imageUrl;
+  const displayImage = liveData.imageUrl || data.imageUrl || (data.type === 'content' && !data.id?.includes('-') ? tmdbPoster(data.poster_path) : undefined);
   const displayAvatar = liveData.avatarUrl || data.avatarUrl;
   const displayLocation = liveData.location || data.location;
   const displayBadge = liveData.badge || liveData.category || data.badge;
-  const displayPrice = liveData.priceOrSalary || liveData.salary || data.priceOrSalary;
+  const displayPrice = liveData.priceOrSalary || liveData.salary || data.priceOrSalary || (data.type === 'pitch' ? liveData.compensation || liveData.budgetRange : undefined);
   const displayCompany = liveData.company || data.company;
   const displayCraft = liveData.craft;
   const displayBio = liveData.bio;
@@ -291,6 +437,8 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
   if (data.type === 'profile') {
     return (
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Open shared ${data.type}`}
         style={[
           s.card,
           { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
@@ -348,6 +496,8 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
   if (data.type === 'job') {
     return (
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Open shared ${data.type}`}
         style={[
           s.card,
           { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
@@ -422,6 +572,47 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
           <TouchableOpacity style={s.ctaButtonJob} activeOpacity={0.85} onPress={handlePress}>
             <Icon name="briefcase" size={14} color="#FFFFFF" />
             <Text style={s.ctaTextJob}>Apply for Role</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  // Film / series: poster beside the title, rating and a details button
+  if (data.type === 'content') {
+    const rating = typeof liveData.rating === 'number' && liveData.rating > 0 ? liveData.rating : data.rating;
+    return (
+      <TouchableOpacity
+        style={[s.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }, width ? { width } : null, style]}
+        activeOpacity={0.92}
+        onPress={handlePress}
+      >
+        <CornerBrackets />
+        <View style={{ flexDirection: 'row', padding: 12, gap: 10 }}>
+          {displayImage ? (
+            <CachedImage uri={displayImage} style={{ width: 70, height: 105, borderRadius: 8, backgroundColor: '#0A0A0A' }} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={config.gradientColors} style={{ width: 70, height: 105, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name={config.icon} size={22} color="rgba(255,75,51,0.5)" />
+            </LinearGradient>
+          )}
+          <View style={{ flex: 1, gap: 6 }}>
+            <View style={s.monoBadge}>
+              <Text style={s.monoBadgeText}>{data.mediaType === 'tv' ? 'SERIES' : 'FILM'}</Text>
+            </View>
+            <Text style={[s.cardTitle, { color: themeColors.textPrimary }]} numberOfLines={3}>{displayTitle}</Text>
+            {rating ? (
+              <View style={s.statusBadge}>
+                <Icon name="star" size={8} color={ORANGE} />
+                <Text style={[s.statusBadgeText, { color: themeColors.textSecondary }]}>{rating.toFixed(1)}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+        <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+          <TouchableOpacity style={s.ctaButton} activeOpacity={0.85} onPress={handlePress}>
+            <Icon name={config.icon} size={13} color="#000000" />
+            <Text style={s.ctaText}>{config.cta}</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -512,7 +703,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
           )}
           {liveData.status && (
             <View style={s.statusBadge}>
-              <Icon name="clock" size={8} color="#6B7280" />
+              <Icon name="clock" size={8} color="#64748B" />
               <Text style={[s.statusBadgeText, { color: themeColors.textSecondary }]}>{liveData.status}</Text>
             </View>
           )}
@@ -521,6 +712,31 @@ export const ShareCard: React.FC<ShareCardProps> = ({ data, navigation, style, w
               <Text style={s.monoBadgeMutedText}>{liveData.genre}</Text>
             </View>
           )}
+          {data.type === 'pitch' && liveData.format ? (
+            <View style={s.monoBadgeMuted}>
+              <Text style={s.monoBadgeMutedText}>{liveData.format}</Text>
+            </View>
+          ) : null}
+          {data.type === 'pitch' && liveData.deadline ? (
+            <View style={s.statusBadge}>
+              <Icon name="clock" size={8} color="#64748B" />
+              <Text style={[s.statusBadgeText, { color: themeColors.textSecondary }]}>
+                Due {(() => { const t = new Date(liveData.deadline as string); return isNaN(t.getTime()) ? liveData.deadline : t.toLocaleDateString(); })()}
+              </Text>
+            </View>
+          ) : null}
+          {data.type === 'room' && typeof liveData.memberCount === 'number' ? (
+            <View style={s.statusBadge}>
+              <Icon name="users" size={8} color="#64748B" />
+              <Text style={[s.statusBadgeText, { color: themeColors.textSecondary }]}>{liveData.memberCount} members</Text>
+            </View>
+          ) : null}
+          {data.type === 'room' && liveData.isPrivate ? (
+            <View style={s.statusBadge}>
+              <Icon name="lock" size={8} color="#64748B" />
+              <Text style={[s.statusBadgeText, { color: themeColors.textSecondary }]}>Private</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Verified Listing row (for marketplace, vendor, company) */}
@@ -632,7 +848,7 @@ const s = StyleSheet.create({
   imageTypeBadgeText: {
     color: ORANGE,
     fontSize: 7,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
@@ -667,8 +883,8 @@ const s = StyleSheet.create({
   },
   postAuthorFallbackText: {
     color: ORANGE,
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   postAuthorName: {
     fontSize: 12,
@@ -681,7 +897,7 @@ const s = StyleSheet.create({
   // ─── Card Title ────────────────────────────────────────
   cardTitle: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#111827',
     letterSpacing: -0.3,
     lineHeight: 17,
@@ -697,7 +913,7 @@ const s = StyleSheet.create({
     marginTop: 2,
   },
   descriptionText: {
-    fontSize: 10,
+    fontSize: 12,
     color: 'rgba(17,24,39,0.6)',
     fontStyle: 'italic',
     lineHeight: 15,
@@ -725,7 +941,7 @@ const s = StyleSheet.create({
   monoBadgeText: {
     color: ORANGE,
     fontSize: 7.5,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     fontFamily: 'Inconsolata-Bold',
@@ -741,9 +957,9 @@ const s = StyleSheet.create({
     borderRadius: 4,
   },
   monoBadgeMutedText: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 7.5,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     fontFamily: 'Inconsolata-Bold',
@@ -760,9 +976,9 @@ const s = StyleSheet.create({
     borderRadius: 4,
   },
   locationBadgeText: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 7.5,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     fontFamily: 'Inconsolata-Bold',
@@ -783,7 +999,7 @@ const s = StyleSheet.create({
   statusBadgeText: {
     color: '#374151',
     fontSize: 7.5,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     fontFamily: 'Inconsolata-Bold',
@@ -801,7 +1017,7 @@ const s = StyleSheet.create({
   salaryBadgeText: {
     color: '#16A34A',
     fontSize: 7.5,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     fontFamily: 'Inconsolata-Bold',
@@ -830,23 +1046,23 @@ const s = StyleSheet.create({
   },
   authorAvatarFallbackText: {
     color: '#000',
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     textTransform: 'uppercase',
   },
   authorMeta: {
     flex: 1,
   },
   authorName: {
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#111827',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   authorRole: {
     fontSize: 7.5,
-    fontWeight: '900',
+    fontWeight: '700',
     color: ORANGE,
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -870,8 +1086,8 @@ const s = StyleSheet.create({
   },
   ctaText: {
     color: '#000000',
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
@@ -894,8 +1110,8 @@ const s = StyleSheet.create({
   },
   ctaTextJob: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
@@ -919,7 +1135,7 @@ const s = StyleSheet.create({
   hiringBadgeText: {
     color: '#FFFFFF',
     fontSize: 7,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
@@ -978,7 +1194,7 @@ const s = StyleSheet.create({
   profileAvatarInitial: {
     color: ORANGE,
     fontSize: 28,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   verifiedBadge: {
     position: 'absolute',
@@ -995,7 +1211,7 @@ const s = StyleSheet.create({
   },
   profileName: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#111827',
     textTransform: 'uppercase',
     letterSpacing: -0.3,
@@ -1004,7 +1220,7 @@ const s = StyleSheet.create({
     fontFamily: 'Lora-Bold',
   },
   profileBio: {
-    fontSize: 10,
+    fontSize: 12,
     color: 'rgba(107,114,128,0.8)',
     fontStyle: 'italic',
     fontWeight: '500',

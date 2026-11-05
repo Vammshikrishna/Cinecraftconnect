@@ -21,7 +21,7 @@ export interface CompressResult {
 
 /**
  * High-performance client-side image compressor.
- * Uses native Android Bitmap decode stream + sampling to downscale and re-encode.
+ * Uses a native module (Android Bitmap sampling, iOS ImageIO) to downscale and re-encode.
  * Reduces 10MB camera shots to ~200KB-400KB in ~80ms.
  */
 export async function compressImage(
@@ -34,7 +34,7 @@ export async function compressImage(
   const maxHeight = options?.maxHeight || 1280;
   const quality = options?.quality || 75;
 
-  if (Platform.OS === 'android' && ImageCompressor?.compress) {
+  if ((Platform.OS === 'android' || Platform.OS === 'ios') && ImageCompressor?.compress) {
     try {
       const res = await ImageCompressor.compress(uri, { maxWidth, maxHeight, quality });
       if (res && res.uri) {
@@ -95,6 +95,8 @@ export interface UploadOptions {
   folder?: string;
   onProgressText?: (status: string) => void;
   maxDocSizeMB?: number;
+  /** the picture is already finished (edited and resized): upload it as it is, without compressing it again */
+  skipCompress?: boolean;
 }
 
 /**
@@ -131,7 +133,7 @@ export async function uploadMediaPipeline(
   let finalSize = item.size;
 
   // Step 1: Compress images before streaming
-  if (isImg) {
+  if (isImg && !options?.skipCompress) {
     options?.onProgressText?.('Compressing photo...');
     const comp = await compressImage(item.uri, { maxWidth: 1280, quality: 75 });
     finalUri = comp.uri;

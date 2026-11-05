@@ -12,19 +12,28 @@ import {
   KeyboardAvoidingView,
   Platform,
   InteractionManager,
+  Linking,
 } from 'react-native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
+import { isTabletDevice } from '../../utils/pageType';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { getSupabaseClient } from '@cinecraft/api';
+import { createDirectPitchCall, friendlyError, canSubmitPitch } from '@cinecraft/core';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { pitchDraftKey, canEditPitch } from '@cinecraft/core';
+import DocumentPicker from 'react-native-document-picker';
+import {
+  newSubmissionId, checkPitchAttachment, uploadPitchAttachment, removePitchAttachment, attachmentLabel, signPitchAttachment, PITCH_ATTACHMENT_MAX,
+} from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 
 export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
-  const { pitchId, pitchTitle, targetProducerId, targetProducerName } = route.params || {};
+  const { pitchId, pitchTitle, targetProducerId, targetProducerName, editSubmissionId } = route.params || {};
   const [pitchCall, setPitchCall] = useState<any>(null);
   const [targetProducer, setTargetProducer] = useState<any>(null);
   const [loadingCall, setLoadingCall] = useState(true);
@@ -52,10 +61,82 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
   const [lookbookUrl, setLookbookUrl] = useState('');
   const [ndaSignature, setNdaSignature] = useState('');
 
+  // editing a sent pitch (until the producer starts to review it) and the unfinished-form draft
+  const [editing, setEditing] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftKeyRef = React.useRef<string | null>(null);
+
+  // private file attachments (PDF / images), up to 3
+  const [submissionId] = useState(() => newSubmissionId());
+  const [attachmentPaths, setAttachmentPaths] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const addAttachment = async () => {
+    try {
+      const file = await DocumentPicker.pickSingle({ type: [DocumentPicker.types.pdf, DocumentPicker.types.images] });
+      const problem = checkPitchAttachment({ name: file.name || '', size: file.size }, attachmentPaths.length);
+      if (problem) { Alert.alert('Cannot attach this file', problem); return; }
+      setUploading(true);
+      const supabase = getSupabaseClient();
+      const { data: { user: me } } = await supabase.auth.getUser();
+      if (!me) throw new Error('Sign in first');
+      const body = await (await fetch(file.uri)).arrayBuffer();
+      const ref = await uploadPitchAttachment(supabase, me.id, editSubmissionId || submissionId, body, file.name || 'file.pdf', attachmentPaths.length + 1);
+      setAttachmentPaths((p) => [...p, ref]);
+    } catch (e: any) {
+      if (!DocumentPicker.isCancel(e)) Alert.alert('Upload failed', friendlyError(e, 'Please try again.'));
+    } finally {
+      setUploading(false);
+    }
+  };
+  const dropAttachment = (ref: string) => {
+    setAttachmentPaths((p) => p.filter((x) => x !== ref));
+    removePitchAttachment(getSupabaseClient(), ref);
+  };
+  const openAttachment = async (ref: string) => {
+    try { await Linking.openURL(await signPitchAttachment(getSupabaseClient(), ref)); } catch { Alert.alert('Could not open the file'); }
+  };
+
+  const draftReady = !loadingCall && !editing && !!draftKeyRef.current;
+  useEffect(() => {
+    if (!draftReady) return;
+    const t = setTimeout(() => {
+      const key = draftKeyRef.current;
+      if (!key) return;
+      if (!title && !logline && !shortSynopsis && !fullSynopsis) { AsyncStorage.removeItem(key).catch(() => { }); return; }
+      AsyncStorage.setItem(key, JSON.stringify({ title, logline, shortSynopsis, fullSynopsis, genre, language, tone, whyFits, guildRegNum, copyrightNum, treatmentUrl, lookbookUrl, step })).catch(() => { });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [draftReady, title, logline, shortSynopsis, fullSynopsis, genre, language, tone, whyFits, guildRegNum, copyrightNum, treatmentUrl, lookbookUrl, step]);
+
+  const discardDraft = () => {
+    if (draftKeyRef.current) AsyncStorage.removeItem(draftKeyRef.current).catch(() => { });
+    setTitle(''); setLogline(''); setShortSynopsis(''); setFullSynopsis(''); setTone(''); setWhyFits('');
+    setGuildRegNum(''); setCopyrightNum(''); setTreatmentUrl(''); setLookbookUrl(''); setNdaSignature('');
+    setStep(1); setDraftRestored(false);
+  };
+
   useEffect(() => {
     const fetchCall = async () => {
       const isDirectMode = pitchId === 'direct' || !!targetProducerId;
       const supabase = getSupabaseClient();
+      const { data: { user: me } } = await supabase.auth.getUser();
+      draftKeyRef.current = editSubmissionId ? null : pitchDraftKey(me?.id, isDirectMode ? `direct:${targetProducerId || route.params?.to || ''}` : String(pitchId || ''));
+      const restoreDraft = async () => {
+        if (!draftKeyRef.current) return;
+        try {
+          const raw = await AsyncStorage.getItem(draftKeyRef.current);
+          if (!raw) return;
+          const d = JSON.parse(raw);
+          setTitle(d.title || ''); setLogline(d.logline || ''); setShortSynopsis(d.shortSynopsis || ''); setFullSynopsis(d.fullSynopsis || '');
+          if (d.genre) setGenre(d.genre);
+          if (d.language) setLanguage(d.language);
+          setTone(d.tone || ''); setWhyFits(d.whyFits || ''); setGuildRegNum(d.guildRegNum || ''); setCopyrightNum(d.copyrightNum || '');
+          setTreatmentUrl(d.treatmentUrl || ''); setLookbookUrl(d.lookbookUrl || '');
+          if (d.step) setStep(Math.min(3, Math.max(1, Number(d.step) || 1)));
+          setDraftRestored(true);
+        } catch { /* a broken draft is ignored */ }
+      };
 
       if (isDirectMode) {
         const pId = targetProducerId || route.params?.to;
@@ -80,6 +161,7 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
             console.warn('[SubmitPitch] Error fetching producer:', e);
           }
         }
+        await restoreDraft();
         setLoadingCall(false);
         return;
       }
@@ -98,6 +180,28 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
         if (data) {
           setPitchCall(data);
           setGenre((data.genre || [])[0] || 'Drama');
+          if (editSubmissionId && me) {
+            const { data: mine } = await (supabase.from('pitch_submissions') as any).select('*').eq('id', editSubmissionId).eq('submitter_id', me.id).single();
+            if (!mine || !canEditPitch(mine.status)) {
+              Alert.alert('This pitch can no longer be edited', 'The producer has started to review it.');
+              navigation.goBack();
+              return;
+            }
+            setEditing(true);
+            setTitle(mine.title || ''); setLogline(mine.logline || ''); setShortSynopsis(mine.short_synopsis || ''); setFullSynopsis(mine.full_synopsis || '');
+            if (mine.genre) setGenre(mine.genre);
+            if (mine.language) setLanguage(mine.language);
+            setTone(mine.tone || ''); setWhyFits(mine.why_fits || '');
+            setRightsOwned(!!mine.rights_owned); setIsOriginalWork(!!mine.is_original_work);
+            setTreatmentUrl(mine.treatment_url || ''); setLookbookUrl(mine.lookbook_url || '');
+            setAttachmentPaths(Array.isArray(mine.attachment_paths) ? mine.attachment_paths : []);
+            try {
+              const g = JSON.parse(mine.guild_registration_number || '{}');
+              setGuildRegNum(g.swa_registration_number || ''); setCopyrightNum(g.copyright_registration_number || '');
+            } catch { /* older format */ }
+          } else {
+            await restoreDraft();
+          }
         }
       } catch (e) {
         console.warn('[SubmitPitch] Error:', e);
@@ -109,7 +213,7 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
       fetchCall();
     });
     return () => task.cancel();
-  }, [pitchId, targetProducerId]);
+  }, [pitchId, targetProducerId, editSubmissionId]);
 
   const handleNextStep = () => {
     if (step === 1) {
@@ -128,7 +232,8 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
   };
 
   const handleSubmitPitch = async () => {
-    const isNdaRequired = !!pitchCall?.nda_required;
+    // a direct pitch always needs the NDA signature (the database enforces it too)
+    const isNdaRequired = !editing && (!!pitchCall?.nda_required || pitchId === 'direct' || !!targetProducerId || !!targetProducer?.id);
     if (isNdaRequired && ndaSignature.trim().length < 3) {
       Alert.alert('NDA Signature Required', 'Please type your full legal name to e-sign the non-disclosure agreement.');
       return;
@@ -137,9 +242,29 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
     setSubmitting(true);
     try {
       const supabase = getSupabaseClient();
+      if (editing && editSubmissionId) {
+        const { error: updateError } = await (supabase.from('pitch_submissions') as any).update({
+          title: title.trim(), logline: logline.trim(), short_synopsis: shortSynopsis.trim(), full_synopsis: fullSynopsis.trim() || null,
+          genre: genre || null, language: language || null, tone: tone.trim() || null, why_fits: whyFits.trim() || null,
+          rights_owned: rightsOwned, is_original_work: isOriginalWork, treatment_url: treatmentUrl.trim() || null, lookbook_url: lookbookUrl.trim() || null,
+          guild_registration_number: JSON.stringify({ swa_registration_number: guildRegNum.trim(), copyright_registration_number: copyrightNum.trim() }),
+          attachment_paths: attachmentPaths,
+        }).eq('id', editSubmissionId);
+        if (updateError) throw updateError;
+        // leave the form at once; the message is a toast and its button would only run after it fades (a second tap could resubmit)
+        navigation.goBack();
+        Alert.alert('Pitch updated', 'Your changes were saved.');
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         Alert.alert('Authentication', 'Please sign in to submit pitches.');
+        return;
+      }
+      // The shared rule (same as the web): fans never, creators always, studios only with a writer-side craft. The database checks it too.
+      const { data: me } = await (supabase.from('profiles') as any).select('craft, account_type').eq('id', user.id).maybeSingle();
+      if (!canSubmitPitch(me?.craft, me?.account_type)) {
+        Alert.alert('Not available for your account', 'Pitches can be submitted by writers, directors and creators. Your account type or craft does not allow it.');
         return;
       }
 
@@ -154,53 +279,18 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
       let targetCallId = pitchId;
 
       if (isDirectMode && targetId) {
-        // Create a direct_catcher pitch call brief where creator_id = Producer's ID (matching Web app behavior)
-        const { data: newCatcher, error: cError } = await (supabase as any)
-          .from('pitch_calls')
-          .insert({
-            creator_id: targetId,
-            title: `Direct Pitch: ${title.trim() || 'New Concept'}`,
-            project_type: 'other',
-            requirement_description: 'Confidential direct concept submission brief.',
-            status: 'open',
-            is_published: true,
-            attachments: {
-              is_direct_catcher: true,
-              target_producer_id: targetId,
-              target_producer_name: targetProducer?.full_name || 'Producer',
-            },
-          })
-          .select('id')
-          .single();
-
-        if (!cError && newCatcher) {
-          targetCallId = newCatcher.id;
-        } else {
-          console.warn('[SubmitPitch] Direct catcher creation fallback:', cError);
-          const { data: fallbackCall } = await (supabase as any)
-            .from('pitch_calls')
-            .select('id')
-            .eq('creator_id', targetId)
-            .limit(1)
-            .maybeSingle();
-
-          if (fallbackCall) {
-            targetCallId = fallbackCall.id;
-          } else {
-            const { data: absoluteFallback } = await (supabase as any)
-              .from('pitch_calls')
-              .select('id')
-              .limit(1)
-              .maybeSingle();
-
-            if (absoluteFallback) {
-              targetCallId = absoluteFallback.id;
-            }
-          }
+        // the database creates the private brief (and checks blocks and the daily limit)
+        try {
+          targetCallId = await createDirectPitchCall(supabase, targetId, title.trim(), targetProducer?.full_name);
+        } catch (err: any) {
+          Alert.alert('Could not send the direct pitch', friendlyError(err, 'Please try again.'));
+          return;
         }
       }
 
       const payload: any = {
+        id: submissionId,
+        attachment_paths: attachmentPaths,
         pitch_call_id: targetCallId,
         submitter_id: user.id,
         title: title.trim(),
@@ -217,9 +307,6 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
         lookbook_url: lookbookUrl.trim() || null,
         guild_registration_number: JSON.stringify(guildData),
         nda_signature: ndaSignature.trim() || null,
-        nda_signed_at: ndaSignature.trim() ? new Date().toISOString() : null,
-        submitted_at: new Date().toISOString(),
-        status: 'submitted',
         attachments: {
           target_producer_id: targetId,
           is_direct_pitch: isDirectMode,
@@ -237,14 +324,12 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
         return;
       }
 
-      Alert.alert('Pitch Submitted! 🎬', 'Your pitch has been securely encrypted and submitted to the call creator.', [
-        {
-          text: 'Great',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      if (draftKeyRef.current) AsyncStorage.removeItem(draftKeyRef.current).catch(() => { });
+      // leave the form at once so it cannot be submitted twice while the message is still showing
+      navigation.goBack();
+      Alert.alert('Pitch Submitted! 🎬', 'Your pitch has been securely encrypted and submitted to the call creator.');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not submit pitch.');
+      Alert.alert('Error', friendlyError(err, 'Could not submit pitch.'));
     } finally {
       setSubmitting(false);
     }
@@ -252,8 +337,11 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
 
   if (loadingCall) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={ORANGE} />
+      <View style={{ flex: 1, backgroundColor: themeColors.bgScreen }}>
+        <Header title="Submit Script Pitch" showLogo={false} onBack={() => navigation.goBack()} />
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={ORANGE} />
+        </View>
       </View>
     );
   }
@@ -265,6 +353,18 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
         showLogo={false}
         onBack={() => navigation.goBack()}
       />
+
+      {draftRestored && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: 12, marginBottom: 0, padding: 10, borderRadius: 12, backgroundColor: '#FEF3C7' }}>
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#B45309' }}>We restored the draft you started on this phone.</Text>
+          <TouchableOpacity onPress={discardDraft} accessibilityRole="button" accessibilityLabel="Start over"><Text style={{ fontSize: 12, fontWeight: '700', color: '#B45309', textDecorationLine: 'underline' }}>Start over</Text></TouchableOpacity>
+        </View>
+      )}
+      {editing && (
+        <View style={{ margin: 12, marginBottom: 0, padding: 10, borderRadius: 12, backgroundColor: '#FFF1EE' }}>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: ORANGE }}>Editing your pitch. You can change it until the producer starts to review it.</Text>
+        </View>
+      )}
 
       {/* Step Indicator Header */}
       <View
@@ -310,10 +410,10 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        <ScrollView style={styles.formContent} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.formContent} contentContainerStyle={{ paddingBottom: isTabletDevice ? 64 : 32 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <TabletContainer maxWidth={720}>
             {step === 1 && (
               <View>
@@ -478,7 +578,7 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
                     <Text style={[styles.switchTitle, { color: themeColors.textPrimary }]}>I Own All IP Rights</Text>
                     <Text style={[styles.switchSub, { color: themeColors.textSecondary }]}>I own 100% of rights to submit this story.</Text>
                   </View>
-                  <Switch value={rightsOwned} onValueChange={setRightsOwned} trackColor={{ true: ORANGE }} />
+                  <Switch accessibilityLabel="I Own All IP Rights" value={rightsOwned} onValueChange={setRightsOwned} trackColor={{ true: ORANGE }} />
                 </View>
 
                 <View
@@ -491,7 +591,7 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
                     <Text style={[styles.switchTitle, { color: themeColors.textPrimary }]}>Declared Original Work</Text>
                     <Text style={[styles.switchSub, { color: themeColors.textSecondary }]}>This script is an original creation.</Text>
                   </View>
-                  <Switch value={isOriginalWork} onValueChange={setIsOriginalWork} trackColor={{ true: ORANGE }} />
+                  <Switch accessibilityLabel="Declared Original Work" value={isOriginalWork} onValueChange={setIsOriginalWork} trackColor={{ true: ORANGE }} />
                 </View>
 
                 <View style={styles.btnRow}>
@@ -547,7 +647,24 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
                   onChangeText={setLookbookUrl}
                 />
 
-                {pitchCall?.nda_required && (
+                <Text style={[styles.label, { color: themeColors.textMuted, marginTop: 12 }]}>ATTACH FILES (OPTIONAL, UP TO {PITCH_ATTACHMENT_MAX}: PDF OR IMAGE, 15 MB EACH)</Text>
+                {attachmentPaths.map((ref, i) => (
+                  <View key={ref} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 }}>
+                    <TouchableOpacity onPress={() => openAttachment(ref)} accessibilityRole="link" style={{ flex: 1, minHeight: 36, justifyContent: 'center' }}>
+                      <Text style={{ color: ORANGE, fontWeight: '700' }}>{attachmentLabel(ref, i)}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => dropAttachment(ref)} accessibilityRole="button" accessibilityLabel={`Remove ${attachmentLabel(ref, i)}`} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="x" size={16} color={themeColors.iconMuted} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {attachmentPaths.length < PITCH_ATTACHMENT_MAX && (
+                  <TouchableOpacity onPress={addAttachment} disabled={uploading} accessibilityRole="button" style={{ minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
+                    {uploading ? <ActivityIndicator color={ORANGE} /> : <Text style={{ fontWeight: '700', color: themeColors.textPrimary }}>+ Add a file</Text>}
+                  </TouchableOpacity>
+                )}
+
+                {!editing && (!!pitchCall?.nda_required || pitchId === 'direct' || !!targetProducerId || !!targetProducer?.id) && (
                   <View
                     style={[
                       styles.ndaBox,
@@ -578,6 +695,7 @@ export const SubmitPitchScreen = ({ route, navigation }: { route: any; navigatio
                       placeholderTextColor={themeColors.textMuted}
                       value={ndaSignature}
                       onChangeText={setNdaSignature}
+                      accessibilityLabel="NDA signature, type your full legal name"
                     />
                   </View>
                 )}
@@ -629,7 +747,8 @@ const styles = StyleSheet.create({
   stepHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
+    justifyContent: isTabletDevice ? 'center' : 'space-around',
+    gap: isTabletDevice ? 72 : 0,
     backgroundColor: '#FFFFFF',
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -651,15 +770,15 @@ const styles = StyleSheet.create({
     backgroundColor: ORANGE,
   },
   stepNum: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   stepNumActive: {
     color: '#FFFFFF',
   },
   stepLabelText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
   },
@@ -667,17 +786,17 @@ const styles = StyleSheet.create({
     color: ORANGE,
   },
   formContent: {
-    padding: 16,
+    padding: isTabletDevice ? 24 : 16,
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 22 : 18,
+    fontWeight: '700',
     color: INK,
     marginBottom: 12,
   },
   label: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 12,
@@ -688,17 +807,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
+    paddingHorizontal: isTabletDevice ? 16 : 12,
+    paddingVertical: isTabletDevice ? 14 : 10,
+    fontSize: isTabletDevice ? 15 : 14,
     color: INK,
   },
   textareaShort: {
-    height: 60,
+    height: isTabletDevice ? 84 : 60,
     textAlignVertical: 'top',
   },
   textarea: {
-    height: 90,
+    height: isTabletDevice ? 140 : 90,
     textAlignVertical: 'top',
   },
   switchRow: {
@@ -713,11 +832,11 @@ const styles = StyleSheet.create({
   },
   switchTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   switchSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
@@ -737,8 +856,8 @@ const styles = StyleSheet.create({
   },
   ndaTitleText: {
     color: '#D97706',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   ndaSub: {
@@ -762,11 +881,11 @@ const styles = StyleSheet.create({
   backStepText: {
     color: '#64748B',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   nextBtn: {
     backgroundColor: ORANGE,
-    height: 48,
+    height: isTabletDevice ? 54 : 48,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -776,7 +895,7 @@ const styles = StyleSheet.create({
   nextBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   submitBtn: {
     flex: 1,
@@ -784,13 +903,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ORANGE,
-    height: 48,
+    height: isTabletDevice ? 54 : 48,
     borderRadius: 12,
     gap: 8,
   },
   submitBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

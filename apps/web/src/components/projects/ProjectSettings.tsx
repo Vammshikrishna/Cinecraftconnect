@@ -6,7 +6,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
-import { Loader2, Save, Trash2, ChevronRight, MessageCircle, Wallet, CircleUser, ArrowLeft, Lock, Film, Camera, Search, Check, Users } from 'lucide-react';
+import { Loader2, Save, Trash2, MessageCircle, Wallet, CircleUser, Lock, Film, Camera, Search, Check, Users, Globe, MapPin, X, Plus, Play, Pause, CheckCircle2, Archive, AlertTriangle, CalendarRange, Tag } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { useAppNavigation } from '@/contexts/NavigationContext';
@@ -38,13 +39,33 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { useAppRole } from '@/hooks/useAppRole';
+import { friendlyError } from '@cinecraft/core';
 
 interface ProjectSettingsProps {
     projectId: string;
+    /** true only for the space / project creator */
+    canManage?: boolean;
 }
 
-const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
+/** One settings card. Defined outside the screen so typing in its fields never remounts it. */
+const Section = ({ id, title: t, desc, icon: Icon, children, tone }: { id: string; title: string; desc: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode; tone?: 'danger' }) => (
+    <section id={'ps-' + id} aria-labelledby={'ps-h-' + id} className={cn('scroll-mt-4 rounded-2xl border bg-card', tone === 'danger' ? 'border-destructive/30' : 'border-border')}>
+        <div className="flex items-start gap-3.5 px-5 sm:px-6 pt-5 sm:pt-6">
+            <span className={cn('h-10 w-10 rounded-xl grid place-items-center shrink-0', tone === 'danger' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary')}><Icon className="h-5 w-5" /></span>
+            <div className="min-w-0">
+                <h2 id={'ps-h-' + id} className={cn('text-lg font-semibold leading-tight', tone === 'danger' && 'text-destructive')}>{t}</h2>
+                <p className="text-sm text-muted-foreground mt-0.5">{desc}</p>
+            </div>
+        </div>
+        <div className="p-5 sm:p-6 pt-5">{children}</div>
+    </section>
+);
+
+
+const ProjectSettings = ({ projectId, canManage = false }: ProjectSettingsProps) => {
     const { isInternal } = useAppRole();
+    // Only the space / project creator edits, purges chat, terminates or deletes. Staff observers and everyone else: read-only.
+    const readOnly = isInternal || !canManage;
     const { toast } = useToast();
     const { push } = useAppNavigation();
     const [loading, setLoading] = useState(true);
@@ -68,6 +89,11 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [step, setStep] = useState<'basis' | 'financials' | 'privacy' | 'danger'>('basis');
     const [isMenu, setIsMenu] = useState(true);
+    const [baseline, setBaseline] = useState<string | null>(null);
+    const [rebase, setRebase] = useState(0);
+    const [genreDraft, setGenreDraft] = useState('');
+    const [deleteConfirm, setDeleteConfirm] = useState('');
+    const [activeSection, setActiveSection] = useState('basics');
 
     const [originalStatus, setOriginalStatus] = useState('active');
     const [showWrapDialog, setShowWrapDialog] = useState(false);
@@ -100,7 +126,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             'bg-gradient-to-br from-pink-500 to-rose-500',
             'bg-gradient-to-br from-purple-500 to-indigo-500',
             'bg-gradient-to-br from-blue-500 to-cyan-500',
-            'bg-gradient-to-br from-primary to-accent',
+            'bg-gradient-to-br from-primary to-[hsl(var(--accent-strong))]',
             'bg-gradient-to-br from-orange-500 to-amber-500',
             'bg-gradient-to-br from-red-500 to-orange-600',
             'bg-gradient-to-br from-primary to-primary/80',
@@ -245,10 +271,11 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             setOriginalStatus('completed');
             setStatus('completed');
             setShowWrapDialog(false);
+            setRebase((n) => n + 1);
         } catch (error: any) {
             toast({
                 title: "Error",
-                description: error.message || "Failed to wrap project settings",
+                description: friendlyError(error, "Failed to wrap project settings"),
                 variant: "destructive"
             });
         } finally {
@@ -294,6 +321,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             });
         } finally {
             setLoading(false);
+            setRebase((n) => n + 1);
         }
     };
 
@@ -336,13 +364,14 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             setImageUrl(publicUrl);
             toast({ title: "Success", description: "Project thumbnail updated!" });
         } catch (error: any) {
-            toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+            toast({ title: "Upload Failed", description: friendlyError(error), variant: "destructive" });
         } finally {
             setImageUploading(false);
         }
     };
 
     const handleSave = async () => {
+        if (readOnly) return;
         if (status === 'completed' && originalStatus !== 'completed') {
             await fetchSpaceMembers();
             setShowWrapDialog(true);
@@ -377,6 +406,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 title: "Success",
                 description: "Project settings updated successfully",
             });
+            setRebase((n) => n + 1);
         } catch (error: any) {
             toast({
                 title: "Error",
@@ -389,6 +419,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     };
 
     const handleDelete = async () => {
+        if (readOnly) return;
         setDeleting(true);
         try {
             const { error } = await supabase
@@ -415,6 +446,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     };
 
     const handleClearChatHistory = async () => {
+        if (readOnly) return;
         setSaving(true);
         try {
             // 1. Attempt RPC call passing both _space_id and _project_id
@@ -500,7 +532,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
         } catch (error: any) {
             toast({
                 title: "Error",
-                description: error.message || "Failed to clear chat history",
+                description: friendlyError(error, "Failed to clear chat history"),
                 variant: "destructive"
             });
         } finally {
@@ -508,435 +540,333 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
         }
     };
 
+    const current = JSON.stringify([title, description, status, location, genre, requiredRoles, startDate, endDate, budgetMin, budgetMax, isPublic]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => { if (!loading) setBaseline(current); }, [loading, rebase]);
+    const dirty = baseline !== null && current !== baseline;
+
+    const SECTION_IDS = ['basics', 'roles', 'budget', 'visibility', 'danger'];
+    useEffect(() => {
+        if (loading) return;
+        const seen = new Map<string, number>();
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0));
+            const best = [...seen.entries()].sort((x, y) => y[1] - x[1])[0];
+            if (best && best[1] > 0) setActiveSection(best[0]);
+        }, { threshold: [0, 0.25, 0.5, 0.75, 1] });
+        SECTION_IDS.forEach((id) => { const el = document.getElementById('ps-' + id); if (el) io.observe(el); });
+        return () => io.disconnect();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading]);
+
     if (loading) {
         return <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
     }
 
-    if (isMenu) {
-        return (
-            <div className="max-w-xl mx-auto h-full overflow-y-auto no-scrollbar pb-24 relative p-4 sm:p-6 space-y-6 animate-in fade-in duration-500">
-                {/* Profile-Header Style: Dynamic Image with Edit Capability */}
-                <div className="flex items-center gap-6 mb-12 group/header">
-                    <div 
-                        onClick={() => !isInternal && fileInputRef.current?.click()}
-                        className={`w-20 h-20 sm:w-24 sm:h-24 ${!imageUrl ? getGradient(projectId) : ''} rounded-3xl flex items-center justify-center border-4 border-background shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] ${!isInternal ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default'} transition-all duration-500 relative overflow-hidden shrink-0`}
-                    >
-                        {imageUrl ? (
-                            <img loading="lazy" decoding="async" src={imageUrl} alt={title} className="w-full h-full object-cover" />
-                        ) : (
-                            <>
-                                <div className="absolute inset-0 bg-black/10 backdrop-blur-[2px]" />
-                                <Film className="w-10 h-10 sm:w-12 sm:h-12 text-white/90 relative z-10 drop-shadow-2xl" />
-                            </>
-                        )}
-                        
-                        {/* Camera Overlay: Always show on hover or while uploading */}
-                        {!isInternal && (
-                            <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/header:opacity-100 transition-opacity duration-300 z-20`}>
-                                {imageUploading ? (
-                                    <Loader2 className="w-6 h-6 text-white animate-spin" />
-                                ) : (
-                                    <Camera className="w-6 h-6 text-white drop-shadow-lg" />
-                                )}
-                            </div>
-                        )}
-                    </div>
+    const genreList = genre.split(',').map((g) => g.trim()).filter(Boolean);
+    const setGenres = (list: string[]) => setGenre(list.join(', '));
+    const addGenre = (g: string) => {
+        const v = g.trim();
+        if (!v || genreList.some((x) => x.toLowerCase() === v.toLowerCase())) return;
+        setGenres([...genreList, v]);
+    };
+    const GENRE_SUGGESTIONS = ['Drama', 'Thriller', 'Comedy', 'Documentary', 'Sci-Fi', 'Horror', 'Romance', 'Action', 'Short film'];
 
-                    <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleImageChange} 
-                        accept="image/*" 
-                        className="hidden" 
-                    />
+    const days = startDate && endDate ? Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1 : null;
+    const dateProblem = days !== null && days < 1;
+    const budgetProblem = !!budgetMin && !!budgetMax && parseFloat(budgetMin) > parseFloat(budgetMax);
+    const money = (v: string) => (v ? '$' + Number(v).toLocaleString() : null);
 
-                    <div className="flex-1 overflow-hidden space-y-1">
-                        <h1 className="text-3xl font-black text-foreground truncate tracking-tighter leading-none">{title}</h1>
-                        <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] opacity-60">Production Space</p>
-                    </div>
-                </div>
+    const PHASES = [
+        { id: 'active', label: 'Active', hint: 'In production', icon: Play, tone: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/40' },
+        { id: 'on_hold', label: 'On hold', hint: 'Paused for now', icon: Pause, tone: 'text-amber-600 bg-amber-500/10 border-amber-500/40' },
+        { id: 'completed', label: 'Completed', hint: 'Wrapped and released', icon: CheckCircle2, tone: 'text-sky-600 bg-sky-500/10 border-sky-500/40' },
+        { id: 'archived', label: 'Archived', hint: 'Kept for reference', icon: Archive, tone: 'text-muted-foreground bg-muted border-foreground/20' },
+    ];
+    const phase = PHASES.find((p) => p.id === status) || PHASES[0];
 
-                <div className="space-y-4">
-                    <p className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-[0.2em] px-2">Project Management</p>
-                    
-                    <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[32px] overflow-hidden">
-                        <button 
-                            onClick={() => openStep('basis')}
-                            className="w-full flex items-center gap-4 p-5 hover:bg-white/5 transition-colors group text-left"
-                        >
-                            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
-                                <CircleUser className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                                <p className="font-black text-foreground tracking-tight">General Basics</p>
-                                <p className="text-xs text-muted-foreground">Title, Story, Location & Genres</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-muted-foreground/30" />
-                        </button>
-                        
-                        <div className="h-[1px] bg-border/40 mx-16" />
+    const NAV = [
+        { id: 'basics', label: 'Basics', icon: CircleUser },
+        { id: 'roles', label: 'Open roles', icon: Users },
+        { id: 'budget', label: 'Budget and dates', icon: Wallet },
+        { id: 'visibility', label: 'Visibility and phase', icon: Globe },
+        ...(!readOnly ? [{ id: 'danger', label: 'Danger zone', icon: Trash2 }] : []),
+    ];
+    const go = (id: string) => {
+        setActiveSection(id);
+        document.getElementById('ps-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
-                        <button 
-                            onClick={() => openStep('financials')}
-                            className="w-full flex items-center gap-4 p-5 hover:bg-white/5 transition-colors group text-left"
-                        >
-                            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary/80 group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
-                                <Wallet className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                                <p className="font-black text-foreground tracking-tight">Budget & Timeline</p>
-                                <p className="text-xs text-muted-foreground">Financial estimates & production dates</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-muted-foreground/30" />
-                        </button>
-
-                        <div className="h-[1px] bg-border/40 mx-16" />
-
-                        <button 
-                            onClick={() => openStep('privacy')}
-                            className="w-full flex items-center gap-4 p-5 hover:bg-white/5 transition-colors group text-left"
-                        >
-                            <div className="w-10 h-10 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-400 group-hover:bg-blue-500 group-hover:text-white transition-all shadow-sm">
-                                <Lock className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                                <p className="font-black text-foreground tracking-tight">Privacy & Scope</p>
-                                <p className="text-xs text-muted-foreground">Marketplace visibility & phase status</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-muted-foreground/30" />
-                        </button>
-                    </div>
-
-                    {!isInternal && (
-                        <>
-                            <p className="text-[10px] font-black text-destructive/60 uppercase tracking-[0.2em] px-2 pt-4">Danger Zone</p>
-                            
-                            <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[32px] overflow-hidden">
-                                <button 
-                                    onClick={() => openStep('danger')}
-                                    className="w-full flex items-center gap-4 p-5 hover:bg-destructive/5 transition-colors group text-left"
-                                >
-                                    <div className="w-10 h-10 bg-destructive/10 rounded-full flex items-center justify-center text-destructive group-hover:bg-destructive group-hover:text-white transition-all shadow-sm">
-                                        <Trash2 className="w-5 h-5" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <p className="font-black text-destructive tracking-tight uppercase text-xs">Security Actions</p>
-                                        <p className="text-xs text-muted-foreground">Terminate space or clear chat logs</p>
-                                    </div>
-                                    <ChevronRight className="w-5 h-5 text-muted-foreground/30" />
-                                </button>
-                            </div>
-                        </>
-                    )}
-                </div>
-            </div>
-        );
-    }
+    const fieldLabel = 'text-sm font-medium text-foreground';
+    const inputCls = 'h-11 rounded-xl bg-background border-border text-base';
 
     return (
         <div className="flex flex-col h-full w-full relative">
-            <div className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-8 space-y-8 overflow-y-auto no-scrollbar pb-32 animate-in fade-in slide-in-from-right-8 duration-500">
-                <div className="flex flex-col gap-1 mb-8">
-                <button 
-                    onClick={() => setIsMenu(true)}
-                    className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-4 group w-fit"
-                >
-                    <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Back to Menu</span>
-                </button>
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xs font-black tracking-[0.2em] text-primary uppercase">{step === 'danger' ? 'Advanced' : 'Settings'}</h1>
-                        <p className="text-3xl font-black text-foreground tracking-tighter uppercase">{step}</p>
+            <div className="flex-1 overflow-y-auto no-scrollbar pb-28">
+                {/* ── cover ── */}
+                <div className="relative">
+                    <div className="h-36 sm:h-44 w-full relative overflow-hidden">
+                        {imageUrl ? (
+                            <>
+                                <img src={imageUrl} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover scale-110 blur-xl opacity-70" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent" />
+                            </>
+                        ) : (
+                            <div className={cn('absolute inset-0 opacity-90', getGradient(projectId))}>
+                                <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
+                            </div>
+                        )}
                     </div>
-                    <div className="w-10 h-10 bg-primary/5 rounded-full flex items-center justify-center text-primary/30">
-                        {step === 'basis' && <CircleUser className="w-5 h-5" />}
-                        {step === 'financials' && <Wallet className="w-5 h-5" />}
-                        {step === 'privacy' && <Lock className="w-5 h-5" />}
-                        {step === 'danger' && <Trash2 className="w-5 h-5" />}
+                    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-14 sm:-mt-16 relative">
+                        <div className="flex flex-wrap items-end gap-4 sm:gap-5">
+                            <button
+                                type="button"
+                                disabled={readOnly}
+                                onClick={() => fileInputRef.current?.click()}
+                                aria-label="Change project picture"
+                                className="group relative h-24 w-24 sm:h-28 sm:w-28 rounded-3xl overflow-hidden ring-4 ring-background shadow-lg shrink-0 disabled:cursor-default"
+                            >
+                                {imageUrl ? <img src={imageUrl} alt={title} className="h-full w-full object-cover" /> : <span className={cn('h-full w-full grid place-items-center', getGradient(projectId))}><Film className="h-10 w-10 text-white/90" /></span>}
+                                {!readOnly && (
+                                    <span className="absolute inset-0 bg-black/50 grid place-items-center opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
+                                        {imageUploading ? <Loader2 className="h-6 w-6 text-white animate-spin" /> : <span className="text-white text-xs font-medium flex flex-col items-center gap-1"><Camera className="h-5 w-5" />Change</span>}
+                                    </span>
+                                )}
+                            </button>
+                            <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+                            <div className="min-w-0 flex-1 pb-1">
+                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">{title || 'Untitled project'}</h1>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold', phase.tone)}><phase.icon className="h-3.5 w-3.5" />{phase.label}</span>
+                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium">{isPublic ? <Globe className="h-3.5 w-3.5 text-emerald-600" /> : <Lock className="h-3.5 w-3.5" />}{isPublic ? 'Public' : 'Private'}</span>
+                                    {location && <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium"><MapPin className="h-3.5 w-3.5" />{location}</span>}
+                                    {requiredRoles.length > 0 && <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium"><Users className="h-3.5 w-3.5" />Hiring {requiredRoles.length}</span>}
+                                </div>
+                            </div>
+                        </div>
                     </div>
+                </div>
+
+                <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 grid gap-6 lg:grid-cols-[210px_minmax(0,1fr)] items-start">
+                    {/* ── anchors ── */}
+                    <nav aria-label="Settings sections" className="flex lg:flex-col gap-1 overflow-x-auto no-scrollbar lg:sticky lg:top-4 -mx-1 px-1 pb-1">
+                        {NAV.map((n) => {
+                            const Icon = n.icon;
+                            const active = activeSection === n.id;
+                            return (
+                                <button key={n.id} type="button" aria-current={active ? 'true' : undefined} onClick={() => go(n.id)}
+                                    className={cn('flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm whitespace-nowrap transition-colors shrink-0', active ? (n.id === 'danger' ? 'bg-destructive/10 text-destructive font-semibold' : 'bg-primary/10 text-primary font-semibold') : n.id === 'danger' ? 'text-destructive/80 hover:bg-destructive/5' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>
+                                    <Icon className="h-4 w-4 shrink-0" />{n.label}
+                                </button>
+                            );
+                        })}
+                    </nav>
+
+                    <fieldset disabled={readOnly} className="contents">
+                    <div className="space-y-6 min-w-0">
+                        {/* ── basics ── */}
+                        <Section id="basics" title="Basics" desc="How your project looks to everyone who finds it." icon={CircleUser}>
+                            <div className="space-y-5">
+                                <div className="space-y-2">
+                                    <Label htmlFor="ps-title" className={fieldLabel}>Project title</Label>
+                                    <Input id="ps-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="The Masterpiece" className={cn(inputCls, 'text-lg font-semibold h-12')} />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between"><Label htmlFor="ps-syn" className={fieldLabel}>Story synopsis</Label><span className="text-xs text-muted-foreground tabular-nums">{description.length} characters</span></div>
+                                    <Textarea id="ps-syn" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A few lines about the story, the tone and what you are looking for." className="rounded-xl bg-background border-border min-h-[130px] resize-y text-base" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="ps-loc" className={fieldLabel}>Shooting location</Label>
+                                    <div className="relative">
+                                        <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input id="ps-loc" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Hyderabad, India" className={cn(inputCls, 'pl-10')} />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="ps-genre" className={fieldLabel}>Genres</Label>
+                                    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background p-2 focus-within:ring-2 focus-within:ring-ring">
+                                        {genreList.map((g) => (
+                                            <span key={g} className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary pl-3 pr-1.5 py-1 text-sm font-medium">
+                                                {g}
+                                                <button type="button" aria-label={`Remove ${g}`} onClick={() => setGenres(genreList.filter((x) => x !== g))} className="h-5 w-5 rounded-full grid place-items-center hover:bg-primary/20"><X className="h-3 w-3" /></button>
+                                            </span>
+                                        ))}
+                                        <input
+                                            id="ps-genre"
+                                            value={genreDraft}
+                                            onChange={(e) => setGenreDraft(e.target.value.replace(',', ''))}
+                                            onKeyDown={(e) => {
+                                                if ((e.key === 'Enter' || e.key === ',') && genreDraft.trim()) { e.preventDefault(); addGenre(genreDraft); setGenreDraft(''); }
+                                                if (e.key === 'Backspace' && !genreDraft && genreList.length) setGenres(genreList.slice(0, -1));
+                                            }}
+                                            onBlur={() => { if (genreDraft.trim()) { addGenre(genreDraft); setGenreDraft(''); } }}
+                                            placeholder={genreList.length ? 'Add another' : 'Type a genre and press Enter'}
+                                            className="flex-1 min-w-[140px] bg-transparent outline-none text-base px-2 py-1"
+                                        />
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {GENRE_SUGGESTIONS.filter((g) => !genreList.some((x) => x.toLowerCase() === g.toLowerCase())).map((g) => (
+                                            <button key={g} type="button" onClick={() => addGenre(g)} className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"><Plus className="h-3 w-3" />{g}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </Section>
+
+                        {/* ── roles ── */}
+                        <Section id="roles" title="Open roles" desc="Pick the roles you are hiring for. People can apply to them from the marketplace." icon={Users}>
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{requiredRoles.length}</span> of {availableRoles.length} open</p>
+                                {requiredRoles.length > 0 && !readOnly && <button type="button" onClick={() => setRequiredRoles([])} className="text-sm text-primary font-medium hover:underline">Clear all</button>}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                                {availableRoles.map((role) => {
+                                    const on = requiredRoles.includes(role);
+                                    return (
+                                        <button key={role} type="button" role="checkbox" aria-checked={on} onClick={() => handleRoleToggle(role)}
+                                            className={cn('flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-sm transition', on ? 'border-primary bg-primary/10 text-foreground font-semibold shadow-sm' : 'border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30')}>
+                                            <span className={cn('h-5 w-5 rounded-md border grid place-items-center shrink-0 transition-colors', on ? 'bg-primary border-primary text-primary-foreground' : 'border-border')}>{on && <Check className="h-3.5 w-3.5" />}</span>
+                                            <span className="truncate">{role}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </Section>
+
+                        {/* ── budget and dates ── */}
+                        <Section id="budget" title="Budget and dates" desc="Helps the right people decide if the project fits them." icon={Wallet}>
+                            <div className="space-y-6">
+                                <div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {([['Minimum budget', budgetMin, setBudgetMin, 'ps-bmin'], ['Maximum budget', budgetMax, setBudgetMax, 'ps-bmax']] as const).map(([lbl, val, set, id]) => (
+                                            <div key={id} className="space-y-2">
+                                                <Label htmlFor={id} className={fieldLabel}>{lbl}</Label>
+                                                <div className="relative">
+                                                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                                                    <Input id={id} type="number" inputMode="numeric" min={0} value={val} onChange={(e) => set(e.target.value)} placeholder="0" aria-invalid={budgetProblem} className={cn(inputCls, 'pl-8 tabular-nums', budgetProblem && 'border-destructive')} />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className={cn('text-sm mt-2.5', budgetProblem ? 'text-destructive' : 'text-muted-foreground')} role={budgetProblem ? 'alert' : undefined}>
+                                        {budgetProblem ? 'The minimum is higher than the maximum.' : money(budgetMin) || money(budgetMax) ? `Shown as ${money(budgetMin) || '$0'} to ${money(budgetMax) || 'open'}` : 'Leave empty if you prefer not to share a budget.'}
+                                    </p>
+                                </div>
+                                <div className="border-t border-border pt-6">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2"><Label htmlFor="ps-start" className={fieldLabel}>Production start</Label><Input id="ps-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} /></div>
+                                        <div className="space-y-2"><Label htmlFor="ps-end" className={fieldLabel}>Estimated wrap</Label><Input id="ps-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} aria-invalid={dateProblem} className={cn(inputCls, dateProblem && 'border-destructive')} /></div>
+                                    </div>
+                                    <p className={cn('text-sm mt-2.5 flex items-center gap-1.5', dateProblem ? 'text-destructive' : 'text-muted-foreground')} role={dateProblem ? 'alert' : undefined}>
+                                        <CalendarRange className="h-4 w-4" />
+                                        {dateProblem ? 'The wrap date is before the start date.' : days ? `${days} ${days === 1 ? 'day' : 'days'} of production` : 'Add both dates to see how long the shoot is.'}
+                                    </p>
+                                </div>
+                            </div>
+                        </Section>
+
+                        {/* ── visibility and phase ── */}
+                        <Section id="visibility" title="Visibility and phase" desc="Who can find the project, and where it is in its life." icon={Globe}>
+                            <div className="space-y-6">
+                                <div>
+                                    <p className={cn(fieldLabel, 'mb-2.5')}>Who can see this project</p>
+                                    <div role="radiogroup" aria-label="Visibility" className="grid sm:grid-cols-2 gap-3">
+                                        {[{ v: true, t: 'Public', d: 'Listed in the marketplace so people can find it and apply.', icon: Globe }, { v: false, t: 'Private', d: 'Only your team can see it. Not listed anywhere.', icon: Lock }].map((o) => (
+                                            <button key={o.t} type="button" role="radio" aria-checked={isPublic === o.v} onClick={() => setIsPublic(o.v)}
+                                                className={cn('relative flex items-start gap-3 rounded-2xl border p-4 text-left transition', isPublic === o.v ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-foreground/30')}>
+                                                <span className={cn('h-10 w-10 rounded-xl grid place-items-center shrink-0', isPublic === o.v ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}><o.icon className="h-5 w-5" /></span>
+                                                <span className="min-w-0"><span className="block font-semibold">{o.t}</span><span className="block text-sm text-muted-foreground mt-0.5">{o.d}</span></span>
+                                                {isPublic === o.v && <span className="absolute top-3 right-3 h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center"><Check className="h-3 w-3" /></span>}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className={cn(fieldLabel, 'mb-2.5')}>Project phase</p>
+                                    <div role="radiogroup" aria-label="Project phase" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                        {PHASES.map((p) => (
+                                            <button key={p.id} type="button" role="radio" aria-checked={status === p.id} onClick={() => setStatus(p.id)}
+                                                className={cn('rounded-2xl border p-3.5 text-left transition', status === p.id ? p.tone + ' ring-1 ring-current/20' : 'border-border hover:border-foreground/30')}>
+                                                <p.icon className={cn('h-5 w-5 mb-2', status === p.id ? '' : 'text-muted-foreground')} />
+                                                <span className={cn('block text-sm font-semibold', status !== p.id && 'text-foreground')}>{p.label}</span>
+                                                <span className={cn('block text-xs mt-0.5', status === p.id ? 'opacity-80' : 'text-muted-foreground')}>{p.hint}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {status === 'completed' && originalStatus !== 'completed' && (
+                                        <p className="mt-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sm px-3.5 py-2.5 text-foreground">When you save, you will be asked to credit your crew so the credits appear on their profiles.</p>
+                                    )}
+                                </div>
+                            </div>
+                        </Section>
+
+                        {/* ── danger zone ── */}
+                        {!readOnly && (
+                            <Section id="danger" title="Danger zone" desc="These actions cannot be undone." icon={AlertTriangle} tone="danger">
+                                <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">
+                                    <div className="flex flex-wrap items-center justify-between gap-4 p-4">
+                                        <div className="min-w-0"><p className="font-semibold flex items-center gap-2"><MessageCircle className="h-4 w-4 text-muted-foreground" />Clear chat history</p><p className="text-sm text-muted-foreground mt-0.5">Deletes every message. Tasks, files, call sheets and the budget stay.</p></div>
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild><Button type="button" variant="outline" className="h-10 rounded-xl font-semibold">Clear chat</Button></AlertDialogTrigger>
+                                            <AlertDialogContent className="rounded-2xl p-6">
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle className="text-xl font-bold">Clear all messages?</AlertDialogTitle>
+                                                    <AlertDialogDescription className="text-base text-muted-foreground">Every message in this project will be deleted for everyone. Roles, shot lists and finances stay untouched.</AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter className="mt-4 gap-2">
+                                                    <AlertDialogCancel className="h-11 rounded-xl font-semibold">Keep messages</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={handleClearChatHistory} className="h-11 rounded-xl font-semibold">Clear messages</AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    </div>
+                                    <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-destructive/5">
+                                        <div className="min-w-0"><p className="font-semibold text-destructive flex items-center gap-2"><Trash2 className="h-4 w-4" />Delete this project</p><p className="text-sm text-muted-foreground mt-0.5">Erases the budget, shot lists, call sheets and chat. Everyone loses access.</p></div>
+                                        <AlertDialog onOpenChange={(o) => { if (!o) setDeleteConfirm(''); }}>
+                                            <AlertDialogTrigger asChild><Button type="button" variant="destructive" className="h-10 rounded-xl font-semibold">Delete project</Button></AlertDialogTrigger>
+                                            <AlertDialogContent className="rounded-2xl p-6 border-destructive/30">
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle className="text-xl font-bold">Delete "{title}"?</AlertDialogTitle>
+                                                    <AlertDialogDescription className="text-base text-muted-foreground">This is permanent. To confirm, type the project name below.</AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <Input value={deleteConfirm} onChange={(e) => setDeleteConfirm(e.target.value)} placeholder={title} aria-label="Type the project name to confirm" className="h-11 rounded-xl" />
+                                                <AlertDialogFooter className="mt-4 gap-2">
+                                                    <AlertDialogCancel className="h-11 rounded-xl font-semibold">Keep project</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={handleDelete} disabled={deleting || deleteConfirm.trim() !== title.trim()} className="h-11 rounded-xl font-semibold bg-destructive hover:bg-destructive/90 text-white gap-2">
+                                                        {deleting && <Loader2 className="h-4 w-4 animate-spin" />}Delete forever
+                                                    </AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    </div>
+                                </div>
+                            </Section>
+                        )}
+                    </div>
+                    </fieldset>
                 </div>
             </div>
 
-            <div className="flex-grow min-h-0">
-                {step === 'basis' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <Card className="bg-card/60 backdrop-blur-xl border border-border shadow-2xl rounded-[40px] overflow-hidden p-6 sm:p-10">
-                            <div className="space-y-8">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Project Title</Label>
-                                        <Input
-                                            value={title}
-                                            onChange={(e) => setTitle(e.target.value)}
-                                            placeholder="The Masterpiece"
-                                            className="bg-background/50 border-border h-14 rounded-2xl text-lg font-bold"
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Production Location</Label>
-                                        <Input
-                                            value={location}
-                                            onChange={(e) => setLocation(e.target.value)}
-                                            placeholder="e.g. Hyderabad, India"
-                                            className="bg-background/50 border-border h-14 rounded-2xl font-bold"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Story Synopsis</Label>
-                                    <Textarea
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        placeholder="Brief production overview..."
-                                        className="bg-background/50 border-border rounded-2xl font-bold min-h-[160px] resize-none focus:ring-primary/20"
-                                    />
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Project Genres</Label>
-                                    <Input
-                                        value={genre}
-                                        onChange={(e) => setGenre(e.target.value)}
-                                        placeholder="Action, Sci-Fi, Indie"
-                                        className="bg-background/50 border-border h-14 rounded-2xl font-bold"
-                                    />
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest flex items-center"><Users className="mr-1 h-3 w-3" />Required Roles</Label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {availableRoles.map((role) => (
-                                            <Badge 
-                                                key={role} 
-                                                variant={requiredRoles.includes(role) ? "default" : "outline"} 
-                                                className={`cursor-pointer transition-colors ${requiredRoles.includes(role) ? 'bg-primary text-primary-foreground' : 'border-border hover:bg-muted/50'}`} 
-                                                onClick={() => handleRoleToggle(role)}
-                                            >
-                                                {role}
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground ml-1">Toggle roles to open or close them. Deselecting a role will remove it from the open roles list.</p>
-                                </div>
-                            </div>
-                        </Card>
-                        <Button onClick={() => setStep('financials')} variant="ghost" className="w-full h-16 rounded-[28px] border border-dashed border-border hover:bg-accent/50 group">
-                            <span className="text-muted-foreground group-hover:text-foreground font-bold">Adjust Financials</span>
-                            <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                        </Button>
-                    </div>
-                )}
-
-                {step === 'financials' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-                        <Card className="bg-card/60 backdrop-blur-xl border border-border shadow-2xl rounded-[40px] overflow-hidden p-6 sm:p-10">
-                            <div className="space-y-10">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div className="space-y-3">
-                                        <Label className="text-[10px] font-black uppercase ml-1 tracking-widest text-primary/80">Min Budget</Label>
-                                        <Input
-                                            type="number"
-                                            value={budgetMin}
-                                            onChange={(e) => setBudgetMin(e.target.value)}
-                                            placeholder="0"
-                                            className="bg-background/50 border-border h-14 rounded-2xl font-mono font-bold"
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <Label className="text-[10px] font-black uppercase ml-1 tracking-widest text-primary/80">Max Budget</Label>
-                                        <Input
-                                            type="number"
-                                            value={budgetMax}
-                                            onChange={(e) => setBudgetMax(e.target.value)}
-                                            placeholder="0"
-                                            className="bg-background/50 border-border h-14 rounded-2xl font-mono font-bold"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-border/40 pt-10">
-                                    <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Production Start</Label>
-                                        <Input
-                                            type="date"
-                                            value={startDate}
-                                            onChange={(e) => setStartDate(e.target.value)}
-                                            className="bg-background/50 border-border h-14 rounded-2xl font-bold"
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Estimated Wrap</Label>
-                                        <Input
-                                            type="date"
-                                            value={endDate}
-                                            onChange={(e) => setEndDate(e.target.value)}
-                                            className="bg-background/50 border-border h-14 rounded-2xl font-bold"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </Card>
-                        <Button onClick={() => setStep('privacy')} variant="ghost" className="w-full h-16 rounded-[28px] border border-dashed border-border hover:bg-accent/50 group">
-                            <span className="text-muted-foreground group-hover:text-foreground font-bold">Configure Privacy</span>
-                            <ChevronRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                        </Button>
-                    </div>
-                )}
-
-                {step === 'privacy' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-                        <Card className="bg-card/60 backdrop-blur-xl border border-border shadow-2xl rounded-[40px] overflow-hidden p-6 sm:p-10">
-                            <div className="space-y-10">
-                                <div className="space-y-3">
-                                    <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Project Phase</Label>
-                                    <Select value={status} onValueChange={setStatus}>
-                                        <SelectTrigger className="h-16 rounded-2xl bg-background/50 border-border text-lg font-bold">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-2xl shadow-2xl">
-                                            <SelectItem value="active" className="font-bold py-3">Active Production</SelectItem>
-                                            <SelectItem value="completed" className="font-bold py-3">Completed / Released</SelectItem>
-                                            <SelectItem value="archived" className="font-bold py-3">Archived</SelectItem>
-                                            <SelectItem value="on_hold" className="font-bold py-3">On Hold</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="flex items-center justify-between p-8 border border-border/40 rounded-3xl bg-background/20 backdrop-blur-sm group hover:border-primary/30 transition-all">
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-2">
-                                            <Label className="text-lg font-black tracking-tight">Public Visibility</Label>
-                                            <span className="bg-primary/10 text-primary text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest">Global Discovery</span>
-                                        </div>
-                                        <p className="text-sm text-muted-foreground max-w-sm">
-                                            Enable discovery in the marketplace. When off, this project is invisible to non-team members.
-                                        </p>
-                                    </div>
-                                    <Switch
-                                        checked={isPublic}
-                                        onCheckedChange={setIsPublic}
-                                        className="data-[state=checked]:bg-primary"
-                                    />
-                                </div>
-                            </div>
-                        </Card>
-                    </div>
-                )}
-
-                {step === 'danger' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <Card className="bg-destructive/5 border border-destructive/20 backdrop-blur-xl shadow-2xl rounded-[40px] overflow-hidden p-8 group hover:bg-destructive/10 transition-all">
-                                <div className="space-y-6">
-                                    <div className="w-12 h-12 bg-destructive/10 rounded-2xl flex items-center justify-center text-destructive group-hover:scale-110 transition-transform">
-                                        <Trash2 className="w-6 h-6" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h3 className="text-xl font-black text-destructive tracking-tight">Delete Project</h3>
-                                        <p className="text-sm text-destructive/60 leading-relaxed">
-                                            This will permanently erase all budget logs, shot lists, call sheets and discussions.
-                                        </p>
-                                    </div>
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="destructive" className="w-full h-14 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-destructive/20">
-                                                Terminate Entire Space
-                                            </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent className="rounded-[40px] p-10 border-destructive/20">
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle className="text-3xl font-black tracking-tighter">Ultimate Confirmation</AlertDialogTitle>
-                                                <AlertDialogDescription className="text-base text-muted-foreground">
-                                                    You are about to delete "{title}". This action is irreversible. All team access will be revoked immediately.
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter className="mt-8 gap-4">
-                                                <AlertDialogCancel className="h-14 rounded-2xl font-bold">Keep Project</AlertDialogCancel>
-                                                <AlertDialogAction onClick={handleDelete} disabled={deleting} className="h-14 rounded-2xl font-black bg-destructive hover:bg-red-600 text-white shadow-xl shadow-destructive/20 flex items-center gap-2">
-                                                    {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
-                                                    Confirm Destruction
-                                                </AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                </div>
-                            </Card>
-
-                            <Card className="bg-card/40 border border-border backdrop-blur-xl shadow-2xl rounded-[40px] overflow-hidden p-8 group hover:bg-accent/40 transition-all">
-                                <div className="space-y-6">
-                                    <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                                        <MessageCircle className="w-6 h-6" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <h3 className="text-xl font-black text-foreground tracking-tight">Clear Conversations</h3>
-                                        <p className="text-sm text-muted-foreground leading-relaxed">
-                                            Purge all message history from project spaces while keeping lists and files intact.
-                                        </p>
-                                    </div>
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="outline" className="w-full h-14 rounded-2xl font-black text-xs uppercase tracking-widest border-primary/20 text-primary hover:bg-primary hover:text-white transition-all shadow-lg hover:shadow-primary/20">
-                                                Purge Chat History
-                                            </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent className="rounded-[40px] p-10 border-primary/20">
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle className="text-3xl font-black tracking-tighter">Reset Conversations?</AlertDialogTitle>
-                                                <AlertDialogDescription className="text-base text-muted-foreground">
-                                                    This will wipe all messages. Team roles, Shot lists and Finances will remain untouched.
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter className="mt-8 gap-4">
-                                                <AlertDialogCancel className="h-14 rounded-2xl font-bold">Keep Messages</AlertDialogCancel>
-                                                <AlertDialogAction onClick={handleClearChatHistory} className="h-14 rounded-2xl font-black bg-primary hover:bg-primary/90 text-white shadow-xl shadow-primary/20">Start Fresh</AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                </div>
-                            </Card>
+            {/* ── save bar: only when there is something to save ── */}
+            {!readOnly && dirty && (
+                <div className="absolute bottom-0 inset-x-0 z-40 px-4 pb-4 pt-8 pointer-events-none bg-gradient-to-t from-background via-background/80 to-transparent animate-in slide-in-from-bottom-4 duration-300">
+                    <div role="status" className="pointer-events-auto max-w-2xl mx-auto flex items-center justify-between gap-3 rounded-2xl border border-border bg-card shadow-lg px-4 py-3">
+                        <p className="text-sm font-medium flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-amber-500" />You have unsaved changes</p>
+                        <div className="flex items-center gap-2">
+                            <Button variant="ghost" onClick={fetchProjectDetails} disabled={saving} className="h-10 rounded-xl font-medium text-muted-foreground">Discard</Button>
+                            <Button onClick={handleSave} disabled={saving || budgetProblem || dateProblem} className="h-10 rounded-xl px-5 font-semibold gap-2">
+                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save changes
+                            </Button>
                         </div>
                     </div>
-                )}
-            </div>
-            </div>
-
-            {/* Persistent Action Bar */}
-            {!isInternal && (
-                <div className="absolute bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-8 duration-700">
-                    <Card className="bg-background/80 backdrop-blur-2xl border-t border-x-0 border-b-0 border-white/10 shadow-[0_-20px_50px_-15px_rgba(0,0,0,0.5)] rounded-none p-4 sm:p-6 w-full">
-                        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 w-full">
-                            <div className="hidden sm:block space-y-0.5">
-                                <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Editing Mode</p>
-                                <p className="text-sm font-bold text-foreground/70">Unsaved changes in <span className="text-primary font-black uppercase text-xs">{step}</span></p>
-                            </div>
-                            <div className="flex items-center justify-end gap-4 w-full sm:w-auto">
-                                <Button 
-                                    variant="ghost" 
-                                    onClick={fetchProjectDetails} 
-                                    disabled={saving}
-                                    className="w-auto h-14 rounded-2xl font-bold text-muted-foreground hover:bg-white/5 px-6"
-                                >
-                                    Reset
-                                </Button>
-                                <Button 
-                                    onClick={handleSave} 
-                                    disabled={saving} 
-                                    className="flex-1 sm:flex-none sm:w-auto h-14 rounded-[24px] px-8 sm:px-12 bg-primary hover:bg-primary/90 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-primary/40 transition-all active:scale-95 flex items-center justify-center gap-3"
-                                >
-                                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                    Sync Settings
-                                </Button>
-                            </div>
-                        </div>
-                    </Card>
                 </div>
             )}
 
             <Dialog open={showWrapDialog} onOpenChange={setShowWrapDialog}>
-                <DialogContent className="sm:max-w-2xl bg-card border-border rounded-[32px] p-8 max-h-[85vh] overflow-y-auto no-scrollbar">
+                <DialogContent className="sm:max-w-2xl bg-card border-border rounded-2xl p-8 max-h-[85vh] overflow-y-auto no-scrollbar">
                     <DialogHeader>
-                        <DialogTitle className="text-2xl font-black tracking-tight text-foreground uppercase flex items-center gap-2">
-                            <Film className="h-6 w-6 text-primary" /> Wrap Project & Tag Crew
+                        <DialogTitle className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                            <Film className="h-6 w-6 text-primary" /> Wrap project and tag crew
                         </DialogTitle>
                         <DialogDescription className="text-muted-foreground text-sm font-medium">
                             Officially wrap the production of "{title}". Tag the crew members below to publish locked verified credits directly to their profiles.
@@ -945,7 +875,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
 
                     <div className="space-y-6 py-4">
                         <div className="space-y-2">
-                            <Label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Tag Additional Crew Members</Label>
+                            <Label className="text-sm font-medium text-foreground ml-1">Tag Additional Crew Members</Label>
                             <div className="flex gap-2">
                                 <Input
                                     value={searchQuery}
@@ -954,7 +884,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                                     className="bg-background/50 border-border h-12 rounded-xl"
                                     onKeyDown={(e) => e.key === 'Enter' && searchExternalUsers()}
                                 />
-                                <Button onClick={searchExternalUsers} disabled={searchingUsers} className="bg-primary text-primary-foreground h-12 rounded-xl px-4">
+                                <Button aria-label="Search" onClick={searchExternalUsers} disabled={searchingUsers} className="bg-primary text-primary-foreground h-12 rounded-xl px-4">
                                     <Search className="h-4 w-4" />
                                 </Button>
                             </div>
@@ -973,10 +903,10 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                                                 )}
                                                 <div>
                                                     <p className="text-sm font-bold text-foreground">{user.full_name}</p>
-                                                    <p className="text-[10px] text-muted-foreground">@{user.username}</p>
+                                                    <p className="text-[12px] text-muted-foreground">@{user.username}</p>
                                                 </div>
                                             </div>
-                                            <Button size="sm" onClick={() => addExternalCrew(user)} className="bg-primary/20 text-primary hover:bg-primary/30 border border-primary/20 rounded-lg text-xs font-bold py-1 h-8">
+                                            <Button size="sm" onClick={() => addExternalCrew(user)} className="bg-primary/20 text-primary hover:bg-primary/30 border border-primary/20 rounded-lg text-xs font-bold py-1 h-10 md:h-8">
                                                 Add Credit
                                             </Button>
                                         </div>
@@ -986,7 +916,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                         </div>
 
                         <div className="space-y-3">
-                            <Label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Credits Roll</Label>
+                            <Label className="text-sm font-medium text-foreground ml-1">Credits Roll</Label>
                             {loadingCrew ? (
                                 <div className="text-center py-6 text-muted-foreground">Loading crew list...</div>
                             ) : crewList.length === 0 ? (
@@ -996,7 +926,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                             ) : (
                                 <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
                                     {crewList.map((crew, idx) => (
-                                        <div key={crew.user_id + '-' + idx} className="flex items-center justify-between gap-4 p-4 bg-background/30 border border-border/50 rounded-2xl hover:border-primary/20 transition-all">
+                                        <div key={crew.user_id + '-' + idx} className="flex items-center justify-between gap-4 p-4 bg-background/30 border border-border/50 rounded-2xl hover:border-primary/20 transition">
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <Checkbox
                                                     checked={crew.selected}
@@ -1016,7 +946,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                                             </div>
 
                                             <div className="flex items-center gap-2">
-                                                <Label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest shrink-0">Credit Role:</Label>
+                                                <Label className="text-[12px] font-bold text-muted-foreground shrink-0">Credit Role:</Label>
                                                 <Input
                                                     value={crew.role}
                                                     onChange={(e) => {
@@ -1046,7 +976,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                         <Button
                             onClick={handleConfirmWrap}
                             disabled={saving}
-                            className="bg-primary hover:bg-primary/95 text-white font-black text-xs uppercase tracking-widest px-8 h-12 rounded-xl shadow-lg shadow-primary/20"
+                            className="bg-primary hover:bg-primary/95 text-white font-bold text-xs px-8 h-12 rounded-xl shadow-sm"
                         >
                             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Wrap & Publish Credits"}
                         </Button>

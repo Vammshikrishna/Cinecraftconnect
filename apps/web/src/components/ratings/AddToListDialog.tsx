@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@cinecraft/core';
 
 interface Props {
   open: boolean;
@@ -60,7 +61,7 @@ export const AddToListDialog = ({ open, onOpenChange, titleId, mediaType, title,
     const { error } = on ? await add(listId) : await db.from('film_list_items').delete().eq('list_id', listId).eq(col, val);
     if (error && error.code !== '23505') {
       setMember(m => ({ ...m, [listId]: !on }));
-      toast({ title: 'Could not update the list', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not update the list', description: friendlyError(error), variant: 'destructive' });
     }
   };
 
@@ -70,7 +71,7 @@ export const AddToListDialog = ({ open, onOpenChange, titleId, mediaType, title,
     const { data, error } = await db.from('film_lists').insert({ user_id: user.id, name: name.trim() }).select('id').single();
     if (error) {
       setBusy(false);
-      toast({ title: 'Could not create the list', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not create the list', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     await add(data.id);
@@ -108,7 +109,7 @@ export const AddToListDialog = ({ open, onOpenChange, titleId, mediaType, title,
 
         <div className="flex gap-2 pt-2 border-t">
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="New list name" maxLength={80} onKeyDown={e => e.key === 'Enter' && create()} />
-          <Button onClick={create} disabled={busy || !name.trim()}><Plus className="h-4 w-4" /></Button>
+          <Button aria-label="Add" onClick={create} disabled={busy || !name.trim()}><Plus className="h-4 w-4" /></Button>
         </div>
       </DialogContent>
     </Dialog>

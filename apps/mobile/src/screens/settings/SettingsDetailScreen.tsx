@@ -1,4 +1,6 @@
 import { BlockedAccountsList } from '../../components/settings/BlockedAccountsList';
+import { AccountStandingView } from '../../components/settings/AccountStandingView';
+import { EncryptedMessagesSettings } from '../../components/settings/EncryptedMessagesSettings';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
@@ -18,27 +20,36 @@ import {
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
+import { useResponsive } from '../../hooks/useResponsive';
+import { useAppRole } from '../../hooks/useAppRole';
 import { getSupabaseClient } from '@cinecraft/api';
 import { E2EERecoveryPinModal } from '../../components/security/E2EERecoveryPinModal';
 import { useUserSettings, UserSettings } from '../../hooks/useUserSettings';
 import { performMobileSignOut } from '../../services/authService';
+import { loadDeviceSessions, revokeDeviceSession, registerThisDevice, type DeviceSession } from '../../services/sessionRegistry';
 import { exportUserDataDPDP } from '../../services/dpdpExportService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { friendlyError } from '@cinecraft/core';
 
-const ORANGE = '#FF4B33';
-const EMERALD = '#10B981';
 const INDIGO = '#6366F1';
 const BLUE = '#2563EB';
 const PURPLE = '#9333EA';
-const AMBER = '#D97706';
-const ROSE = '#DC2626';
 const CYAN = '#0891B2';
 
-export const SettingsDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
+// Values the verification_requests CHECK accepts for Creator accounts (kept in step with web AccountSettings).
+const VERIFY_REQUEST_TYPES: { id: 'creator' | 'professional' | 'public_figure'; label: string }[] = [
+  { id: 'creator', label: 'Individual Creator' },
+  { id: 'public_figure', label: 'Public Figure' },
+  { id: 'professional', label: 'Journalist / Press' },
+];
+
+export const SettingsDetailScreen = ({ route, navigation, embedded = false }: { route: any; navigation: any; embedded?: boolean }) => {
+  const { isTablet } = useResponsive();
+  const { isInternal } = useAppRole();
   const { sectionId, sectionTitle, focus } = route.params || {};
   // each settings row opens only its own option (no focus = the whole page)
   const show = (...ids: string[]) => !focus || ids.includes(focus);
-  const { settings, updateSettings, updateSetting, isDark: ctxIsDark, resolvedTheme: ctxResolvedTheme } = useUserSettings();
+  const { settings, updateSettings, updateSetting, isDark: ctxIsDark, resolvedTheme: ctxResolvedTheme, themeColors } = useUserSettings();
   const systemScheme = useColorScheme();
 
   const [saving, setSaving] = useState(false);
@@ -48,6 +59,9 @@ export const SettingsDetailScreen = ({ route, navigation }: { route: any; naviga
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [revokingSessions, setRevokingSessions] = useState(false);
+  const [devices, setDevices] = useState<DeviceSession[] | null>(null);
+  const [devicesFailed, setDevicesFailed] = useState(false);
+  const [revokingDevice, setRevokingDevice] = useState<string | null>(null);
   const [confirmPassword, setConfirmPassword] = useState('');
 
   // Account State
@@ -59,7 +73,8 @@ export const SettingsDetailScreen = ({ route, navigation }: { route: any; naviga
   const [legalName, setLegalName] = useState('');
   const [verifyReason, setVerifyReason] = useState('');
   const [submittingVerify, setSubmittingVerify] = useState(false);
-  const [verifyStatus, setVerifyStatus] = useState<'none' | 'pending' | 'verified'>('none');
+  const [verifyStatus, setVerifyStatus] = useState<'none' | 'pending' | 'under_review' | 'approved' | 'verified'>('none');
+  const [verifyRequestType, setVerifyRequestType] = useState<'creator' | 'professional' | 'public_figure'>('creator');
 
   // Storage Cache State
   const [cacheSizeText, setCacheSizeText] = useState('Calculating...');
@@ -77,47 +92,7 @@ export const SettingsDetailScreen = ({ route, navigation }: { route: any; naviga
   const activeTheme = settings.theme || 'system';
   const resolvedTheme = ctxResolvedTheme || (activeTheme === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : activeTheme);
   const isDark = ctxIsDark !== undefined ? ctxIsDark : (resolvedTheme !== 'light');
-  const isOled = resolvedTheme === 'oled';
 
-  const themeColors = useMemo(() => {
-    if (isOled) {
-      return {
-        bgScreen: '#000000',
-        bgCard: '#0A0A0A',
-        border: 'rgba(255, 255, 255, 0.12)',
-        textPrimary: '#F8FAFC',
-        textSecondary: '#94A3B8',
-        textMuted: '#64748B',
-        inputBg: '#111111',
-        divider: 'rgba(255, 255, 255, 0.08)',
-        chipBg: '#171717',
-      };
-    }
-    if (isDark) {
-      return {
-        bgScreen: '#0B0F15',
-        bgCard: '#151C26',
-        border: 'rgba(255, 255, 255, 0.08)',
-        textPrimary: '#F1F5F9',
-        textSecondary: '#94A3B8',
-        textMuted: '#64748B',
-        inputBg: '#111722',
-        divider: 'rgba(255, 255, 255, 0.06)',
-        chipBg: '#1F2937',
-      };
-    }
-    return {
-      bgScreen: '#F8FAFC',
-      bgCard: '#FFFFFF',
-      border: '#E2E8F0',
-      textPrimary: '#0F172A',
-      textSecondary: '#64748B',
-      textMuted: '#94A3B8',
-      inputBg: '#FFFFFF',
-      divider: '#E2E8F0',
-      chipBg: '#F1F5F9',
-    };
-  }, [isDark, isOled]);
 
   // Fetch account information & calculate storage
   useEffect(() => {
@@ -149,7 +124,11 @@ export const SettingsDetailScreen = ({ route, navigation }: { route: any; naviga
             .maybeSingle();
 
           if (vReq && isMounted && !profile?.is_verified) {
-            setVerifyStatus(vReq.status === 'pending' ? 'pending' : 'none');
+            setVerifyStatus(
+              vReq.status === 'pending' || vReq.status === 'under_review' || vReq.status === 'approved'
+                ? vReq.status
+                : 'none',
+            );
           }
         }
       } catch (e) {
@@ -209,7 +188,7 @@ export const SettingsDetailScreen = ({ route, navigation }: { route: any; naviga
       await calculateStorage();
       Alert.alert('Storage Cleared 🧹', 'All cached video thumbnails and offline posts purged.');
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not clear cache.');
+      Alert.alert('Error', friendlyError(e, 'Could not clear cache.'));
     } finally {
       setClearingCache(false);
     }
@@ -237,10 +216,72 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
         Alert.alert('Export Error', res.error);
       }
     } catch (e: any) {
-      Alert.alert('Export Failed', e.message || 'Could not compile personal data export.');
+      Alert.alert('Export Failed', friendlyError(e, 'Could not compile personal data export.'));
     } finally {
       setDownloadingDpdp(false);
     }
+  };
+
+  const refreshDevices = async () => {
+    try {
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      // make sure this phone is in the list even if it signed in before devices were recorded
+      await registerThisDevice(session);
+      setDevices(await loadDeviceSessions(session.user.id));
+      setDevicesFailed(false);
+    } catch (e) {
+      console.warn('[SettingsDetail] could not load devices:', e);
+      setDevicesFailed(true);
+    }
+  };
+
+  useEffect(() => {
+    if (sectionId === 'security') refreshDevices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionId]);
+
+  const handleRevokeDevice = (d: DeviceSession) => {
+    Alert.alert(
+      `Log out ${d.device_name || 'this device'}?`,
+      'It will be signed out of your account and will need to sign in again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log out device',
+          style: 'destructive',
+          onPress: async () => {
+            setRevokingDevice(d.id);
+            try {
+              await revokeDeviceSession(d.id);
+              setDevices((prev) => (prev || []).filter((x) => x.id !== d.id));
+            } catch (e: any) {
+              Alert.alert('Could not log out that device', friendlyError(e, 'Please try again.'));
+            } finally {
+              setRevokingDevice(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSignOutHere = () => {
+    Alert.alert('Sign out?', 'You will be signed out on this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await performMobileSignOut(() => navigation.reset({ index: 0, routes: [{ name: 'Landing' }] }));
+          } catch {
+            navigation.reset({ index: 0, routes: [{ name: 'Landing' }] });
+          }
+        },
+      },
+    ]);
   };
 
   // Change Password
@@ -260,8 +301,9 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
               const { data, error } = await supabase.functions.invoke('revoke-other-sessions');
               if (error || (data as any)?.error) throw error || new Error((data as any).error);
               Alert.alert('Done', 'All other devices have been signed out.');
+              refreshDevices();
             } catch (e: any) {
-              Alert.alert('Could not sign out other devices', e?.message || 'Please try again.');
+              Alert.alert('Could not sign out other devices', friendlyError(e, 'Please try again.'));
             } finally {
               setRevokingSessions(false);
             }
@@ -308,7 +350,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update password.');
+      Alert.alert('Error', friendlyError(err, 'Failed to update password.'));
     } finally {
       setSaving(false);
     }
@@ -316,6 +358,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
 
   // Submit Verification Application
   const handleSubmitVerification = async () => {
+    if (accountType !== 'creator') return; // only Creator accounts can apply for the badge
     if (!legalName.trim() || !verifyReason.trim()) {
       Alert.alert('Required Fields', 'Please enter your Full Legal Name and Reason/Credits.');
       return;
@@ -330,7 +373,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
       const { error } = await (supabase.from('verification_requests') as any).insert({
         user_id: user.id,
         full_legal_name: legalName.trim(),
-        request_type: accountType,
+        request_type: verifyRequestType,
         reason: verifyReason.trim(),
         status: 'pending',
       });
@@ -342,15 +385,32 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
       setLegalName('');
       setVerifyReason('');
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not submit verification request.');
+      Alert.alert('Error', friendlyError(e, 'Could not submit verification request.'));
     } finally {
       setSubmittingVerify(false);
     }
   };
 
   // Switch Account Type (Tier)
-  const handleSwitchAccountType = async (newType: string) => {
+  const TIER_EFFECT: Record<string, string> = {
+    creator: 'Creator / Pro gives you the full tool set: projects, jobs, network, pitches and the marketplace.',
+    studio: 'Studio Scale is meant for companies and teams. It may need business verification, and some features depend on your plan.',
+    fan: 'Fan / Patron is a viewer account. You will lose the Projects, Jobs and Network tabs and the ability to post jobs or apply.',
+  };
+  const handleSwitchAccountType = (newType: string) => {
     if (newType === accountType) return;
+    Alert.alert(
+      'Change account tier?',
+      `${TIER_EFFECT[newType] || ''}
+
+Your tabs and the features you can use change right away. Continue?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Change tier', style: 'destructive', onPress: () => { void applyAccountType(newType); } },
+      ]
+    );
+  };
+  const applyAccountType = async (newType: string) => {
     try {
       const supabase = getSupabaseClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -364,7 +424,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
       setAccountType(newType);
       Alert.alert('Account Tier Updated', `Your account is now set to ${newType.toUpperCase()}.`);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not update account tier.');
+      Alert.alert('Error', friendlyError(e, 'Could not update account tier.'));
     }
   };
 
@@ -395,7 +455,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
       setDeleteModalVisible(false);
       Alert.alert('Account Erased', 'Your profile and data have been permanently deleted.');
     } catch (err: any) {
-      Alert.alert('Deletion Error', err.message || 'Failed to delete account.');
+      Alert.alert('Deletion Error', friendlyError(err, 'Failed to delete account.'));
     } finally {
       setDeleting(false);
     }
@@ -406,20 +466,27 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
       backgroundColor={themeColors.bgScreen}
       feedMode={false}
       header={
-        <Header
-          title={sectionTitle || 'Settings'}
-          showLogo={false}
-          onBack={() => navigation.goBack()}
-          theme={isDark ? 'dark' : 'light'}
-        />
+        embedded ? undefined : (
+          <Header
+            title={sectionTitle || 'Settings'}
+            showLogo={false}
+            onBack={() => navigation.goBack()}
+            theme={isDark ? 'dark' : 'light'}
+          />
+        )
       }
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContainer}
+        contentContainerStyle={[styles.scrollContainer, embedded && { paddingHorizontal: 32, paddingTop: 28 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.responsiveContent}>
+        <View style={[styles.responsiveContent, isTablet && { maxWidth: 820 }, embedded && { alignSelf: 'flex-start' }]}>
+          {embedded && (
+            <Text style={{ color: themeColors.textPrimary, fontSize: 24, fontWeight: '700', fontFamily: 'Lora-Bold', marginBottom: 20 }}>
+              {sectionTitle || 'Settings'}
+            </Text>
+          )}
           {/* ══════════════════════════════════════════════════════════════════
               1. CALLS & LIVEKIT SESSIONS (Dedicated Section)
              ══════════════════════════════════════════════════════════════════ */}
@@ -439,12 +506,14 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Allow Incoming Calls"
+                    accessibilityRole="switch"
                     value={settings.allow_incoming_calls !== 'nobody'}
                     onValueChange={(val) =>
                       updateSetting('allow_incoming_calls', val ? 'everyone' : 'nobody')
                     }
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: EMERALD }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.success }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -460,10 +529,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Call Ringtone Audio"
+                    accessibilityRole="switch"
                     value={settings.call_ringtone ?? true}
                     onValueChange={(val) => updateSetting('call_ringtone', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -479,10 +550,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Call Vibration"
+                    accessibilityRole="switch"
                     value={settings.call_vibration ?? true}
                     onValueChange={(val) => updateSetting('call_vibration', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -518,7 +591,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       {(settings.call_alert_mode || 'fullscreen') === mode.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -542,10 +615,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Picture-in-Picture (PiP)"
+                    accessibilityRole="switch"
                     value={settings.call_pip_enabled ?? true}
                     onValueChange={(val) => updateSetting('call_pip_enabled', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -561,10 +636,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Join Calls with Mic Muted"
+                    accessibilityRole="switch"
                     value={!!settings.call_mute_mic_on_join}
                     onValueChange={(val) => updateSetting('call_mute_mic_on_join', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -580,10 +657,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Join Calls with Video Off"
+                    accessibilityRole="switch"
                     value={!!settings.call_video_off_on_join}
                     onValueChange={(val) => updateSetting('call_video_off_on_join', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -599,10 +678,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Data Saver for LiveKit"
+                    accessibilityRole="switch"
                     value={!!settings.call_data_saver}
                     onValueChange={(val) => updateSetting('call_data_saver', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -631,7 +712,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       {(settings.allow_incoming_calls || 'everyone') === opt.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -664,10 +745,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Push Notifications"
+                    accessibilityRole="switch"
                     value={!!settings.push_notifications}
                     onValueChange={(val) => updateSetting('push_notifications', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -714,10 +797,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       <Switch
+                        accessibilityLabel={item.title}
+                        accessibilityRole="switch"
                         value={!!(settings as any)[item.key]}
                         onValueChange={(val) => updateSetting(item.key as any, val)}
-                        trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                        thumbColor="#FFFFFF"
+                        trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                        thumbColor={themeColors.onPrimary}
                       />
                     </View>
                     {idx < arr.length - 1 && (
@@ -745,10 +830,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Quiet Hours"
+                    accessibilityRole="switch"
                     value={!!settings.dnd_enabled}
                     onValueChange={(val) => updateSetting('dnd_enabled', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: INDIGO }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: INDIGO }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -800,7 +887,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       {settings.profile_visibility === p.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -834,10 +921,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Read Receipts"
+                    accessibilityRole="switch"
                     value={settings.read_receipts ?? true}
                     onValueChange={(val) => updateSetting('read_receipts', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -853,10 +942,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Show Online Status"
+                    accessibilityRole="switch"
                     value={settings.show_online_status ?? true}
                     onValueChange={(val) => updateSetting('show_online_status', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -879,10 +970,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Show Email on Public Card"
+                    accessibilityRole="switch"
                     value={!!settings.show_email}
                     onValueChange={(val) => updateSetting('show_email', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -898,10 +991,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Show Location Tag"
+                    accessibilityRole="switch"
                     value={settings.show_location ?? true}
                     onValueChange={(val) => updateSetting('show_location', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -934,7 +1029,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       {(settings.allow_messages_from || 'everyone') === opt.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -943,6 +1038,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   </View>
                 ))}
               </View>
+              <EncryptedMessagesSettings />
               </>
               )}
 
@@ -968,7 +1064,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         <Text style={[styles.optionSub, { color: themeColors.textSecondary }]}>{opt.sub}</Text>
                       </View>
                       {(settings.allow_connection_requests || 'everyone') === opt.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -989,13 +1085,13 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
               <View style={[styles.cardGroup, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border, padding: 16 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <View style={{ backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-                    <Text style={{ color: EMERALD, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 }}>
+                    <Text style={{ color: themeColors.success, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>
                       DPDP ACT 2023 COMPLIANT
                     </Text>
                   </View>
                 </View>
 
-                <Text style={[styles.optionTitle, { color: themeColors.textPrimary, fontSize: 15, marginBottom: 4 }]}>
+                <Text style={[styles.optionTitle, { color: themeColors.textPrimary, fontSize: 16, marginBottom: 4 }]}>
                   Download My Personal Data
                 </Text>
                 <Text style={[styles.optionSub, { color: themeColors.textSecondary, marginBottom: 16, lineHeight: 18 }]}>
@@ -1004,7 +1100,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
 
                 <TouchableOpacity
                   style={[
-                    { backgroundColor: ORANGE, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 10 },
+                    { backgroundColor: themeColors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 10 },
                     downloadingDpdp && { opacity: 0.7 },
                   ]}
                   activeOpacity={0.8}
@@ -1023,7 +1119,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
 
                 <View style={[styles.divider, { backgroundColor: themeColors.divider, marginVertical: 14 }]} />
 
-                <Text style={{ color: themeColors.textMuted, fontSize: 11, lineHeight: 15 }}>
+                <Text style={{ color: themeColors.textMuted, fontSize: 12, lineHeight: 15 }}>
                   Statutory Grievance Redressal Officer: grievance-officer@cinecraftconnect.com. All passwords and E2EE private keys are excluded from export files for your cryptographic protection.
                 </Text>
               </View>
@@ -1047,7 +1143,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   {
                     id: 'system',
                     label: 'System Default',
-                    sub: `Automatically adapt to device OS appearance (${systemScheme === 'dark' ? 'Dark active' : 'Light active'})`,
+                    sub: `Automatically adapt to device OS appearance (${activeTheme === 'system' ? (isDark ? 'Dark active' : 'Light active') : systemScheme === 'dark' ? 'device is dark' : 'device is light'})`,
                   },
                   {
                     id: 'dark',
@@ -1080,7 +1176,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       {(settings.theme || 'system') === t.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -1109,7 +1205,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         {sz.label}
                       </Text>
                       {settings.font_size === sz.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -1139,7 +1235,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                           {lang}
                         </Text>
                         {settings.language === lang && (
-                          <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                          <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                         )}
                       </TouchableOpacity>
                       {idx < arr.length - 1 && (
@@ -1159,6 +1255,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
              ══════════════════════════════════════════════════════════════════ */}
           {(sectionId === 'storage' || sectionId === 'data') && (
             <View>
+              {sectionId === 'storage' && (<>
               <Text style={[styles.sectionHeader, { color: themeColors.textSecondary }]}>
                 Storage
               </Text>
@@ -1210,7 +1307,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       {(settings.media_auto_download || 'wifi') === opt.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -1244,7 +1341,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                         </Text>
                       </View>
                       {(settings.video_streaming_quality || 'auto') === q.id && (
-                        <Icon name="check" size={18} color={ORANGE} strokeWidth={2.5} />
+                        <Icon name="check" size={18} color={themeColors.primary} strokeWidth={2.5} />
                       )}
                     </TouchableOpacity>
                     {idx < arr.length - 1 && (
@@ -1253,6 +1350,8 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   </View>
                 ))}
               </View>
+
+              </>)}
 
               {/* DPDP Act 2023: Export under Storage & Data */}
               <Text style={[styles.sectionHeader, { color: themeColors.textSecondary }]}>
@@ -1333,7 +1432,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                 />
 
                 <TouchableOpacity
-                  style={[styles.primaryActionBtn, (!newPassword || saving) && { opacity: 0.6 }]}
+                  style={[styles.primaryActionBtn, { backgroundColor: themeColors.primary }, (!newPassword || saving) && { opacity: 0.6 }]}
                   onPress={handlePasswordChange}
                   disabled={!newPassword || saving}
                 >
@@ -1350,17 +1449,47 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
               </Text>
               <View style={[styles.cardGroup, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border, padding: 16 }]}>
                 <Text style={[styles.optionSub, { color: themeColors.textSecondary, marginBottom: 12 }]}>
-                  Lost a phone or signed in somewhere you don't trust? Sign out of every other device.
+                  Review the devices that can open your account. Log out of any you do not recognise.
                 </Text>
+                {devices === null && !devicesFailed && <ActivityIndicator color={themeColors.primary} style={{ marginVertical: 12 }} />}
+                {devicesFailed && devices === null && (
+                  <TouchableOpacity onPress={refreshDevices} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }}>
+                    <Text style={{ color: themeColors.primary, fontFamily: 'WorkSans-SemiBold' }}>Could not load your devices. Tap to try again.</Text>
+                  </TouchableOpacity>
+                )}
+                {(devices || []).map((d) => (
+                  <View key={d.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: themeColors.border }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.optionTitle, { color: themeColors.textPrimary }]}>
+                        {d.device_name || 'Unknown device'}{d.is_current ? '  ·  This device' : ''}
+                      </Text>
+                      <Text style={[styles.optionSub, { color: d.is_current ? themeColors.success : themeColors.textSecondary }]}>
+                        {d.is_current ? 'Active now' : `Last active ${new Date(d.last_active_at).toLocaleDateString()}`}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => (d.is_current ? handleSignOutHere() : handleRevokeDevice(d))}
+                      disabled={revokingDevice === d.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={d.is_current ? 'Sign out of this device' : `Log out ${d.device_name || 'device'}`}
+                      style={{ minHeight: 44, paddingHorizontal: 14, justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: themeColors.danger, opacity: revokingDevice === d.id ? 0.5 : 1 }}
+                    >
+                      <Text style={{ color: themeColors.danger, fontFamily: 'WorkSans-SemiBold', fontSize: 14 }}>{d.is_current ? 'Sign out' : 'Log out'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {devices !== null && devices.length === 0 && !devicesFailed && (
+                  <Text style={[styles.optionSub, { color: themeColors.textSecondary, marginBottom: 12 }]}>No devices recorded yet.</Text>
+                )}
                 <TouchableOpacity
-                  style={[styles.primaryActionBtn, revokingSessions && { opacity: 0.6 }]}
+                  style={[styles.primaryActionBtn, { backgroundColor: themeColors.primary }, revokingSessions && { opacity: 0.6 }]}
                   onPress={handleRevokeOtherSessions}
                   disabled={revokingSessions}
                 >
                   {revokingSessions ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.primaryActionBtnText}>Log out of other devices</Text>
+                    <Text style={styles.primaryActionBtnText}>Log out of all other devices</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1379,10 +1508,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Unlock with Fingerprint / Face ID"
+                    accessibilityRole="switch"
                     value={!!settings.biometric_lock}
                     onValueChange={(val) => updateSetting('biometric_lock', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: EMERALD }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.success }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -1429,10 +1560,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="In-App Sound Effects"
+                    accessibilityRole="switch"
                     value={!!settings.sound_effects}
                     onValueChange={(val) => updateSetting('sound_effects', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -1448,10 +1581,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Haptic Feedback"
+                    accessibilityRole="switch"
                     value={settings.haptic_feedback ?? true}
                     onValueChange={(val) => updateSetting('haptic_feedback', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -1467,10 +1602,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Call & Message Chimes"
+                    accessibilityRole="switch"
                     value={!!settings.notification_sounds}
                     onValueChange={(val) => updateSetting('notification_sounds', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -1483,11 +1620,11 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
           {sectionId === 'about' && (
             <View>
               <View style={[styles.cardGroup, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 }]}>
-                <View style={[styles.iconSquircle, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1EE', width: 52, height: 52, borderRadius: 14 }]}>
-                  <Icon name="film" size={26} color={ORANGE} />
+                <View style={[styles.iconSquircle, { backgroundColor: themeColors.primarySoft, width: 52, height: 52, borderRadius: 14 }]}>
+                  <Icon name="film" size={26} color={themeColors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.optionTitle, { color: themeColors.textPrimary, fontSize: 17, fontWeight: '800' }]}>CineCraft Connect</Text>
+                  <Text style={[styles.optionTitle, { color: themeColors.textPrimary, fontSize: 18, fontWeight: '700' }]}>CineCraft Connect</Text>
                   <Text style={[styles.optionSub, { color: themeColors.textSecondary }]}>Version {require('../../../package.json').version}</Text>
                   <Text style={[styles.optionSub, { color: themeColors.textMuted }]}>Where filmmakers, crew and studios meet, build and work together.</Text>
                 </View>
@@ -1512,6 +1649,8 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
             </View>
           )}
 
+          {sectionId === 'standing' && <AccountStandingView />}
+
           {sectionId === 'blocked' && (
             <BlockedAccountsList onOpenProfile={(id, name) => navigation.navigate('PublicProfile', { userId: id, creatorName: name })} />
           )}
@@ -1532,10 +1671,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="High Contrast Mode"
+                    accessibilityRole="switch"
                     value={!!settings.high_contrast}
                     onValueChange={(val) => updateSetting('high_contrast', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: AMBER }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.warning }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
 
@@ -1551,10 +1692,12 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </View>
                   <Switch
+                    accessibilityLabel="Reduce Motion"
+                    accessibilityRole="switch"
                     value={!!settings.reduce_motion}
                     onValueChange={(val) => updateSetting('reduce_motion', val)}
-                    trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: ORANGE }}
-                    thumbColor="#FFFFFF"
+                    trackColor={{ false: isDark ? themeColors.iconMuted : themeColors.border, true: themeColors.primary }}
+                    thumbColor={themeColors.onPrimary}
                   />
                 </View>
               </View>
@@ -1579,6 +1722,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   editable={false}
                 />
 
+                {!isInternal && (<>
                 <Text style={[styles.inputLabel, { color: themeColors.textSecondary, marginTop: 16 }]}>
                   ACCOUNT TIER
                 </Text>
@@ -1592,14 +1736,14 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                       key={t.id}
                       style={[
                         styles.tierButton,
-                        { backgroundColor: accountType === t.id ? ORANGE : themeColors.inputBg, borderColor: accountType === t.id ? ORANGE : themeColors.border },
+                        { backgroundColor: accountType === t.id ? themeColors.primary : themeColors.inputBg, borderColor: accountType === t.id ? themeColors.primary : themeColors.border },
                       ]}
                       onPress={() => handleSwitchAccountType(t.id)}
                     >
                       <Text
                         style={[
                           styles.tierButtonText,
-                          { color: accountType === t.id ? '#FFFFFF' : themeColors.textSecondary },
+                          { color: accountType === t.id ? themeColors.onPrimary : themeColors.textSecondary },
                         ]}
                       >
                         {t.label}
@@ -1607,9 +1751,42 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </TouchableOpacity>
                   ))}
                 </View>
+                </>)}
               </View>
 
-              {/* Official Verification Application */}
+              {/* Plans and payments (staff accounts do not buy plans) */}
+              {!isInternal && (
+                <>
+                  <Text style={[styles.sectionHeader, { color: themeColors.textSecondary }]}>
+                    Plans and payments
+                  </Text>
+                  <View style={[styles.cardGroup, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                    {[
+                      { route: 'Plans', icon: 'sparkles', title: 'Plans', sub: 'See what each plan includes' },
+                      { route: 'MyPayments', icon: 'dollar-sign', title: 'My payments', sub: 'Your plan, gifts and receipts' },
+                    ].map((r, i) => (
+                      <TouchableOpacity
+                        key={r.route}
+                        accessibilityRole="button"
+                        accessibilityLabel={r.title}
+                        style={[styles.optionRow, i > 0 && { borderTopWidth: 1, borderTopColor: themeColors.border }]}
+                        onPress={() => navigation.navigate(r.route)}
+                      >
+                        <Icon name={r.icon} size={20} color={themeColors.primary} />
+                        <View style={styles.rowTextCol}>
+                          <Text style={[styles.optionTitle, { color: themeColors.textPrimary }]}>{r.title}</Text>
+                          <Text style={[styles.optionSub, { color: themeColors.textSecondary }]}>{r.sub}</Text>
+                        </View>
+                        <Icon name="chevron-right" size={18} color={themeColors.textMuted} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* Official Verification Application: Creator accounts only (Fan and Studio have no badge) */}
+              {accountType === 'creator' && (
+              <>
               <Text style={[styles.sectionHeader, { color: themeColors.textSecondary }]}>
                 Verification
               </Text>
@@ -1618,14 +1795,18 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   <Icon
                     name={isVerified ? 'badge-check' : 'award'}
                     size={22}
-                    color={isVerified ? EMERALD : ORANGE}
+                    color={isVerified ? themeColors.success : themeColors.primary}
                   />
                   <Text style={[styles.verifyTitle, { color: themeColors.textPrimary }]}>
                     {isVerified
                       ? 'Verified Official Creator'
                       : verifyStatus === 'pending'
-                        ? 'Application Pending Review'
-                        : 'Apply for Official Verification'}
+                        ? 'Application Received'
+                        : verifyStatus === 'under_review'
+                          ? 'Application Under Review'
+                          : verifyStatus === 'approved'
+                            ? 'Application Approved'
+                            : 'Apply for Official Verification'}
                   </Text>
                 </View>
 
@@ -1633,15 +1814,39 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   <Text style={[styles.verifyDesc, { color: themeColors.textSecondary }]}>
                     Your CineCraft identity is officially verified. Your profile displays the verification checkmark across all feeds, directories, and screenplay credits.
                   </Text>
-                ) : verifyStatus === 'pending' ? (
+                ) : verifyStatus === 'pending' || verifyStatus === 'under_review' ? (
                   <Text style={[styles.verifyDesc, { color: themeColors.textSecondary }]}>
-                    Your verification application is currently under review by our editorial team. You will be notified in-app once accredited.
+                    Your verification application is with our editorial team. You will be notified in-app once a decision is made.
+                  </Text>
+                ) : verifyStatus === 'approved' ? (
+                  <Text style={[styles.verifyDesc, { color: themeColors.textSecondary }]}>
+                    Your application was approved. The badge will appear on your profile shortly.
                   </Text>
                 ) : (
                   <View style={{ marginTop: 12 }}>
                     <Text style={[styles.verifyDesc, { color: themeColors.textSecondary }]}>
-                      Official verified badges are reserved for accredited film professionals, guild members, and released production studios.
+                      Official verified badges are reserved for accredited film professionals and guild members.
                     </Text>
+
+                    <Text style={[styles.inputLabel, { color: themeColors.textSecondary, marginTop: 14 }]}>
+                      APPLICATION TYPE
+                    </Text>
+                    <View style={styles.tierButtonGroup}>
+                      {VERIFY_REQUEST_TYPES.map((t) => (
+                        <TouchableOpacity
+                          key={t.id}
+                          style={[
+                            styles.tierButton,
+                            { backgroundColor: verifyRequestType === t.id ? themeColors.primary : themeColors.inputBg, borderColor: verifyRequestType === t.id ? themeColors.primary : themeColors.border },
+                          ]}
+                          onPress={() => setVerifyRequestType(t.id)}
+                        >
+                          <Text style={[styles.tierButtonText, { color: verifyRequestType === t.id ? themeColors.onPrimary : themeColors.textSecondary }]}>
+                            {t.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
 
                     <Text style={[styles.inputLabel, { color: themeColors.textSecondary, marginTop: 14 }]}>
                       FULL LEGAL NAME *
@@ -1670,7 +1875,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     />
 
                     <TouchableOpacity
-                      style={[styles.primaryActionBtn, submittingVerify && { opacity: 0.6 }]}
+                      style={[styles.primaryActionBtn, { backgroundColor: themeColors.primary }, submittingVerify && { opacity: 0.6 }]}
                       onPress={handleSubmitVerification}
                       disabled={submittingVerify}
                     >
@@ -1683,9 +1888,11 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   </View>
                 )}
               </View>
+              </>
+              )}
 
               {/* Danger Zone: Permanent Account Deletion */}
-              <Text style={[styles.sectionHeader, { color: ROSE }]}>DANGER ZONE</Text>
+              <Text style={[styles.sectionHeader, { color: themeColors.danger }]}>DANGER ZONE</Text>
               <View style={[styles.cardGroup, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                 <TouchableOpacity
                   style={styles.dangerRow}
@@ -1697,18 +1904,18 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     setDeleteModalVisible(true);
                   }}
                 >
-                  <View style={[styles.iconSquircle, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEE2E2' }]}>
-                    <Icon name="alert-triangle" size={18} color={ROSE} />
+                  <View style={[styles.iconSquircle, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2' }]}>
+                    <Icon name="alert-triangle" size={18} color={themeColors.danger} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.dangerTitle, { color: ROSE }]}>
+                    <Text style={[styles.dangerTitle, { color: themeColors.danger }]}>
                       Permanently Delete Account
                     </Text>
                     <Text style={[styles.dangerSub, { color: themeColors.textSecondary }]}>
                       Erase profile, screenplays, pitches, and database records
                     </Text>
                   </View>
-                  <Icon name="chevron-right" size={16} color={ROSE} />
+                  <Icon name="chevron-right" size={16} color={themeColors.danger} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1723,11 +1930,11 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
         transparent={true}
         onRequestClose={() => setDeleteModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: themeColors.overlay }]}>
           <View style={[styles.deleteModalCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
             <View style={styles.deleteHeaderRow}>
-              <View style={[styles.dangerIconBg, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEE2E2' }]}>
-                <Icon name="alert-triangle" size={20} color={ROSE} />
+              <View style={[styles.dangerIconBg, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2' }]}>
+                <Icon name="alert-triangle" size={20} color={themeColors.danger} />
               </View>
               <Text style={[styles.deleteModalTitle, { color: themeColors.textPrimary }]}>
                 Delete Account Permanently
@@ -1745,7 +1952,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   activeOpacity={0.8}
                   onPress={() => setDeleteUnderstood(!deleteUnderstood)}
                 >
-                  <View style={[styles.checkbox, deleteUnderstood && styles.checkboxActive]}>
+                  <View style={[styles.checkbox, { borderColor: themeColors.textMuted }, deleteUnderstood && { backgroundColor: themeColors.danger, borderColor: themeColors.danger }]}>
                     {deleteUnderstood && <Icon name="check" size={12} color="#FFFFFF" strokeWidth={3} />}
                   </View>
                   <Text style={[styles.checkboxLabel, { color: themeColors.textPrimary }]}>
@@ -1763,7 +1970,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.nextModalBtn, !deleteUnderstood && { opacity: 0.5 }]}
+                    style={[styles.nextModalBtn, { backgroundColor: themeColors.danger }, !deleteUnderstood && { opacity: 0.5 }]}
                     disabled={!deleteUnderstood}
                     onPress={() => setDeleteStep(2)}
                   >
@@ -1803,6 +2010,7 @@ Message contents are end-to-end encrypted and appear as ciphertext. Save the JSO
                   <TouchableOpacity
                     style={[
                       styles.deleteFinalBtn,
+                      { backgroundColor: themeColors.danger },
                       (deleteConfirmEmail.trim().toLowerCase() !== email.toLowerCase() || deleting) && {
                         opacity: 0.5,
                       },
@@ -1847,11 +2055,11 @@ const styles = StyleSheet.create({
   },
   responsiveContent: {
     width: '100%',
-    maxWidth: 680,
+    maxWidth: 1200,
     alignSelf: 'center',
   },
   sectionHeader: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     fontFamily: 'WorkSans-Bold',
     marginBottom: 10,
@@ -1882,7 +2090,7 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   optionTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'WorkSans-Regular',
     fontWeight: '500',
   },
@@ -1904,12 +2112,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inputLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
     letterSpacing: 0.8,
     marginBottom: 6,
-    textTransform: 'uppercase',
   },
   textInput: {
     height: 48,
@@ -1920,7 +2127,6 @@ const styles = StyleSheet.create({
     fontFamily: 'WorkSans-Regular',
   },
   primaryActionBtn: {
-    backgroundColor: ORANGE,
     borderRadius: 12,
     height: 48,
     justifyContent: 'center',
@@ -1956,7 +2162,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   verifyTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -1973,7 +2179,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   dangerTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '600',
   },
@@ -1985,7 +2191,6 @@ const styles = StyleSheet.create({
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -2012,7 +2217,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteModalTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -2033,14 +2238,10 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: '#94A3B8',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkboxActive: {
-    backgroundColor: ROSE,
-    borderColor: ROSE,
-  },
+  checkboxActive: {},
   checkboxLabel: {
     flex: 1,
     fontSize: 12,
@@ -2067,7 +2268,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 10,
-    backgroundColor: ROSE,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2089,7 +2289,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 10,
-    backgroundColor: ROSE,
     justifyContent: 'center',
     alignItems: 'center',
   },

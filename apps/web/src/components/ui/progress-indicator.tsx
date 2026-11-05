@@ -41,7 +41,7 @@ export function ProgressIndicator({
             {steps.map((step, index) => (
               <div key={step.id} className="flex flex-col items-center flex-1">
                 <div className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300",
+                  "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-[color,background-color,border-color,transform] duration-300",
                   step.completed
                     ? "bg-primary border-primary text-primary-foreground"
                     : step.current
@@ -83,7 +83,7 @@ export function ProgressIndicator({
         
         <div className="w-full bg-muted rounded-full h-2">
           <div
-            className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
+            className="bg-primary h-2 rounded-full transition-[width] duration-500 ease-out"
             style={{ width: `${progressPercentage}%` }}
           />
         </div>
@@ -96,7 +96,7 @@ export function ProgressIndicator({
       {steps.map((step, index) => (
         <div key={step.id} className="flex items-start space-x-3">
           <div className={cn(
-            "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all duration-300",
+            "w-8 h-8 rounded-full flex items-center justify-center border-2 transition-[color,background-color,border-color,transform] duration-300",
             step.completed
               ? "bg-primary border-primary text-primary-foreground"
               : step.current

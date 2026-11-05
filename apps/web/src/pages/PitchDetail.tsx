@@ -1,14 +1,11 @@
+import { safeHref } from '@/lib/safeUrl';
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useAppNavigation } from "@/contexts/NavigationContext";
 import { motion } from "framer-motion";
-import {
-    Megaphone, Calendar, Share2, Bookmark,
-    DollarSign, Film, Users, Shield, Clock,
-    CheckCircle2, Info, MapPin, ExternalLink,
-    MessageSquare, FileText, Edit2, Sparkles,
-    Globe, ArrowLeft, Lock, Award
-} from "lucide-react";
+import { confirmDialog } from '@/lib/confirmDialog';
+import { BackButton } from '@/components/common/BackButton';
+import { Megaphone, Calendar, Bookmark, DollarSign, Film, Users, Shield, Clock, CheckCircle2, Info, MapPin, ExternalLink, MessageSquare, FileText, Edit2, Sparkles, Globe, ArrowLeft, Lock, Award, Flag } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +14,17 @@ import { PitchCall } from "@/hooks/usePitch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAccountType } from "@/hooks/useAccountType";
-import { formatDistanceToNow, isPast, parseISO } from "date-fns";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { formatDistanceToNow, parseISO } from "date-fns";
 import { PitchCallCreationModal } from "@/components/pitch/PitchCallCreationModal";
 import { UniversalShareSheet } from "@/components/common/UniversalShareSheet";
 import VerificationBadge from "@/components/common/VerificationBadge";
 import { getSafeImageUrl } from "@/services/tmdb";
 import SEO from "@/components/common/SEO";
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { hasGuildClaim, GUILD_CLAIM_HINT, GUILD_CLAIM_LABEL, pitchCallIsClosed, logPitchCallView, friendlyError } from '@cinecraft/core';
+import { closePitchCall, reopenPitchCall, duplicatePitchCall, fetchPitchStats, type PitchStats } from '@cinecraft/core';
+import ReportDialog from '@/components/common/ReportDialog';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const FORMAT_LABELS: Record<string, string> = {
     film: 'Feature Film', series: 'Web Series', short: 'Short Film',
@@ -57,6 +58,9 @@ const PitchDetail = () => {
     const [showShare, setShowShare] = useState(false);
     const [alreadySubmitted, setAlreadySubmitted] = useState(false);
     const [isSaved, setIsSaved] = useState(false);
+    const [stats, setStats] = useState<PitchStats | null>(null);
+    const [ownerBusy, setOwnerBusy] = useState(false);
+    const [reportOpen, setReportOpen] = useState(false);
 
     const { user } = useAuth();
     const { toast } = useToast();
@@ -70,6 +74,8 @@ const PitchDetail = () => {
     const fetchPitchDetail = async () => {
         if (!pitchId || pitchId === 'undefined') { setLoading(false); return; }
         setLoading(true);
+        setAlreadySubmitted(false);
+        setIsSaved(false);
         try {
             const { data, error } = await supabase
                 .from('pitch_calls')
@@ -78,8 +84,11 @@ const PitchDetail = () => {
                 .single();
             if (error) throw error;
             setPitchCall(data);
+            setStats(null);
+            if (user && data.creator_id === user.id) fetchPitchStats(supabase, pitchId).then(setStats).catch(() => { });
             if (user) {
-                const { data: sub } = await supabase.from('pitch_submissions').select('id').eq('pitch_call_id', pitchId).eq('submitter_id', user.id).maybeSingle();
+                logPitchCallView(supabase, pitchId);
+                const { data: sub } = await supabase.from('pitch_submissions').select('id').eq('pitch_call_id', pitchId).eq('submitter_id', user.id).neq('status', 'withdrawn').maybeSingle();
                 if (sub) setAlreadySubmitted(true);
                 const { data: saved } = await supabase.from('saved_pitch_calls').select('id').eq('pitch_call_id', pitchId).eq('user_id', user.id).maybeSingle();
                 if (saved) setIsSaved(true);
@@ -184,11 +193,11 @@ const PitchDetail = () => {
 
         try {
             if (!nextSaved) {
-                await supabase.from('saved_pitch_calls').delete().eq('user_id', user.id).eq('pitch_call_id', pitchId);
-                toast({ title: "Removed from saves", duration: 2000 });
+                const { error } = await supabase.from('saved_pitch_calls').delete().eq('user_id', user.id).eq('pitch_call_id', pitchId);
+                if (error) throw error;
             } else {
-                await supabase.from('saved_pitch_calls').insert({ user_id: user.id, pitch_call_id: pitchId });
-                toast({ title: "Saved!", duration: 2000 });
+                const { error } = await supabase.from('saved_pitch_calls').insert({ user_id: user.id, pitch_call_id: pitchId });
+                if (error) throw error;
             }
         } catch {
             setIsSaved(!nextSaved);
@@ -202,25 +211,56 @@ const PitchDetail = () => {
                     ts: Date.now()
                 }));
             } catch {}
-            toast({ title: "Failed to update save status", variant: "destructive" });
+            toast({ title: "Could not update your saved pitch calls", description: "Please try again.", variant: "destructive" });
         }
     };
 
-    if (loading) return (
-        <div className="min-h-screen flex items-center justify-center bg-background">
-            <LoadingSpinner size="lg" />
+    const handleCloseToggle = async () => {
+        if (!pitchCall) return;
+        setOwnerBusy(true);
+        try {
+            const closing = pitchCall.status === 'open' && !pitchCallIsClosed(pitchCall);
+            if (closing) {
+                if (!await confirmDialog('Close this call? Writers will not be able to send new pitches. Pitches already sent stay with you. You can re-open it later.', { title: 'Close this call?', confirmLabel: 'Close call', destructive: false })) return;
+                await closePitchCall(supabase, pitchCall.id);
+                toast({ title: 'Call closed' });
+            } else {
+                const deadline = await reopenPitchCall(supabase, pitchCall);
+                toast({ title: 'Call re-opened', description: deadline ? `Deadline: ${deadline}` : undefined });
+            }
+            await fetchPitchDetail();
+        } catch (e: any) {
+            toast({ title: 'Could not update the call', description: friendlyError(e), variant: 'destructive' });
+        } finally { setOwnerBusy(false); }
+    };
+
+    const handleDuplicate = async () => {
+        if (!pitchCall || !user) return;
+        setOwnerBusy(true);
+        try {
+            const id = await duplicatePitchCall(supabase, pitchCall, user.id);
+            toast({ title: 'Copy created', description: 'Set a deadline and adjust it as you like.' });
+            push(`/pitch/${id}`);
+        } catch (e: any) {
+            toast({ title: 'Could not copy the call', description: friendlyError(e), variant: 'destructive' });
+        } finally { setOwnerBusy(false); }
+    };
+
+    if (loading) return <ScreenSkeleton variant="detail" />;
+    if (!pitchCall) return (
+        <div className="min-h-dvh flex flex-col items-center justify-center gap-4 px-4 text-center text-muted-foreground">
+            <p>This pitch call is not available.</p>
+            <BackButton to="/pitch" />
         </div>
     );
 
-    if (!pitchCall) return null;
-
-    const isExpired = pitchCall.deadline && isPast(parseISO(pitchCall.deadline));
+    const isExpired = pitchCallIsClosed(pitchCall);
     const isOwner = pitchCall.creator_id === user?.id;
     const avatarUrl = getSafeImageUrl(pitchCall.profiles?.avatar_url || null);
     const initials = (pitchCall.profiles?.full_name || 'P').split(' ').map((n: string) => n[0]).join('').toUpperCase();
 
     return (
-        <div className="min-h-screen bg-background text-foreground pb-24">
+        <div className="min-h-dvh bg-background text-foreground pb-24">
             <SEO
                 title={`${pitchCall.title} | CineCraft Pitch`}
                 description={pitchCall.requirement_description}
@@ -232,7 +272,9 @@ const PitchDetail = () => {
                 <div className="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-purple-500/4 blur-[120px]" />
             </div>
 
-            <main className="max-w-6xl mx-auto px-4 md:px-8 pt-6 md:pt-24 relative z-10">
+            {pitchCall && !isOwner && <ReportDialog open={reportOpen} onOpenChange={setReportOpen} targetId={pitchCall.id} targetType="pitch_call" />}
+
+            <main className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6 md:pt-24 relative z-10">
                 {/* Nav Row */}
                 <div className="flex items-center justify-between mb-8">
                     <button
@@ -244,14 +286,19 @@ const PitchDetail = () => {
                         <span className="sm:hidden">Back</span>
                     </button>
                     <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => setShowShare(true)} className="rounded-full h-10 w-10 text-muted-foreground hover:text-foreground">
-                            <Share2 size={18} />
+                        {!isOwner && (
+                            <Button aria-label="Report this pitch call" variant="ghost" size="icon" onClick={() => setReportOpen(true)} className="rounded-full h-11 w-11 text-muted-foreground hover:text-foreground">
+                                <Flag size={18} />
+                            </Button>
+                        )}
+                        <Button aria-label="Share" variant="ghost" size="icon" onClick={() => setShowShare(true)} className="rounded-full h-11 w-11 text-muted-foreground hover:text-foreground">
+                            <ShareIcon size={18} />
                         </Button>
-                        <Button
+                        <Button aria-label={isSaved ? "Saved" : "Save"} aria-pressed={!!isSaved}
                             variant="ghost"
                             size="icon"
                             onClick={handleSaveToggle}
-                            className={`rounded-full h-10 w-10 transition-all ${isSaved ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`}
+                            className={`rounded-full h-11 w-11 transition-colors ${isSaved ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}`}
                         >
                             <Bookmark size={18} className={isSaved ? 'fill-primary' : ''} />
                         </Button>
@@ -275,25 +322,25 @@ const PitchDetail = () => {
                             <div className="p-7 md:p-10">
                                 {/* Status badges */}
                                 <div className="flex flex-wrap items-center gap-2 mb-5">
-                                    <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full">
+                                    <span className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-widest text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full">
                                         <Megaphone className="h-3 w-3" /> Pitch Call
                                     </span>
-                                    {pitchCall.attachments?.producers_guild_member_id && (
-                                        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
-                                            <Award className="h-3 w-3" /> Guild Verified
+                                    {hasGuildClaim(pitchCall.attachments) && (
+                                        <span title={GUILD_CLAIM_HINT} className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
+                                            <Award className="h-3 w-3" /> Guild (claimed)
                                         </span>
                                     )}
                                     {isExpired ? (
-                                        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-destructive bg-destructive/10 border border-destructive/20 px-3 py-1.5 rounded-full">
+                                        <span className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-widest text-destructive bg-destructive/10 border border-destructive/20 px-3 py-1.5 rounded-full">
                                             Call Closed
                                         </span>
                                     ) : (
-                                        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-green-500 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-full">
+                                        <span className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-widest text-green-500 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-full">
                                             <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /> Open Now
                                         </span>
                                     )}
                                     {pitchCall.nda_required && (
-                                        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
+                                        <span className="inline-flex items-center gap-1.5 text-[12px] font-black uppercase tracking-widest text-amber-500 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full">
                                             <Lock className="h-3 w-3" /> NDA Required
                                         </span>
                                     )}
@@ -325,14 +372,34 @@ const PitchDetail = () => {
 
                                 {/* CTA */}
                                 {isOwner ? (
-                                    <Button
-                                        onClick={() => setShowEditModal(true)}
-                                        size="lg"
-                                        variant="outline"
-                                        className="h-12 px-8 rounded-full font-bold border-2"
-                                    >
-                                        <Edit2 size={16} className="mr-2" /> Edit This Call
-                                    </Button>
+                                    <div className="space-y-4">
+                                        <div className="flex flex-wrap gap-2">
+                                            <Button
+                                                onClick={() => setShowEditModal(true)}
+                                                size="lg"
+                                                variant="outline"
+                                                className="h-12 px-8 rounded-full font-bold border-2"
+                                            >
+                                                <Edit2 size={16} className="mr-2" /> Edit This Call
+                                            </Button>
+                                            <Button onClick={handleCloseToggle} disabled={ownerBusy} size="lg" variant="outline" className="h-12 px-6 rounded-full font-bold">
+                                                {isExpired ? 'Re-open call' : 'Close call'}
+                                            </Button>
+                                            <Button onClick={handleDuplicate} disabled={ownerBusy} size="lg" variant="ghost" className="h-12 px-6 rounded-full font-bold">
+                                                Duplicate
+                                            </Button>
+                                        </div>
+                                        {stats && (
+                                            <div className="grid grid-cols-3 gap-2 max-w-md" aria-label="Call statistics">
+                                                {[['Views', stats.views], ['Saves', stats.saves], ['Pitches', stats.submissions]].map(([label, n]) => (
+                                                    <div key={String(label)} className="rounded-2xl border border-border/50 bg-muted/20 p-3 text-center">
+                                                        <p className="text-2xl font-black text-foreground">{n}</p>
+                                                        <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/70">{label}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 ) : alreadySubmitted ? (
                                     <div className="inline-flex items-center gap-2.5 h-12 px-6 rounded-full bg-green-500/10 border border-green-500/30 text-green-500 font-bold text-sm">
                                         <CheckCircle2 className="h-5 w-5" />
@@ -346,7 +413,7 @@ const PitchDetail = () => {
                                     <Button
                                         onClick={() => push(`/pitch/${pitchCall.id}/submit`)}
                                         size="lg"
-                                        className="h-13 px-10 rounded-full font-black text-base shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                                        className="h-13 px-10 rounded-full font-black text-base shadow-lg shadow-primary/25 hover:shadow-primary/40 [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.98] transition-[transform,box-shadow]"
                                     >
                                         <Sparkles size={18} className="mr-2" />
                                         Submit Your Pitch
@@ -356,94 +423,13 @@ const PitchDetail = () => {
                             </div>
                         </motion.div>
 
-                        {/* Owner Analytics Panel (Gap 4) */}
-                        {isOwner && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 12 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="bg-card border border-primary/20 rounded-3xl p-6 md:p-8 space-y-6 shadow-xl"
-                            >
-                                <div className="flex items-center justify-between border-b pb-4">
-                                    <h2 className="flex items-center gap-3 text-lg font-black text-foreground">
-                                        <Award className="h-5 w-5 text-amber-500" />
-                                        Performance Analytics
-                                    </h2>
-                                    <Badge variant="outline" className="text-xs text-muted-foreground">Owner Dashboard</Badge>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div className="bg-secondary/10 border border-border/50 rounded-2xl p-4 text-center">
-                                        <p className="text-2xl font-black text-primary">{pitchCall.view_count || 124}</p>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-1">Total Views</p>
-                                    </div>
-                                    <div className="bg-secondary/10 border border-border/50 rounded-2xl p-4 text-center">
-                                        <p className="text-2xl font-black text-green-500">{pitchCall.submission_count || 14}</p>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-1">Submissions</p>
-                                    </div>
-                                    <div className="bg-secondary/10 border border-border/50 rounded-2xl p-4 text-center">
-                                        <p className="text-2xl font-black text-blue-400">
-                                            {Math.round(((pitchCall.submission_count || 14) / (pitchCall.view_count || 124)) * 100)}%
-                                        </p>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-1">Conversion Rate</p>
-                                    </div>
-                                    <div className="bg-secondary/10 border border-border/50 rounded-2xl p-4 text-center">
-                                        <p className="text-2xl font-black text-purple-400">Low</p>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-1">Spam Rate</p>
-                                    </div>
-                                </div>
-                                
-                                <div className="grid md:grid-cols-2 gap-4 pt-2">
-                                    <div className="space-y-3 p-4 bg-muted/20 border border-border/40 rounded-2xl">
-                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">Genre of Incoming Pitches</h3>
-                                        <div className="space-y-2">
-                                            {[
-                                                { name: 'Thriller', value: 45, color: 'bg-primary' },
-                                                { name: 'Drama', value: 25, color: 'bg-blue-400' },
-                                                { name: 'Action', value: 20, color: 'bg-green-500' },
-                                                { name: 'Sci-Fi', value: 10, color: 'bg-purple-500' },
-                                            ].map((item, idx) => (
-                                                <div key={idx} className="space-y-1">
-                                                    <div className="flex justify-between text-[11px] font-bold">
-                                                        <span>{item.name}</span>
-                                                        <span>{item.value}%</span>
-                                                    </div>
-                                                    <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
-                                                        <div className={`h-full ${item.color}`} style={{ width: `${item.value}%` }} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-3 p-4 bg-muted/20 border border-border/40 rounded-2xl">
-                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">Submitter Experience Level</h3>
-                                        <div className="space-y-2">
-                                            {[
-                                                { name: 'Professional (Verified Credit)', value: 30, color: 'bg-green-500' },
-                                                { name: 'Experienced (2+ projects)', value: 50, color: 'bg-blue-400' },
-                                                { name: 'Debut / Aspiring Writer', value: 20, color: 'bg-primary' },
-                                            ].map((item, idx) => (
-                                                <div key={idx} className="space-y-1">
-                                                    <div className="flex justify-between text-[11px] font-bold">
-                                                        <span>{item.name}</span>
-                                                        <span>{item.value}%</span>
-                                                    </div>
-                                                    <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
-                                                        <div className={`h-full ${item.color}`} style={{ width: `${item.value}%` }} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        )}
+                        {/* The owner's real numbers (views, saves, pitches) are shown above from pitch_call_stats; the invented analytics panel that used to be here has been removed. */}
 
                         {/* Spec Cards Row */}
                         <motion.div
                             initial={{ opacity: 0, y: 12 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.08 }}
+                            transition={{ duration: 0.15 }}
                             className="space-y-3"
                         >
                             {/* Budget · Compensation · NDA — one row of 3 */}
@@ -456,7 +442,7 @@ const PitchDetail = () => {
                                     <div key={i} className="bg-card/60 border border-border/50 rounded-2xl p-4 space-y-2">
                                         <div className="flex items-center gap-1.5">
                                             <spec.icon size={12} className="text-primary/70" />
-                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{spec.label}</p>
+                                            <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">{spec.label}</p>
                                         </div>
                                         <p className={`text-sm font-bold leading-snug ${spec.color || 'text-foreground'}`}>{spec.value}</p>
                                     </div>
@@ -466,7 +452,7 @@ const PitchDetail = () => {
                             <div className="bg-card/60 border border-border/50 rounded-2xl p-4 space-y-2">
                                 <div className="flex items-center gap-1.5">
                                     <Info size={12} className="text-primary/70" />
-                                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Rights</p>
+                                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Rights</p>
                                 </div>
                                 <p className="text-sm font-bold text-foreground leading-snug">{pitchCall.rights_expectation || 'Standard'}</p>
                             </div>
@@ -476,14 +462,14 @@ const PitchDetail = () => {
                         <motion.section
                             initial={{ opacity: 0, y: 12 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.12 }}
+                            transition={{ duration: 0.15 }}
                             className="bg-card/40 border border-border/50 rounded-3xl p-7 md:p-10"
                         >
                             <h2 className="flex items-center gap-3 text-xl font-black mb-6">
                                 <span className="h-6 w-1.5 bg-primary rounded-full" />
                                 What They're Looking For
                             </h2>
-                            <div className="text-muted-foreground leading-relaxed whitespace-pre-wrap text-[15px]">
+                            <div className="text-muted-foreground leading-relaxed whitespace-pre-wrap text-base">
                                 {pitchCall.requirement_description}
                             </div>
                         </motion.section>
@@ -493,7 +479,7 @@ const PitchDetail = () => {
                             <motion.section
                                 initial={{ opacity: 0, y: 12 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.15 }}
+                                transition={{ duration: 0.15 }}
                                 className="bg-card/40 border border-border/50 rounded-3xl p-7 md:p-10"
                             >
                                 <h2 className="flex items-center gap-3 text-xl font-black mb-6">
@@ -503,19 +489,19 @@ const PitchDetail = () => {
                                 <div className="grid md:grid-cols-2 gap-6">
                                     {pitchCall.tone && (
                                         <div className="space-y-2 p-4 rounded-2xl bg-muted/20 border border-border/30">
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-primary/70">Tone & Style</p>
+                                            <p className="text-[12px] font-black uppercase tracking-widest text-primary/70">Tone & Style</p>
                                             <p className="text-sm text-foreground/90 font-medium leading-relaxed">{pitchCall.tone}</p>
                                         </div>
                                     )}
                                     {pitchCall.target_audience && (
                                         <div className="space-y-2 p-4 rounded-2xl bg-muted/20 border border-border/30">
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-primary/70">Target Audience</p>
+                                            <p className="text-[12px] font-black uppercase tracking-widest text-primary/70">Target Audience</p>
                                             <p className="text-sm text-foreground/90 font-medium leading-relaxed">{pitchCall.target_audience}</p>
                                         </div>
                                     )}
                                     {pitchCall.ref_films && (
                                         <div className="space-y-2 p-4 rounded-2xl bg-muted/20 border border-border/30 md:col-span-2">
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-primary/70">Reference Films</p>
+                                            <p className="text-[12px] font-black uppercase tracking-widest text-primary/70">Reference Films</p>
                                             <p className="text-sm text-foreground/90 font-medium leading-relaxed italic">"{pitchCall.ref_films}"</p>
                                         </div>
                                     )}
@@ -527,7 +513,7 @@ const PitchDetail = () => {
                         <motion.div
                             initial={{ opacity: 0, y: 12 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.18 }}
+                            transition={{ duration: 0.15 }}
                             className="grid md:grid-cols-2 gap-4"
                         >
                             <div className="bg-card/40 border border-border/50 rounded-2xl p-6">
@@ -542,7 +528,7 @@ const PitchDetail = () => {
                                             <span className="text-sm text-muted-foreground shrink-0">Genre</span>
                                             <div className="flex flex-wrap gap-1 justify-end">
                                                 {pitchCall.genre.map((g: string) => (
-                                                    <Badge key={g} variant="secondary" className="text-[11px] font-semibold">{g}</Badge>
+                                                    <Badge key={g} variant="secondary" className="text-[12px] font-semibold">{g}</Badge>
                                                 ))}
                                             </div>
                                         </div>
@@ -573,7 +559,7 @@ const PitchDetail = () => {
                                     </div>
                                     {pitchCall.language && pitchCall.language.length > 0 && (
                                         <div>
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 mb-2">Languages</p>
+                                            <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60 mb-2">Languages</p>
                                             <div className="flex flex-wrap gap-1.5">
                                                 {pitchCall.language.map((l: string) => (
                                                     <span key={l} className="inline-flex items-center gap-1 text-xs font-semibold border border-border/40 bg-muted/20 px-2.5 py-1 rounded-full">
@@ -592,7 +578,7 @@ const PitchDetail = () => {
                             <motion.section
                                 initial={{ opacity: 0, y: 12 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.2 }}
+                                transition={{ duration: 0.15 }}
                                 className="bg-card/40 border border-border/50 rounded-3xl p-7 md:p-10"
                             >
                                 <h2 className="flex items-center gap-3 text-xl font-black mb-6">
@@ -603,17 +589,17 @@ const PitchDetail = () => {
                                     {pitchCall.attachments.map((file: any, i: number) => (
                                         <a
                                             key={i}
-                                            href={file.url}
+                                            href={safeHref(file.url)}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="flex items-center gap-3.5 p-4 rounded-2xl bg-muted/20 border border-border/40 hover:border-primary/30 hover:bg-primary/5 transition-all group"
+                                            className="flex items-center gap-3.5 p-4 rounded-2xl bg-muted/20 border border-border/40 hover:border-primary/30 hover:bg-primary/5 transition group"
                                         >
                                             <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center group-hover:bg-primary/20 transition-colors">
                                                 <FileText size={18} className="text-primary" />
                                             </div>
                                             <div>
                                                 <p className="text-sm font-bold group-hover:text-primary transition-colors">{file.name || 'Attachment'}</p>
-                                                <p className="text-[11px] text-muted-foreground font-semibold">View File →</p>
+                                                <p className="text-[12px] text-muted-foreground font-semibold">View File →</p>
                                             </div>
                                         </a>
                                     ))}
@@ -630,7 +616,7 @@ const PitchDetail = () => {
                             <motion.div
                                 initial={{ opacity: 0, x: 12 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.1 }}
+                                transition={{ duration: 0.15 }}
                                 className="bg-card border border-border/60 rounded-3xl overflow-hidden"
                             >
                                 <div className="h-20 bg-gradient-to-br from-primary/15 via-primary/5 to-purple-500/10 relative">
@@ -649,9 +635,9 @@ const PitchDetail = () => {
                                         <h3 className="text-lg font-black">{pitchCall.profiles?.full_name}</h3>
                                         <VerificationBadge size="sm" />
                                     </div>
-                                    {pitchCall.attachments?.producers_guild_member_id && (
-                                        <div className="inline-flex items-center justify-center gap-1 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[10px] font-black text-amber-500">
-                                            <Award className="h-3 w-3" /> Producers Guild Member
+                                    {hasGuildClaim(pitchCall.attachments) && (
+                                        <div title={GUILD_CLAIM_HINT} className="inline-flex items-center justify-center gap-1 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-[12px] font-black text-amber-500">
+                                            <Award className="h-3 w-3" /> {GUILD_CLAIM_LABEL}
                                         </div>
                                     )}
                                     <p className="text-sm text-primary font-bold uppercase tracking-wide">
@@ -686,7 +672,7 @@ const PitchDetail = () => {
                             <motion.div
                                 initial={{ opacity: 0, x: 12 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: 0.15 }}
+                                transition={{ duration: 0.15 }}
                                 className="bg-card/60 border border-border/50 rounded-2xl p-5 space-y-4"
                             >
                                 <p className="text-xs font-black uppercase tracking-widest text-muted-foreground/60">Pitch Protection</p>
@@ -709,13 +695,13 @@ const PitchDetail = () => {
                                 <motion.div
                                     initial={{ opacity: 0, y: 12 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: 0.2 }}
+                                    transition={{ duration: 0.15 }}
                                     className="hidden lg:block"
                                 >
                                     <Button
                                         onClick={() => push(`/pitch/${pitchCall.id}/submit`)}
                                         size="lg"
-                                        className="w-full h-13 rounded-xl font-black text-base shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                                        className="w-full h-13 rounded-xl font-black text-base shadow-lg shadow-primary/25 hover:shadow-primary/40 [@media(hover:hover)]:hover:scale-[1.02] active:scale-[0.98] transition-[transform,box-shadow]"
                                     >
                                         <Sparkles size={18} className="mr-2" />
                                         Submit Your Pitch
@@ -727,9 +713,9 @@ const PitchDetail = () => {
                 </div>
             </main>
 
-            {/* Mobile sticky CTA */}
+            {/* Mobile sticky CTA: z-[110] puts it above the bottom tab bar (z-100); at z-30 it was hidden behind it */}
             {!isOwner && !alreadySubmitted && !isExpired && (
-                <div className="fixed bottom-0 left-0 right-0 z-30 lg:hidden p-4 bg-background/80 backdrop-blur-md border-t border-border/50">
+                <div className="fixed bottom-0 left-0 right-0 z-[110] lg:hidden p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] bg-background/90 backdrop-blur-md border-t border-border/50">
                     <Button
                         onClick={() => push(`/pitch/${pitchCall.id}/submit`)}
                         size="lg"

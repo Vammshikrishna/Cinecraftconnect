@@ -10,6 +10,7 @@ import { Sparkles, Loader2, Award, Shield } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { fetchStoryFullSynopsis, friendlyError } from '@cinecraft/core';
 
 interface StoryListingModalProps {
     isOpen: boolean;
@@ -38,6 +39,14 @@ export const StoryListingModal = ({ isOpen, onClose, onCreated, initialData, lis
         nda_required: false,
     });
 
+    const [fullLoaded, setFullLoaded] = useState(!listingId);
+    useEffect(() => {
+        if (!listingId) return;
+        fetchStoryFullSynopsis(supabase, listingId)
+            .then((t) => { setForm((f) => ({ ...f, synopsis_full: t || '' })); setFullLoaded(true); })
+            .catch(() => { /* leave it untouched */ });
+    }, [listingId]);
+
     useEffect(() => {
         if (initialData) {
             setForm({
@@ -62,10 +71,10 @@ export const StoryListingModal = ({ isOpen, onClose, onCreated, initialData, lis
         setLoading(true);
 
         try {
-            const payload = {
-                ...form,
-                creator_id: user.id,
-            };
+            // on an edit the full synopsis is only sent once it has been loaded, so it is never blanked by accident
+            const { synopsis_full, ...rest } = form;
+            const payload: Record<string, unknown> = { ...rest, creator_id: user.id };
+            if (!listingId || fullLoaded) payload.synopsis_full = synopsis_full || null;
 
             let error;
             if (listingId) {
@@ -76,41 +85,13 @@ export const StoryListingModal = ({ isOpen, onClose, onCreated, initialData, lis
                 error = res.error;
             }
 
-            if (error) {
-                // Fallback to local storage if DB tables do not exist
-                if (error.message?.includes('relation') || error.code === '42P01') {
-                    const localListings = JSON.parse(localStorage.getItem('story_listings') || '[]');
-                    if (listingId) {
-                        const idx = localListings.findIndex((l: any) => l.id === listingId);
-                        if (idx !== -1) {
-                            localListings[idx] = { ...localListings[idx], ...payload, updated_at: new Date().toISOString() };
-                        }
-                    } else {
-                        localListings.unshift({
-                            id: Math.random().toString(36).substring(2, 9),
-                            created_at: new Date().toISOString(),
-                            updated_at: new Date().toISOString(),
-                            ...payload,
-                            profiles: {
-                                full_name: user.email?.split('@')[0] || 'Writer',
-                                avatar_url: null,
-                                craft: 'Writer'
-                            }
-                        });
-                    }
-                    localStorage.setItem('story_listings', JSON.stringify(localListings));
-                    toast({ title: 'Success (Mock)', description: 'Saved story listing locally.' });
-                } else {
-                    throw error;
-                }
-            } else {
-                toast({ title: 'Success', description: 'Story Listing saved successfully!' });
-            }
+            if (error) throw error;
+            toast({ title: 'Success', description: 'Story Listing saved successfully!' });
 
             onCreated?.();
             onClose();
         } catch (err: any) {
-            toast({ title: 'Error', description: err.message || 'Failed to save listing.', variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(err, 'Failed to save listing.'), variant: 'destructive' });
         } finally {
             setLoading(false);
         }
@@ -262,7 +243,7 @@ export const StoryListingModal = ({ isOpen, onClose, onCreated, initialData, lis
                             </Label>
                             <p className="text-xs text-muted-foreground">Producers must electronically sign an NDA before viewing the full synopsis.</p>
                         </div>
-                        <Switch
+                        <Switch aria-label="Require signed NDA to unlock full synopsis"
                             checked={form.nda_required}
                             onCheckedChange={v => setForm(f => ({ ...f, nda_required: v }))}
                         />

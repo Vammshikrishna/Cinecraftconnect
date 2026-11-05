@@ -6,6 +6,8 @@ import { withTimeout, setCachedCurrentUserId, clearAllOfflineCaches } from './of
 import { clearAllDeviceE2EEKeys, secureRemoveItem } from './mobileStorage';
 import { notifyKeyChanged } from './e2eeKeyEvents';
 import { clearGroupKeyRawCache } from '../hooks/useGroupEncryption';
+import { NativeModules } from 'react-native';
+import messaging from '@react-native-firebase/messaging';
 
 const CACHE_PREFIX = '@cinecraft_cache_';
 
@@ -27,7 +29,21 @@ const CACHE_PREFIX = '@cinecraft_cache_';
  * 7. Disconnects Google Sign-In session.
  * 8. Invokes optional onComplete callback after state is fully wiped.
  */
+/** True while a sign-out the person asked for is running, so the SIGNED_OUT listener in App.tsx commits to it instead of trying to recover the session. */
+let deliberateSignOut = false;
+export const isDeliberateSignOut = (): boolean => deliberateSignOut;
+
 export async function performMobileSignOut(onComplete?: () => void): Promise<void> {
+  deliberateSignOut = true;
+  try {
+    await runMobileSignOut(onComplete);
+  } finally {
+    // the SIGNED_OUT event can arrive a moment after we return
+    setTimeout(() => { deliberateSignOut = false; }, 8000);
+  }
+}
+
+async function runMobileSignOut(onComplete?: () => void): Promise<void> {
   const supabase = getSupabaseClient();
   let currentUserId: string | null = null;
 
@@ -82,6 +98,22 @@ export async function performMobileSignOut(onComplete?: () => void): Promise<voi
     }
   }
 
+  // 2a. Retire this phone's push token. The server row is only switched off best-effort above (it can fail offline); deleting the
+  //     token itself means Firebase can no longer deliver anything to this phone for the account that just signed out.
+  try {
+    await withTimeout(messaging().deleteToken(), 3000);
+  } catch (e) {
+    console.warn('[authService] FCM token delete warning:', e);
+  }
+
+  // 2b. Revoke this device's session on the server while we still hold it. Doing this after the local wipe left nothing to revoke,
+  //     so the refresh token stayed valid. 'local' ends only this session, not the person's other devices.
+  try {
+    await withTimeout(supabase.auth.signOut({ scope: 'local' }), 2500);
+  } catch (e) {
+    console.warn('[authService] Supabase remote signOut warning (offline or timeout):', e);
+  }
+
   // 3. Clear all Android Keystore & Keychain E2EE private keys FIRST
   try {
     await Keychain.resetGenericPassword();
@@ -91,6 +123,17 @@ export async function performMobileSignOut(onComplete?: () => void): Promise<voi
     console.log('[authService] Android Keystore E2EE keys wiped for user(s):', Array.from(userIdsToWipe));
   } catch (e) {
     console.warn('[authService] Keystore reset warning:', e);
+  }
+
+  // 3b. Remove what the Android notification layer kept for this person: shown notifications, the readable message
+  //     history behind them, and any reply / mark-read actions still queued. Otherwise the next person to sign in
+  //     on this phone could see them, and a queued action could run under their account.
+  try {
+    const bridge: any = NativeModules.NotificationBridge;
+    bridge?.dismissAllNotifications?.();
+    await bridge?.clearPendingActions?.();
+  } catch (e) {
+    console.warn('[authService] Notification cleanup warning:', e);
   }
 
   // 4. Clear all memory caches and broadcast key purge to all active screens
@@ -127,12 +170,10 @@ export async function performMobileSignOut(onComplete?: () => void): Promise<voi
     console.warn('[authService] AsyncStorage key removal warning:', e);
   }
 
-  // 6. Call Supabase remote sign out with timeout protection
+  // 6. Make sure nothing of the session is left in the client or its storage (a no-op when 2b already removed it)
   try {
-    await withTimeout(supabase.auth.signOut(), 2000);
-  } catch (e) {
-    console.warn('[authService] Supabase remote signOut warning (offline or timeout):', e);
-  }
+    await withTimeout(supabase.auth.signOut({ scope: 'local' }), 2000);
+  } catch { /* already signed out */ }
 
   // 7. Sign out from Google Identity so next sign-in displays Account Chooser dialog
   try {

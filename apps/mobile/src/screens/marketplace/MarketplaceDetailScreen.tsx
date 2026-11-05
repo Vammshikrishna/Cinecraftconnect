@@ -23,6 +23,11 @@ import { UniversalShareSheet } from '../../components/common/UniversalShareSheet
 import { CachedImage } from '../../components/common/CachedImage';
 import { LeaveReviewModal } from '../../components/modals/LeaveReviewModal';
 import { BookingRequestModal } from '../../components/marketplace/BookingRequestModal';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
+import { isTabletDevice } from '../../utils/pageType';
+import { useAccountType } from '../../hooks/useAccountType';
+import { useAppRole } from '../../hooks/useAppRole';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -30,9 +35,14 @@ const INK = '#0D0D0D';
 export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { listingId, listingTitle, price, location, imageUrl, owner } = route.params || {};
   const { themeColors, isDark } = useUserSettings();
+  const { isFan } = useAccountType();
+  const { isInternal } = useAppRole();
+  // Booking is for creators and studios; staff only look. Fans have no Marketplace, but the rule is kept here too.
+  const canBook = !isFan && !isInternal;
 
   const [listing, setListing] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -45,6 +55,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
   const fetchListingDetails = useCallback(async () => {
     if (!listingId) return;
     setLoading(true);
+    setLoadError(false);
     try {
       const supabase = getSupabaseClient();
       // Local session (no network round trip) — getUser() used to block everything else.
@@ -90,6 +101,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
       if (user) (supabase as any).rpc('record_listing_view', { p_listing_id: listingId }).then(() => {}, () => {});
     } catch (e) {
       console.warn('[MarketplaceDetail] Fetch error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -115,19 +127,22 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
 
     try {
       const supabase = getSupabaseClient();
+      let res: any;
       if (!nextState) {
-        await ((supabase as any).from('marketplace_wishlists') as any)
+        res = await ((supabase as any).from('marketplace_wishlists') as any)
           .delete()
           .eq('listing_id', listingId)
           .eq('user_id', currentUserId);
       } else {
-        await ((supabase as any).from('marketplace_wishlists') as any).insert({
+        res = await ((supabase as any).from('marketplace_wishlists') as any).insert({
           listing_id: listingId,
           user_id: currentUserId,
         });
       }
+      if (res?.error) throw res.error;
     } catch (e) {
       console.warn('Wishlist toggle error:', e);
+      setIsWishlisted(!nextState);
     }
   };
 
@@ -145,6 +160,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
   };
 
   const handleRequestBooking = () => {
+    if (!canBook || !listing) return;
     if (!currentUserId) {
       Alert.alert('Sign In Required', 'Please sign in to request booking.');
       return;
@@ -159,23 +175,30 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
   const images =
     listing?.images && listing.images.length > 0
       ? listing.images
-      : [imageUrl || 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=800'];
+      : imageUrl ? [imageUrl] : [];
 
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
         <Header title="Listing Details" showLogo={false} onBack={() => navigation.goBack()} />
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={ORANGE} />
-        </View>
+        <ScreenSkeleton variant="detail" />
       </View>
     );
   }
 
-  const title = listing?.title || listingTitle || 'Cinema Equipment Kit';
-  const sellerName = listing?.profiles?.full_name || listing?.profiles?.username || owner || 'CineCraft Member';
+  if (loadError && !listing) {
+    return (
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+        <Header title="Listing Details" showLogo={false} onBack={() => navigation.goBack()} />
+        <LoadErrorState onRetry={fetchListingDetails} />
+      </View>
+    );
+  }
+
+  const title = listing?.title || listingTitle || 'Listing';
+  const sellerName = listing?.profiles?.full_name || listing?.profiles?.username || owner || 'Member';
   const sellerAvatar = listing?.profiles?.avatar_url;
-  const sellerCraft = listing?.profiles?.craft || 'Verified Vendor';
+  const sellerCraft = listing?.profiles?.craft || '';
 
   const pricePerDay = listing?.price_per_day
     ? `₹${listing.price_per_day.toLocaleString()}`
@@ -190,7 +213,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
         onBack={() => navigation.goBack()}
         rightAction={
           <View style={styles.headerRightActions}>
-            <TouchableOpacity onPress={toggleWishlist} style={styles.headerIconBtn}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={isWishlisted ? "Remove from wishlist" : "Save to wishlist"} accessibilityState={{ selected: isWishlisted }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={toggleWishlist} style={styles.headerIconBtn}>
               <Icon
                 name="heart"
                 size={18}
@@ -199,22 +222,29 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
               />
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => setReportOpen(true)} style={styles.headerIconBtn}>
-              <Icon name="flag" size={18} color={themeColors.textSecondary} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Report" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setReportOpen(true)} style={styles.headerIconBtn}>
+              <Icon name="flag" size={18} color={themeColors.iconSecondary} />
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleShare} style={styles.headerIconBtn}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={handleShare} style={styles.headerIconBtn}>
               <Icon name="share" size={18} color={themeColors.textPrimary} />
             </TouchableOpacity>
           </View>
         }
       />
 
-      <TabletContainer maxWidth={720} backgroundColor={themeColors.bgScreen}>
+      <TabletContainer maxWidth="content" backgroundColor={themeColors.bgScreen}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Main Image View */}
           <View style={styles.mainImageContainer}>
-            <CachedImage uri={images[activeImageIndex]} style={styles.mainImage} resizeMode="cover" />
+            {images[activeImageIndex] ? (
+              <CachedImage uri={images[activeImageIndex]} style={styles.mainImage} resizeMode="cover" />
+            ) : (
+              <View style={[styles.mainImage, { alignItems: 'center', justifyContent: 'center', backgroundColor: themeColors.chipBg }]}>
+                <Icon name="image" size={40} color={themeColors.iconMuted} />
+                <Text style={{ color: themeColors.textMuted, marginTop: 8, fontSize: 13 }}>No photos yet</Text>
+              </View>
+            )}
 
             {listing?.is_bundle && (
               <View style={styles.bundleBadge}>
@@ -250,7 +280,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
 
               {listing?.condition_grade && (
                 <View style={[styles.conditionPill, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
-                  <Text style={[styles.conditionPillText, { color: themeColors.textSecondary }]}>GRADE // {listing.condition_grade.toUpperCase()}</Text>
+                  <Text style={[styles.conditionPillText, { color: themeColors.textSecondary }]}>Grade {listing.condition_grade}</Text>
                 </View>
               )}
             </View>
@@ -258,7 +288,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
             <Text style={[styles.titleText, { color: themeColors.textPrimary }]}>{title}</Text>
 
             <View style={styles.locationRow}>
-              <Icon name="map-pin" size={13} color={themeColors.textSecondary} />
+              <Icon name="map-pin" size={13} color={themeColors.iconSecondary} />
               <Text style={[styles.locationText, { color: themeColors.textSecondary }]}>{listing?.location || location || 'Pan-India'}</Text>
             </View>
 
@@ -285,7 +315,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
             {/* Description */}
             <Text style={[styles.sectionHeading, { color: themeColors.textPrimary }]}>Description & Equipment Overview</Text>
             <Text style={[styles.descriptionParagraph, { color: themeColors.textSecondary }]}>
-              {listing?.description || 'Professional cinema equipment kit available for production bookings.'}
+              {listing?.description || 'No description provided.'}
             </Text>
 
             {/* Bundle Included Items */}
@@ -331,7 +361,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
 
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.sellerNameText, { color: themeColors.textPrimary }]}>{sellerName}</Text>
-                  <Text style={[styles.sellerCraftText, { color: themeColors.textSecondary }]}>{sellerCraft}</Text>
+                  {sellerCraft ? <Text style={[styles.sellerCraftText, { color: themeColors.textSecondary }]}>{sellerCraft}</Text> : null}
                 </View>
 
                 <TouchableOpacity style={styles.messageSellerBtn} onPress={handleContactSeller}>
@@ -343,6 +373,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
 
             {/* Action Buttons Row: Request Booking & Leave Review */}
             <View style={styles.actionBtnsRow}>
+              {canBook && (
               <TouchableOpacity
                 style={[styles.bookingBtn, { flex: 2 }, bookingLoading && { opacity: 0.7 }]}
                 onPress={handleRequestBooking}
@@ -354,7 +385,9 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
                   <Text style={styles.bookingBtnText}>{currentUserId && currentUserId === listing?.user_id ? 'Manage Bookings →' : 'Request Booking Dates →'}</Text>
                 )}
               </TouchableOpacity>
+              )}
 
+              {!isInternal && (
               <TouchableOpacity
                 style={[styles.reviewBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
                 onPress={() => {
@@ -366,6 +399,7 @@ export const MarketplaceDetailScreen = ({ route, navigation }: { route: any; nav
                 <Icon name="star" size={16} color="#F59E0B" fill="#F59E0B" />
                 <Text style={[styles.reviewBtnText, { color: themeColors.textPrimary }]}>Rate & Review</Text>
               </TouchableOpacity>
+              )}
             </View>
           </View>
         </ScrollView>
@@ -426,7 +460,7 @@ const styles = StyleSheet.create({
   },
   mainImageContainer: {
     width: '100%',
-    height: 250,
+    height: isTabletDevice ? 400 : 250,
     backgroundColor: INK,
     position: 'relative',
   },
@@ -445,8 +479,8 @@ const styles = StyleSheet.create({
   },
   bundleBadgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   thumbRow: {
     paddingHorizontal: 16,
@@ -493,8 +527,8 @@ const styles = StyleSheet.create({
   },
   categoryPillText: {
     color: ORANGE,
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   conditionPill: {
     backgroundColor: '#F1F5F9',
@@ -504,12 +538,12 @@ const styles = StyleSheet.create({
   },
   conditionPillText: {
     color: '#64748B',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   titleText: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     lineHeight: 25,
@@ -522,7 +556,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   locationText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '600',
   },
@@ -539,8 +573,8 @@ const styles = StyleSheet.create({
   },
   dailyPriceGroup: {},
   priceLabelText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginBottom: 2,
@@ -551,11 +585,11 @@ const styles = StyleSheet.create({
   },
   priceNum: {
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     color: ORANGE,
   },
   pricePerText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '700',
     marginLeft: 3,
@@ -565,7 +599,7 @@ const styles = StyleSheet.create({
   },
   weeklyPriceNum: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   divider: {
@@ -574,14 +608,14 @@ const styles = StyleSheet.create({
     marginVertical: 14,
   },
   sectionHeading: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginBottom: 8,
   },
   descriptionParagraph: {
-    fontSize: 13.5,
+    fontSize: 14,
     color: '#475569',
     lineHeight: 20,
   },
@@ -602,12 +636,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   specKey: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   specVal: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: INK,
   },
@@ -640,15 +674,15 @@ const styles = StyleSheet.create({
   sellerFallbackText: {
     color: ORANGE,
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   sellerNameText: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   sellerCraftText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
   },
   messageSellerBtn: {
@@ -663,7 +697,7 @@ const styles = StyleSheet.create({
   messageSellerBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   bookingBtn: {
     backgroundColor: ORANGE,
@@ -675,7 +709,7 @@ const styles = StyleSheet.create({
   bookingBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   actionBtnsRow: {
     flexDirection: 'row',
@@ -693,8 +727,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   reviewBtnText: {
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
 

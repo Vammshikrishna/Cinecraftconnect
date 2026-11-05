@@ -7,13 +7,13 @@ import { TrendingDown, TrendingUp, Minus } from 'lucide-react';
 const Delta = ({ now, prev }: { now: number; prev: number }) => {
   if (now === prev) return <Minus className="h-3 w-3 text-muted-foreground" />;
   return now > prev
-    ? <span className="inline-flex items-center text-emerald-600 text-[10px] gap-0.5"><TrendingUp className="h-3 w-3" />+{now - prev}</span>
-    : <span className="inline-flex items-center text-rose-500 text-[10px] gap-0.5"><TrendingDown className="h-3 w-3" />{now - prev}</span>;
+    ? <span className="inline-flex items-center text-emerald-600 text-xs gap-0.5"><TrendingUp className="h-3 w-3" />+{now - prev}</span>
+    : <span className="inline-flex items-center text-rose-500 text-xs gap-0.5"><TrendingDown className="h-3 w-3" />{now - prev}</span>;
 };
 
 const Stat = ({ label, value, children }: { label: string; value: number | string; children?: React.ReactNode }) => (
   <div className="rounded-xl border bg-background/50 p-3">
-    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
+    <p className="text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</p>
     <div className="flex items-end gap-2 mt-1">
       <span className="text-2xl font-extrabold leading-none">{value}</span>
       {children}
@@ -47,7 +47,7 @@ export const NetworkInsights = () => {
   };
 
   return (
-    <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
+    <Card className="bg-card/40 border-border/50 shadow-sm overflow-hidden">
       <div className="px-5 pt-4 pb-2"><h2 className="text-lg font-semibold">Network insights</h2></div>
       <div className="px-5 pb-5 space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -59,11 +59,11 @@ export const NetworkInsights = () => {
         {(data.top_crafts?.length > 0 || data.top_locations?.length > 0) && (
           <div className="grid md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Top crafts in your network</p>
+              <p className="text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Top crafts in your network</p>
               {bars(data.top_crafts || [])}
             </div>
             <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Where they are</p>
+              <p className="text-[12px] uppercase tracking-wider text-muted-foreground font-semibold">Where they are</p>
               {bars(data.top_locations || [])}
             </div>
           </div>

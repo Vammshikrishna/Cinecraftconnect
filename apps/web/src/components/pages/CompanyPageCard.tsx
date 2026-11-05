@@ -14,13 +14,13 @@ interface CompanyPageCardProps {
 
 export function CompanyPageCard({ page }: CompanyPageCardProps) {
   const { user } = useAuth();
-  const { data: isFollowing } = useIsFollowingPage(page.id);
+  const { data: isFollowing, isLoading: followLoading } = useIsFollowingPage(page.id);
   const toggleFollow = useToggleFollowPage();
   const { isInternal } = useAppRole();
   const isOwner = user?.id === page.owner_id || isInternal;
 
   return (
-    <div className="group bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:-translate-y-0.5">
+    <div className="group relative bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg hover:shadow-primary/5 transition-[transform,box-shadow] duration-200 [@media(hover:hover)]:hover:-translate-y-0.5">
       {/* Cover Image / Gradient */}
       <div className="h-24 relative">
         {page.cover_image_url ? (
@@ -41,7 +41,7 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
 
       {/* Content */}
       <div className="pt-10 px-4 pb-4">
-        <Link to={`/pages/${page.slug}`} className="block group/link">
+        <Link to={`/pages/${page.slug}`} className="block group/link after:absolute after:inset-0 after:content-['']">
           <div className="flex items-center gap-1.5 mb-1">
             <h3 className="font-serif font-bold text-xl text-foreground group-hover/link:text-primary transition-colors truncate">
               {page.name}
@@ -63,7 +63,7 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
             </span>
           )}
           <span className="flex items-center gap-1">
-            <Users className="h-3 w-3" /> {page.follower_count.toLocaleString()} followers
+            <Users className="h-3 w-3" /> {page.follower_count.toLocaleString()} {page.follower_count === 1 ? 'follower' : 'followers'}
           </span>
         </div>
 
@@ -71,12 +71,12 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
         {page.industry.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
             {page.industry.slice(0, 2).map((ind, i) => (
-              <div key={i} className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
-                IND // {ind}
+              <div key={i} className="text-[12px] font-medium text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
+                {ind}
               </div>
             ))}
             {page.industry.length > 2 && (
-              <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
+              <div className="text-[12px] font-medium text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
                 +{page.industry.length - 2} MORE
               </div>
             )}
@@ -86,20 +86,20 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
         {/* Follow Button */}
         {!isOwner && !isInternal && (
           <Button
-            variant={isFollowing ? 'outline' : 'default'}
+            variant={isFollowing ? 'outline' : 'soft'}
             size="sm"
-            className="w-full text-xs"
+            className="relative z-10 w-full text-xs"
             onClick={(e) => {
               e.preventDefault();
               toggleFollow.mutate({ pageId: page.id, isFollowing: !!isFollowing });
             }}
-            disabled={toggleFollow.isPending}
+            disabled={toggleFollow.isPending || followLoading}
           >
             {isFollowing ? 'Following' : '+ Follow'}
           </Button>
         )}
         {isOwner && (
-          <Button variant="outline" size="sm" className="w-full text-xs" asChild>
+          <Button variant="outline" size="sm" className="relative z-10 w-full text-xs" asChild>
             <Link to={`/pages/${page.slug}`}>Manage Page</Link>
           </Button>
         )}

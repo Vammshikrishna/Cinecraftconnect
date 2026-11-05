@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { STORAGE_BUCKETS } from '@/lib/storage';
 import { useAuth } from "@/contexts/AuthContext";
 import { PortfolioItemData } from "@/types/portfolio";
+import { friendlyError } from '@cinecraft/core';
 
 // Type moved to @/types/portfolio.ts
 
@@ -92,7 +93,7 @@ const PortfolioUploadDialog = ({ isOpen, onOpenChange, onSave, itemToEdit }: Por
         }
 
         const fileExt = fileToUpload.name.split('.').pop();
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const fileName = `portfolio/${user.id}/${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from(STORAGE_BUCKETS.PORTFOLIO_MEDIA)
           .upload(fileName, fileToUpload, {
@@ -133,7 +134,7 @@ const PortfolioUploadDialog = ({ isOpen, onOpenChange, onSave, itemToEdit }: Por
     } catch (error: any) {
       toast({
         title: "Upload Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: friendlyError(error, "An unexpected error occurred."),
         variant: "destructive",
       });
     } finally {
@@ -162,7 +163,7 @@ const PortfolioUploadDialog = ({ isOpen, onOpenChange, onSave, itemToEdit }: Por
           <div className="space-y-2">
             <Label>Media File</Label>
             {!filePreview ? (
-              <div className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => document.getElementById('file-upload')?.click()}>
+              <div className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:bg-muted/50 transition-colors" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => document.getElementById('file-upload')?.click()}>
                 <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground mb-2">Click to upload a file</p>
                 <p className="text-xs text-muted-foreground">PNG, JPG, GIF, MP4, PDF, etc.</p>
@@ -176,7 +177,7 @@ const PortfolioUploadDialog = ({ isOpen, onOpenChange, onSave, itemToEdit }: Por
                     <p className="text-sm font-medium">{file?.name || itemToEdit?.title}</p>
                     {file && <span className="text-xs text-muted-foreground">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>}
                   </div>
-                  <Button variant="ghost" size="icon" onClick={removeFile} disabled={isUploading} className="absolute top-2 right-2">
+                  <Button aria-label="Close" variant="ghost" size="icon" onClick={removeFile} disabled={isUploading} className="absolute top-2 right-2">
                     <X className="h-4 w-4" />
                   </Button>
                 </div>

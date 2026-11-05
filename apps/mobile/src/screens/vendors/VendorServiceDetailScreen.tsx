@@ -7,15 +7,19 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  ActivityIndicator,
   InteractionManager,
 } from 'react-native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { TabletContainer } from '../../components/common/TabletContainer';
+import { isTabletDevice } from '../../utils/pageType';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { QuoteRequestModal } from '../../components/marketplace/MarketplaceModals';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
+import { useAppRole } from '../../hooks/useAppRole';
+import { ReportModal } from '../../components/modals/ReportModal';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -23,12 +27,15 @@ const INK = '#0D0D0D';
 export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { serviceId, serviceTitle, vendorId } = route.params || {};
   const { themeColors, isDark } = useUserSettings();
+  const { isInternal } = useAppRole(); // staff: view + report only
+  const [reportOpen, setReportOpen] = useState(false);
 
   const [service, setService] = useState<any>(null);
   const [vendor, setVendor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [meId, setMeId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     getSupabaseClient().auth.getSession().then(({ data }: any) => setMeId(data?.session?.user?.id || null)).catch(() => {});
   }, []);
@@ -40,6 +47,7 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
     }
     try {
       setLoading(true);
+      setLoadError(false);
       const supabase = getSupabaseClient();
 
       const { data: serviceData, error: sErr } = await ((supabase as any).from('vendor_services') as any)
@@ -60,6 +68,7 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
       }
     } catch (e) {
       console.warn('[VendorServiceDetail] Fetch error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -85,9 +94,16 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
     return (
       <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
         <Header title="Service Package" showLogo={false} onBack={() => navigation.goBack()} />
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={ORANGE} />
-        </View>
+        <ScreenSkeleton variant="detail" />
+      </View>
+    );
+  }
+
+  if (loadError && !service) {
+    return (
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+        <Header title="Service Package" showLogo={false} onBack={() => navigation.goBack()} />
+        <LoadErrorState onRetry={fetchServiceDetails} />
       </View>
     );
   }
@@ -103,7 +119,7 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
         onBack={() => navigation.goBack()}
       />
 
-      <TabletContainer maxWidth={720} backgroundColor={themeColors.bgScreen}>
+      <TabletContainer maxWidth={900} backgroundColor={themeColors.bgScreen}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={[styles.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
             <Text style={[styles.titleText, { color: themeColors.textPrimary }]}>{title}</Text>
@@ -113,28 +129,28 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
             <View style={[styles.priceCard, { backgroundColor: isDark ? 'rgba(255,75,51,0.12)' : '#FFF7F5', borderColor: isDark ? 'rgba(255,75,51,0.25)' : '#FFE5DF' }]}>
               <Text style={styles.priceLabel}>DAY RENTAL RATE</Text>
               <View style={styles.priceNumRow}>
-                <Text style={styles.priceNum}>₹{service?.day_rate ? service.day_rate.toLocaleString() : '0'}</Text>
+                <Text style={styles.priceNum}>{service?.day_rate ? `₹${Number(service.day_rate).toLocaleString()}` : 'On request'}</Text>
                 <Text style={[styles.pricePerText, { color: themeColors.textSecondary }]}>/ day</Text>
               </View>
             </View>
 
             {/* Highlights Row */}
             <View style={styles.highlightsRow}>
-              {service?.coverage_area && (
+              {!!service?.coverage_area && (
                 <View style={[styles.highlightPill, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
                   <Icon name="map-pin" size={13} color={ORANGE} />
                   <Text style={[styles.highlightPillText, { color: themeColors.textPrimary }]}>{service.coverage_area}</Text>
                 </View>
               )}
 
-              {service?.min_booking_days && (
+              {!!service?.min_booking_days && (
                 <View style={[styles.highlightPill, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
                   <Icon name="calendar" size={13} color={ORANGE} />
                   <Text style={[styles.highlightPillText, { color: themeColors.textPrimary }]}>Min {service.min_booking_days} day(s)</Text>
                 </View>
               )}
 
-              {service?.crew_capacity && (
+              {!!service?.crew_capacity && (
                 <View style={[styles.highlightPill, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
                   <Icon name="users" size={13} color={ORANGE} />
                   <Text style={[styles.highlightPillText, { color: themeColors.textPrimary }]}>Up to {service.crew_capacity} crew</Text>
@@ -147,7 +163,7 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
             {/* Description */}
             <Text style={[styles.sectionHeading, { color: themeColors.textPrimary }]}>Service Package Description</Text>
             <Text style={[styles.descriptionParagraph, { color: themeColors.textSecondary }]}>
-              {service?.description || 'Full production service package for camera, lighting & grip.'}
+              {service?.description || 'The vendor has not added a description yet.'}
             </Text>
 
             {/* Service Checklist */}
@@ -181,7 +197,7 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
 
             <View style={[styles.divider, { backgroundColor: themeColors.divider }]} />
 
-            {vendor && meId !== vendor.owner_id && (
+            {vendor && meId !== vendor.owner_id && !isInternal && (
               <TouchableOpacity
                 style={[styles.contactBtn, { marginBottom: 10 }]}
                 onPress={() => (meId ? setQuoteOpen(true) : Alert.alert('Sign In Required', 'Please sign in to request a quote.'))}
@@ -191,14 +207,28 @@ export const VendorServiceDetailScreen = ({ route, navigation }: { route: any; n
               </TouchableOpacity>
             )}
 
-            {/* Contact Button */}
+            {/* Contact Button (not for staff, not for the owner) */}
+            {!isInternal && vendor?.owner_id !== meId && (
             <TouchableOpacity style={styles.contactBtn} onPress={handleContactVendor}>
               <Icon name="message-square" size={16} color="#FFFFFF" />
               <Text style={styles.contactBtnText}>Contact Vendor for Booking 💬</Text>
             </TouchableOpacity>
+            )}
+            {vendor && meId !== vendor.owner_id && (
+              <TouchableOpacity
+                style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}
+                onPress={() => (meId ? setReportOpen(true) : Alert.alert('Sign In Required', 'Please sign in to report.'))}
+              >
+                <Icon name="flag" size={14} color={themeColors.iconSecondary} />
+                <Text style={{ color: themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>Report</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
       </TabletContainer>
+      {vendor && meId !== vendor.owner_id && (
+        <ReportModal visible={reportOpen} onClose={() => setReportOpen(false)} targetTitle="this vendor" targetType="user" targetId={vendor.owner_id} />
+      )}
       {vendor && service && (
         <QuoteRequestModal visible={quoteOpen} onClose={() => setQuoteOpen(false)} vendorId={vendor.id} vendorName={vendor.business_name} serviceId={service.id} serviceTitle={service.title} onRequested={() => navigation.navigate('MyQuotes')} />
       )}
@@ -217,19 +247,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 56,
   },
   card: {
     backgroundColor: '#FFFFFF',
-    margin: 16,
+    margin: isTabletDevice ? 24 : 16,
     borderRadius: 20,
-    padding: 18,
+    padding: isTabletDevice ? 28 : 18,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   titleText: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 28 : 24,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginBottom: 2,
@@ -250,8 +280,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   priceLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
     letterSpacing: 0.6,
     marginBottom: 2,
@@ -261,8 +291,8 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   priceNum: {
-    fontSize: 26,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 30 : 24,
+    fontWeight: '700',
     color: ORANGE,
   },
   pricePerText: {
@@ -299,16 +329,16 @@ const styles = StyleSheet.create({
     marginVertical: 14,
   },
   sectionHeading: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     marginBottom: 8,
   },
   descriptionParagraph: {
-    fontSize: 13.5,
+    fontSize: isTabletDevice ? 15 : 14,
     color: '#475569',
-    lineHeight: 20,
+    lineHeight: isTabletDevice ? 23 : 20,
   },
   checkItemRow: {
     flexDirection: 'row',
@@ -317,7 +347,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   checkItemText: {
-    fontSize: 13,
+    fontSize: isTabletDevice ? 14 : 13,
     color: INK,
     fontWeight: '600',
   },
@@ -333,14 +363,14 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   prodTypeTagText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   contactBtn: {
     backgroundColor: ORANGE,
     borderRadius: 14,
-    height: 48,
+    height: isTabletDevice ? 54 : 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -349,7 +379,7 @@ const styles = StyleSheet.create({
   contactBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

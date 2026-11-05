@@ -1,12 +1,16 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, Alert, ScrollView } from 'react-native';
 import { getSupabaseClient } from '@cinecraft/api';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { addInterviewToCalendar, ORANGE } from '../../components/jobs/JobsShared';
-import { getStage, stageProgress, formatSalary, JOB_TYPE_LABELS, INTERVIEW_MODE_LABELS } from '@cinecraft/core';
+import { getStage, stageProgress, formatSalary, JOB_TYPE_LABELS, INTERVIEW_MODE_LABELS, friendlyError } from '@cinecraft/core';
 import { respondToInterview } from '../../services/jobsApi';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { isTabletDevice } from '../../utils/pageType';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
+import { TabletColumn } from '../../components/common/TabletContainer';
 
 const fmtWhen = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -25,6 +29,7 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [busyInterview, setBusyInterview] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -51,8 +56,10 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
         (ivs || []).forEach((iv: any) => (byApp[iv.application_id] ||= []).push(iv));
       }
       setApplications(rows.map((r) => ({ ...r, interviews: byApp[r.id] || [] })));
+      setLoadError(false);
     } catch (e) {
       console.warn('[MyApplications] fetch error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -83,7 +90,7 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
       await respondToInterview(interviewId, accept);
       load();
     } catch (e: any) {
-      Alert.alert('Could not update the interview', e?.message || 'Please try again.');
+      Alert.alert('Could not update the interview', friendlyError(e, 'Please try again.'));
     } finally {
       setBusyInterview(null);
     }
@@ -101,7 +108,7 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
             if (error) throw error;
             setApplications((prev) => prev.filter((a) => a.id !== appId));
           } catch (e: any) {
-            Alert.alert('Error', e?.message || 'Could not withdraw the application.');
+            Alert.alert('Error', friendlyError(e, 'Could not withdraw the application.'));
           }
         },
       },
@@ -110,31 +117,37 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
   return (
     <View style={[styles.container, { backgroundColor: T.bgScreen }]}>
       <Header title="My Applications" showLogo={false} onBack={() => navigation.goBack()} />
+      <TabletColumn maxWidth="content">
       <ScrollView
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={ORANGE} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={ORANGE} colors={[ORANGE]} />}
       >
         {loading ? (
-          <ActivityIndicator color={ORANGE} style={{ marginTop: 40 }} />
+          <ScreenSkeleton variant="list" />
+        ) : loadError && applications.length === 0 ? (
+          <LoadErrorState onRetry={() => { setLoading(true); setLoadError(false); load(); }} />
         ) : applications.length === 0 ? (
           <View style={{ alignItems: 'center', marginTop: 60 }}>
-            <Icon name="file-text" size={36} color={T.textMuted} />
-            <Text style={{ color: T.textPrimary, fontSize: 17, fontWeight: '800', marginTop: 10 }}>No applications yet</Text>
+            <Icon name="file-text" size={36} color={T.iconMuted} />
+            <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700', marginTop: 10 }}>No applications yet</Text>
             <Text style={{ color: T.textMuted, marginTop: 4, textAlign: 'center' }}>Your applications will show up here as you apply.</Text>
             <TouchableOpacity style={styles.primaryBtn} onPress={() => navigation.goBack()}>
               <Text style={styles.primaryBtnText}>Discover jobs</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          applications.map((app) => {
+          <View style={isTabletDevice ? { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, alignItems: 'flex-start' } : undefined}>
+          {applications.map((app) => {
             const stage = getStage(app.status);
             const progress = stageProgress(app.status);
             const job = app.jobs;
             const pay = job ? formatSalary(job) : null;
-            const open = (app.interviews || []).filter((i: any) => i.status === 'proposed' || i.status === 'confirmed');
+            // once the application is rejected or withdrawn, the interview can no longer be confirmed or changed
+            const closedApp = app.status === 'rejected' || app.status === 'withdrawn';
+            const open = closedApp ? [] : (app.interviews || []).filter((i: any) => i.status === 'proposed' || i.status === 'confirmed');
             return (
-              <View key={app.id} style={[styles.appCard, { backgroundColor: T.bgCard, borderColor: T.border }]}>
+              <View key={app.id} style={[styles.appCard, isTabletDevice && { width: '49.3%' }, { backgroundColor: T.bgCard, borderColor: T.border }]}>
                 <TouchableOpacity activeOpacity={0.8} disabled={!job} onPress={() => navigation.navigate('JobDetail', { jobId: job.id, jobTitle: job.title })}>
                   <View style={styles.headerRow}>
                     <Text style={[styles.title, { color: T.textPrimary }]} numberOfLines={2}>{job?.title || 'Job removed'}</Text>
@@ -143,8 +156,8 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
                     </View>
                   </View>
                   <View style={styles.companyRow}>
-                    <Icon name="briefcase" size={13} color={T.textSecondary} />
-                    <Text style={{ color: T.textSecondary, fontSize: 12.5, fontWeight: '600' }}>{job?.company}</Text>
+                    <Icon name="briefcase" size={13} color={T.iconSecondary} />
+                    <Text style={{ color: T.textSecondary, fontSize: 12, fontWeight: '600' }}>{job?.company || 'Company not listed'}</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -154,12 +167,12 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
                     <View key={i} style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: progress.stopped ? stage.tint : i <= progress.index ? stage.color : 'rgba(148,163,184,0.25)' }} />
                   ))}
                 </View>
-                <Text style={{ color: T.textMuted, fontSize: 11, marginTop: 6 }}>
+                <Text style={{ color: T.textMuted, fontSize: 12, marginTop: 6 }}>
                   {app.status_updated_at && app.status !== 'pending' ? `Updated ${ago(app.status_updated_at)}` : 'Waiting for the hiring team to look at it'}
                 </Text>
                 {app.status === 'rejected' && app.rejection_reason ? (
                   <View style={[styles.reason, { backgroundColor: stage.tint }]}>
-                    <Text style={{ color: stage.color, fontSize: 12.5 }}>{app.rejection_reason}</Text>
+                    <Text style={{ color: stage.color, fontSize: 12 }}>{app.rejection_reason}</Text>
                   </View>
                 ) : null}
 
@@ -171,16 +184,16 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
                         <Icon name="calendar" size={18} color="#3B82F6" />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '800' }}>
+                        <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '700' }}>
                           {iv.status === 'confirmed' ? 'Interview confirmed' : 'Interview invitation'}
                         </Text>
                         <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '700', marginTop: 2 }}>
                           {fmtWhen(iv.scheduled_at)} · {iv.duration_minutes} min
                         </Text>
-                        <Text style={{ color: T.textSecondary, fontSize: 11.5, marginTop: 2 }}>
+                        <Text style={{ color: T.textSecondary, fontSize: 12, marginTop: 2 }}>
                           {iv.location || INTERVIEW_MODE_LABELS[iv.mode as keyof typeof INTERVIEW_MODE_LABELS]}
                         </Text>
-                        {iv.notes ? <Text style={{ color: T.textSecondary, fontSize: 11.5, marginTop: 2 }}>{iv.notes}</Text> : null}
+                        {iv.notes ? <Text style={{ color: T.textSecondary, fontSize: 12, marginTop: 2 }}>{iv.notes}</Text> : null}
                       </View>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
@@ -188,11 +201,11 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
                         <>
                           <TouchableOpacity style={[styles.ivBtn, { backgroundColor: ORANGE, opacity: busyInterview === iv.id ? 0.6 : 1 }]} disabled={busyInterview === iv.id} onPress={() => respond(iv.id, true)}>
                             <Icon name="check" size={14} color="#fff" />
-                            <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '800' }}>Confirm</Text>
+                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Confirm</Text>
                           </TouchableOpacity>
                           <TouchableOpacity style={[styles.ivBtn, { borderWidth: 1, borderColor: T.border }]} disabled={busyInterview === iv.id} onPress={() => respond(iv.id, false)}>
                             <Icon name="x" size={14} color={T.textPrimary} />
-                            <Text style={{ color: T.textPrimary, fontSize: 12.5, fontWeight: '800' }}>Decline</Text>
+                            <Text style={{ color: T.textPrimary, fontSize: 12, fontWeight: '700' }}>Decline</Text>
                           </TouchableOpacity>
                         </>
                       ) : (
@@ -202,10 +215,13 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
                             onPress={() => addInterviewToCalendar({ title: `Interview: ${job?.title || 'Job'}`, startsAt: iv.scheduled_at, durationMinutes: iv.duration_minutes, location: iv.location, notes: iv.notes })}
                           >
                             <Icon name="calendar" size={14} color={T.textPrimary} />
-                            <Text style={{ color: T.textPrimary, fontSize: 12.5, fontWeight: '800' }}>Add to calendar</Text>
+                            <Text style={{ color: T.textPrimary, fontSize: 12, fontWeight: '700' }}>Add to calendar</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity style={styles.ivBtn} disabled={busyInterview === iv.id} onPress={() => respond(iv.id, false)}>
-                            <Text style={{ color: '#EF4444', fontSize: 12.5, fontWeight: '800' }}>Can't make it</Text>
+                          <TouchableOpacity style={styles.ivBtn} disabled={busyInterview === iv.id} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} onPress={() => Alert.alert('Cancel this interview?', 'The hiring team will be told you cannot make it.', [
+                            { text: 'Keep it', style: 'cancel' },
+                            { text: "Can't make it", style: 'destructive', onPress: () => respond(iv.id, false) },
+                          ])}>
+                            <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '700' }}>Can't make it</Text>
                           </TouchableOpacity>
                         </>
                       )}
@@ -214,41 +230,43 @@ export const MyApplicationsScreen = ({ navigation }: { navigation: any }) => {
                 ))}
 
                 <View style={styles.footerRow}>
-                  <Text style={{ color: T.textMuted, fontSize: 11, flex: 1 }} numberOfLines={1}>
+                  <Text style={{ color: T.textMuted, fontSize: 12, flex: 1 }} numberOfLines={1}>
                     {[job?.location, job ? JOB_TYPE_LABELS[job.type as keyof typeof JOB_TYPE_LABELS] || job.type : null, pay].filter(Boolean).join(' · ')}
                   </Text>
-                  <Text style={{ color: T.textMuted, fontSize: 11 }}>Applied {ago(app.created_at)}</Text>
+                  <Text style={{ color: T.textMuted, fontSize: 12 }}>Applied {ago(app.created_at)}</Text>
                   {(app.status === 'pending' || app.status === 'reviewing') && (
-                    <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => withdraw(app.id)}>
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Withdraw application" hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }} onPress={() => withdraw(app.id)}>
                       <Icon name="trash-2" size={15} color="#EF4444" />
                     </TouchableOpacity>
                   )}
                 </View>
               </View>
             );
-          })
+          })}
+          </View>
         )}
       </ScrollView>
+      </TabletColumn>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  list: { padding: 14, paddingBottom: 40 },
-  appCard: { borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1 },
+  list: { padding: isTabletDevice ? 24 : 14, paddingBottom: 72 },
+  appCard: { borderRadius: 16, padding: isTabletDevice ? 18 : 14, marginBottom: 12, borderWidth: 1 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6, gap: 8 },
-  title: { fontSize: 15, fontWeight: '800', flex: 1 },
+  title: { fontSize: 16, fontWeight: '700', flex: 1 },
   statusBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
-  statusText: { fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5 },
+  statusText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   companyRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reason: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 8 },
   ivCard: { borderWidth: 1, borderColor: 'rgba(59,130,246,0.35)', backgroundColor: 'rgba(59,130,246,0.06)', borderRadius: 14, padding: 12, marginTop: 12 },
   ivIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(59,130,246,0.14)', alignItems: 'center', justifyContent: 'center' },
-  ivBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 36, borderRadius: 10, justifyContent: 'center' },
+  ivBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44, borderRadius: 10, justifyContent: 'center' },
   footerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(148,163,184,0.3)' },
   primaryBtn: { backgroundColor: ORANGE, borderRadius: 12, paddingHorizontal: 22, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 18 },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13.5 },
+  primaryBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
 });
 
 export default MyApplicationsScreen;

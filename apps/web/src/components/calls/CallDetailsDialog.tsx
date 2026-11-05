@@ -133,7 +133,7 @@ export const CallDetailsDialog: React.FC<CallDetailsDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md bg-background/95 backdrop-blur-2xl border-border/40 shadow-2xl rounded-3xl p-6">
+      <DialogContent className="sm:max-w-md bg-background/95 border-border/40 shadow-2xl rounded-3xl p-6">
         <DialogHeader>
           <div className="flex items-center gap-3 mb-2">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${isStarted ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-400'}`}>
@@ -160,7 +160,7 @@ export const CallDetailsDialog: React.FC<CallDetailsDialogProps> = ({
             {/* Host Card */}
             {hostInfo && (
               <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-primary mb-2 flex items-center gap-1">
+                <p className="text-[12px] font-bold uppercase tracking-wider text-primary mb-2 flex items-center gap-1">
                   <Crown className="w-3 h-3 text-amber-500" /> Call Initiator / Host
                 </p>
                 <div className="flex items-center gap-3">
@@ -174,7 +174,7 @@ export const CallDetailsDialog: React.FC<CallDetailsDialogProps> = ({
                     <p className="text-sm font-bold text-foreground truncate">{hostInfo.full_name}</p>
                     <p className="text-xs text-muted-foreground truncate">@{hostInfo.username}</p>
                   </div>
-                  <Badge variant="secondary" className="bg-primary/20 text-primary text-[10px]">Host</Badge>
+                  <Badge variant="secondary" className="bg-primary/20 text-primary text-[12px]">Host</Badge>
                 </div>
               </div>
             )}
@@ -188,7 +188,7 @@ export const CallDetailsDialog: React.FC<CallDetailsDialogProps> = ({
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {participants.length > 0 ? (
                   participants.map((p) => (
-                    <div key={p.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/40 hover:bg-muted/70 transition-all border border-border/30">
+                    <div key={p.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-muted/40 hover:bg-muted/70 transition border border-border/30">
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={p.avatar_url} />
                         <AvatarFallback className="bg-secondary text-secondary-foreground font-bold text-xs">
@@ -197,9 +197,9 @@ export const CallDetailsDialog: React.FC<CallDetailsDialogProps> = ({
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-foreground truncate">{p.full_name}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">@{p.username}</p>
+                        <p className="text-[12px] text-muted-foreground truncate">@{p.username}</p>
                       </div>
-                      <Badge variant="outline" className="text-[10px] capitalize">
+                      <Badge variant="outline" className="text-[12px] capitalize">
                         {p.role === 'Host' ? 'Host' : 'Joined'}
                       </Badge>
                     </div>

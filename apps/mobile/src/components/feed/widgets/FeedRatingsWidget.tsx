@@ -1,3 +1,4 @@
+import { WT } from './widgetScale';
 import React from 'react';
 import {
   View,
@@ -11,7 +12,7 @@ import { Icon } from '../../common/Icon';
 import { useUserSettings } from '../../../hooks/useUserSettings';
 
 const ORANGE = '#FF4B33';
-const MUTED = '#6B7280';
+const MUTED = '#64748B';
 const BORDER = '#E5E7EB';
 
 interface RatingItem {
@@ -106,7 +107,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   titleGroup: {
     flexDirection: 'row',
@@ -115,14 +116,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0D0D0D',
-    fontSize: 16,
+    fontSize: WT.sectionTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   seeAllText: {
     color: '#4B5563',
-    fontSize: 12,
+    fontSize: WT.seeAll,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -165,14 +166,14 @@ const styles = StyleSheet.create({
     gap: 3,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     paddingHorizontal: 7,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   ratingText: {
     color: '#F59E0B',
-    fontSize: 11,
+    fontSize: WT.badge,
     fontFamily: 'WorkSans-Bold',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   contentArea: {
     padding: 8,
@@ -180,14 +181,14 @@ const styles = StyleSheet.create({
   },
   movieTitle: {
     color: '#0D0D0D',
-    fontSize: 13.5,
+    fontSize: WT.cardTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     marginBottom: 4,
   },
   movieOverview: {
     color: '#64748B',
-    fontSize: 11,
+    fontSize: WT.body,
     fontFamily: 'WorkSans-Regular',
     lineHeight: 15,
   },

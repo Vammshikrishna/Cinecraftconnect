@@ -4,6 +4,7 @@ import { CachedImage } from '../common/CachedImage';
 import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const db = () => getSupabaseClient() as any;
@@ -99,7 +100,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
       await load();
       onUpdated?.();
     } catch (e: any) {
-      Alert.alert('Something went wrong', e?.message || 'Please try again.');
+      Alert.alert('Something went wrong', friendlyError(e, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -129,12 +130,12 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
         <CachedImage uri={p.avatar_url} style={styles.avatar} />
       ) : (
         <View style={[styles.avatar, { backgroundColor: T.chipBg, alignItems: 'center', justifyContent: 'center' }]}>
-          <Text style={{ color: ORANGE, fontWeight: '800' }}>{(p?.full_name || p?.username || '?').charAt(0).toUpperCase()}</Text>
+          <Text style={{ color: ORANGE, fontWeight: '700' }}>{(p?.full_name || p?.username || '?').charAt(0).toUpperCase()}</Text>
         </View>
       )}
       <View style={{ flex: 1 }}>
-        <Text style={{ color: T.textPrimary, fontSize: 13.5, fontWeight: '700' }} numberOfLines={1}>{p?.full_name || p?.username}</Text>
-        <Text style={{ color: T.textMuted, fontSize: 11.5 }} numberOfLines={1}>{p?.craft || (p?.username ? `@${p.username}` : '')}</Text>
+        <Text style={{ color: T.textPrimary, fontSize: 14, fontWeight: '700' }} numberOfLines={1}>{p?.full_name || p?.username}</Text>
+        <Text style={{ color: T.textMuted, fontSize: 12 }} numberOfLines={1}>{p?.craft || (p?.username ? `@${p.username}` : '')}</Text>
       </View>
       {right}
     </View>
@@ -147,18 +148,18 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
         <View style={[styles.sheet, { backgroundColor: T.bgScreen, borderColor: T.border }]}>
           <View style={styles.head}>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '800' }}>Team & access</Text>
+              <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700' }}>Team & access</Text>
               <Text style={{ color: T.textSecondary, fontSize: 12 }}>People join only when they accept an invitation.</Text>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Icon name="x" size={20} color={T.textSecondary} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Icon name="x" size={20} color={T.iconSecondary} />
             </TouchableOpacity>
           </View>
 
           <View style={[styles.tabs, { backgroundColor: T.inputBg }]}>
             {([['team', `Team (${members.length})`], ['invite', `Invite${invites.length ? ` (${invites.length})` : ''}`], ['followers', 'Followers']] as const).map(([k, label]) => (
               <TouchableOpacity key={k} style={[styles.tab, tab === k && { backgroundColor: T.bgCard }]} onPress={() => setTab(k)}>
-                <Text style={{ color: tab === k ? ORANGE : T.textSecondary, fontSize: 12.5, fontWeight: '800' }}>{label}</Text>
+                <Text style={{ color: tab === k ? ORANGE : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{label}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -194,7 +195,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
                                 <Icon name="crown" size={17} color="#F59E0B" />
                               </TouchableOpacity>
                             )}
-                            <TouchableOpacity
+                            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete"
                               disabled={busy}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                               onPress={() =>
@@ -210,7 +211,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
                           ) : null
                         }
                       />
-                      <Text style={{ color: T.textMuted, fontSize: 11, marginLeft: 4, marginTop: 4 }}>{[m.title, m.department].filter(Boolean).join(' · ') || 'Team member'}</Text>
+                      <Text style={{ color: T.textMuted, fontSize: 12, marginLeft: 4, marginTop: 4 }}>{[m.title, m.department].filter(Boolean).join(' · ') || 'Team member'}</Text>
                       {isOwner && (
                         <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
                           {ROLES.map((r) => {
@@ -222,7 +223,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
                                 onPress={() => !on && run(() => db().rpc('set_page_admin', { p_page_id: pageId, p_user_id: m.user_id, p_role: r.value }))}
                                 style={[styles.chip, { backgroundColor: on ? ORANGE : T.inputBg, borderColor: on ? ORANGE : T.border }]}
                               >
-                                <Text style={{ color: on ? '#fff' : T.textSecondary, fontSize: 11, fontWeight: '800' }}>{r.label}</Text>
+                                <Text style={{ color: on ? '#fff' : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{r.label}</Text>
                               </TouchableOpacity>
                             );
                           })}
@@ -232,7 +233,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
                   ))
                 )}
                 {isOwner && (
-                  <Text style={{ color: T.textMuted, fontSize: 11, marginTop: 6 }}>
+                  <Text style={{ color: T.textMuted, fontSize: 12, marginTop: 6 }}>
                     Content admins edit the page and post as the company. Analysts see insights. Super admins also manage the team and hiring.
                   </Text>
                 )}
@@ -256,7 +257,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
                           p={r}
                           right={
                             <TouchableOpacity disabled={done || busy} onPress={() => invite(r.id)} style={[styles.invBtn, { backgroundColor: done ? T.chipBg : ORANGE }]}>
-                              <Text style={{ color: done ? T.textSecondary : '#fff', fontSize: 12, fontWeight: '800' }}>{memberIds.has(r.id) ? 'On team' : invitedIds.has(r.id) ? 'Invited' : 'Invite'}</Text>
+                              <Text style={{ color: done ? T.textSecondary : '#fff', fontSize: 12, fontWeight: '700' }}>{memberIds.has(r.id) ? 'On team' : invitedIds.has(r.id) ? 'Invited' : 'Invite'}</Text>
                             </TouchableOpacity>
                           }
                         />
@@ -275,9 +276,9 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
                         p={i.invitee}
                         right={
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                            <Text style={{ color: T.textMuted, fontSize: 11 }}>{timeAgo(i.created_at)}</Text>
-                            <TouchableOpacity disabled={busy} onPress={() => run(() => db().rpc('cancel_page_invite', { p_invite_id: i.id }))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                              <Icon name="x" size={17} color={T.textSecondary} />
+                            <Text style={{ color: T.textMuted, fontSize: 12 }}>{timeAgo(i.created_at)}</Text>
+                            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" disabled={busy} onPress={() => run(() => db().rpc('cancel_page_invite', { p_invite_id: i.id }))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                              <Icon name="x" size={17} color={T.iconSecondary} />
                             </TouchableOpacity>
                           </View>
                         }
@@ -294,7 +295,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
               ) : (
                 followers.map((f) => (
                   <View key={f.user_id} style={{ marginBottom: 8 }}>
-                    <Person p={f} right={<Text style={{ color: T.textMuted, fontSize: 11 }}>{timeAgo(f.followed_at)}</Text>} />
+                    <Person p={f} right={<Text style={{ color: T.textMuted, fontSize: 12 }}>{timeAgo(f.followed_at)}</Text>} />
                   </View>
                 ))
               ))}
@@ -306,7 +307,7 @@ export const ManageMembersModal: React.FC<Props> = ({ visible, pageId, onClose, 
 };
 
 const styles = StyleSheet.create({
-  sheet: { maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
   head: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 8 },
   tabs: { flexDirection: 'row', marginHorizontal: 16, borderRadius: 12, padding: 3 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10 },
@@ -316,7 +317,7 @@ const styles = StyleSheet.create({
   box: { borderWidth: 1, borderRadius: 16, padding: 12 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, height: 42, fontSize: 13, marginBottom: 10 },
   invBtn: { paddingHorizontal: 12, height: 32, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  section: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8, marginTop: 18, marginBottom: 8 },
+  section: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 18, marginBottom: 8 },
 });
 
 export default ManageMembersModal;

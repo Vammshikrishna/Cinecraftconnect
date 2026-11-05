@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Lets the incoming call notification open the app over the lock screen -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Keeps microphone capture alive while a call is running in the background (Android 14+). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -87,6 +89,14 @@
             <action android:name="com.cinecraftconnect.app.ACTION_REPLY" />
             <action android:name="com.cinecraftconnect.app.ACTION_MARK_AS_READ" />
             <action android:name="com.cinecraftconnect.app.ACTION_DISMISSED" />
+        </intent-filter>
+      </receiver>
+
+      <receiver
+        android:name=".IncomingCallActionReceiver"
+        android:exported="false">
+        <intent-filter>
+            <action android:name="com.cinecraftconnect.app.ACTION_CALL_DECLINE" />
         </intent-filter>
       </receiver>
 

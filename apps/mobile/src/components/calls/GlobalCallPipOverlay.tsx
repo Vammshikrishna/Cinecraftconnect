@@ -1,5 +1,5 @@
 import { CachedImage } from '../common/CachedImage';
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,30 +7,36 @@ import {
   TouchableOpacity,
   Animated,
   PanResponder,
-  Dimensions,
+  useWindowDimensions,
   Platform,
   AppState,
   StatusBar,
   Vibration,
   Modal,
   Image,
+  NativeModules,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { IncomingCallScreen } from './IncomingCallScreen';
 import { useGlobalCall } from '../../contexts/CallContext';
 import {
   formatCallDuration,
   postCallSystemMessage,
 } from '../../services/callService';
-import { addPipListener } from '../../services/pipService';
+import { addPipListener, addPipActionListener, setPipCallState } from '../../services/pipService';
+import { VideoView } from '@livekit/react-native';
+import { useLiveCall } from '../../hooks/useLiveCall';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import type { ThemeColors } from '../../contexts/SettingsContext';
 import { getSupabaseClient } from '@cinecraft/api';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { calmLoop } from '../../utils/motion';
+import { beginCallSession } from '../../services/callSession';
+import { isDeviceLocked, setLockedCall, useLockedCall } from '../../services/lockScreenGuard';
+import { verifyCallInvite } from '../../services/callInviteVerify';
 
 const ORANGE = '#FF4B33';
 const EMERALD = '#10B981';
-const PIP_WIDTH = 180;
-const PIP_HEIGHT = 215;
 const PIP_MARGIN = 12;
 
 /**
@@ -44,6 +50,7 @@ const PIP_MARGIN = 12;
 export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any }) => {
   const { callState, updateCallState, endCall, maximizeCall, startCall } = useGlobalCall();
   const { settings } = useUserSettings();
+  const styles = useCallStyles();
   const [isNativePip, setIsNativePip] = useState(false);
   const prevNativePip = useRef(false);
 
@@ -77,20 +84,35 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
   const displayName = (partnerName || roomName || 'Live Session').trim() || 'Session';
   const displayInitial = displayName.charAt(0).toUpperCase();
 
+  const lockedCall = useLockedCall();
+  // the call ending also ends the lock-screen mode
+  useEffect(() => {
+    if (!isActive) setLockedCall(false);
+  }, [isActive]);
+
   const handleExpand = useCallback(() => {
     maximizeCall();
     try {
       if (navigationRef) {
         const doNavigate = () => {
           try {
-            navigationRef.navigate('Call', {
-              roomId,
-              roomType,
-              roomName,
-              partnerName,
-              partnerId,
-              isVideo: !isVideoOff,
-            });
+            // Back to where the call belongs: a discussion room opens on its call tab, a project space on its Live Call
+            // tab. Only a one-to-one call (no room) uses the full-screen call screen.
+            if (roomType === 'discussion' && roomId) {
+              navigationRef.navigate('DiscussionRoomDetail', { roomId, roomTitle: roomName, openCallTab: Date.now() });
+            } else if (roomType === 'project' && roomId) {
+              navigationRef.navigate('ProjectSpace', { spaceId: roomId, projectTitle: roomName, openCallTab: Date.now() });
+            } else {
+              navigationRef.navigate('Call', {
+                roomId,
+                roomType,
+                roomName,
+                partnerName,
+                partnerId,
+                isVideo: !isVideoOff,
+                answering: true,
+              });
+            }
           } catch (err) {
             console.warn('[GlobalCallPipOverlay] doNavigate error:', err);
           }
@@ -122,6 +144,30 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
     };
   }, [isActive, handleExpand]);
 
+  // The PiP window gets no touches from Android, so its mute / speaker / end buttons are system actions: keep their
+  // state current and answer them here.
+  useEffect(() => {
+    if (isActive) setPipCallState(isMuted, isSpeakerOn);
+  }, [isActive, isMuted, isSpeakerOn]);
+
+  const pipActionRef = useRef<(action: string) => void>(() => {});
+  pipActionRef.current = (action: string) => {
+    if (action === 'mute') updateCallState({ isMuted: !isMuted });
+    else if (action === 'speaker') updateCallState({ isSpeakerOn: !isSpeakerOn });
+    else if (action === 'end') {
+      try {
+        if (roomType && roomId) {
+          postCallSystemMessage(roomType as any, roomId, 'ended', formatCallDuration(callDuration), undefined, partnerId).catch(() => {});
+        }
+      } catch {}
+      endCall();
+    }
+  };
+  useEffect(() => {
+    const sub = addPipActionListener((a) => pipActionRef.current(a));
+    return () => sub?.remove();
+  }, []);
+
   // Listen for AppState changes when returning to active from background
   useEffect(() => {
     const appStateSub = AppState.addEventListener('change', (nextAppState) => {
@@ -149,19 +195,23 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
         // 1. Broadcast Channel
         broadcastChannel = supabase.channel('global-call-invites-broadcast');
         broadcastChannel
-          .on('broadcast', { event: 'incoming_call_invite' }, (payload: any) => {
+          .on('broadcast', { event: 'incoming_call_invite' }, async (payload: any) => {
             const data = payload?.payload;
             if (data && data.targetUserId === user.id && data.callerId !== user.id) {
               // Respect user setting: Who can call me
               if (settings.allow_incoming_calls === 'nobody') return;
 
+              // anyone can send on this channel: only ring for a call the database confirms, with the caller's real name
+              const verified = await verifyCallInvite(data);
+              if (!verified || !isMounted) return;
+
               setIncomingCall({
                 callerId: data.callerId,
-                callerName: data.callerName || 'Team Member',
-                callerAvatar: data.callerAvatar,
+                callerName: verified.callerName,
+                callerAvatar: verified.callerAvatar,
                 roomId: data.roomId,
-                roomName: data.roomName || 'Live Call',
-                roomType: data.roomType || 'direct',
+                roomName: String(data.roomName || 'Live Call').slice(0, 80),
+                roomType: ['project', 'discussion', 'direct'].includes(data.roomType) ? data.roomType : 'direct',
                 isVideo: !!data.isVideo,
               });
 
@@ -169,6 +219,20 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
                 Vibration.vibrate([0, 600, 400, 600], true);
               }
             }
+          })
+          .on('broadcast', { event: 'incoming_call_cancelled' }, (payload: any) => {
+            // the caller hung up before anyone answered: stop ringing
+            const data = payload?.payload;
+            if (!data?.roomId) return;
+            if (Array.isArray(data.targetUserIds) && !data.targetUserIds.includes(user.id)) return;
+            setIncomingCall((current) => {
+              if (current && current.roomId === data.roomId) {
+                Vibration.cancel();
+                NativeModules.NotificationBridge?.cancelIncomingCall?.();
+                return null;
+              }
+              return current;
+            });
           })
           .subscribe();
 
@@ -238,11 +302,16 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
   }, [settings.allow_incoming_calls, settings.call_vibration]);
 
   // Accept incoming call action
-  const handleAcceptCall = () => {
+  const handleAcceptCall = async () => {
     Vibration.cancel();
+    NativeModules.NotificationBridge?.cancelIncomingCall?.();
     if (!incomingCall) return;
     const callToJoin = { ...incomingCall };
     setIncomingCall(null);
+    // Answered on the lock screen: show only the full-screen call, never the room (its chat and tabs would be readable by
+    // whoever holds the phone). The call screen then has no way out until the owner unlocks.
+    const lockedNow = await isDeviceLocked();
+    setLockedCall(lockedNow);
 
     startCall({
       roomId: callToJoin.roomId,
@@ -254,6 +323,25 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
     });
 
     try {
+      // A call in a discussion room or project space is answered inside that room (its call tab), like starting one there.
+      // That screen does not connect the media itself, so connect it here. A one-to-one call opens the call screen,
+      // which connects on its own. This is also where answering from the lock screen ends up.
+      if (!lockedNow && (callToJoin.roomType === 'discussion' || callToJoin.roomType === 'project')) {
+        void beginCallSession({
+          roomType: callToJoin.roomType,
+          roomId: callToJoin.roomId,
+          roomName: callToJoin.roomName,
+          isVideo: callToJoin.isVideo,
+          startMuted: !!settings.call_mute_mic_on_join,
+          videoOffOnJoin: !!settings.call_video_off_on_join,
+        }).catch((e) => console.warn('[GlobalCallPipOverlay] Join from incoming call failed:', e));
+        if (callToJoin.roomType === 'discussion') {
+          navigationRef?.navigate('DiscussionRoomDetail', { roomId: callToJoin.roomId, roomTitle: callToJoin.roomName, openCallTab: Date.now() });
+        } else {
+          navigationRef?.navigate('ProjectSpace', { spaceId: callToJoin.roomId, projectTitle: callToJoin.roomName, openCallTab: Date.now() });
+        }
+        return;
+      }
       navigationRef?.navigate('Call', {
         roomId: callToJoin.roomId,
         roomType: callToJoin.roomType,
@@ -261,6 +349,7 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
         partnerName: callToJoin.callerName,
         partnerId: callToJoin.callerId,
         isVideo: callToJoin.isVideo,
+        answering: true,
       });
     } catch (e) {
       console.warn('[GlobalCallPipOverlay] Accept navigation error:', e);
@@ -270,38 +359,59 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
   // Decline incoming call action
   const handleDeclineCall = () => {
     Vibration.cancel();
+    NativeModules.NotificationBridge?.cancelIncomingCall?.();
     setIncomingCall(null);
   };
+
+  // A call that rang while the app was closed or locked: the notification opened the app, so show the call screen.
+  // (Android only; the native side hands the caller over once, from a cold start or while the app is running.)
+  const [autoAcceptCall, setAutoAcceptCall] = useState(false);
+  useEffect(() => {
+    const showFromNative = (d: any) => {
+      if (!d?.roomId) return;
+      NativeModules.NotificationBridge?.cancelIncomingCall?.(); // the screen takes over from the ringing notification
+      setIncomingCall({
+        callerId: d.callerId || '',
+        callerName: d.callerName || 'Incoming call',
+        callerAvatar: d.callerAvatar || undefined,
+        roomId: d.roomId,
+        roomName: d.roomName || 'Live Call',
+        roomType: d.roomType === 'project' || d.roomType === 'discussion' ? d.roomType : 'direct',
+        isVideo: !!d.isVideo,
+      });
+      if (d.callAction === 'accept') setAutoAcceptCall(true);
+      else if (settings.call_vibration !== false) Vibration.vibrate([0, 600, 400, 600], true);
+    };
+    NativeModules.NotificationBridge?.getInitialNotificationData?.()
+      ?.then((d: any) => { if (d?.incomingCall) showFromNative(d); })
+      ?.catch?.(() => {});
+    const sub = DeviceEventEmitter.addListener('incomingCallFromNative', showFromNative);
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (autoAcceptCall && incomingCall) {
+      setAutoAcceptCall(false);
+      handleAcceptCall();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAcceptCall, incomingCall]);
 
   // When in Android OS native Picture-in-Picture mode outside the app,
   // render the dedicated full-window call view so MainActivity displays exclusively the call UI.
   if (isActive && isNativePip) {
     return (
-      <NativePipFullScreenView
+      <NativePipCallView
         displayName={displayName}
         displayInitial={displayInitial}
         callDuration={callDuration}
         isMuted={isMuted}
-        isSpeaking={isSpeaking}
-        isSpeakerOn={isSpeakerOn}
         callStatus={callStatus}
-        onToggleMute={() => updateCallState({ isMuted: !isMuted })}
-        onToggleSpeaker={() => updateCallState({ isSpeakerOn: !isSpeakerOn })}
-        onExpand={handleExpand}
-        onEndCall={() => {
-          try {
-            if (roomType && roomId) {
-              const durStr = formatCallDuration(callDuration);
-              postCallSystemMessage(roomType as any, roomId, 'ended', durStr, undefined, partnerId).catch(() => {});
-            }
-          } catch {}
-          endCall();
-        }}
       />
     );
   }
 
-  const shouldRenderPip = isActive && isMinimized && (settings.call_pip_enabled ?? true);
+  const shouldRenderPip = isActive && isMinimized && !lockedCall && (settings.call_pip_enabled ?? true);
 
   return (
     <>
@@ -351,14 +461,14 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
                 {incomingCall.isVideo ? 'Incoming Video Call...' : 'Incoming Voice Call...'}
               </Text>
             </View>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.incomingBannerDeclineBtn}
               onPress={handleDeclineCall}
               activeOpacity={0.8}
             >
               <Icon name="x" size={16} color="#FFFFFF" strokeWidth={2.5} />
             </TouchableOpacity>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Call" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.incomingBannerAcceptBtn}
               onPress={handleAcceptCall}
               activeOpacity={0.8}
@@ -370,55 +480,15 @@ export const GlobalCallPipOverlay = ({ navigationRef }: { navigationRef?: any })
       )}
 
       {incomingCall && settings.call_alert_mode !== 'banner' && (
-        <Modal
-          visible={true}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={handleDeclineCall}
-        >
-          <View style={styles.incomingModalOverlay}>
-            <View style={styles.incomingModalCenter}>
-              <View style={styles.incomingPulseRing}>
-                <View style={styles.incomingModalAvatar}>
-                  {incomingCall.callerAvatar ? (
-                    <CachedImage uri={incomingCall.callerAvatar} style={styles.incomingModalAvatarImg} />
-                  ) : (
-                    <Text style={styles.incomingModalAvatarInitial}>
-                      {(incomingCall.callerName || 'C').charAt(0).toUpperCase()}
-                    </Text>
-                  )}
-                </View>
-              </View>
-
-              <Text style={styles.incomingModalName} numberOfLines={1}>
-                {incomingCall.callerName}
-              </Text>
-              <Text style={styles.incomingModalSub}>
-                CineCraft Connect {incomingCall.isVideo ? 'Video' : 'Voice'} Call
-              </Text>
-
-              <View style={styles.incomingModalActionRow}>
-                <TouchableOpacity
-                  style={styles.incomingModalDeclineBtn}
-                  onPress={handleDeclineCall}
-                  activeOpacity={0.8}
-                >
-                  <Icon name="phone-off" size={24} color="#FFFFFF" />
-                  <Text style={styles.incomingBtnLabel}>Decline</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.incomingModalAcceptBtn}
-                  onPress={handleAcceptCall}
-                  activeOpacity={0.8}
-                >
-                  <Icon name="phone" size={24} color="#FFFFFF" />
-                  <Text style={styles.incomingBtnLabel}>Accept</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        <IncomingCallScreen
+          callerName={incomingCall.callerName}
+          callerAvatar={incomingCall.callerAvatar}
+          roomName={incomingCall.roomName}
+          roomType={incomingCall.roomType}
+          isVideo={incomingCall.isVideo}
+          onAccept={handleAcceptCall}
+          onDecline={handleDeclineCall}
+        />
       )}
     </>
   );
@@ -471,9 +541,10 @@ type PipSizeMode = 'compact' | 'normal' | 'large';
  * Isolated memoized timer so 1s clock ticks do not trigger re-render
  * of the outer card or gesture PanResponders during dragging.
  */
-const PipTimer = React.memo(({ duration }: { duration: number }) => (
-  <Text style={styles.pipTimer}>{formatCallDuration(duration)}</Text>
-));
+const PipTimer = React.memo(({ duration }: { duration: number }) => {
+  const styles = useCallStyles();
+  return <Text style={styles.pipTimer}>{formatCallDuration(duration)}</Text>;
+});
 
 /**
  * Single shared PipCardContent component used by both:
@@ -509,12 +580,14 @@ const PipCardContent = React.memo(({
   onEndCall,
   cfg = PIP_SIZES.normal,
 }: PipCardContentProps) => {
+  const styles = useCallStyles();
+  const { themeColors } = useUserSettings();
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     let anim: Animated.CompositeAnimation | null = null;
     if (isSpeaking) {
-      anim = Animated.loop(
+      anim = calmLoop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 1.12,
@@ -582,7 +655,7 @@ const PipCardContent = React.memo(({
               isSpeaking && styles.pipStatusPillSpeaking,
             ]}
           >
-            <View style={[styles.pipStatusDot, { backgroundColor: isSpeaking ? EMERALD : '#94A3B8' }]} />
+            <View style={[styles.pipStatusDot, { backgroundColor: isSpeaking ? EMERALD : themeColors.iconSecondary }]} />
             <Text style={[styles.pipStatusText, { fontSize: cfg.pillFont }, isSpeaking && { color: EMERALD }]}>
               {isSpeaking ? 'Speaking' : isMuted ? 'Muted' : 'Active'}
             </Text>
@@ -610,7 +683,7 @@ const PipCardContent = React.memo(({
           <Icon
             name={isMuted ? 'mic-off' : 'mic'}
             size={cfg.actionIconSize}
-            color={isMuted ? '#EF4444' : '#FFFFFF'}
+            color={isMuted ? '#EF4444' : themeColors.textPrimary}
           />
         </TouchableOpacity>
 
@@ -626,11 +699,11 @@ const PipCardContent = React.memo(({
           <Icon
             name={isSpeakerOn ? 'volume-2' : 'volume-x'}
             size={cfg.actionIconSize}
-            color={isSpeakerOn ? EMERALD : '#94A3B8'}
+            color={isSpeakerOn ? EMERALD : themeColors.iconSecondary}
           />
         </TouchableOpacity>
 
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="End call"
           style={[
             styles.pipActionBtn,
             styles.pipActionBtnEnd,
@@ -647,66 +720,77 @@ const PipCardContent = React.memo(({
 });
 
 /**
- * NativePipFullScreenView
- * 
- * Rendered when the Android OS enters Picture-in-Picture mode outside the app.
- * Uses the shared PipCardContent to guarantee 100% UI and functionality parity.
+ * NativePipCallView
+ *
+ * What the Android OS Picture-in-Picture window shows (like Google Meet): just the call, no buttons. Android sends no
+ * touches into that small window, so mute / speaker / end are the system's own buttons (see MainActivity.pipActions);
+ * tapping the window opens the system controls and the expand icon brings the app back.
+ * Shows the person who is talking (or the first other person) with their video, or their picture when the camera is off.
  */
-const NativePipFullScreenView = React.memo(({
+const NativePipCallView = React.memo(({
   displayName,
   displayInitial,
   callDuration,
   isMuted,
-  isSpeaking,
-  isSpeakerOn,
   callStatus,
-  onToggleMute,
-  onToggleSpeaker,
-  onExpand,
-  onEndCall,
 }: {
   displayName: string;
   displayInitial: string;
   callDuration: number;
   isMuted: boolean;
-  isSpeaking: boolean;
-  isSpeakerOn: boolean;
   callStatus: string;
-  onToggleMute: () => void;
-  onToggleSpeaker: () => void;
-  onExpand: () => void;
-  onEndCall: () => void;
 }) => {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.95}
-      onPress={onExpand}
-      style={styles.nativePipFullScreen}
-    >
-      <StatusBar hidden />
-      <View style={styles.nativePipCardInner}>
-        <PipCardContent
-          displayName={displayName}
-          displayInitial={displayInitial}
-          callDuration={callDuration}
-          isMuted={isMuted}
-          isSpeakerOn={isSpeakerOn}
-          isSpeaking={isSpeaking}
-          callStatus={callStatus}
-          onToggleMute={onToggleMute}
-          onToggleSpeaker={onToggleSpeaker}
-          onEndCall={onEndCall}
-        />
+  const live = useLiveCall();
+  const others = live.participants.filter((p) => !p.isLocal);
+  const sharer = live.participants.find((p) => p.isScreenSharing && p.screenTrack);
+  const main = others.find((p) => p.isSpeaking) || others[0] || live.participants[0];
+  const me = live.participants.find((p) => p.isLocal);
+  const mainName = main && !main.isLocal ? main.name : displayName;
+  const initial = (mainName?.[0] || displayInitial || '?').toUpperCase();
+  const showMyself = !!me && !!main && !main.isLocal && me.isCameraOn && !!me.videoTrack;
+  const mm = String(Math.floor(callDuration / 60)).padStart(2, '0');
+  const ss = String(callDuration % 60).padStart(2, '0');
+  const connected = callStatus === 'connected' || callDuration > 0;
 
-        {/* Corner Affordance */}
-        <View style={styles.pipCornerResizeHandle}>
-          <View style={styles.pipResizeCornerPlate} />
-          <View style={styles.pipResizeGripBar1} />
-          <View style={styles.pipResizeGripBar2} />
-          <View style={styles.pipResizeGripBar3} />
+  return (
+    // absolute and on top of the whole app: in the PiP window nothing of the app screen may show through
+    <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: '#0F0F12', zIndex: 99999999, elevation: 99999999 }}>
+      <StatusBar hidden />
+      {sharer ? (
+        <VideoView style={{ flex: 1 }} videoTrack={sharer.screenTrack} objectFit="contain" />
+      ) : main && main.isCameraOn && main.videoTrack ? (
+        <VideoView style={{ flex: 1 }} videoTrack={main.videoTrack} objectFit="cover" mirror={main.isLocal} />
+      ) : (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          {main?.avatarUrl ? (
+            <CachedImage uri={main.avatarUrl} style={{ width: '38%', aspectRatio: 1, borderRadius: 999 }} />
+          ) : (
+            <View style={{ width: '38%', aspectRatio: 1, borderRadius: 999, backgroundColor: '#4C2A9A', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '700' }}>{initial}</Text>
+            </View>
+          )}
         </View>
+      )}
+
+      {/* timer / status, top left */}
+      <View style={{ position: 'absolute', top: 6, left: 6, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
+        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: connected ? '#10B981' : '#FF4B33' }} />
+        <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>{connected ? `${mm}:${ss}` : 'Ringing…'}</Text>
       </View>
-    </TouchableOpacity>
+
+      {/* name, bottom left */}
+      <View style={{ position: 'absolute', left: 6, bottom: 6, maxWidth: '70%', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
+        {isMuted ? <Icon name="mic-off" size={10} color="#EF4444" /> : null}
+        <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>{mainName}</Text>
+      </View>
+
+      {/* your own camera, bottom right */}
+      {showMyself && me?.videoTrack ? (
+        <View style={{ position: 'absolute', right: 6, bottom: 6, width: '28%', aspectRatio: 3 / 4, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' }}>
+          <VideoView style={{ flex: 1 }} videoTrack={me.videoTrack} objectFit="cover" mirror />
+        </View>
+      ) : null}
+    </View>
   );
 });
 
@@ -738,16 +822,32 @@ const PipBubble = React.memo(({
   onExpand: () => void;
   onEndCall: () => void;
 }) => {
+  const styles = useCallStyles();
   const [sizeMode, setSizeMode] = useState<PipSizeMode>('normal');
-  const cfg = PIP_SIZES[sizeMode];
+  // Tablets (shortest side >= 600dp) get a PiP about 1.4x bigger; the window size is read live so rotation works.
+  const { width: winW, height: winH } = useWindowDimensions();
+  const pipScaleFactor = Math.min(winW, winH) >= 600 ? 1.4 : 1;
+  const win = useRef({ w: winW, h: winH, k: pipScaleFactor });
+  win.current = { w: winW, h: winH, k: pipScaleFactor };
+  const cfg = useMemo(() => {
+    const base = PIP_SIZES[sizeMode];
+    if (pipScaleFactor === 1) return base;
+    const out: any = {};
+    (Object.keys(base) as (keyof typeof base)[]).forEach((key) => {
+      out[key] = Math.round((base[key] as number) * pipScaleFactor);
+    });
+    return out as typeof base;
+  }, [sizeMode, pipScaleFactor]);
 
-  const currentWidth = useRef(PIP_SIZES.normal.width);
-  const currentHeight = useRef(PIP_SIZES.normal.height);
-  const animWidth = useRef(new Animated.Value(PIP_SIZES.normal.width)).current;
-  const animHeight = useRef(new Animated.Value(PIP_SIZES.normal.height)).current;
+  const baseW = Math.round(PIP_SIZES.normal.width * pipScaleFactor);
+  const baseH = Math.round(PIP_SIZES.normal.height * pipScaleFactor);
+  const currentWidth = useRef(baseW);
+  const currentHeight = useRef(baseH);
+  const animWidth = useRef(new Animated.Value(baseW)).current;
+  const animHeight = useRef(new Animated.Value(baseH)).current;
 
-  const initialX = SCREEN_WIDTH - PIP_SIZES.normal.width - PIP_MARGIN;
-  const initialY = SCREEN_HEIGHT - PIP_SIZES.normal.height - 120;
+  const initialX = winW - baseW - PIP_MARGIN;
+  const initialY = winH - baseH - 120;
 
   const pan = useRef(
     new Animated.ValueXY({
@@ -782,6 +882,18 @@ const PipBubble = React.memo(({
       }),
     ]).start();
   }, [pipScale, pipOpacity]);
+
+  // Keep the card on screen when the window changes (rotation, split screen)
+  useEffect(() => {
+    const maxX = Math.max(PIP_MARGIN, winW - currentWidth.current - PIP_MARGIN);
+    const maxY = Math.max(50, winH - currentHeight.current - 50);
+    const x = Math.min(Math.max(PIP_MARGIN, currentPos.current.x), maxX);
+    const y = Math.min(Math.max(50, currentPos.current.y), maxY);
+    if (x !== currentPos.current.x || y !== currentPos.current.y) {
+      pan.setValue({ x, y });
+      currentPos.current = { x, y };
+    }
+  }, [winW, winH, pan]);
 
   // Track position
   useEffect(() => {
@@ -834,12 +946,12 @@ const PipBubble = React.memo(({
       ),
       onPanResponderRelease: (_, gesture) => {
         pan.flattenOffset();
-        const snapX = gesture.moveX > SCREEN_WIDTH / 2
-          ? SCREEN_WIDTH - currentWidth.current - PIP_MARGIN
+        const snapX = gesture.moveX > win.current.w / 2
+          ? win.current.w - currentWidth.current - PIP_MARGIN
           : PIP_MARGIN;
         const boundedY = Math.max(
           50,
-          Math.min(SCREEN_HEIGHT - currentHeight.current - 50, gesture.moveY - currentHeight.current / 2)
+          Math.min(win.current.h - currentHeight.current - 50, gesture.moveY - currentHeight.current / 2)
         );
 
         Animated.parallel([
@@ -862,7 +974,7 @@ const PipBubble = React.memo(({
   ).current;
 
   // Google Meet Style Exclusive Corner Drag-to-Resize PanResponder
-  const startDim = useRef({ w: PIP_SIZES.normal.width, h: PIP_SIZES.normal.height, x: initialX, y: initialY });
+  const startDim = useRef({ w: baseW, h: baseH, x: initialX, y: initialY });
   const resizePanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponderCapture: () => true,
@@ -872,7 +984,7 @@ const PipBubble = React.memo(({
         isResizing.current = true;
         const curX = currentPos.current.x;
         const curY = currentPos.current.y;
-        isDockedOnRight.current = curX > SCREEN_WIDTH / 2;
+        isDockedOnRight.current = curX > win.current.w / 2;
         startDim.current = {
           w: currentWidth.current,
           h: currentHeight.current,
@@ -888,7 +1000,7 @@ const PipBubble = React.memo(({
       onPanResponderMove: (_, gesture) => {
         // Dragging diagonally expands or shrinks proportionally
         const delta = Math.max(gesture.dx, gesture.dy);
-        const newW = Math.max(130, Math.min(275, startDim.current.w + delta));
+        const newW = Math.max(130 * win.current.k, Math.min(275 * win.current.k, startDim.current.w + delta));
         const newH = Math.round(newW * 1.22);
 
         animWidth.setValue(newW);
@@ -896,21 +1008,21 @@ const PipBubble = React.memo(({
         currentWidth.current = newW;
         currentHeight.current = newH;
 
-        if (newW < 160) setSizeMode('compact');
-        else if (newW > 215) setSizeMode('large');
+        if (newW / win.current.k < 160) setSizeMode('compact');
+        else if (newW / win.current.k > 215) setSizeMode('large');
         else setSizeMode('normal');
 
         // Prevent off-screen clipping when anchored to right edge
         if (isDockedOnRight.current) {
           const rightEdge = startDim.current.x + startDim.current.w;
-          const adjustedX = Math.max(PIP_MARGIN, Math.min(SCREEN_WIDTH - newW - PIP_MARGIN, rightEdge - newW));
+          const adjustedX = Math.max(PIP_MARGIN, Math.min(win.current.w - newW - PIP_MARGIN, rightEdge - newW));
           pan.x.setValue(adjustedX);
           currentPos.current.x = adjustedX;
         }
 
         // Prevent bottom clipping
-        if (startDim.current.y + newH > SCREEN_HEIGHT - 60) {
-          const adjustedY = Math.max(50, SCREEN_HEIGHT - 60 - newH);
+        if (startDim.current.y + newH > win.current.h - 60) {
+          const adjustedY = Math.max(50, win.current.h - 60 - newH);
           pan.y.setValue(adjustedY);
           currentPos.current.y = adjustedY;
         }
@@ -924,7 +1036,7 @@ const PipBubble = React.memo(({
         }).start();
 
         const delta = Math.max(gesture.dx, gesture.dy);
-        const finalW = Math.max(130, Math.min(275, startDim.current.w + delta));
+        const finalW = Math.max(130 * win.current.k, Math.min(275 * win.current.k, startDim.current.w + delta));
         const finalH = Math.round(finalW * 1.22);
         currentWidth.current = finalW;
         currentHeight.current = finalH;
@@ -1007,7 +1119,9 @@ const PipBubble = React.memo(({
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors, isDark: boolean) => {
+  const d = (dark: string, light: string) => (isDark ? dark : light);
+  return StyleSheet.create({
   pipDraggableWrap: {
     position: 'absolute',
     top: 0,
@@ -1017,9 +1131,9 @@ const styles = StyleSheet.create({
   },
   pipCard: {
     borderRadius: 20,
-    backgroundColor: '#0D111D',
+    backgroundColor: d('#0D111D', c.bgCard),
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderColor: d('rgba(255, 255, 255, 0.14)', c.border),
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.65,
@@ -1043,12 +1157,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: d('rgba(255, 255, 255, 0.08)', c.chipBg),
     paddingHorizontal: 8,
     paddingVertical: 2.5,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: d('rgba(255, 255, 255, 0.1)', c.border),
   },
   pipCornerResizeHandle: {
     position: 'absolute',
@@ -1090,7 +1204,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 1.8,
     borderRadius: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    backgroundColor: d('rgba(255, 255, 255, 0.7)', 'rgba(15, 23, 42, 0.45)'),
     transform: [{ rotate: '-45deg' }],
   },
   pipResizeGripBar3: {
@@ -1100,7 +1214,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 1.5,
     borderRadius: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: d('rgba(255, 255, 255, 0.4)', 'rgba(15, 23, 42, 0.25)'),
     transform: [{ rotate: '-45deg' }],
   },
   pipLiveDot: {
@@ -1111,7 +1225,7 @@ const styles = StyleSheet.create({
   },
   pipTimer: {
     color: EMERALD,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
@@ -1142,17 +1256,17 @@ const styles = StyleSheet.create({
   pipAvatarInner: {
     flex: 1,
     borderRadius: 22,
-    backgroundColor: '#1E1E24',
+    backgroundColor: c.chipBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pipAvatarText: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   pipName: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
@@ -1166,9 +1280,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: d('rgba(255, 255, 255, 0.06)', c.chipBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: d('rgba(255, 255, 255, 0.1)', c.border),
   },
   pipStatusPillSpeaking: {
     backgroundColor: 'rgba(16, 185, 129, 0.12)',
@@ -1180,8 +1294,8 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   pipStatusText: {
-    color: '#94A3B8',
-    fontSize: 8,
+    color: c.textSecondary,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -1198,11 +1312,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 75, 51, 0.3)',
   },
   pipRingingText: {
-    color: '#FDBA74',
-    fontSize: 8,
+    color: d('#FDBA74', '#C2410C'),
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
-    textTransform: 'uppercase',
   },
   pipActionsRow: {
     flexDirection: 'row',
@@ -1211,15 +1324,15 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: c.divider,
   },
   pipActionBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: d('rgba(255, 255, 255, 0.08)', c.chipBg),
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: d('rgba(255, 255, 255, 0.12)', c.border),
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1243,7 +1356,7 @@ const styles = StyleSheet.create({
   // Native OS PiP Full-window Styles
   nativePipFullScreen: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#0D111D',
+    backgroundColor: d('#0D111D', c.bgCard),
     zIndex: 99999999,
     elevation: 99999999,
     justifyContent: 'center',
@@ -1253,7 +1366,7 @@ const styles = StyleSheet.create({
   nativePipCardInner: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#0D111D',
+    backgroundColor: d('#0D111D', c.bgCard),
     padding: 8,
     justifyContent: 'space-between',
     overflow: 'hidden',
@@ -1271,10 +1384,10 @@ const styles = StyleSheet.create({
   incomingBannerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151C26',
+    backgroundColor: c.bgCard,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: d('rgba(255, 255, 255, 0.15)', c.border),
     padding: 12,
     gap: 12,
     shadowColor: '#000000',
@@ -1287,7 +1400,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#1E293B',
+    backgroundColor: c.chipBg,
     borderWidth: 1.5,
     borderColor: ORANGE,
     justifyContent: 'center',
@@ -1299,19 +1412,19 @@ const styles = StyleSheet.create({
     height: 44,
   },
   incomingAvatarInitial: {
-    color: '#FFFFFF',
+    color: c.textPrimary,
     fontSize: 18,
     fontWeight: '700',
   },
   incomingBannerName: {
-    color: '#F8FAFC',
+    color: c.textPrimary,
     fontSize: 14,
     fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   incomingBannerType: {
     color: EMERALD,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
   },
@@ -1423,10 +1536,17 @@ const styles = StyleSheet.create({
   },
   incomingBtnLabel: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     marginTop: 4,
   },
-});
+  });
+};
+
+/** Theme-aware styles for the call overlays (rebuilt only when the theme changes). */
+const useCallStyles = () => {
+  const { themeColors, isDark } = useUserSettings();
+  return useMemo(() => makeStyles(themeColors, isDark), [themeColors, isDark]);
+};
 
 export default GlobalCallPipOverlay;

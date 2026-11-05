@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext';
+import { toast } from '@/hooks/use-toast';
+import { canStartCalls, FAN_CALL_TOOLTIP } from '@/lib/calls/fanCallRule';
 import { supabase } from '@/integrations/supabase/client';
 import { postCallSystemMessage, sendCallNotifications, formatCallDuration } from '@/lib/calls/callSystemMessages';
+import { fetchCallToken, callParticipantName, warmCallService } from '@/lib/calls/callToken';
 
 interface CallState {
   isActive: boolean;
@@ -27,6 +30,8 @@ interface CallContextType {
   startCall: (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role?: string, options?: StartCallOptions) => Promise<boolean>;
   joinCall: (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role?: string) => Promise<boolean>;
   leaveCall: () => void;
+  /** The call screen tells us when the other person actually joined (so a hang-up before that is recorded as a missed call). */
+  markCallAnswered: () => void;
   toggleMinimize: (minimized?: boolean) => void;
   togglePipHidden: (hidden?: boolean) => void;
   reconcileCall: (roomType: 'discussion' | 'project' | 'direct', roomId: string) => Promise<{ canJoin: boolean; status: string; connectionId?: string }>;
@@ -37,7 +42,8 @@ interface CallContextType {
 const CallContext = createContext<CallContextType | undefined>(undefined);
 
 export const CallProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  useEffect(() => { if (user?.id) warmCallService(); }, [user?.id]);
   const [callState, setCallState] = useState<CallState>({
     isActive: false,
     roomId: null,
@@ -65,6 +71,8 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const callStartTimeRef = useRef<number | null>(null);
+  const callerRef = useRef(false);   // this person started the call
+  const answeredRef = useRef(false); // the other person joined
 
   // Call Session Restoration
   useEffect(() => {
@@ -78,6 +86,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
             const check = await reconcileCall(session.roomType, session.roomId);
             if (check.canJoin) {
               console.log('🔄 [PROCESS RECOVERY] Restoring active call session:', session);
+              callerRef.current = false; answeredRef.current = true;
               setCallState({
                 isActive: true,
                 roomId: session.roomId,
@@ -100,6 +109,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     restoreSession();
   }, [user?.id]);
 
+  const wasActiveRef = useRef(false);
   // Persist or clear active call session in storage
   useEffect(() => {
     if (callState.isActive && callState.roomId && callState.roomType) {
@@ -115,7 +125,11 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
           })
         );
       }
-    } else if (!callState.isActive) {
+      wasActiveRef.current = true;
+    } else if (!callState.isActive && wasActiveRef.current) {
+      // only clear after a call really ran in this page. On a fresh page load callState starts inactive, and clearing then wiped the saved
+      // call before the sign-in finished, so a reload could never put the person back into their call.
+      wasActiveRef.current = false;
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('active_call_session');
       }
@@ -229,7 +243,9 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
 
       const durationMs = callStartTimeRef.current ? Date.now() - callStartTimeRef.current : 0;
       const formattedDuration = formatCallDuration(durationMs);
-      postCallSystemMessage(activeRoomType, activeRoomId, 'ended', formattedDuration, user.id);
+      // nobody ever joined this call (caller hung up, the person declined, or never picked up): a missed call, not a call with a duration
+      const missed = activeRoomType === 'direct' && callerRef.current && !answeredRef.current;
+      postCallSystemMessage(activeRoomType, activeRoomId, missed ? 'missed' : 'ended', missed ? undefined : formattedDuration, user.id);
 
       // Broadcast call_ended so partner ends call automatically (cellular style)
       try {
@@ -278,6 +294,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
 
     let connectionId = roomId;
     let callJoined = false;
+    const participantName = callParticipantName(profile, { id: currentUserId, email: user?.email });
     let joinedMode: 'call' | 'audio_space' = 'call';
     let joinedSpeaking: 'open' | 'request' = 'request';
 
@@ -291,6 +308,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       if (!answerError && answerResult && answerResult.success) {
         connectionId = answerResult?.connection_id || roomId;
         callJoined = true;
+        fetchCallToken(connectionId, participantName).catch(() => {});
         joinedMode = answerResult?.call_mode === 'audio_space' ? 'audio_space' : 'call';
         joinedSpeaking = answerResult?.speaking_mode === 'open' ? 'open' : 'request';
 
@@ -342,6 +360,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
+    callerRef.current = false; answeredRef.current = true;
     callStartTimeRef.current = Date.now();
 
     // Launch UI with validated connectionId
@@ -363,6 +382,11 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
 
   const startCall = async (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role: string = 'member', options?: StartCallOptions) => {
     if (!user) return false;
+    // Fans can answer and join calls but not start them (the database enforces this too, part GG).
+    if (!canStartCalls(profile?.account_type)) {
+      toast({ title: FAN_CALL_TOOLTIP });
+      return false;
+    }
 
     try {
       // 1. Generate unique connection ID
@@ -426,6 +450,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
             .single();
 
           if (!insertError && newCall) {
+            callStarted = true;
             await supabase
               .from('call_participants' as any)
               .upsert([{
@@ -440,6 +465,16 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
 
+      // Neither the database function nor the fallback created the call (for example the person blocked you, or you are not in this chat):
+      // do not open a call screen and do not ring anybody.
+      if (!callStarted) {
+        console.warn('[startCall] The call could not be created, not ringing.');
+        return false;
+      }
+
+      // the call screen needs a token; ask for it now so it is ready when the screen opens
+      fetchCallToken(connectionId, callParticipantName(profile, user)).catch(() => {});
+
       // 3. Post start system message in chat
       const kind = options?.mode === 'audio_space' ? 'space' : 'call';
       postCallSystemMessage(roomType, roomId, 'started', undefined, user.id, kind);
@@ -448,6 +483,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       sendCallNotifications(roomType, roomId, roomName, user.id, kind);
 
       // 5. Launch Live UI
+      callerRef.current = true; answeredRef.current = false;
       callStartTimeRef.current = Date.now();
 
       setCallState({
@@ -471,7 +507,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <CallContext.Provider value={{ callState, startCall, joinCall, leaveCall, toggleMinimize, togglePipHidden, reconcileCall, findActiveCall }}>
+    <CallContext.Provider value={{ callState, startCall, joinCall, leaveCall, markCallAnswered: () => { answeredRef.current = true; }, toggleMinimize, togglePipHidden, reconcileCall, findActiveCall }}>
       {children}
     </CallContext.Provider>
   );

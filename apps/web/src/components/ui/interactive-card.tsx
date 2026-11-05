@@ -20,10 +20,10 @@ export function InteractiveCard({
   variant = "default"
 }: InteractiveCardProps) {
   const variants = {
-    default: "transition-all duration-300 hover:shadow-lg hover:-translate-y-1",
-    "hover-lift": "transition-all duration-300 hover:shadow-xl hover:-translate-y-2 hover:scale-[1.02]",
-    glow: "transition-all duration-300 hover:shadow-2xl hover:shadow-primary/20 hover:-translate-y-1",
-    gradient: "bg-gradient-to-br from-card via-card to-primary/5 transition-all duration-300 hover:from-primary/5 hover:to-primary/10 hover:-translate-y-1"
+    default: "transition duration-300 hover:shadow-lg hover:-translate-y-1",
+    "hover-lift": "transition duration-300 hover:shadow-xl hover:-translate-y-1 hover:scale-[1.02]",
+    glow: "transition duration-300 hover:shadow-2xl hover:shadow-primary/20 hover:-translate-y-1",
+    gradient: "bg-gradient-to-br from-card via-card to-primary/5 transition duration-300 hover:from-primary/5 hover:to-primary/10 hover:-translate-y-1"
   };
   
   return (

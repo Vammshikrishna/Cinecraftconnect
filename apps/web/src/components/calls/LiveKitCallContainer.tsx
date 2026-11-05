@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useMemo, type CSSProperties } from 'react';
 import { useGlobalCall } from '@/contexts/CallContext';
 import { useLocation } from 'react-router-dom';
 import {
@@ -33,12 +33,106 @@ import { useToast } from '@/hooks/use-toast';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { fetchCallToken, callParticipantName } from '@/lib/calls/callToken';
 
 // A discussion room page can be opened as /discussion-rooms/:id or /discussions/:id (both routes exist). The inline
 // call placement only recognised the first, so on the second the call covered the whole screen instead of sitting
 // next to the chat.
 const isDiscussionPath = (p: string) => p.startsWith('/discussion-rooms') || p.startsWith('/discussions');
 const isProjectSpacePath = (p: string) => p.includes('/projects/');
+
+/**
+ * What the browser's Picture-in-Picture window shows (same idea as the phone app's PiP): only the call. The person who
+ * is talking fills the window (their video, or their initial), with the time top left, their name bottom left and your own
+ * camera bottom right. The buttons (mic, camera, end, back to the page) appear on hover, like Google Meet.
+ */
+const DocumentPipView = ({
+  tracks,
+  participants,
+  roomName,
+  duration,
+  connected,
+  onLeave,
+  onBack,
+}: {
+  tracks: any[];
+  participants: any[];
+  roomName?: string;
+  duration: string;
+  connected: boolean;
+  onLeave: () => void;
+  onBack: () => void;
+}) => {
+  const remote = participants.filter((p) => !p.isLocal);
+  const main = remote.find((p) => p.isSpeaking) || remote[0] || participants[0];
+  const me = participants.find((p) => p.isLocal);
+  const sharer = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication?.track);
+  const camOf = (id?: string) =>
+    tracks.find((t) => t.source === Track.Source.Camera && t.participant?.identity === id && t.publication?.track && !t.publication?.isMuted);
+  const mainTrack = sharer || camOf(main?.identity);
+  const myTrack = main && me && main.identity !== me.identity ? camOf(me.identity) : undefined;
+  const mainName = (main?.name || main?.identity || roomName || 'Call').replace(/_/g, ' ');
+  const speaking = !!main?.isSpeaking;
+
+  return (
+    <div className="group relative h-screen w-screen overflow-hidden bg-[#0f0f12] text-white font-sans select-none">
+      {mainTrack ? (
+        <VideoTrack trackRef={mainTrack} className="h-full w-full object-cover" style={{ objectFit: sharer ? 'contain' : 'cover' }} />
+      ) : (
+        <div className="h-full w-full flex items-center justify-center">
+          <div className={cn(
+            'h-24 w-24 rounded-full bg-primary/25 border-2 flex items-center justify-center text-4xl font-bold',
+            speaking ? 'border-emerald-400' : 'border-white/15'
+          )}>
+            {mainName[0]?.toUpperCase()}
+          </div>
+        </div>
+      )}
+
+      {/* time, top left */}
+      <div className="absolute top-2 left-2 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs font-bold">
+        <span className={cn('h-1.5 w-1.5 rounded-full', connected ? 'bg-emerald-400' : 'bg-orange-400 animate-pulse')} />
+        {connected ? duration : 'Ringing…'}
+      </div>
+
+      {/* name, bottom left */}
+      <div className="absolute bottom-2 left-2 max-w-[60%] flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-xs font-bold">
+        {main && !main.isMicrophoneEnabled ? <MicOff className="h-3 w-3 text-red-400 shrink-0" /> : null}
+        <span className="truncate">{mainName}</span>
+      </div>
+
+      {/* your own camera, bottom right */}
+      {myTrack ? (
+        <div className="absolute bottom-2 right-2 h-24 w-[72px] overflow-hidden rounded-lg border border-white/40 shadow-lg">
+          <VideoTrack trackRef={myTrack} className="h-full w-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+        </div>
+      ) : null}
+
+      {/* controls, on hover */}
+      <div className="absolute inset-x-0 bottom-0 flex justify-center pb-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100 bg-gradient-to-t from-black/70 to-transparent pt-10">
+        <div className="flex items-center gap-2 rounded-full bg-black/70 px-2.5 py-1.5 border border-white/15">
+          <TrackToggle source={Track.Source.Microphone} showIcon className="ctrl-action-btn !h-9 !w-9 !min-h-0 !min-w-0" />
+          <TrackToggle source={Track.Source.Camera} showIcon className="ctrl-action-btn !h-9 !w-9 !min-h-0 !min-w-0" />
+          <button
+            onClick={onLeave}
+            title="End call"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white shadow-[0_0_14px_rgba(239,68,68,0.5)] hover:bg-red-700 transition"
+          >
+            <PhoneOff className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onBack}
+            title="Back to the call"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25 transition"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface LiveKitCallContainerProps {
   roomId: string;
@@ -147,8 +241,6 @@ const useParticipantAvatar = (identity?: string, name?: string) => {
 
 // Tier-1 Custom Participant Tile with Full Dark & Light Mode Theme Support & Jitter-Free Glow
 const CustomParticipantTile = ({ trackRef }: { trackRef?: any }) => {
-  const { theme } = useTheme();
-  const isDark = theme !== 'light';
   const participant = trackRef?.participant;
   const isScreenShare = trackRef?.source === Track.Source.ScreenShare;
   
@@ -167,15 +259,13 @@ const CustomParticipantTile = ({ trackRef }: { trackRef?: any }) => {
 
   return (
     <div className={cn(
-      "relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden flex items-center justify-center transition-all duration-300 ease-out select-none border",
-      isDark ? "bg-gradient-to-b from-[#1d1d24] to-[#111115]" : "bg-gradient-to-b from-white to-slate-100",
+      "relative w-full h-full rounded-2xl sm:rounded-3xl overflow-hidden flex items-center justify-center transition duration-300 ease-out select-none border",
+      "bg-card",
       isScreenShare 
         ? "bg-black border-white/20 shadow-2xl" 
         : isSpeaking 
           ? "border-emerald-500 ring-4 ring-emerald-400/50 shadow-[0_0_40px_rgba(16,185,129,0.7),inset_0_0_15px_rgba(16,185,129,0.2)]" 
-          : isDark
-            ? "border-white/10 shadow-[0_15px_35px_rgba(0,0,0,0.6)]"
-            : "border-slate-200/80 shadow-[0_10px_25px_rgba(0,0,0,0.06)]"
+          : "border-border shadow-[0_10px_25px_rgba(0,0,0,0.06)] dark:shadow-[0_15px_35px_rgba(0,0,0,0.6)]"
     )}>
       {/* Video Stream / Screen Share Render */}
       {isScreenShare ? (
@@ -213,13 +303,13 @@ const CustomParticipantTile = ({ trackRef }: { trackRef?: any }) => {
         <div className="relative flex flex-col items-center justify-center p-3 sm:p-6 text-center z-10">
           {/* Smooth Jitter-Free Concentric Ambient Voice Rings */}
           <div className={cn(
-            "absolute rounded-full transition-all duration-700 ease-out pointer-events-none",
+            "absolute rounded-full transition duration-700 ease-out pointer-events-none",
             isSpeaking 
               ? "w-32 h-32 sm:w-48 sm:h-48 bg-emerald-500/15 border border-emerald-400/30 scale-100 opacity-100" 
               : "w-20 h-20 sm:w-36 sm:h-36 scale-75 opacity-0"
           )} />
           <div className={cn(
-            "absolute rounded-full transition-all duration-1000 ease-out pointer-events-none delay-100",
+            "absolute rounded-full transition duration-1000 ease-out pointer-events-none delay-100",
             isSpeaking 
               ? "w-44 h-44 sm:w-64 sm:h-64 bg-emerald-500/10 border border-emerald-400/20 scale-100 opacity-100" 
               : "w-20 h-20 sm:w-36 sm:h-36 scale-75 opacity-0"
@@ -227,12 +317,10 @@ const CustomParticipantTile = ({ trackRef }: { trackRef?: any }) => {
 
           {/* Avatar Disc - Profile Photo with fallback to Initial */}
           <div className={cn(
-            "relative w-20 h-20 sm:w-32 sm:h-32 rounded-full flex items-center justify-center transition-all duration-500 ease-out shadow-2xl p-1 overflow-hidden",
+            "relative w-20 h-20 sm:w-32 sm:h-32 rounded-full flex items-center justify-center transition duration-500 ease-out shadow-2xl p-1 overflow-hidden",
             isSpeaking
               ? "bg-gradient-to-tr from-emerald-500 to-teal-400 ring-4 ring-emerald-400/60 shadow-[0_0_35px_rgba(16,185,129,0.6)] scale-105"
-              : isDark
-                ? "bg-gradient-to-tr from-primary/30 to-orange-500/20 border-2 border-white/15"
-                : "bg-gradient-to-tr from-primary/20 to-orange-400/20 border-2 border-slate-300"
+              : "bg-gradient-to-tr from-primary/20 to-orange-400/20 border-2 border-border"
           )}>
             {avatarUrl ? (
               <img loading="lazy" decoding="async" 
@@ -243,7 +331,7 @@ const CustomParticipantTile = ({ trackRef }: { trackRef?: any }) => {
             ) : (
               <div className={cn(
                 "w-full h-full rounded-full flex items-center justify-center text-2xl sm:text-4xl font-black uppercase tracking-wider",
-                isDark ? "bg-[#18181c] text-white" : "bg-white text-slate-800 shadow-inner"
+                "bg-card text-foreground shadow-inner"
               )}>
                 {initial}
               </div>
@@ -255,16 +343,16 @@ const CustomParticipantTile = ({ trackRef }: { trackRef?: any }) => {
       {/* Bottom Floating Info Pill */}
       <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none z-20">
         <div className={cn(
-          "flex items-center gap-1 px-2 py-0.5 rounded-full backdrop-blur-xl border shadow-sm max-w-full transition-all",
-          isScreenShare
-            ? "bg-black/85 border-blue-500/40 text-blue-300"
-            : isSpeaking 
-              ? isDark
-                ? "bg-black/85 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.4)] text-emerald-400" 
-                : "bg-white/95 border-emerald-500/60 shadow-[0_0_15px_rgba(16,185,129,0.3)] text-emerald-700"
-              : isDark
-                ? "bg-black/75 border-white/15 text-white"
-                : "bg-white/95 border-slate-200 text-slate-800 shadow-sm"
+          "flex items-center gap-1 px-2 py-0.5 rounded-full border shadow-sm max-w-full transition-[background-color,border-color,color,box-shadow]",
+          isScreenShare || isCameraEnabled
+            ? isScreenShare
+              ? "bg-black/85 border-blue-500/40 text-blue-300"
+              : isSpeaking
+                ? "bg-black/85 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.4)] text-emerald-400"
+                : "bg-black/75 border-white/15 text-white"
+            : isSpeaking
+              ? "bg-background/90 border-emerald-500/60 shadow-[0_0_15px_rgba(16,185,129,0.3)] text-emerald-600 dark:text-emerald-400"
+              : "bg-background/90 border-border text-foreground shadow-sm"
         )}>
           {isScreenShare ? (
             <Radio className="w-3 h-3 text-blue-400 shrink-0 animate-pulse" />
@@ -279,7 +367,7 @@ const CustomParticipantTile = ({ trackRef }: { trackRef?: any }) => {
           ) : (
             <Mic className="w-3 h-3 text-emerald-400 shrink-0" />
           )}
-          <span className="text-[10px] sm:text-xs font-bold truncate">
+          <span className="text-[12px] sm:text-xs font-bold truncate">
             {isScreenShare ? `${displayName}'s screen` : displayName}
           </span>
         </div>
@@ -330,6 +418,8 @@ const CallImplementation = ({
   const [showReactions, setShowReactions] = useState(false);
   const [showMoreReactions, setShowMoreReactions] = useState(false);
   const [showPipControls, setShowPipControls] = useState(false);
+  // the browser's own always-on-top Picture-in-Picture window (Document PiP), drawn live with React
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
   const [floatingEmojis, setFloatingEmojis] = useState<{ id: number, emoji: string, x: number }[]>([]);
   const { toast } = useToast();
   const { user, profile } = useAuth();
@@ -337,7 +427,7 @@ const CallImplementation = ({
   const room = useRoomContext();
 
   const { theme } = useTheme();
-  const isDark = theme !== 'light';
+  const isDark = typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : theme !== 'light';
 
   // Listen for LiveKit Data Messages (Emoji reactions from peers)
   useEffect(() => {
@@ -442,6 +532,14 @@ const CallImplementation = ({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      try {
+        pipWindow?.close();
+      } catch (e) {}
+    };
+  }, [pipWindow]);
+
   // Dedicated Picture-in-Picture trigger (Supports native Browser PiP, Document PiP, and In-App Floating PiP)
   const handleEnterPiP = async () => {
     // 1. Android Capacitor Native System PiP
@@ -452,12 +550,17 @@ const CallImplementation = ({
       }
     } catch (e) {}
 
-    // 2. Try Modern Document Picture-in-Picture (Chrome 116+ / Google Meet standard)
+    // 2. Modern Document Picture-in-Picture (Chrome 116+, the same window Google Meet uses). The window is drawn live with
+    //    React (see DocumentPipView) so the picture, the timer and the buttons always show the current call.
     if ('documentPictureInPicture' in window) {
       try {
-        const pipWindow = await (window as any).documentPictureInPicture.requestWindow({
-          width: 360,
-          height: 240,
+        if (pipWindow) {
+          pipWindow.close();
+          return;
+        }
+        const win = await (window as any).documentPictureInPicture.requestWindow({
+          width: 400,
+          height: 260,
         });
 
         // Copy all styles to PiP window
@@ -466,7 +569,7 @@ const CallImplementation = ({
             const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
             const style = document.createElement('style');
             style.textContent = cssRules;
-            pipWindow.document.head.appendChild(style);
+            win.document.head.appendChild(style);
           } catch (e) {
             const link = document.createElement('link');
             if (styleSheet.href) {
@@ -474,103 +577,15 @@ const CallImplementation = ({
               link.type = styleSheet.type;
               link.media = (styleSheet.media as any)?.mediaText || '';
               link.href = styleSheet.href;
-              pipWindow.document.head.appendChild(link);
+              win.document.head.appendChild(link);
             }
           }
         });
-
-        // Mount PiP root container
-        const container = document.createElement('div');
-        container.style.width = '100vw';
-        container.style.height = '100vh';
-        container.style.background = isDark ? '#0f0f12' : '#f8fafc';
-        container.style.color = isDark ? '#ffffff' : '#0f172a';
-        container.style.display = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.overflow = 'hidden';
-        container.style.fontFamily = 'system-ui, sans-serif';
-
-        // Header
-        const header = document.createElement('div');
-        header.style.padding = '8px 12px';
-        header.style.display = 'flex';
-        header.style.alignItems = 'center';
-        header.style.justifyContent = 'space-between';
-        header.style.background = isDark ? '#18181c' : '#ffffff';
-        header.style.borderBottom = isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0';
-        header.innerHTML = `
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div style="width:8px;height:8px;border-radius:9999px;background:#10b981;"></div>
-            <span style="font-weight:bold;font-size:12px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${roomName || 'CineCraft Call'}</span>
-          </div>
-          <span style="font-family:monospace;font-size:11px;color:#10b981;font-weight:bold;">${formattedDuration}</span>
-        `;
-        container.appendChild(header);
-
-        // Body with Video
-        const body = document.createElement('div');
-        body.style.flex = '1';
-        body.style.display = 'flex';
-        body.style.alignItems = 'center';
-        body.style.justifyContent = 'center';
-        body.style.position = 'relative';
-        body.style.background = '#000000';
-        body.style.overflow = 'hidden';
-
-        // Find primary active video
-        const activeVideo = document.querySelector('video') as HTMLVideoElement | null;
-        if (activeVideo && activeVideo.srcObject) {
-          const pipVideo = document.createElement('video');
-          pipVideo.srcObject = activeVideo.srcObject;
-          pipVideo.autoplay = true;
-          pipVideo.playsInline = true;
-          pipVideo.muted = true;
-          pipVideo.style.width = '100%';
-          pipVideo.style.height = '100%';
-          pipVideo.style.objectFit = 'contain';
-          body.appendChild(pipVideo);
-          pipVideo.play().catch(() => {});
-        } else {
-          body.innerHTML = `
-            <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-              <div style="width:56px;height:56px;border-radius:9999px;background:#ff6b00;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;">
-                ${(roomName || 'C')[0].toUpperCase()}
-              </div>
-              <span style="font-size:11px;color:#94a3b8;font-weight:600;">Active Audio Call</span>
-            </div>
-          `;
-        }
-        container.appendChild(body);
-
-        // Footer with Hangup button
-        const footer = document.createElement('div');
-        footer.style.padding = '8px';
-        footer.style.display = 'flex';
-        footer.style.alignItems = 'center';
-        footer.style.justifyContent = 'center';
-        footer.style.gap = '12px';
-        footer.style.background = isDark ? '#18181c' : '#ffffff';
-        footer.style.borderTop = isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid #e2e8f0';
-
-        const endBtn = document.createElement('button');
-        endBtn.innerHTML = 'End Call';
-        endBtn.style.padding = '4px 16px';
-        endBtn.style.borderRadius = '9999px';
-        endBtn.style.background = '#ef4444';
-        endBtn.style.color = '#ffffff';
-        endBtn.style.border = 'none';
-        endBtn.style.fontWeight = 'bold';
-        endBtn.style.fontSize = '11px';
-        endBtn.style.cursor = 'pointer';
-        endBtn.onclick = () => {
-          pipWindow.close();
-          onLeave();
-        };
-        footer.appendChild(endBtn);
-        container.appendChild(footer);
-
-        pipWindow.document.body.style.margin = '0';
-        pipWindow.document.body.appendChild(container);
+        win.document.documentElement.classList.toggle('dark', isDark);
+        win.document.body.style.margin = '0';
+        win.document.body.style.background = '#0f0f12';
+        win.addEventListener('pagehide', () => setPipWindow(null));
+        setPipWindow(win);
         return;
       } catch (e) {
         console.warn('Document PiP skipped:', e);
@@ -693,22 +708,29 @@ const CallImplementation = ({
 
   // Automatic Cellular-Style Hangup: When partner leaves a 1-on-1 call, end the call automatically
   const wasConnectedRef = useRef(false);
+  const { markCallAnswered } = useGlobalCall();
+  // The other person dropped without hanging up (page reload, a few seconds without network): give them time to come back before the
+  // call ends. An explicit hang-up still ends the call at once (the call_ended broadcast below).
+  const [partnerReconnecting, setPartnerReconnecting] = useState(false);
+  const RECONNECT_GRACE_MS = 20000;
   useEffect(() => {
     if (participants.length > 1) {
       if (!wasConnectedRef.current) {
         callAudio.playJoinChime();
       }
       wasConnectedRef.current = true;
-    } else if (wasConnectedRef.current && participants.length <= 1) {
-      // In direct 1-on-1 calls, if the other user hangs up, automatically end the call for this user
-      if (roomType === 'direct' || !roomType) {
-        console.log('📞 Partner hung up. Auto-ending call session.');
+      markCallAnswered();
+      setPartnerReconnecting(false);
+      return;
+    }
+    if (wasConnectedRef.current && participants.length <= 1 && (roomType === 'direct' || !roomType)) {
+      setPartnerReconnecting(true);
+      const t = setTimeout(() => {
+        console.log('📞 Partner did not come back within the grace period. Ending call.');
         callAudio.playDisconnectChime();
-        const t = setTimeout(() => {
-          onLeave();
-        }, 600);
-        return () => clearTimeout(t);
-      }
+        onLeave();
+      }, RECONNECT_GRACE_MS);
+      return () => clearTimeout(t);
     }
   }, [participants.length, roomType, onLeave]);
 
@@ -746,11 +768,15 @@ const CallImplementation = ({
   // Real-time broadcast listener for Call Declined, Call Cancelled, and Call Ended
   useEffect(() => {
     const cleanId = (roomId || '').replace(/^CineCraft_(project|discussion|direct)_/, '').split('_')[0];
+    // The channel is open to every signed-in person, so an event only counts when it names THIS call's full room id
+    // (a short or partial id used to match almost any call and could hang up other people's calls).
+    const sameCallRoom = (pRoom: string) =>
+      typeof pRoom === 'string' && pRoom.length >= 20 && (pRoom === roomId || pRoom === cleanId || (roomId || '').includes(pRoom));
     const channel = supabase.channel('global-call-invites-broadcast');
 
     channel.on('broadcast', { event: 'call_declined' }, ({ payload }) => {
       const pRoom = payload?.roomId || '';
-      if (pRoom && (pRoom === roomId || pRoom === cleanId || roomId?.includes(pRoom))) {
+      if (sameCallRoom(pRoom)) {
         callAudio.playBusySignal();
         toast({
           title: "Call Declined 📞",
@@ -765,7 +791,7 @@ const CallImplementation = ({
 
     channel.on('broadcast', { event: 'call_cancelled' }, ({ payload }) => {
       const pRoom = payload?.roomId || '';
-      if (pRoom && (pRoom === roomId || pRoom === cleanId || roomId?.includes(pRoom))) {
+      if (sameCallRoom(pRoom)) {
         callAudio.playDisconnectChime();
         toast({
           title: "Call Ended 📞",
@@ -779,7 +805,7 @@ const CallImplementation = ({
 
     channel.on('broadcast', { event: 'call_ended' }, ({ payload }) => {
       const pRoom = payload?.roomId || '';
-      if (pRoom && (pRoom === roomId || pRoom === cleanId || roomId?.includes(pRoom))) {
+      if (sameCallRoom(pRoom)) {
         callAudio.playDisconnectChime();
         setTimeout(() => {
           onLeave();
@@ -1090,6 +1116,29 @@ const CallImplementation = ({
     [tracks]
   );
 
+  const pipPortal = pipWindow
+    ? createPortal(
+        <DocumentPipView
+          tracks={tracks}
+          participants={participants}
+          roomName={roomName}
+          duration={formattedDuration}
+          connected={isCallConnected}
+          onLeave={() => {
+            pipWindow.close();
+            onLeave();
+          }}
+          onBack={() => {
+            pipWindow.close();
+            try {
+              window.focus();
+            } catch (e) {}
+          }}
+        />,
+        pipWindow.document.body
+      )
+    : null;
+
   if (isMinimized) {
     return (
       <div 
@@ -1099,6 +1148,7 @@ const CallImplementation = ({
           setShowPipControls(!showPipControls);
         }}
       >
+        {pipPortal}
         {/* Full-bleed Video Background */}
         <div className="absolute inset-0 z-0">
           {tracks.length > 0 ? (
@@ -1111,7 +1161,7 @@ const CallImplementation = ({
                 {participants.slice(0, 3).map((p) => {
                   const name = (p.name || p.identity || '?').replace(/_/g, ' ');
                   return (
-                    <div key={p.sid} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary/20 border-2 border-white/10 flex items-center justify-center text-xs sm:text-sm font-bold text-white backdrop-blur-md shadow-2xl">
+                    <div key={p.sid} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary/20 border-2 border-white/10 flex items-center justify-center text-xs sm:text-sm font-bold text-white shadow-2xl">
                       {name[0].toUpperCase()}
                     </div>
                   );
@@ -1127,14 +1177,14 @@ const CallImplementation = ({
           showPipControls ? "opacity-100" : "opacity-0 group-hover/bubble:opacity-100"
         )}>
           <div className="flex items-center justify-between gap-1.5 min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0 bg-black/50 backdrop-blur-md px-[clamp(0.35rem,1.5cqi,0.6rem)] py-[clamp(0.15rem,1cqi,0.3rem)] rounded-full border border-white/10">
+            <div className="flex items-center gap-1.5 min-w-0 bg-black/50 px-[clamp(0.35rem,1.5cqi,0.6rem)] py-[clamp(0.15rem,1cqi,0.3rem)] rounded-full border border-white/10">
               <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shrink-0" />
               <p className="text-white text-[clamp(9px,2.5cqi,11px)] font-black truncate tracking-wider uppercase">
                 {roomName || 'Live'}
               </p>
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onHidePip(); }} className="text-white/70 hover:text-white hover:bg-white/20 h-[clamp(22px,6.5cqi,32px)] w-[clamp(22px,6.5cqi,32px)] p-0 rounded-full backdrop-blur-sm transition-all flex items-center justify-center" title="Dock to side edge">
+              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onHidePip(); }} className="text-white/70 hover:text-white hover:bg-white/20 h-[clamp(22px,6.5cqi,32px)] w-[clamp(22px,6.5cqi,32px)] p-0 rounded-full transition flex items-center justify-center" title="Dock to side edge">
                 <ChevronRight className="w-[clamp(11px,3.2cqi,15px)] h-[clamp(11px,3.2cqi,15px)]" />
               </Button>
             </div>
@@ -1142,12 +1192,12 @@ const CallImplementation = ({
 
           <div className="flex flex-col items-center gap-1.5 w-full">
              {/* Mini Media Controls with Maximize on Left & End Call on Right */}
-             <div className="bg-black/70 backdrop-blur-xl px-[clamp(0.35rem,2cqi,0.6rem)] py-[clamp(0.2rem,1.5cqi,0.4rem)] rounded-full border border-white/15 flex items-center justify-center gap-[clamp(0.2rem,1.5cqi,0.4rem)] max-w-full shadow-2xl">
+             <div className="bg-black/70 px-[clamp(0.35rem,2cqi,0.6rem)] py-[clamp(0.2rem,1.5cqi,0.4rem)] rounded-full border border-white/15 flex items-center justify-center gap-[clamp(0.2rem,1.5cqi,0.4rem)] max-w-full shadow-2xl">
                 <Button 
                   size="sm" 
                   variant="ghost" 
                   onClick={(e) => { e.stopPropagation(); onToggleMinimize(); }} 
-                  className="h-[clamp(22px,6.5cqi,32px)] w-[clamp(22px,6.5cqi,32px)] p-0 rounded-full text-white/80 hover:text-white hover:bg-white/20 backdrop-blur-sm transition-all shrink-0 flex items-center justify-center" 
+                  className="h-[clamp(22px,6.5cqi,32px)] w-[clamp(22px,6.5cqi,32px)] p-0 rounded-full text-white/80 hover:text-white hover:bg-white/20 transition shrink-0 flex items-center justify-center" 
                   title="Maximize"
                 >
                   <Maximize2 className="w-[clamp(11px,3.2cqi,15px)] h-[clamp(11px,3.2cqi,15px)]" />
@@ -1159,7 +1209,7 @@ const CallImplementation = ({
                   size="sm" 
                   variant="ghost" 
                   onClick={(e) => { e.stopPropagation(); onLeave(); }} 
-                  className="h-[clamp(22px,6.5cqi,32px)] w-[clamp(22px,6.5cqi,32px)] p-0 rounded-full bg-red-600/90 hover:bg-red-600 text-white backdrop-blur-sm transition-all shadow-md shrink-0 border border-red-400/40 flex items-center justify-center" 
+                  className="h-[clamp(22px,6.5cqi,32px)] w-[clamp(22px,6.5cqi,32px)] p-0 rounded-full bg-red-600/90 hover:bg-red-600 text-white transition shadow-md shrink-0 border border-red-400/40 flex items-center justify-center" 
                   title="End Call"
                 >
                   <PhoneOff className="w-[clamp(11px,3.2cqi,15px)] h-[clamp(11px,3.2cqi,15px)]" />
@@ -1168,9 +1218,9 @@ const CallImplementation = ({
 
             {/* Mini Speaking Badge */}
             {participants.some(p => p.isSpeaking) && (
-              <div className="px-2 py-0.5 bg-green-500/80 backdrop-blur-md rounded-full flex items-center gap-1 shadow-lg border border-white/20">
+              <div className="px-2 py-0.5 bg-green-500/80 rounded-full flex items-center gap-1 shadow-lg border border-white/20">
                 <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
-                <span className="text-[8px] text-white font-black uppercase tracking-tighter">Speaking</span>
+                <span className="text-[12px] text-white font-black uppercase tracking-tighter">Speaking</span>
               </div>
             )}
           </div>
@@ -1182,11 +1232,12 @@ const CallImplementation = ({
   return (
     <div className={cn(
       "flex flex-col overflow-hidden font-sans transition-colors duration-300 select-none",
-      isDark ? "bg-[#0f0f12] text-white" : "bg-slate-100 text-slate-900",
+      "bg-background text-foreground",
       isEmbedded
         ? "absolute inset-0 w-full h-full z-0"
         : "fixed inset-0 z-[99999] h-[100dvh] w-[100dvw]"
     )}>
+      {pipPortal}
       {/* 1. Fixed Top Header Bar (Height 56px) */}
       <header className="h-14 shrink-0 px-3 sm:px-6 flex items-center justify-between z-30">
         {/* Top Left: Speaker Toggle */}
@@ -1195,8 +1246,8 @@ const CallImplementation = ({
           size="sm"
           onClick={toggleSpeaker}
           className={cn(
-            "rounded-full h-8 px-3 gap-1.5 text-xs font-semibold transition-all border backdrop-blur-md shadow-sm",
-            isDark ? "bg-black/60 hover:bg-black/80 text-white/90 border-white/15" : "bg-white/90 hover:bg-white text-slate-800 border-slate-300"
+            "rounded-full h-8 px-3 gap-1.5 text-xs font-semibold transition border shadow-sm",
+            "bg-background/90 hover:bg-muted text-foreground border-border"
           )}
           title="Toggle Speakerphone / Earpiece"
         >
@@ -1206,29 +1257,29 @@ const CallImplementation = ({
 
         {/* Center: Live Call Duration / Status */}
         <div>
-          {connectionState === 'reconnecting' ? (
+          {connectionState === 'reconnecting' || partnerReconnecting ? (
             <div className={cn(
-              "flex items-center gap-1.5 backdrop-blur-xl px-3 py-1 rounded-full border shadow-sm",
-              isDark ? "bg-black/75 border-amber-500/50 text-amber-400" : "bg-white/95 border-amber-500/60 text-amber-600"
+              "flex items-center gap-1.5 px-3 py-1 rounded-full border shadow-sm",
+              "bg-background/90 border-amber-500/60 text-amber-600 dark:text-amber-400"
             )}>
               <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-spin" />
-              <span className="text-[10px] font-bold uppercase tracking-wider">Reconnecting</span>
+              <span className="text-[12px] font-bold uppercase tracking-wider">Reconnecting…</span>
             </div>
           ) : !isCallConnected ? (
             <div className={cn(
-              "flex items-center gap-1.5 backdrop-blur-xl px-3 py-1 rounded-full border shadow-sm",
-              isDark ? "bg-black/75 border-orange-500/40 text-orange-300" : "bg-white/95 border-orange-500/50 text-orange-600"
+              "flex items-center gap-1.5 px-3 py-1 rounded-full border shadow-sm",
+              "bg-background/90 border-orange-500/50 text-orange-600 dark:text-orange-300"
             )}>
               <div className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-ping" />
-              <span className="text-[10px] font-bold uppercase tracking-wider">Ringing...</span>
+              <span className="text-[12px] font-bold uppercase tracking-wider">Ringing...</span>
             </div>
           ) : (
             <div className={cn(
-              "flex items-center gap-1.5 backdrop-blur-xl px-3 py-1 rounded-full border shadow-sm",
-              isDark ? "bg-black/75 border-white/15 text-emerald-400" : "bg-white/95 border-slate-300 text-emerald-600"
+              "flex items-center gap-1.5 px-3 py-1 rounded-full border shadow-sm",
+              "bg-background/90 border-border text-emerald-600 dark:text-emerald-400"
             )}>
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-bold font-mono tracking-wider">{formattedDuration}</span>
+              <span className="text-xs font-medium">{formattedDuration}</span>
             </div>
           )}
         </div>
@@ -1239,8 +1290,8 @@ const CallImplementation = ({
           size="sm"
           onClick={handleEnterPiP}
           className={cn(
-            "rounded-full h-8 w-8 p-0 transition-all border backdrop-blur-md shadow-sm flex items-center justify-center",
-            isDark ? "bg-black/60 hover:bg-black/80 text-orange-400 border-white/15" : "bg-white/90 hover:bg-white text-orange-500 border-slate-300"
+            "rounded-full h-8 w-8 p-0 transition border shadow-sm flex items-center justify-center",
+            "bg-background/90 hover:bg-muted text-orange-500 border-border"
           )}
           title="Minimize to PiP"
         >
@@ -1271,11 +1322,11 @@ const CallImplementation = ({
               <div className="absolute w-64 h-64 sm:w-80 sm:h-80 rounded-full bg-primary/5 border border-primary/10 animate-pulse pointer-events-none" />
               <div className={cn(
                 "relative w-28 h-28 sm:w-36 sm:h-36 rounded-full border-2 border-primary/50 p-1.5 shadow-[0_0_50px_rgba(255,107,0,0.35)] flex items-center justify-center overflow-hidden",
-                isDark ? "bg-gradient-to-tr from-primary/30 to-orange-500/20" : "bg-gradient-to-tr from-primary/20 to-orange-400/20"
+                "bg-gradient-to-tr from-primary/20 to-orange-400/20"
               )}>
                 <div className={cn(
                   "w-full h-full rounded-full flex items-center justify-center text-4xl sm:text-5xl font-black uppercase tracking-wider overflow-hidden",
-                  isDark ? "bg-zinc-900 text-white" : "bg-white text-slate-800 shadow-md"
+                  "bg-card text-foreground shadow-md"
                 )}>
                   {(roomName || 'CineCraft')[0]}
                 </div>
@@ -1284,11 +1335,11 @@ const CallImplementation = ({
 
             <h2 className={cn(
               "text-2xl sm:text-3xl font-black tracking-tight mb-2 max-w-md truncate px-4",
-              isDark ? "text-white" : "text-slate-900"
+              "text-foreground"
             )}>
               {roomName || 'Live Video Call'}
             </h2>
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 text-xs font-bold uppercase tracking-widest animate-pulse">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 dark:text-orange-400 text-xs font-bold uppercase tracking-widest animate-pulse">
               <span className="w-2 h-2 rounded-full bg-orange-400 animate-ping" />
               <span>Ringing...</span>
             </div>
@@ -1308,7 +1359,7 @@ const CallImplementation = ({
               /* Google Meet Mobile Screen Share Hero Layout - Maximum Width */
               <div className="w-full h-full min-h-0 flex flex-col gap-2 max-w-7xl">
                 {/* Screen Share Dominant Stage - 100% Complete 16:9 Presentation */}
-                <div className="w-full aspect-video sm:aspect-auto sm:flex-1 min-h-0 rounded-2xl overflow-hidden shadow-2xl relative border border-white/15 bg-black flex items-center justify-center">
+                <div className="w-full aspect-video sm:aspect-auto sm:flex-1 min-h-0 rounded-2xl overflow-hidden shadow-2xl relative border border-border bg-black flex items-center justify-center">
                   <CustomParticipantTile trackRef={screenShareTrack} />
                 </div>
 
@@ -1317,7 +1368,7 @@ const CallImplementation = ({
                   {cameraTracks.map((trackRef: any, idx: number) => (
                     <div 
                       key={trackRef.publication?.trackSid || `${trackRef.participant?.identity}_${idx}`}
-                      className="h-full aspect-[4/3] sm:aspect-video shrink-0 rounded-2xl overflow-hidden shadow-lg border border-white/10"
+                      className="h-full aspect-[4/3] sm:aspect-video shrink-0 rounded-2xl overflow-hidden shadow-lg border border-border"
                     >
                       <CustomParticipantTile trackRef={trackRef} />
                     </div>
@@ -1350,20 +1401,20 @@ const CallImplementation = ({
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="absolute bottom-4 px-4 py-1.5 bg-black/70 backdrop-blur-md border border-white/15 rounded-full flex items-center gap-2 group cursor-pointer hover:bg-white/10 transition-all z-20"
+                className="absolute bottom-4 px-4 py-1.5 bg-background/80 backdrop-blur-md border border-border rounded-full flex items-center gap-2 group cursor-pointer hover:bg-muted transition z-20"
                 onClick={() => setShowParticipants(true)}
               >
                 <div className="flex -space-x-2">
                   {participants.slice(12, 15).map(p => {
                     const name = (p.name || p.identity || '?').replace(/_/g, ' ');
                     return (
-                      <div key={p.sid} className="w-5 h-5 rounded-full bg-primary/20 border border-white/20 flex items-center justify-center text-[9px] font-bold text-white">
+                      <div key={p.sid} className="w-5 h-5 rounded-full bg-primary/20 border border-border flex items-center justify-center text-[12px] font-bold text-foreground">
                         {name[0].toUpperCase()}
                       </div>
                     );
                   })}
                 </div>
-                <span className="text-[11px] font-bold text-white/80 group-hover:text-white transition-colors">
+                <span className="text-[12px] font-bold text-muted-foreground group-hover:text-foreground transition-colors">
                   + {participants.length - 12} others
                 </span>
               </motion.div>
@@ -1375,57 +1426,55 @@ const CallImplementation = ({
       {/* 3. Fixed Bottom Control Bar (Height 80px) */}
       <footer className="h-20 shrink-0 flex items-center justify-center z-30 pb-2">
         <div className={cn(
-          "px-3 py-2 backdrop-blur-2xl border rounded-full flex items-center gap-2 shadow-2xl animate-in fade-in zoom-in duration-300 max-w-[calc(100%-24px)] overflow-x-auto scrollbar-none transition-colors",
-          isDark 
-            ? "bg-[#18181c]/95 border-white/20 text-white shadow-[0_20px_50px_rgba(0,0,0,0.8)]" 
-            : "bg-white/95 border-slate-300 text-slate-800 shadow-[0_15px_40px_rgba(0,0,0,0.15)]"
+          "px-3 py-2 border rounded-full flex items-center gap-2 shadow-2xl animate-in fade-in zoom-in-95 duration-300 max-w-[calc(100%-24px)] overflow-x-auto scrollbar-none transition-colors",
+          "bg-card/95 border-border text-foreground shadow-[0_15px_40px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.8)]"
         )}>
         {/* Core Media Controls */}
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Microphone Toggle */}
           <TrackToggle 
             source={Track.Source.Microphone} 
+            title="Mute or unmute microphone"
+            aria-label="Mute or unmute microphone"
             className={cn(
-              "ctrl-action-btn transition-all duration-200",
-              isDark 
-                ? "bg-white/10 hover:bg-white/20 text-white border border-white/15" 
-                : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300"
+              "ctrl-action-btn transition duration-200",
+              "bg-muted hover:bg-muted/70 text-foreground border border-border"
             )}
           />
 
           {/* Camera Toggle */}
           <TrackToggle 
             source={Track.Source.Camera} 
+            title="Turn camera on or off"
+            aria-label="Turn camera on or off"
             className={cn(
-              "ctrl-action-btn transition-all duration-200",
-              isDark 
-                ? "bg-white/10 hover:bg-white/20 text-white border border-white/15" 
-                : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300"
+              "ctrl-action-btn transition duration-200",
+              "bg-muted hover:bg-muted/70 text-foreground border border-border"
             )}
           />
 
           {/* Screen Share (Desktop) */}
           <TrackToggle 
             source={Track.Source.ScreenShare} 
+            title="Share your screen"
+            aria-label="Share your screen"
             className={cn(
-              "ctrl-action-btn hidden sm:flex transition-all duration-200",
-              isDark 
-                ? "bg-white/10 hover:bg-white/20 text-white border border-white/15" 
-                : "bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300"
+              "ctrl-action-btn hidden sm:flex transition duration-200",
+              "bg-muted hover:bg-muted/70 text-foreground border border-border"
             )}
           />
 
           {/* End Call Button */}
           <button
             onClick={onLeave}
-            className="ctrl-action-btn bg-red-600 hover:bg-red-700 text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] border border-red-400/40 transition-all duration-200 active:scale-95"
+            className="ctrl-action-btn bg-red-600 hover:bg-red-700 text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] border border-red-400/40 transition duration-200 active:scale-95"
             title="End Call"
           >
             <PhoneOff className="w-5 h-5 shrink-0" />
           </button>
         </div>
 
-        <div className={cn("h-6 w-px mx-1 shrink-0", isDark ? "bg-white/20" : "bg-slate-300")} />
+        <div className={cn("h-6 w-px mx-1 shrink-0", "bg-border")} />
 
         {/* Secondary In-Call Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
@@ -1433,12 +1482,10 @@ const CallImplementation = ({
           <button
             onClick={onToggleFullscreen}
             className={cn(
-              "ctrl-icon-btn transition-all duration-200",
+              "ctrl-icon-btn transition duration-200",
               isFullscreen 
                 ? "bg-primary/20 text-primary border border-primary/40" 
-                : isDark 
-                  ? "bg-white/10 hover:bg-white/20 text-white/90 border border-white/15" 
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                : "bg-muted hover:bg-muted/70 text-foreground border border-border"
             )}
             title={isFullscreen ? "Exit Fullscreen" : "Full Screen"}
           >
@@ -1458,12 +1505,10 @@ const CallImplementation = ({
               }
             }}
             className={cn(
-              "ctrl-icon-btn transition-all duration-200",
+              "ctrl-icon-btn transition duration-200",
               showSettings
                 ? "bg-primary/20 text-primary border border-primary/40"
-                : isDark 
-                  ? "bg-white/10 hover:bg-white/20 text-white/90 border border-white/15" 
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                : "bg-muted hover:bg-muted/70 text-foreground border border-border"
             )}
             title="Audio & Video Settings"
           >
@@ -1483,12 +1528,10 @@ const CallImplementation = ({
               }
             }}
             className={cn(
-              "ctrl-icon-btn transition-all duration-200",
+              "ctrl-icon-btn transition duration-200",
               showReactions 
                 ? "bg-primary/20 text-primary border border-primary/40" 
-                : isDark 
-                  ? "bg-white/10 hover:bg-white/20 text-white/90 border border-white/15" 
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                : "bg-muted hover:bg-muted/70 text-foreground border border-border"
             )}
             title="Reactions"
           >
@@ -1508,17 +1551,15 @@ const CallImplementation = ({
               }
             }}
             className={cn(
-              "ctrl-icon-btn transition-all duration-200 relative",
+              "ctrl-icon-btn transition duration-200 relative",
               showParticipants 
                 ? "bg-primary/20 text-primary border border-primary/40" 
-                : isDark 
-                  ? "bg-white/10 hover:bg-white/20 text-white/90 border border-white/15" 
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                : "bg-muted hover:bg-muted/70 text-foreground border border-border"
             )}
             title="Participants"
           >
             <Users className="w-4 h-4" />
-            <span className="absolute -top-1 -right-1 text-[9px] font-black bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center shadow-sm">
+            <span className="absolute -top-1 -right-1 text-xs font-black bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center shadow-sm">
               {participants.length}
             </span>
           </button>
@@ -1537,12 +1578,10 @@ const CallImplementation = ({
                 }
               }}
               className={cn(
-                "ctrl-icon-btn transition-all duration-200",
+                "ctrl-icon-btn transition duration-200",
                 showHostControls 
-                  ? "bg-orange-500/20 text-orange-400 border border-orange-500/40" 
-                  : isDark 
-                    ? "bg-white/10 hover:bg-white/20 text-white/90 border border-white/15" 
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                  ? "bg-orange-500/20 text-orange-500 dark:text-orange-400 border border-orange-500/40" 
+                  : "bg-muted hover:bg-muted/70 text-foreground border border-border"
               )}
               title="Host Controls"
             >
@@ -1566,18 +1605,18 @@ const CallImplementation = ({
 
       {/* Globally Centered Reaction Picker Popover */}
       {showReactions && (
-        <div className={`absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 p-1.5 sm:p-2 bg-black/95 backdrop-blur-2xl border border-white/10 ${showMoreReactions ? 'rounded-3xl flex-wrap w-[260px] sm:w-[360px]' : 'rounded-full whitespace-nowrap overflow-x-auto max-w-[95vw]'} flex flex-row items-center gap-1 sm:gap-2 animate-in fade-in zoom-in slide-in-from-bottom-2 duration-200 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-[200] justify-center origin-bottom`}>
+        <div className={`absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 p-1.5 sm:p-2 bg-card/95 backdrop-blur-2xl border border-border ${showMoreReactions ? 'rounded-3xl flex-wrap w-[260px] sm:w-[360px]' : 'rounded-full whitespace-nowrap overflow-x-auto max-w-[95vw]'} flex flex-row items-center gap-1 sm:gap-2 animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 shadow-[0_10px_40px_rgba(0,0,0,0.2)] dark:shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-[200] justify-center origin-bottom`}>
           {(showMoreReactions ? ['❤️', '👏', '🔥', '😂', '😮', '😢', '👍', '🎉', '🙌', '✨', '🤩', '💡'] : ['❤️', '👏', '🔥', '😂', '😮', '😢']).map((emoji) => (
             <button
               key={emoji}
-              className="text-lg sm:text-2xl hover:scale-125 transition-all duration-200 active:scale-90 px-1 py-0.5 sm:px-1.5 sm:py-1 shrink-0"
+              className="text-lg sm:text-2xl hover:scale-125 transition duration-200 active:scale-90 px-1 py-0.5 sm:px-1.5 sm:py-1 shrink-0"
               onClick={() => sendReaction(emoji)}
             >
               {emoji}
             </button>
           ))}
           <button
-            className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 rounded-full transition-all shrink-0 ml-0.5 border border-white/10"
+            className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition shrink-0 ml-0.5 border border-border"
             onClick={(e) => {
               e.stopPropagation();
               setShowMoreReactions(!showMoreReactions);
@@ -1593,13 +1632,13 @@ const CallImplementation = ({
       {showParticipants && createPortal(
         <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setShowParticipants(false)} />
-          <div className="relative w-[calc(100%-2rem)] max-w-sm sm:max-w-md bg-[#0a0a0f]/95 backdrop-blur-3xl border border-white/10 rounded-[32px] p-5 sm:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.9)] animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+          <div className="relative w-[calc(100%-2rem)] max-w-sm sm:max-w-md bg-card/95 border border-border rounded-[32px] p-5 sm:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.35)] dark:shadow-[0_30px_90px_rgba(0,0,0,0.9)] animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center mb-4 shrink-0">
               <div className="flex flex-col gap-0.5">
                 <h3 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">People</h3>
-                <p className="text-xl font-bold text-white">In This Call ({participants.length})</p>
+                <p className="text-xl font-bold text-foreground">In This Call ({participants.length})</p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => setShowParticipants(false)} className="hover:bg-red-500/20 text-white rounded-full h-10 w-10 p-0 border border-white/10">
+              <Button aria-label="Close" size="sm" variant="ghost" onClick={() => setShowParticipants(false)} className="hover:bg-red-500/20 text-foreground rounded-full h-10 w-10 p-0 border border-border">
                 <X className="w-5 h-5" />
               </Button>
             </div>
@@ -1607,21 +1646,21 @@ const CallImplementation = ({
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
               {/* Active Call Participants */}
               <div className="space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected ({participants.length})</p>
+                <p className="text-[12px] font-bold uppercase tracking-wider text-muted-foreground">Connected ({participants.length})</p>
                 {participants.map((p) => {
                   const pName = p.name || p.identity || 'User';
                   const isMe = p.isLocal;
                   return (
-                    <div key={p.identity} className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10">
+                    <div key={p.identity} className="flex items-center justify-between p-3 rounded-2xl bg-muted/50 border border-border">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center font-bold text-white text-sm shrink-0">
+                        <div className="w-9 h-9 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center font-bold text-foreground text-sm shrink-0">
                           {pName[0]?.toUpperCase() || 'U'}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">
-                            {pName} {isMe && <span className="text-[11px] text-primary font-normal">(You)</span>}
+                          <p className="text-sm font-semibold text-foreground truncate">
+                            {pName} {isMe && <span className="text-[12px] text-primary font-normal">(You)</span>}
                           </p>
-                          <p className="text-[10px] text-green-400 font-medium">● Connected</p>
+                          <p className="text-[12px] text-green-600 dark:text-green-400 font-medium">● Connected</p>
                         </div>
                       </div>
                     </div>
@@ -1631,14 +1670,14 @@ const CallImplementation = ({
 
               {/* Members Not In Call (Invite / Ring) */}
               {notInCallMembers.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Not in Call ({notInCallMembers.length})</p>
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <p className="text-[12px] font-bold uppercase tracking-wider text-muted-foreground">Not in Call ({notInCallMembers.length})</p>
                   {notInCallMembers.map((m) => {
                     const isRequested = requestedMemberIds.has(m.id);
                     return (
-                      <div key={m.id} className="flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/10">
+                      <div key={m.id} className="flex items-center justify-between p-3 rounded-2xl bg-muted/50 border border-border">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-white/10 border border-white/20 flex items-center justify-center font-bold text-white text-sm shrink-0 overflow-hidden">
+                          <div className="w-9 h-9 rounded-full bg-muted border border-border flex items-center justify-center font-bold text-foreground text-sm shrink-0 overflow-hidden">
                             {m.avatar_url ? (
                               <img loading="lazy" decoding="async" src={m.avatar_url} alt={m.full_name || m.username} className="w-full h-full object-cover" />
                             ) : (
@@ -1646,8 +1685,8 @@ const CallImplementation = ({
                             )}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-white truncate">{m.full_name || m.username}</p>
-                            <p className="text-[10px] text-gray-400">Offline</p>
+                            <p className="text-sm font-semibold text-foreground truncate">{m.full_name || m.username}</p>
+                            <p className="text-[12px] text-muted-foreground">Offline</p>
                           </div>
                         </div>
                         <Button
@@ -1656,9 +1695,9 @@ const CallImplementation = ({
                           disabled={isRequested}
                           onClick={() => handleRequestToJoin(m)}
                           className={cn(
-                            "rounded-xl text-xs font-semibold shrink-0 gap-1.5 h-8 px-3 transition-all",
+                            "rounded-xl text-xs font-semibold shrink-0 gap-1.5 h-8 px-3 transition",
                             isRequested 
-                              ? "bg-green-500/20 text-green-400 border border-green-500/30 cursor-default" 
+                              ? "bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/30 cursor-default" 
                               : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-md active:scale-95"
                           )}
                         >
@@ -1687,13 +1726,13 @@ const CallImplementation = ({
       {showSettings && createPortal(
         <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setShowSettings(false)} />
-          <div className="relative w-[calc(100%-2rem)] max-w-sm sm:max-w-md bg-[#0a0a0f]/95 backdrop-blur-3xl border border-white/10 rounded-[32px] p-5 sm:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.9)] animate-in zoom-in-95 duration-200">
+          <div className="relative w-[calc(100%-2rem)] max-w-sm sm:max-w-md bg-card/95 border border-border rounded-[32px] p-5 sm:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.35)] dark:shadow-[0_30px_90px_rgba(0,0,0,0.9)] animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-6 sm:mb-8">
               <div className="flex flex-col gap-1">
                 <h3 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Preferences</h3>
-                <p className="text-xl font-bold text-white">Call Settings</p>
+                <p className="text-xl font-bold text-foreground">Call Settings</p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => setShowSettings(false)} className="hover:bg-red-500/20 text-white rounded-full h-10 w-10 p-0 border border-white/10">
+              <Button aria-label="Close" size="sm" variant="ghost" onClick={() => setShowSettings(false)} className="hover:bg-red-500/20 text-foreground rounded-full h-10 w-10 p-0 border border-border">
                 <X className="w-5 h-5" />
               </Button>
             </div>
@@ -1701,49 +1740,49 @@ const CallImplementation = ({
             <div className="space-y-6">
               {/* Camera Selection */}
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
+                <label className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground px-1 flex items-center gap-2">
                   <Camera className="w-3 h-3" /> Video Input
                 </label>
                 <select
                   value={activeVideoId}
                   onChange={(e) => setActiveVideo(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
+                  className="w-full bg-muted/50 border border-border rounded-2xl p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition cursor-pointer hover:bg-muted"
                 >
-                  {videoDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-[#1a1a2e]">{d.label || `Camera ${d.deviceId.slice(0, 5)}...`}</option>)}
+                  {videoDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-card text-foreground">{d.label || `Camera ${d.deviceId.slice(0, 5)}...`}</option>)}
                 </select>
               </div>
 
               {/* Microphone Selection */}
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
+                <label className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground px-1 flex items-center gap-2">
                   <Mic className="w-3 h-3" /> Audio Input
                 </label>
                 <select
                   value={activeAudioId}
                   onChange={(e) => setActiveAudio(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
+                  className="w-full bg-muted/50 border border-border rounded-2xl p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition cursor-pointer hover:bg-muted"
                 >
-                  {audioDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-[#1a1a2e]">{d.label || `Mic ${d.deviceId.slice(0, 5)}...`}</option>)}
+                  {audioDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-card text-foreground">{d.label || `Mic ${d.deviceId.slice(0, 5)}...`}</option>)}
                 </select>
               </div>
 
               {/* Speaker Selection */}
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
+                <label className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground px-1 flex items-center gap-2">
                   <Speaker className="w-3 h-3" /> Audio Output
                 </label>
                 <select
                   value={activeSpeakerId}
                   onChange={(e) => setActiveSpeaker(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
+                  className="w-full bg-muted/50 border border-border rounded-2xl p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition cursor-pointer hover:bg-muted"
                 >
-                  {speakerDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-[#1a1a2e]">{d.label || `Speaker ${d.deviceId.slice(0, 5)}...`}</option>)}
+                  {speakerDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-card text-foreground">{d.label || `Speaker ${d.deviceId.slice(0, 5)}...`}</option>)}
                 </select>
               </div>
             </div>
 
             <Button
-              className="w-full mt-8 sm:mt-10 rounded-2xl py-6 bg-primary text-primary-foreground font-bold text-sm tracking-wide shadow-[0_10px_30px_rgba(var(--primary),0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all"
+              className="w-full mt-8 sm:mt-10 rounded-2xl py-6 bg-primary text-primary-foreground font-bold text-sm tracking-wide shadow-[0_10px_30px_rgba(var(--primary),0.3)] hover:scale-[1.02] active:scale-[0.98] transition"
               onClick={() => setShowSettings(false)}
             >
               Save & Close
@@ -1756,13 +1795,13 @@ const CallImplementation = ({
       {showHostControls && createPortal(
         <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setShowHostControls(false)} />
-          <div className="relative w-[calc(100%-2rem)] max-w-sm sm:max-w-md bg-[#0a0a0f]/95 backdrop-blur-3xl border border-orange-500/30 rounded-[32px] p-5 sm:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.9)] animate-in zoom-in-95 duration-200">
+          <div className="relative w-[calc(100%-2rem)] max-w-sm sm:max-w-md bg-card/95 border border-orange-500/30 rounded-[32px] p-5 sm:p-6 shadow-[0_30px_90px_rgba(0,0,0,0.35)] dark:shadow-[0_30px_90px_rgba(0,0,0,0.9)] animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-6 sm:mb-8">
               <div className="flex flex-col gap-1">
-                <h3 className="text-xs font-bold tracking-[0.2em] text-orange-400 uppercase">Discussion Host</h3>
-                <p className="text-xl font-bold text-white">Host Dashboard</p>
+                <h3 className="text-xs font-bold tracking-[0.2em] text-orange-500 dark:text-orange-400 uppercase">Discussion Host</h3>
+                <p className="text-xl font-bold text-foreground">Host Dashboard</p>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => setShowHostControls(false)} className="hover:bg-red-500/20 text-white rounded-full h-10 w-10 p-0 border border-white/10">
+              <Button aria-label="Close" size="sm" variant="ghost" onClick={() => setShowHostControls(false)} className="hover:bg-red-500/20 text-foreground rounded-full h-10 w-10 p-0 border border-border">
                 <X className="w-5 h-5" />
               </Button>
             </div>
@@ -1772,25 +1811,25 @@ const CallImplementation = ({
                 onClick={() => {
                   toast({ title: "Mute All Requested", description: "Requesting participants to mute their microphones." });
                 }}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-all text-left"
+                className="w-full bg-muted/50 border border-border rounded-2xl p-4 flex items-center gap-4 hover:bg-muted transition text-left"
               >
-                <div className="w-10 h-10 bg-orange-500/20 rounded-xl flex items-center justify-center text-orange-400 shrink-0">
+                <div className="w-10 h-10 bg-orange-500/20 rounded-xl flex items-center justify-center text-orange-500 dark:text-orange-400 shrink-0">
                   <VolumeX className="w-5 h-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-white truncate">Mute All Participants</p>
-                  <p className="text-xs text-gray-400 truncate">Silence everyone in the discussion</p>
+                  <p className="text-sm font-bold text-foreground truncate">Mute All Participants</p>
+                  <p className="text-xs text-muted-foreground truncate">Silence everyone in the discussion</p>
                 </div>
               </button>
 
               <button
-                onClick={() => {
-                  if (confirm('Are you sure you want to end this discussion for everyone?')) {
+                onClick={async () => {
+                  if (await confirmDialog('Are you sure you want to end this discussion for everyone?')) {
                     onLeave();
                     setShowHostControls(false);
                   }
                 }}
-                className="w-full bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-4 hover:bg-red-500/20 transition-all text-left"
+                className="w-full bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-4 hover:bg-red-500/20 transition text-left"
               >
                 <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center text-red-400 shrink-0">
                   <ShieldAlert className="w-5 h-5" />
@@ -1802,7 +1841,7 @@ const CallImplementation = ({
               </button>
             </div>
 
-            <p className="mt-6 sm:mt-8 text-[10px] text-center text-gray-500 font-medium px-4 leading-relaxed">
+            <p className="mt-6 sm:mt-8 text-[12px] text-center text-muted-foreground font-medium px-4 leading-relaxed">
               As a host, you are responsible for maintaining a healthy discussion environment.
             </p>
           </div>
@@ -1817,18 +1856,18 @@ const CallImplementation = ({
           padding: 0 !important;
         }
         .modern-control-bar .lk-button {
-          background: rgba(255, 255, 255, 0.08) !important;
-          border: 1px solid rgba(255, 255, 255, 0.15) !important;
+          background: hsl(var(--muted)) !important;
+          border: 1px solid hsl(var(--border)) !important;
           border-radius: 9999px !important;
-          color: white !important;
+          color: hsl(var(--foreground)) !important;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
           width: 42px !important;
           height: 42px !important;
         }
         .modern-control-bar .lk-button:hover {
-          background: rgba(255, 255, 255, 0.2) !important;
+          background: hsl(var(--muted) / 0.7) !important;
           transform: translateY(-2px);
-          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
         }
         .modern-control-bar .lk-button-leave {
           background: rgba(239, 68, 68, 0.25) !important;
@@ -2345,15 +2384,10 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
       try {
         // Capture name once and reuse it — profile updates must not cause a re-fetch
         if (!participantNameRef.current) {
-          participantNameRef.current = profile?.full_name?.trim() || user.email?.split('@')[0] || user.id;
+          participantNameRef.current = callParticipantName(profile, user);
         }
         const participantName = participantNameRef.current;
-        const { data, error: funcError } = await supabase.functions.invoke('livekit-token', {
-          body: {
-            roomName: roomId,
-            participantName,
-          },
-        });
+        const { data, error: funcError } = await fetchCallToken(roomId, participantName);
 
         if (funcError) {
           // "Edge Function returned a non-2xx status code" hides the real reason. The response body has it.
@@ -2386,13 +2420,13 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
 
   if (error) {
     return (
-      <div className="fixed inset-0 z-[99999] bg-[#202124] text-white flex flex-col items-center justify-center p-4">
-        <div className="bg-[#2b2b2b] p-8 rounded-2xl shadow-2xl max-w-md w-full text-center border border-red-500/30">
+      <div className="fixed inset-0 z-[99999] bg-background text-foreground flex flex-col items-center justify-center p-4">
+        <div className="bg-card p-8 rounded-2xl shadow-2xl max-w-md w-full text-center border border-red-500/30">
           <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
             <X className="w-8 h-8 text-red-500" />
           </div>
           <h2 className="text-2xl font-bold mb-2">Connection Error</h2>
-          <p className="text-gray-400 mb-8">{error}</p>
+          <p className="text-muted-foreground mb-8">{error}</p>
           <Button onClick={onLeave} variant="destructive" className="w-full py-6 text-lg font-bold rounded-xl shadow-lg shadow-red-500/20">
             Close Call
           </Button>
@@ -2403,11 +2437,11 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
 
   if (!token || !serverUrl) {
     return (
-      <div className="fixed inset-0 z-[99999] bg-[#202124] text-white flex flex-col items-center justify-center p-4">
+      <div className="fixed inset-0 z-[99999] bg-background text-foreground flex flex-col items-center justify-center p-4">
         <div className="p-8 text-center">
           <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-6" />
           <h2 className="text-xl font-medium animate-pulse">Initializing Secure Connection...</h2>
-          <p className="text-gray-500 mt-2 text-sm italic">Connecting to CineCraft Live Services</p>
+          <p className="text-muted-foreground mt-2 text-sm italic">Connecting to CineCraft Live Services</p>
         </div>
       </div>
     );
@@ -2457,8 +2491,8 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
           isMinimized
             ? "fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[999999] bg-[#121214] rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.9)] cursor-move touch-none group/bubble border-2 border-white/20 hover:border-primary/60 transition-colors duration-300 overflow-hidden"
             : embeddedActive || embeddedHidden
-              ? "fixed z-[45] bg-[#09090b] overflow-hidden"
-              : "fixed inset-0 top-0 left-0 right-0 bottom-0 z-[999999] bg-[#121214] overflow-hidden h-[100dvh] w-[100dvw]"
+              ? "fixed z-[35] bg-background overflow-hidden"
+              : "fixed inset-0 top-0 left-0 right-0 bottom-0 z-[999999] bg-background overflow-hidden h-[100dvh] w-[100dvw]"
         }
         style={{
           width: isMinimized ? `${pipSize.width}px` : embeddedActive ? `${embeddedStyle.width}px` : embeddedHidden ? '1px' : '100vw',
@@ -2497,7 +2531,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
                   }));
                 }}
                 onDragEnd={() => { isResizing.current = false; }}
-                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20 backdrop-blur-md"
+                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20"
                 title="Drag top-left corner to resize"
               >
                 <div className="w-2 h-2 border-l-2 border-t-2 border-white/90 rounded-tl-xs" />
@@ -2521,7 +2555,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
                   }));
                 }}
                 onDragEnd={() => { isResizing.current = false; }}
-                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20 backdrop-blur-md"
+                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20"
                 title="Drag top-right corner to resize"
               >
                 <div className="w-2 h-2 border-r-2 border-t-2 border-white/90 rounded-tr-xs" />
@@ -2545,7 +2579,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
                   }));
                 }}
                 onDragEnd={() => { isResizing.current = false; }}
-                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20 backdrop-blur-md"
+                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20"
                 title="Drag bottom-left corner to resize"
               >
                 <div className="w-2 h-2 border-l-2 border-b-2 border-white/90 rounded-bl-xs" />
@@ -2569,7 +2603,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
                   }));
                 }}
                 onDragEnd={() => { isResizing.current = false; }}
-                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20 backdrop-blur-md"
+                className="w-5 h-5 rounded-full bg-black/70 hover:bg-primary/90 flex items-center justify-center shadow-lg border border-white/20"
                 title="Drag bottom-right corner to resize"
               >
                 <div className="w-2 h-2 border-r-2 border-b-2 border-white/90 rounded-br-xs" />
@@ -2599,6 +2633,17 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
           connect={true}
           data-lk-theme="default"
           className="h-full w-full"
+          style={{
+            '--lk-bg': 'hsl(var(--background))',
+            '--lk-bg2': 'hsl(var(--card))',
+            '--lk-bg3': 'hsl(var(--muted))',
+            '--lk-fg': 'hsl(var(--foreground))',
+            '--lk-fg2': 'hsl(var(--muted-foreground))',
+            '--lk-control-fg': 'hsl(var(--foreground))',
+            '--lk-control-bg': 'hsl(var(--muted))',
+            '--lk-control-hover-bg': 'hsl(var(--muted) / 0.7)',
+            '--lk-border-color': 'hsl(var(--border))',
+          } as CSSProperties}
           onDisconnected={onLeave}
           key={roomId}
         >
@@ -2648,7 +2693,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
             e.stopPropagation();
             setIsPipHidden(false);
           }}
-          className="fixed right-0 top-28 sm:top-32 z-[999999] bg-[#1a1a2e]/95 hover:bg-[#252545] border border-r-0 border-white/20 text-white px-2.5 py-3 rounded-l-2xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] flex items-center gap-2 backdrop-blur-xl group cursor-pointer active:scale-95 transition-all"
+          className="fixed right-0 top-28 sm:top-32 z-[999999] bg-card/95 hover:bg-muted border border-r-0 border-border text-foreground px-2.5 py-3 rounded-l-2xl shadow-[0_10px_30px_rgba(0,0,0,0.25)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.8)] flex items-center gap-2 backdrop-blur-xl group cursor-pointer active:scale-95 transition"
           title="Tap to restore video call"
         >
           <ChevronLeft className="w-4 h-4 text-orange-400 group-hover:-translate-x-0.5 transition-transform" />

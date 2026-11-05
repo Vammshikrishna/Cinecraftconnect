@@ -41,7 +41,14 @@ async function uploadPrivate(bucket: string, file: PickedAttachment): Promise<st
   return `${bucket}:${path}`;
 }
 
-export const uploadResume = (file: PickedAttachment): Promise<string> => uploadPrivate('resumes', file);
+/** CV files are limited to PDF, JPG or PNG (checks the MIME type and the file name, like the web app). */
+export const isAllowedResumeType = (file: { name?: string; type?: string }): boolean =>
+  /^(application\/pdf|image\/(jpeg|png))$/i.test(file.type || '') || /\.(pdf|jpe?g|png)$/i.test(file.name || '');
+
+export const uploadResume = (file: PickedAttachment): Promise<string> => {
+  if (!isAllowedResumeType(file)) return Promise.reject(new Error('Attach a PDF, JPG or PNG.'));
+  return uploadPrivate('resumes', file);
+};
 /** Business document for vendor verification (private bucket, only the owner and admins can read it). */
 export const uploadVendorDoc = (file: PickedAttachment): Promise<string> => uploadPrivate('vendor_docs', file);
 /** Company document for page verification (private bucket, only the owner and admins can read it). */

@@ -90,3 +90,10 @@ verify_jwt = true
 [functions.space-control]
 enabled = true
 verify_jwt = true
+
+# A payment provider (Razorpay, Stripe) cannot send a Supabase login token, so the gateway must let its call through.
+# The function does its own checks: payments must be switched on, and the provider's signature must be valid.
+# Deploy with: supabase functions deploy billing-webhook --no-verify-jwt
+[functions.billing-webhook]
+enabled = true
+verify_jwt = false

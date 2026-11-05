@@ -4,14 +4,15 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   Image,
 } from 'react-native';
 import { CachedImage } from '../common/CachedImage';
 import { Icon } from '../common/Icon';
+import { VideoPlayerModal } from '../common/VideoPlayer';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GRID_MAX_WIDTH = Math.min(270, Math.round(SCREEN_WIDTH * 0.74));
+/** Widest a media collage gets in a chat: bigger on a tablet, a share of the screen on a phone. */
+const gridMaxWidth = (w: number, h: number) => Math.min(Math.min(w, h) >= 600 ? 440 : 270, Math.round(w * 0.74));
 
 const imageRatioCache = new Map<string, number>();
 
@@ -109,18 +110,32 @@ interface MediaCollageGridProps {
   imageContainerStyle?: any;
 }
 
-export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
+/** Video tiles open the in-app player (with an "Open in browser" fallback if playback fails). */
+export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo((props) => {
+  const [playingUrl, setPlayingUrl] = React.useState<string | null>(null);
+  return (
+    <>
+      <MediaCollageGridInner {...props} onOpenVideo={setPlayingUrl} />
+      <VideoPlayerModal visible={!!playingUrl} uri={playingUrl} onClose={() => setPlayingUrl(null)} />
+    </>
+  );
+});
+
+const MediaCollageGridInner: React.FC<MediaCollageGridProps & { onOpenVideo: (url: string) => void }> = React.memo(({
+  onOpenVideo,
   mediaUrl,
   mediaType,
   onOpenImage,
   onOpenFile,
   onLongPress,
-  maxWidth = GRID_MAX_WIDTH,
+  maxWidth: maxWidthProp,
   isOwn = false,
   overlayMeta,
   containerStyle,
   imageContainerStyle,
 }) => {
+  const { width: winW, height: winH } = useWindowDimensions();
+  const maxWidth = maxWidthProp ?? gridMaxWidth(winW, winH);
   const items = React.useMemo(() => parseMediaUrls(mediaUrl, mediaType), [mediaUrl, mediaType]);
 
   const count = items?.length || 0;
@@ -162,6 +177,10 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
   }, [items]);
 
   const handleItemPress = (item: MediaCollageItem, index: number) => {
+    if (item.type === 'video') {
+      onOpenVideo(item.url);
+      return;
+    }
     if (item.type === 'image') {
       const imgIdx = allImageUrls.indexOf(item.url);
       onOpenImage?.(item.url, imgIdx >= 0 ? imgIdx : index, allImageUrls.length > 0 ? allImageUrls : [item.url]);
@@ -178,6 +197,8 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
       const containerHeight = Math.min(320, Math.max(140, Math.round(maxWidth / imageRatio)));
       return (
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Open image"
           onPress={() => handleItemPress(item, 0)}
           onLongPress={onLongPress}
           activeOpacity={0.9}
@@ -205,6 +226,8 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
     if (item.type === 'video') {
       return (
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={item?.type === 'video' ? 'Open video' : 'Open image'}
           onPress={() => handleItemPress(item, 0)}
           onLongPress={onLongPress}
           activeOpacity={0.88}
@@ -227,6 +250,8 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
 
     return (
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Open file"
         onPress={() => handleItemPress(item, 0)}
         onLongPress={onLongPress}
         activeOpacity={0.85}
@@ -265,10 +290,12 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
           {items.map((item, idx) => (
             <TouchableOpacity
               key={idx}
+              accessibilityRole="button"
+              accessibilityLabel={item?.type === 'video' ? 'Open video' : 'Open image'}
               onPress={() => handleItemPress(item, idx)}
               onLongPress={onLongPress}
               activeOpacity={0.9}
-              style={[styles.twoColBox, { width: colWidth, height: 150 }]}
+              style={[styles.twoColBox, { width: colWidth, height: Math.round(colWidth * 1.12) }]}
             >
               {item.type === 'video' ? (
                 <View style={styles.gridVideoThumb}>
@@ -305,6 +332,8 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
         <View style={[styles.threeColRow, { width: maxWidth }, imageContainerStyle]}>
           {/* Left Hero */}
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={items[0]?.type === 'video' ? 'Open video' : 'Open image'}
             onPress={() => handleItemPress(items[0], 0)}
             onLongPress={onLongPress}
             activeOpacity={0.9}
@@ -330,6 +359,8 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
               return (
                 <TouchableOpacity
                   key={actualIdx}
+                  accessibilityRole="button"
+                  accessibilityLabel={item?.type === 'video' ? 'Open video' : 'Open image'}
                   onPress={() => handleItemPress(item, actualIdx)}
                   onLongPress={onLongPress}
                   activeOpacity={0.9}
@@ -376,6 +407,8 @@ export const MediaCollageGrid: React.FC<MediaCollageGridProps> = React.memo(({
           return (
             <TouchableOpacity
               key={idx}
+              accessibilityRole="button"
+              accessibilityLabel={item?.type === 'video' ? 'Open video' : 'Open image'}
               onPress={() => handleItemPress(item, idx)}
               onLongPress={onLongPress}
               activeOpacity={0.9}
@@ -487,7 +520,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   docSub: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   gridContainer: {
@@ -547,7 +580,7 @@ const styles = StyleSheet.create({
   moreText: {
     color: '#FFFFFF',
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
 });

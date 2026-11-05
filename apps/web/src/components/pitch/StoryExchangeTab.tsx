@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import VerificationBadge from '@/components/common/VerificationBadge';
 import { getSafeImageUrl } from '@/services/tmdb';
+import { STORY_LISTING_COLUMNS, fetchStoryFullSynopsis, friendlyError } from '@cinecraft/core';
 
 export default function StoryExchangeTab() {
     const { user, profile } = useAuth();
@@ -73,14 +74,14 @@ export default function StoryExchangeTab() {
     const fetchListings = async () => {
         setLoading(true);
         try {
-            // Get public listings
+            // the full synopsis is not a readable column: it comes through get_story_full_synopsis once the writer approves
             let query = (supabase as any).from('story_listings').select(`
-                *,
+                ${STORY_LISTING_COLUMNS},
                 profiles:creator_id (
                     id, full_name, avatar_url, username, craft, location, is_verified
                 )
             `);
-            
+
             if (genreFilter !== 'all') query = query.eq('genre', genreFilter);
             if (formatFilter !== 'all') query = query.eq('format', formatFilter);
             if (stageFilter !== 'all') query = query.eq('stage', stageFilter);
@@ -89,25 +90,9 @@ export default function StoryExchangeTab() {
             }
 
             const { data, error } = await query.order('created_at', { ascending: false });
+            if (error) throw error;
+            setListings(data || []);
 
-            if (error) {
-                // Fallback to local storage
-                let mockListings = JSON.parse(localStorage.getItem('story_listings') || '[]');
-                if (genreFilter !== 'all') mockListings = mockListings.filter((l: any) => l.genre === genreFilter);
-                if (formatFilter !== 'all') mockListings = mockListings.filter((l: any) => l.format === formatFilter);
-                if (stageFilter !== 'all') mockListings = mockListings.filter((l: any) => l.stage === stageFilter);
-                if (searchQuery.trim()) {
-                    mockListings = mockListings.filter((l: any) => 
-                        l.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        l.logline.toLowerCase().includes(searchQuery.toLowerCase())
-                    );
-                }
-                setListings(mockListings);
-            } else {
-                setListings(data || []);
-            }
-
-            // Fetch my interests
             if (user) {
                 const { data: interests } = await (supabase as any)
                     .from('story_interests')
@@ -115,16 +100,17 @@ export default function StoryExchangeTab() {
                     .eq('interested_by', user.id);
                 setMyInterests(interests || []);
 
-                // Fetch incoming requests if I am the writer
+                // requests on my own stories (inner join, so only my stories come back)
                 const { data: incoming } = await (supabase as any)
                     .from('story_interests')
-                    .select('*, story:story_id(*), profiles:interested_by(full_name, avatar_url, craft, is_verified)')
-                    .eq('story.creator_id', user.id);
+                    .select('*, story:story_id!inner(id, title, creator_id), profiles:interested_by(full_name, avatar_url, craft, is_verified)')
+                    .eq('story.creator_id', user.id)
+                    .order('created_at', { ascending: false });
                 setIncomingRequests(incoming || []);
             }
-
         } catch (e) {
             console.error(e);
+            toast({ title: 'Could not load the Story Exchange', variant: 'destructive', description: 'Please check your connection and try again.' });
         } finally {
             setLoading(false);
         }
@@ -142,69 +128,44 @@ export default function StoryExchangeTab() {
     const submitInterest = async (storyId: string, ndaSig: string) => {
         if (!user) return;
         try {
-            const payload = {
+            // the status and the signing time are set by the database
+            const { error } = await (supabase as any).from('story_interests').insert({
                 story_id: storyId,
                 interested_by: user.id,
-                status: 'pending',
-                nda_signed_at: ndaSig !== 'unsigned' ? new Date().toISOString() : null,
-            };
-
-            const { error } = await (supabase as any).from('story_interests').insert(payload);
-
+                nda_signature: ndaSig !== 'unsigned' ? ndaSig : null,
+            });
             if (error) {
-                // Fallback local storage
-                const localInterests = JSON.parse(localStorage.getItem('story_interests') || '[]');
-                localInterests.push(payload);
-                localStorage.setItem('story_interests', JSON.stringify(localInterests));
-                setMyInterests(localInterests.filter((i: any) => i.interested_by === user.id));
-                toast({ title: 'Interest Expressed', description: 'Request sent to the writer.' });
-            } else {
-                toast({ title: 'Request Sent', description: 'Your interest has been submitted.' });
-                fetchListings();
+                if (error.code === '23505') {
+                    toast({ title: 'Already requested', description: 'You have already asked for access to this story.' });
+                } else {
+                    toast({ title: 'Could not send request', variant: 'destructive', description: friendlyError(error) });
+                }
+                return;
             }
-        } catch (e) {
-            toast({ title: 'Error', variant: 'destructive', description: 'Failed to express interest.' });
+            toast({ title: 'Request Sent', description: 'The writer has been notified.' });
+            fetchListings();
+        } catch (e: any) {
+            toast({ title: 'Error', variant: 'destructive', description: friendlyError(e, 'Failed to express interest.') });
         }
     };
 
-    const handleApproveInterest = async (requestId: string) => {
+    const decideInterest = async (requestId: string, status: 'approved' | 'declined') => {
         try {
-            const { error } = await (supabase as any)
-                .from('story_interests')
-                .update({ status: 'approved' })
-                .eq('id', requestId);
-
+            const { error } = await (supabase as any).from('story_interests').update({ status }).eq('id', requestId);
             if (error) {
-                // local storage update
-                const localIncoming = incomingRequests.map(r => r.id === requestId ? { ...r, status: 'approved' } : r);
-                setIncomingRequests(localIncoming);
-            } else {
-                toast({ title: 'Approved!', description: 'Full concept synopsis is now visible to the producer.' });
-                fetchListings();
+                toast({ title: 'Could not update the request', variant: 'destructive', description: friendlyError(error) });
+                return;
             }
-        } catch (e) {
-            toast({ title: 'Error', variant: 'destructive', description: 'Failed to approve request.' });
+            toast(status === 'approved'
+                ? { title: 'Approved!', description: 'The producer can now read the full synopsis.' }
+                : { title: 'Declined', description: 'Request declined.' });
+            fetchListings();
+        } catch (e: any) {
+            toast({ title: 'Error', variant: 'destructive', description: friendlyError(e, 'Failed to update the request.') });
         }
     };
-
-    const handleDeclineInterest = async (requestId: string) => {
-        try {
-            const { error } = await (supabase as any)
-                .from('story_interests')
-                .update({ status: 'declined' })
-                .eq('id', requestId);
-
-            if (error) {
-                const localIncoming = incomingRequests.filter(r => r.id !== requestId);
-                setIncomingRequests(localIncoming);
-            } else {
-                toast({ title: 'Declined', description: 'Request declined.' });
-                fetchListings();
-            }
-        } catch (e) {
-            toast({ title: 'Error', variant: 'destructive', description: 'Failed to decline request.' });
-        }
-    };
+    const handleApproveInterest = (id: string) => decideInterest(id, 'approved');
+    const handleDeclineInterest = (id: string) => decideInterest(id, 'declined');
 
     return (
         <div className="space-y-6">
@@ -277,7 +238,7 @@ export default function StoryExchangeTab() {
                 <div className="md:col-span-2 space-y-4">
                     {loading ? (
                         <div className="text-center py-20 text-muted-foreground">
-                            <BookOpen className="h-10 w-10 animate-bounce mx-auto mb-3" />
+                            <BookOpen className="h-10 w-10 mx-auto mb-3" />
                             Loading Story Exchange...
                         </div>
                     ) : listings.length === 0 ? (
@@ -294,7 +255,7 @@ export default function StoryExchangeTab() {
                             const initials = (l.profiles?.full_name || 'W').split(' ').map((n: string) => n[0]).join('').toUpperCase();
 
                             return (
-                                <Card key={l.id} className="p-5 border border-border hover:border-primary/20 transition-all space-y-4">
+                                <Card key={l.id} className="p-5 border border-border hover:border-primary/20 transition space-y-4">
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3">
                                             <Avatar className="h-10 w-10 shrink-0">
@@ -310,10 +271,10 @@ export default function StoryExchangeTab() {
                                             </div>
                                         </div>
                                         <div className="flex gap-1.5 flex-wrap">
-                                            <Badge variant="outline" className="text-[10px] capitalize">{l.format}</Badge>
-                                            <Badge variant="secondary" className="text-[10px]">{l.genre}</Badge>
+                                            <Badge variant="outline" className="text-[12px] capitalize">{l.format}</Badge>
+                                            <Badge variant="secondary" className="text-[12px]">{l.genre}</Badge>
                                             {l.nda_required && (
-                                                <Badge variant="destructive" className="text-[10px] bg-amber-500/10 text-amber-500 border-amber-500/20 gap-1 flex items-center shrink-0">
+                                                <Badge variant="destructive" className="text-[12px] bg-amber-500/10 text-amber-500 border-amber-500/20 gap-1 flex items-center shrink-0">
                                                     <Shield className="h-2.5 w-2.5" /> NDA Required
                                                 </Badge>
                                             )}
@@ -326,7 +287,7 @@ export default function StoryExchangeTab() {
                                     </div>
 
                                     <div className="text-xs leading-relaxed text-muted-foreground p-3.5 bg-muted/20 border border-border/40 rounded-xl">
-                                        <p className="font-bold text-[10px] uppercase tracking-widest text-muted-foreground/60 mb-1">Teaser Synopsis</p>
+                                        <p className="font-bold text-[12px] uppercase tracking-widest text-muted-foreground/60 mb-1">Teaser Synopsis</p>
                                         {l.synopsis_teaser}
                                     </div>
 
@@ -345,8 +306,8 @@ export default function StoryExchangeTab() {
                                                         <Check className="h-4 w-4" /> Full Synopsis Unlocked
                                                     </div>
                                                     <div className="text-xs p-3 bg-primary/5 border border-primary/10 rounded-xl leading-relaxed text-foreground">
-                                                        <p className="font-black text-[10px] uppercase tracking-widest text-primary mb-1">Full Confidential Synopsis</p>
-                                                        {l.synopsis_full || 'No full synopsis provided.'}
+                                                        <p className="font-black text-[12px] uppercase tracking-widest text-primary mb-1">Full Confidential Synopsis</p>
+                                                        <FullSynopsis storyId={l.id} />
                                                     </div>
                                                     <Button size="sm" className="w-full bg-secondary" onClick={() => push(`/dm/${l.creator_id}`)}>
                                                         Open Chat with Writer
@@ -375,7 +336,7 @@ export default function StoryExchangeTab() {
 
                 {/* Right panel: Interest Tracker (Writers) */}
                 <div className="space-y-4">
-                    <Card className="p-4 border border-border bg-card/60 backdrop-blur-sm space-y-4">
+                    <Card className="p-4 border border-border bg-card/60 space-y-4">
                         <h3 className="font-black text-sm flex items-center gap-1.5 border-b pb-2.5">
                             <Clock className="h-4 w-4 text-primary" /> Incoming Access Requests
                         </h3>
@@ -387,15 +348,15 @@ export default function StoryExchangeTab() {
                                     <div key={r.id} className="p-3 bg-muted/30 border border-border/40 rounded-xl space-y-2">
                                         <div className="flex items-center gap-2 justify-between">
                                             <p className="text-xs font-bold text-foreground truncate max-w-[120px]">{r.profiles?.full_name || 'Producer'}</p>
-                                            <Badge variant="outline" className="text-[10px] uppercase tracking-wider">{r.status}</Badge>
+                                            <Badge variant="outline" className="text-[12px] uppercase tracking-wider">{r.status}</Badge>
                                         </div>
                                         <p className="text-xs text-muted-foreground line-clamp-1">Requested: <strong>{r.story?.title}</strong></p>
                                         {r.status === 'pending' && (
                                             <div className="flex gap-1.5 pt-1">
-                                                <Button size="sm" className="h-7 text-[10px] bg-green-500 hover:bg-green-600 px-3 py-1 flex-1 font-bold text-white" onClick={() => handleApproveInterest(r.id)}>
+                                                <Button size="sm" className="h-10 md:h-8 text-[12px] bg-green-500 hover:bg-green-600 px-3 py-1 flex-1 font-bold text-white" onClick={() => handleApproveInterest(r.id)}>
                                                     <Check className="h-3 w-3 mr-1" /> Approve
                                                 </Button>
-                                                <Button size="sm" variant="ghost" className="h-7 text-[10px] text-destructive hover:bg-destructive/10 px-3 py-1 flex-1 font-bold" onClick={() => handleDeclineInterest(r.id)}>
+                                                <Button size="sm" variant="ghost" className="h-10 md:h-8 text-[12px] text-destructive hover:bg-destructive/10 px-3 py-1 flex-1 font-bold" onClick={() => handleDeclineInterest(r.id)}>
                                                     <X className="h-3 w-3 mr-1" /> Decline
                                                 </Button>
                                             </div>
@@ -430,4 +391,16 @@ export default function StoryExchangeTab() {
             />
         </div>
     );
+}
+
+/** The writer's full synopsis, fetched on demand (the database only returns it to the writer or an approved reader). */
+function FullSynopsis({ storyId }: { storyId: string }) {
+    const [text, setText] = useState<string | null | undefined>(undefined);
+    useEffect(() => {
+        let alive = true;
+        fetchStoryFullSynopsis(supabase, storyId).then((t) => { if (alive) setText(t); }).catch(() => { if (alive) setText(null); });
+        return () => { alive = false; };
+    }, [storyId]);
+    if (text === undefined) return <span className="opacity-60">Loading…</span>;
+    return <>{text || 'No full synopsis provided.'}</>;
 }

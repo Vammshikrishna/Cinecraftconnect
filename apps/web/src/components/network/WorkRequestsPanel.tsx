@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Check, X } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
 
 const db = supabase as any;
 const range = (a: string, b: string) => (a === b ? format(new Date(a + 'T00:00:00'), 'd MMM') : `${format(new Date(a + 'T00:00:00'), 'd MMM')} - ${format(new Date(b + 'T00:00:00'), 'd MMM')}`);
@@ -29,7 +30,7 @@ export const WorkRequestsPanel = () => {
 
   const run = async (fn: string, args: any, ok?: string) => {
     const { error } = await db.rpc(fn, args);
-    if (error) toast({ title: 'Could not complete', description: error.message, variant: 'destructive' });
+    if (error) toast({ title: 'Could not complete', description: friendlyError(error), variant: 'destructive' });
     else if (ok) toast({ title: ok });
     setCounter(null);
     load();
@@ -42,7 +43,7 @@ export const WorkRequestsPanel = () => {
   if (holds.length === 0 && invites.length === 0) return null;
 
   return (
-    <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
+    <Card className="bg-card/40 border-border/50 shadow-sm overflow-hidden">
       <div className="p-5 border-b border-border/50"><h2 className="text-xl font-semibold">Work requests</h2></div>
       <div className="p-5 space-y-5">
         {incomingInvites.filter(i => i.status === 'pending').map(i => (
@@ -101,7 +102,7 @@ export const WorkRequestsPanel = () => {
                 <span>Dates {range(h.start_date, h.end_date)} · {h.role} · <b>{h.other_name}</b></span>
                 <span className="flex items-center gap-2 shrink-0">
                   <span className="text-muted-foreground">{STATUS[h.status]}</span>
-                  {['pending', 'accepted'].includes(h.status) && <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => run('cancel_date_hold', { p_id: h.id }, 'Request withdrawn')}>Withdraw</Button>}
+                  {['pending', 'accepted'].includes(h.status) && <Button size="sm" variant="ghost" className="h-10 md:h-8 text-xs" onClick={() => run('cancel_date_hold', { p_id: h.id }, 'Request withdrawn')}>Withdraw</Button>}
                 </span>
               </div>
             ))}

@@ -12,6 +12,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserPlus, UserMinus, Search, Loader2, X, Users, Crown } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface Props {
   pageId: string;
@@ -118,7 +120,7 @@ export function ManageMembersModal({ pageId, isOpen, onOpenChange, existingMembe
       toast({ title: ok });
       refresh();
     } catch (e: any) {
-      toast({ title: 'Something went wrong', description: e?.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: 'Something went wrong', description: friendlyError(e, 'Please try again.'), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -142,7 +144,7 @@ export function ManageMembersModal({ pageId, isOpen, onOpenChange, existingMembe
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg w-[95vw] max-h-[88vh] overflow-y-auto bg-card/95 backdrop-blur-3xl border-white/10 shadow-2xl rounded-[32px]">
+      <DialogContent className="max-w-lg w-[95vw] max-h-[88vh] overflow-y-auto bg-card/95 border-white/10 shadow-2xl rounded-[32px]">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold flex items-center gap-2"><Users className="h-6 w-6 text-primary" /> Team & access</DialogTitle>
           <DialogDescription>People join your team only when they accept an invitation.</DialogDescription>
@@ -168,17 +170,17 @@ export function ManageMembersModal({ pageId, isOpen, onOpenChange, existingMembe
                         <SelectContent>{ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
                       </Select>
                     ) : (
-                      <span className="text-[11px] text-muted-foreground">{m.title}{m.department ? ` · ${m.department}` : ''}</span>
+                      <span className="text-[12px] text-muted-foreground">{m.title}{m.department ? ` · ${m.department}` : ''}</span>
                     )}
                     {isOwner && m.user_id !== user?.id && (
                       <Button size="icon" variant="ghost" className="h-8 w-8" title="Make this person the owner" disabled={busy}
-                        onClick={() => window.confirm(`Transfer ownership of this page to ${m.profiles?.full_name || 'this person'}? You will stay on as a super admin, but only they can transfer or delete the page.`) && call(() => db.rpc('transfer_page_ownership', { p_page_id: pageId, p_new_owner: m.user_id }), 'Ownership transferred').then(() => onOpenChange(false))}>
+                        onClick={async () => await confirmDialog(`Transfer ownership of this page to ${m.profiles?.full_name || 'this person'}? You will stay on as a super admin, but only they can transfer or delete the page.`) && call(() => db.rpc('transfer_page_ownership', { p_page_id: pageId, p_new_owner: m.user_id }), 'Ownership transferred').then(() => onOpenChange(false))}>
                         <Crown className="h-4 w-4" />
                       </Button>
                     )}
                     {m.user_id !== user?.id && (
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-500/10" disabled={busy}
-                        onClick={() => window.confirm('Remove this person from the team?') && call(() => db.from('company_page_members').delete().eq('page_id', pageId).eq('user_id', m.user_id), 'Removed from the team')}>
+                      <Button aria-label="Remove person" size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-500/10" disabled={busy}
+                        onClick={async () => await confirmDialog('Remove this person from the team?') && call(() => db.from('company_page_members').delete().eq('page_id', pageId).eq('user_id', m.user_id), 'Removed from the team')}>
                         <UserMinus className="h-4 w-4" />
                       </Button>
                     )}
@@ -186,7 +188,7 @@ export function ManageMembersModal({ pageId, isOpen, onOpenChange, existingMembe
                 </PersonRow>
               ))
             )}
-            {isOwner && <p className="text-[11px] text-muted-foreground pt-2">Roles: content admins edit the page and post as the company; analysts can see insights; super admins can also manage the team and hiring.</p>}
+            {isOwner && <p className="text-[12px] text-muted-foreground pt-2">Roles: content admins edit the page and post as the company; analysts can see insights; super admins can also manage the team and hiring.</p>}
           </TabsContent>
 
           <TabsContent value="invite" className="space-y-4 mt-4">
@@ -220,7 +222,7 @@ export function ManageMembersModal({ pageId, isOpen, onOpenChange, existingMembe
                 invites.map((i: any) => (
                   <PersonRow key={i.id} p={i.invitee}>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-muted-foreground hidden sm:inline">{formatDistanceToNow(new Date(i.created_at), { addSuffix: true })}</span>
+                      <span className="text-[12px] text-muted-foreground hidden sm:inline">{formatDistanceToNow(new Date(i.created_at), { addSuffix: true })}</span>
                       <Button size="icon" variant="ghost" className="h-8 w-8" title="Withdraw invitation" disabled={busy} onClick={() => call(() => db.rpc('cancel_page_invite', { p_invite_id: i.id }), 'Invitation withdrawn')}>
                         <X className="h-4 w-4" />
                       </Button>
@@ -239,7 +241,7 @@ export function ManageMembersModal({ pageId, isOpen, onOpenChange, existingMembe
             ) : (
               followers.map((f: any) => (
                 <PersonRow key={f.user_id} p={f}>
-                  <span className="text-[11px] text-muted-foreground shrink-0">{formatDistanceToNow(new Date(f.followed_at), { addSuffix: true })}</span>
+                  <span className="text-[12px] text-muted-foreground shrink-0">{formatDistanceToNow(new Date(f.followed_at), { addSuffix: true })}</span>
                 </PersonRow>
               ))
             )}

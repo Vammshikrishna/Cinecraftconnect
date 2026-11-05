@@ -75,7 +75,7 @@ const NavLinks = () => {
             key={path}
             to={path}
             onMouseEnter={() => handlePrefetch(path)}
-            className={`nav-item px-2 lg:px-2 xl:px-3 py-2 rounded-lg transition-all duration-200 hover-lift relative group whitespace-nowrap flex items-center gap-2 ${isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
+            className={`nav-item px-2 lg:px-2 xl:px-3 py-2 rounded-lg transition-[color,background-color,transform,box-shadow] duration-200 hover-lift relative group whitespace-nowrap flex items-center gap-2 ${isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
               }`}
           >
             <div className="relative">
@@ -84,7 +84,7 @@ const NavLinks = () => {
                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500 border-2 border-background animate-pulse" />
               )}
             </div>
-            <span className="font-serif font-bold uppercase tracking-tight text-[12px] lg:text-[13px]">{label}</span>
+            <span className="font-serif font-bold uppercase tracking-tight text-[12px] lg:text-sm">{label}</span>
             {isActive(path) && (
               <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-0.5 bg-gradient-to-r from-primary to-primary/80 rounded-full"></div>
             )}

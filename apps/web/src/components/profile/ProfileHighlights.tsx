@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Play, FileText, Camera, Languages, Upload, Trash2, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@cinecraft/core';
 
 export interface Highlights {
   showreel_url: string | null;
@@ -65,7 +66,7 @@ export const ProfileHighlights = ({ highlights, isOwn, onEdit }: { highlights: H
   const yt = h.showreel_url ? youtubeId(h.showreel_url) : null;
 
   return (
-    <div className="rounded-2xl border bg-card/40 backdrop-blur-md overflow-hidden">
+    <div className="rounded-2xl border bg-card/40 overflow-hidden">
       <div className="grid md:grid-cols-[minmax(0,340px)_1fr] gap-0">
         {h.showreel_url && (
           <a href={h.showreel_url} target="_blank" rel="noopener noreferrer" className="relative block aspect-video bg-muted group">
@@ -75,7 +76,7 @@ export const ProfileHighlights = ({ highlights, isOwn, onEdit }: { highlights: H
               <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/5" />
             )}
             <div className="absolute inset-0 flex items-center justify-center bg-black/25 group-hover:bg-black/40 transition-colors">
-              <span className="h-14 w-14 rounded-full bg-white/90 text-black flex items-center justify-center shadow-xl"><Play className="h-6 w-6 fill-current ml-0.5" /></span>
+              <span className="h-14 w-14 rounded-full bg-foreground/90 text-black flex items-center justify-center shadow-xl"><Play className="h-6 w-6 fill-current ml-0.5" /></span>
             </div>
             <span className="absolute bottom-2 left-3 right-3 text-white text-sm font-bold drop-shadow line-clamp-1">{h.showreel_title || 'Showreel'}</span>
           </a>
@@ -83,7 +84,7 @@ export const ProfileHighlights = ({ highlights, isOwn, onEdit }: { highlights: H
         <div className="p-5 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Highlights</p>
-            {isOwn && <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onEdit}>Edit</Button>}
+            {isOwn && <Button size="sm" variant="ghost" className="h-10 md:h-8 text-xs" onClick={onEdit}>Edit</Button>}
           </div>
           {h.languages.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -151,7 +152,7 @@ export const ProfileHighlightsDialog = ({ open, onOpenChange, userId, current, o
     const { error } = await supabase.storage.from('resumes').upload(path, file, { cacheControl: '31536000', upsert: false });
     setUploading(false);
     if (error) {
-      toast({ title: 'Could not upload the file', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not upload the file', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     setCvPath(`resumes:${path}`);
@@ -173,7 +174,7 @@ export const ProfileHighlightsDialog = ({ open, onOpenChange, userId, current, o
     }, { onConflict: 'user_id' });
     setSaving(false);
     if (error) {
-      toast({ title: 'Could not save', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not save', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     onSaved();
@@ -206,7 +207,7 @@ export const ProfileHighlightsDialog = ({ open, onOpenChange, userId, current, o
             {cvPath ? (
               <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
                 <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> CV uploaded</span>
-                <Button size="sm" variant="ghost" onClick={() => { setCvPath(null); setCvPublic(false); }}><Trash2 className="h-4 w-4" /></Button>
+                <Button aria-label="Delete" size="sm" variant="ghost" onClick={() => { setCvPath(null); setCvPublic(false); }}><Trash2 className="h-4 w-4" /></Button>
               </div>
             ) : (
               <label className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed px-3 py-4 text-sm text-muted-foreground cursor-pointer hover:bg-muted/40">

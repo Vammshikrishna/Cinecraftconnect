@@ -11,7 +11,8 @@ interface DesktopOnlyGuardProps {
 
 /**
  * DesktopOnlyGuard - Prevents rendering of internal tools on mobile/tablet devices.
- * Shows a premium "PC Only" screen if the viewport is less than 1024px.
+ * Shows a "Tablet or Desktop Required" screen if the viewport is narrower than 600px (phones).
+ * 600px is intended: the consoles use responsive grids that collapse to one column, so they work on tablets.
  */
 const DesktopOnlyGuard = ({ children }: DesktopOnlyGuardProps) => {
   const isLargeScreen = useMediaQuery('(min-width: 600px)');
@@ -19,7 +20,7 @@ const DesktopOnlyGuard = ({ children }: DesktopOnlyGuardProps) => {
 
   if (!isLargeScreen) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-dvh bg-background flex flex-col items-center justify-center p-6 text-center">
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -28,7 +29,7 @@ const DesktopOnlyGuard = ({ children }: DesktopOnlyGuardProps) => {
           <div className="flex justify-center items-center gap-4 py-4">
             <div className="flex items-center gap-4">
               <Monitor className="w-12 h-12 text-primary/40" />
-              <Tablet className="w-16 h-16 text-primary animate-pulse" />
+              <Tablet className="w-16 h-16 text-primary" />
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-green-500 rounded-full border-2 border-background ml-8 mt-4" />
             </div>
             <div className="flex flex-col gap-2 opacity-40">
@@ -55,7 +56,7 @@ const DesktopOnlyGuard = ({ children }: DesktopOnlyGuardProps) => {
               <ChevronLeft className="w-4 h-4" />
               Back to Feed
             </Button>
-            <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground opacity-50">
+            <p className="text-[12px] uppercase font-black tracking-widest text-muted-foreground opacity-50">
               CineCraft Connect Governance
             </p>
           </div>

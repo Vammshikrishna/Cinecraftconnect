@@ -9,14 +9,7 @@ import { Button } from '@/components/ui/button';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-    MessageSquare,
-    Share2,
-    Edit,
-    Trash2,
-    Flag,
-    Heart
-} from 'lucide-react';
+import { MessageSquare, Edit, Trash2, Flag, Heart } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
@@ -27,6 +20,9 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Package, Star, ClipboardCheck } from 'lucide-react';
 import { LeaveReviewModal } from '@/components/marketplace/LeaveReviewModal';
 import { BookingRequestDialog } from '@/components/marketplace/BookingRequestDialog';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const MarketplaceListingDetail = () => {
     const { listingId } = useParams<{ listingId: string }>();
@@ -66,24 +62,23 @@ const MarketplaceListingDetail = () => {
             toast({
                 title: 'Sign in required',
                 description: 'Redirecting to sign in page...',
-                variant: 'destructive'
             });
             push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
         }
 
         if (isWishlisted) {
-            await supabase
+            const { error } = await supabase
                 .from('marketplace_wishlists' as any)
                 .delete()
                 .eq('listing_id', listing!.id)
                 .eq('user_id', user.id);
-            toast({ title: 'Removed', description: 'Removed from wishlist' });
+            if (error) { toast({ title: 'Could not update your wishlist', description: friendlyError(error), variant: 'destructive' }); return; }
         } else {
-            await supabase
+            const { error } = await supabase
                 .from('marketplace_wishlists' as any)
                 .insert({ listing_id: listing!.id, user_id: user.id });
-            toast({ title: 'Saved', description: 'Added to wishlist' });
+            if (error) { toast({ title: 'Could not update your wishlist', description: friendlyError(error), variant: 'destructive' }); return; }
         }
         queryClient.invalidateQueries({ queryKey: ['wishlist', listing!.id, user?.id] });
     };
@@ -112,7 +107,7 @@ const MarketplaceListingDetail = () => {
             if (listingData.user_id) {
                 const { data: profile, error: profileError } = await supabase
                     .from('profiles')
-                    .select('id, username, full_name, avatar_url')
+                    .select('id, username, full_name, avatar_url, is_verified')
                     .eq('id', listingData.user_id)
                     .single();
 
@@ -165,7 +160,6 @@ const MarketplaceListingDetail = () => {
             toast({
                 title: 'Sign in required',
                 description: 'Redirecting to sign in page...',
-                variant: 'destructive'
             });
             push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
@@ -173,6 +167,12 @@ const MarketplaceListingDetail = () => {
 
         if (listing && listing.profiles && (listing.profiles as any).id) {
             push(`/messages/${(listing.profiles as any).id}`);
+        } else {
+            toast({
+                title: 'Seller unavailable',
+                description: 'We could not load the seller profile, so you cannot message them from here right now. Please try again later.',
+                variant: 'destructive'
+            });
         }
     };
 
@@ -181,7 +181,6 @@ const MarketplaceListingDetail = () => {
             toast({
                 title: 'Sign in required',
                 description: 'Redirecting to sign in page...',
-                variant: 'destructive'
             });
             push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
@@ -191,7 +190,7 @@ const MarketplaceListingDetail = () => {
 
     const handleDelete = async () => {
         if (!listingId) return;
-        if (!confirm('Are you sure you want to delete this listing? This action cannot be undone.')) return;
+        if (!await confirmDialog('Are you sure you want to delete this listing? This action cannot be undone.')) return;
 
         try {
             const { error } = await supabase
@@ -218,8 +217,8 @@ const MarketplaceListingDetail = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-background pt-24 px-4 flex justify-center">
-                <div className="w-full max-w-6xl gap-8 lg:gap-12 grid grid-cols-1 lg:grid-cols-2">
+            <div className="min-h-dvh bg-background pt-24 px-4 flex justify-center">
+                <div className="w-full max-w-[1400px] gap-8 lg:gap-12 grid grid-cols-1 lg:grid-cols-2">
                     <div className="space-y-4">
                         <EnhancedSkeleton className="aspect-video rounded-3xl" />
                         <div className="grid grid-cols-5 gap-3">
@@ -239,15 +238,15 @@ const MarketplaceListingDetail = () => {
     if (!listing) return null;
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-40">
-            <div className="max-w-6xl mx-auto px-4 md:px-8">
+        <div className="min-h-dvh bg-background pt-20 pb-40">
+            <div className="max-w-[1400px] mx-auto px-4 md:px-8">
                 <PageHeader
                     title={listing.title}
                     subtitle={
                         <div className="flex items-center gap-2">
                             <span>Marketplace Listing in {listing.location}</span>
                             {isInternal && (
-                                <Badge variant="outline" className="border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[10px] py-0.5 px-2 bg-orange-500/5">
+                                <Badge variant="outline" className="border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[12px] py-0.5 px-2 bg-orange-500/5">
                                     Staff Observer
                                 </Badge>
                             )}
@@ -258,20 +257,20 @@ const MarketplaceListingDetail = () => {
                         <div className="flex gap-2">
                             {(isOwner || isInternal) ? (
                                 <>
-                                    <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setIsEditModalOpen(true)}>
+                                    <Button aria-label="Edit" variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setIsEditModalOpen(true)}>
                                         <Edit className="h-4 w-4" />
                                     </Button>
-                                    <Button variant="destructive" size="icon" className="rounded-xl shadow-lg shadow-red-500/20" onClick={handleDelete}>
+                                    <Button aria-label="Delete" variant="destructive" size="icon" className="rounded-xl shadow-lg shadow-red-500/20" onClick={handleDelete}>
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </>
                             ) : (user && !isInternal) && (
-                                <Button variant="ghost" size="icon" className="rounded-xl hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
+                                <Button aria-label="Report" variant="ghost" size="icon" className="rounded-xl hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
                                     <Flag className="h-4 w-4" />
                                 </Button>
                             )}
-                            <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
-                                <Share2 className="h-4 w-4" />
+                            <Button aria-label="Share" variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                                <ShareIcon className="h-4 w-4" />
                             </Button>
                         </div>
                     }
@@ -284,7 +283,7 @@ const MarketplaceListingDetail = () => {
                             <img loading="lazy" decoding="async"
                                 src={listing.images?.[activeImageIndex] || '/placeholder-image.jpg'}
                                 alt={listing.title}
-                                className="w-full h-full object-contain backdrop-blur-xl"
+                                className="w-full h-full object-contain"
                             />
                             {/* Subtle Lighting */}
                             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-white/5 pointer-events-none" />
@@ -296,7 +295,7 @@ const MarketplaceListingDetail = () => {
                                     <button
                                         key={idx}
                                         onClick={() => setActiveImageIndex(idx)}
-                                        className={`aspect-square rounded-2xl overflow-hidden border-2 transition-all duration-300 ${activeImageIndex === idx ? 'border-primary scale-105 shadow-xl shadow-primary/20' : 'border-transparent hover:border-primary/50 opacity-60 hover:opacity-100'
+                                        className={`aspect-square rounded-2xl overflow-hidden border-2 transition duration-300 ${activeImageIndex === idx ? 'border-primary scale-105 shadow-xl shadow-primary/20' : 'border-transparent hover:border-primary/50 opacity-60 hover:opacity-100'
                                             }`}
                                     >
                                         <img loading="lazy" decoding="async" src={img} alt={`View ${idx + 1}`} className="w-full h-full object-cover" />
@@ -308,7 +307,7 @@ const MarketplaceListingDetail = () => {
 
                     {/* Right Column: Details */}
                     <div className="space-y-8 flex flex-col">
-                             <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] space-y-6 mt-6 shadow-xl relative overflow-hidden group">
+                             <div className="p-8 bg-zinc-50/80 dark:bg-card/60 border border-black/5 dark:border-white/10 rounded-[32px] space-y-6 mt-6 shadow-xl relative overflow-hidden group">
                                  <UniversalShareSheet
                                      isOpen={showShareSheet}
                                      onOpenChange={setShowShareSheet}
@@ -320,7 +319,7 @@ const MarketplaceListingDetail = () => {
                                          previewUrl: listing.images?.[0],
                                          price: listing.price_per_day,
                                          author: listing.profiles,
-                                         subtitle: `${listing.category} • ₹${listing.price_per_day}/day`
+                                         subtitle: `${listing.category} • ₹${Number(listing.price_per_day).toLocaleString('en-IN')}/day`
                                      }}
                                  />
                                  <ListingCreationModal
@@ -348,28 +347,28 @@ const MarketplaceListingDetail = () => {
                                 <div className="relative z-10 flex items-end gap-3 pb-6 border-b border-black/5 dark:border-white/10">
                                     <span className="text-4xl tracking-tighter font-black text-primary flex items-start leading-[0.8]">
                                         <span className="text-2xl mr-1.5 opacity-60 mt-1.5">₹</span>
-                                        {listing.price_per_day}
+                                        {Number(listing.price_per_day).toLocaleString('en-IN')}
                                     </span>
                                     <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest pb-1 opacity-60">/ Day</span>
                                 </div>
 
                                 {listing.price_per_week && (
-                                    <div className="relative z-10 text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                                    <div className="relative z-10 text-[12px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
                                         <div className="w-1.5 h-1.5 rounded-full bg-primary/40 shrink-0" />
-                                        Weekly Rate: <span className="text-foreground tracking-tight ml-1">₹{listing.price_per_week}</span> / Week
+                                        Weekly Rate: <span className="text-foreground tracking-tight ml-1">₹{Number(listing.price_per_week).toLocaleString('en-IN')}</span> / Week
                                     </div>
                                 )}
 
                                  <div className="pt-2 flex flex-col gap-4 relative z-10">
                                     <div className="flex gap-4">
                                         {!isInternal && !isOwner && (
-                                            <Button className="flex-1 gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={handleRequestBooking}>
+                                            <Button className="flex-1 gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition" onClick={handleRequestBooking}>
                                                 <Package className="h-5 w-5" />
                                                 <span className="font-bold tracking-wide">{listing.is_bundle ? 'Request Bundle Booking' : 'Request Booking'}</span>
                                             </Button>
                                         )}
                                         {!isInternal && (
-                                            <Button variant={isOwner ? 'default' : 'outline'} className="flex-1 gap-2.5 h-14 rounded-2xl text-base transition-all" onClick={isOwner ? () => push('/marketplace/bookings') : handleContactSeller}>
+                                            <Button variant={isOwner ? 'default' : 'outline'} className="flex-1 gap-2.5 h-14 rounded-2xl text-base transition-colors" onClick={isOwner ? () => push('/marketplace/bookings') : handleContactSeller}>
                                                 <MessageSquare className="h-5 w-5" />
                                                 <span className="font-bold tracking-wide">{isOwner ? 'Manage Bookings' : 'Contact Seller'}</span>
                                             </Button>
@@ -377,7 +376,7 @@ const MarketplaceListingDetail = () => {
                                     </div>
                                     <div className="flex gap-3">
                                         {!isInternal && !isOwner && user && (
-                                            <Button variant="outline" className="flex-1 h-12 rounded-xl text-sm transition-all font-bold" onClick={() => setIsReviewModalOpen(true)}>
+                                            <Button variant="outline" className="flex-1 h-12 rounded-xl text-sm transition-colors font-bold" onClick={() => setIsReviewModalOpen(true)}>
                                                 <Star className="h-4 w-4 mr-2" />
                                                 Leave Review
                                             </Button>
@@ -385,7 +384,7 @@ const MarketplaceListingDetail = () => {
                                         {!isInternal && !isOwner && user && (
                                             <Button 
                                                 variant="outline" 
-                                                className={`flex-1 h-12 rounded-xl text-sm transition-all font-bold ${isWishlisted ? 'border-red-500/50 text-red-500 bg-red-500/5 hover:bg-red-500/10' : ''}`}
+                                                className={`flex-1 h-12 rounded-xl text-sm transition-colors font-bold ${isWishlisted ? 'border-red-500/50 text-red-500 bg-red-500/5 hover:bg-red-500/10' : ''}`}
                                                 onClick={toggleWishlist}
                                                 disabled={isWishlistLoading}
                                             >
@@ -398,7 +397,7 @@ const MarketplaceListingDetail = () => {
                             </div>
 
                         {listing.condition_grade && (
-                            <div className="p-5 bg-card/40 backdrop-blur-md rounded-2xl border border-white/5 space-y-3 shadow-sm">
+                            <div className="p-5 bg-card/40 rounded-2xl border border-white/5 space-y-3 shadow-sm">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1 flex items-center gap-2">
                                         <ClipboardCheck className="h-4 w-4 text-primary" />
@@ -424,7 +423,7 @@ const MarketplaceListingDetail = () => {
 
                         <div className="space-y-5">
                             <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1">Description</h3>
-                            <p className="text-foreground/90 leading-loose whitespace-pre-wrap font-medium bg-secondary/10 p-6 rounded-3xl border border-white/5 shadow-inner">
+                            <p className="text-foreground/90 leading-loose whitespace-pre-wrap font-medium bg-secondary/10 p-6 rounded-3xl border border-foreground/5 shadow-inner">
                                 {listing.description}
                             </p>
                         </div>
@@ -434,7 +433,7 @@ const MarketplaceListingDetail = () => {
                                 <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1">Included in this bundle</h3>
                                 <div className="grid grid-cols-1 gap-3">
                                     {listing.bundle_items.map(item => (
-                                        <div key={item.id} className="flex gap-4 p-3 bg-secondary/10 rounded-2xl border border-white/5 items-center">
+                                        <div key={item.id} className="flex gap-4 p-3 bg-secondary/10 rounded-2xl border border-foreground/5 items-center">
                                             <div className="w-16 h-16 rounded-xl bg-black/10 overflow-hidden shrink-0">
                                                 <img loading="lazy" decoding="async" src={item.images?.[0] || '/placeholder-image.jpg'} alt={item.title} className="w-full h-full object-cover" />
                                             </div>
@@ -453,8 +452,8 @@ const MarketplaceListingDetail = () => {
                                 <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1">Specifications</h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {Object.entries(listing.specifications).map(([key, value]) => (
-                                        <div key={key} className="flex justify-between items-center p-4 bg-secondary/10 rounded-2xl border border-white/5 transition-all hover:bg-secondary/20">
-                                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{key.replace(/_/g, ' ')}</span>
+                                        <div key={key} className="flex justify-between items-center p-4 bg-secondary/10 rounded-2xl border border-foreground/5 transition hover:bg-secondary/20">
+                                            <span className="text-[12px] font-bold text-muted-foreground uppercase tracking-wider">{key.replace(/_/g, ' ')}</span>
                                             <span className="font-black text-sm tracking-tight">{value as string}</span>
                                         </div>
                                     ))}
@@ -463,8 +462,8 @@ const MarketplaceListingDetail = () => {
                         )}
 
                         <div className="pt-8 mt-auto">
-                            <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4">Listed by Community Member</h3>
-                            <div className="flex items-center gap-4 bg-card/40 backdrop-blur-md p-4 rounded-[24px] border border-white/5 hover:border-primary/20 transition-all cursor-pointer group">
+                            <h3 className="text-[12px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4">Listed by Community Member</h3>
+                            <div role="link" tabIndex={0} onClick={() => push(`/profile/${listing.user_id}`)} onKeyDown={(e) => { if (e.key === 'Enter') push(`/profile/${listing.user_id}`); }} className="flex items-center gap-4 bg-card/40 p-4 rounded-[24px] border border-white/5 hover:border-primary/20 active:bg-card/60 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                 <Avatar className="h-14 w-14 border-2 border-background shadow-md">
                                     <AvatarImage src={listing.profiles?.avatar_url || undefined} />
                                     <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-xl">
@@ -475,8 +474,8 @@ const MarketplaceListingDetail = () => {
                                     <div className="font-black text-lg tracking-tight group-hover:text-primary transition-colors">
                                         {listing.profiles?.full_name || listing.profiles?.username || 'Anonymous User'}
                                     </div>
-                                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
-                                        Verified Owner
+                                    <div className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                                        {(listing.profiles as any)?.is_verified === true ? 'Verified Owner' : 'Community Member'}
                                     </div>
                                 </div>
                             </div>

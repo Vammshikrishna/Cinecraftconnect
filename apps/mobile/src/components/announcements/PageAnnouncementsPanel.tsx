@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'rea
 import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useRecordOnShow } from '../../hooks/useAnnouncementViews';
 import { ReportModal } from '../modals/ReportModal';
 import { CreateAnnouncementModal } from '../modals/CreateAnnouncementModal';
 import { AnnouncementBadges, AnnouncementCover, AnnouncementActions, AnnouncementMenuButton } from './AnnouncementParts';
@@ -34,13 +35,15 @@ export const PageAnnouncementsPanel = ({ pageId, canManage, userId }: { pageId: 
   useEffect(() => {
     load();
   }, [load]);
+  // The panel is a plain list inside a parent scroll view, so views are counted shortly after it shows
+  useRecordOnShow(items, userId);
 
   return (
     <View>
       {canManage && (
         <TouchableOpacity onPress={() => setCreateOpen(true)} style={s.newBtn}>
           <Icon name="plus" size={14} color="#fff" />
-          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12.5 }}>New announcement</Text>
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>New announcement</Text>
         </TouchableOpacity>
       )}
 
@@ -55,14 +58,14 @@ export const PageAnnouncementsPanel = ({ pageId, canManage, userId }: { pageId: 
           <View key={a.id} style={[s.card, { backgroundColor: T.bgCard, borderColor: T.border }]}>
             <AnnouncementBadges item={a} />
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-              <Text style={{ color: T.textPrimary, fontSize: 15, fontWeight: '800', flex: 1 }}>{a.title}</Text>
+              <Text style={{ color: T.textPrimary, fontSize: 16, fontWeight: '700', flex: 1 }}>{a.title}</Text>
               <AnnouncementMenuButton item={a} onEdit={setEditing} onChanged={load} />
             </View>
             <AnnouncementCover uri={a.image_url} />
             <Text style={{ color: T.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 4 }} numberOfLines={6}>
               {String(a.content).split('JOB_SHARE::')[0].trim()}
             </Text>
-            <Text style={{ color: T.textMuted, fontSize: 11, marginTop: 6 }}>{ago(a.posted_at)}</Text>
+            <Text style={{ color: T.textMuted, fontSize: 12, marginTop: 6 }}>{ago(a.posted_at)}</Text>
             <AnnouncementActions item={a} userId={userId} onReport={setReportFor} />
           </View>
         ))

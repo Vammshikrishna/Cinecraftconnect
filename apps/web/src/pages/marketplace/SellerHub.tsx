@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BadgeCheck, Eye, Heart, Loader2, Package, Pause, Play, Store, Wallet, CalendarCheck, FileText } from 'lucide-react';
+import { BadgeCheck, Eye, Heart, Package, Pause, Play, Store, Wallet, CalendarCheck, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAppNavigation } from '@/contexts/NavigationContext';
@@ -8,6 +8,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { PageHeader } from '@/components/common/PageHeader';
 import { BackButton } from '@/components/common/BackButton';
 import { VendorVerificationDialog } from '@/components/vendors/VendorVerificationDialog';
+import { LoadError } from '@/components/settings/LoadError';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { friendlyError } from '@cinecraft/core';
 
 const db = supabase as any;
 
@@ -22,7 +25,7 @@ interface VendorStat {
 
 const Tile = ({ icon: Icon, label, value }: { icon: any; label: string; value: string | number }) => (
   <div className="rounded-2xl border border-border/60 bg-card/40 p-4">
-    <div className="flex items-center gap-2 text-muted-foreground text-[10px] font-black uppercase tracking-widest"><Icon size={14} /> {label}</div>
+    <div className="flex items-center gap-2 text-muted-foreground text-[12px] font-black uppercase tracking-widest"><Icon size={14} /> {label}</div>
     <p className="text-2xl font-black mt-1">{value}</p>
   </div>
 );
@@ -34,11 +37,18 @@ const SellerHub = () => {
   const [listings, setListings] = useState<ListingStat[]>([]);
   const [vendors, setVendors] = useState<VendorStat[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [verifyFor, setVerifyFor] = useState<VendorStat | null>(null);
 
   const load = useCallback(async () => {
     const { data, error } = await db.rpc('seller_hub_stats');
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+    setLoadError(false);
     setListings(data?.listings || []);
     setVendors(data?.vendors || []);
     setLoading(false);
@@ -63,14 +73,14 @@ const SellerHub = () => {
     setListings((prev) => prev.map((x) => (x.id === l.id ? { ...x, is_active: !x.is_active } : x)));
     const { error } = await db.from('marketplace_listings').update({ is_active: !l.is_active }).eq('id', l.id);
     if (error) {
-      toast({ title: 'Could not update the listing', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not update the listing', description: friendlyError(error), variant: 'destructive' });
       load();
     }
   };
 
   return (
-    <div className="min-h-screen bg-background pt-16 md:pt-20 pb-28">
-      <div className="max-w-5xl mx-auto px-4 md:px-8">
+    <div className="min-h-dvh bg-background pt-16 md:pt-20 pb-28">
+      <div className="max-w-[1280px] mx-auto px-4 md:px-8">
         <BackButton label="BACK TO MARKETPLACE" to="/marketplace" className="mb-6" />
         <PageHeader
           title="Seller Hub"
@@ -85,14 +95,16 @@ const SellerHub = () => {
         />
 
         {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+          <ScreenSkeleton variant="list" />
+        ) : loadError && listings.length === 0 && vendors.length === 0 ? (
+          <LoadError className="mt-6" title="Could not load your seller stats" onRetry={() => { setLoading(true); load(); }} />
         ) : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Tile icon={Eye} label="Views" value={totals.views} />
               <Tile icon={Heart} label="Saves" value={totals.saves} />
               <Tile icon={CalendarCheck} label="Pending requests" value={totals.pending} />
-              <Tile icon={Wallet} label="Booked value" value={`₹${totals.revenue.toLocaleString()}`} />
+              <Tile icon={Wallet} label="Booked value" value={`₹${totals.revenue.toLocaleString('en-IN')}`} />
             </div>
 
             <h2 className="text-xs font-black uppercase tracking-widest text-muted-foreground mt-10 mb-3">Your listings ({listings.length})</h2>
@@ -110,17 +122,17 @@ const SellerHub = () => {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Link to={`/marketplace/${l.id}`} className="font-black truncate hover:text-primary">{l.title}</Link>
-                        {!l.is_active && <span className="text-[10px] font-black uppercase bg-muted rounded-full px-2 py-0.5">Paused</span>}
-                        {l.admin_flagged && <span className="text-[10px] font-black uppercase bg-red-500/15 text-red-500 rounded-full px-2 py-0.5">Under review</span>}
+                        {!l.is_active && <span className="text-[12px] font-black uppercase bg-muted rounded-full px-2 py-0.5">Paused</span>}
+                        {l.admin_flagged && <span className="text-[12px] font-black uppercase bg-red-500/15 text-red-500 rounded-full px-2 py-0.5">Under review</span>}
                       </div>
-                      <p className="text-xs text-muted-foreground">₹{Number(l.price_per_day).toLocaleString()}/day{l.is_bundle ? ' · bundle' : ''}</p>
+                      <p className="text-xs text-muted-foreground">₹{Number(l.price_per_day).toLocaleString('en-IN')}/day{l.is_bundle ? ' · bundle' : ''}</p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mt-2 font-semibold">
                         <span className="flex items-center gap-1"><Eye size={12} /> {l.views}</span>
                         <span className="flex items-center gap-1"><Heart size={12} /> {l.saves}</span>
                         <span className={l.pending ? 'text-amber-500' : 'text-muted-foreground'}>{l.pending} pending</span>
                         <span className="text-emerald-500">{l.confirmed} confirmed</span>
                         <span className="text-muted-foreground">{l.completed} done</span>
-                        <span className="text-primary">₹{Number(l.revenue).toLocaleString()}</span>
+                        <span className="text-primary">₹{Number(l.revenue).toLocaleString('en-IN')}</span>
                       </div>
                     </div>
                     <Button variant="outline" size="sm" className="rounded-full shrink-0" onClick={() => toggleActive(l)}>
@@ -145,7 +157,7 @@ const SellerHub = () => {
                       <div className="min-w-0">
                         <Link to={`/vendors/${v.id}`} className="font-black truncate hover:text-primary flex items-center gap-1.5">{v.business_name}{v.is_verified && <BadgeCheck className="w-4 h-4 text-primary" />}</Link>
                         <p className="text-xs text-muted-foreground">
-                          {v.requested} new · {v.quoted} quoted · {v.accepted} accepted · {v.completed} done · won ₹{Number(v.won_value).toLocaleString()}
+                          {v.requested} new · {v.quoted} quoted · {v.accepted} accepted · {v.completed} done · won ₹{Number(v.won_value).toLocaleString('en-IN')}
                         </p>
                       </div>
                     </div>

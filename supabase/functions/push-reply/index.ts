@@ -26,6 +26,13 @@ serve(async (req) => {
         const userId = authData?.user?.id;
         if (authError || !userId) return json({ error: "Unauthorized" }, 401);
 
+        // Messages are written AS THE CALLER (their own token, not the service key), so the same block list,
+        // "who can message me" setting and row rules apply as when they send from the app.
+        const asUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+            global: { headers: { Authorization: `Bearer ${token}` } },
+            auth: { persistSession: false, autoRefreshToken: false },
+        });
+
         if (action === "read") {
             // Only mark messages that were sent TO the caller.
             await supabase.from("direct_messages").update({ is_read: true })
@@ -41,7 +48,7 @@ serve(async (req) => {
                     .eq("room_id", conversationId).eq("user_id", userId).maybeSingle();
                 if (!member) return json({ error: "Forbidden" }, 403);
 
-                const { error } = await supabase.from("room_messages").insert({
+                const { error } = await asUser.from("room_messages").insert({
                     user_id: userId, room_id: conversationId, content,
                 });
                 if (error) return json({ success: false, error: error.message }, 500);
@@ -53,7 +60,7 @@ serve(async (req) => {
                     .eq("project_space_id", conversationId).eq("user_id", userId).maybeSingle();
                 if (!member) return json({ error: "Forbidden" }, 403);
 
-                const { error } = await supabase.from("project_space_messages").insert({
+                const { error } = await asUser.from("project_space_messages").insert({
                     user_id: userId, project_space_id: conversationId, content,
                 });
                 if (error) return json({ success: false, error: error.message }, 500);
@@ -63,7 +70,7 @@ serve(async (req) => {
             // Direct message: conversationId is the other participant's user id.
             if (conversationId === userId) return json({ error: "Invalid recipient" }, 400);
             const channelId = [userId, conversationId].sort().join("-");
-            const { error } = await supabase.from("direct_messages").insert({
+            const { error } = await asUser.from("direct_messages").insert({
                 sender_id: userId, receiver_id: conversationId, channel_id: channelId, content,
             });
             if (error) return json({ success: false, error: error.message }, 500);

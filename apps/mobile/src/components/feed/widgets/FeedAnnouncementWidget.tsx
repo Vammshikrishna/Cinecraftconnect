@@ -1,3 +1,4 @@
+import { WT } from './widgetScale';
 import { CachedImage } from '../../common/CachedImage';
 import React, { useEffect, useState } from 'react';
 import {
@@ -14,9 +15,10 @@ import { Icon } from '../../common/Icon';
 import { FormattedText } from '../../common/FormattedText';
 import { useUserSettings } from '../../../hooks/useUserSettings';
 import { UniversalShareSheet } from '../../common/UniversalShareSheet';
+import { easeLayout } from '../../../utils/motion';
 
 const ORANGE = '#FF4B33';
-const MUTED = '#6B7280';
+const MUTED = '#64748B';
 const BORDER = '#E5E7EB';
 
 interface AnnouncementItem {
@@ -188,21 +190,22 @@ export const FeedAnnouncementWidget: React.FC<FeedAnnouncementWidgetProps> = ({
                     {ann.title}
                   </Text>
                   <View style={styles.timeRow}>
-                    <Icon name="clock" size={11} color={themeColors.textMuted} />
+                    <Icon name="clock" size={11} color={themeColors.iconMuted} />
                     <Text style={[styles.timeText, { color: themeColors.textMuted }]}>{timeAgoStr}</Text>
                   </View>
                 </View>
 
                 {/* Dismiss Button */}
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                   style={styles.dismissBtn}
                   onPress={() => {
+                    easeLayout();
                     setDismissed((prev) => ({ ...prev, [ann.id]: true }));
                     onDismiss?.(ann.id);
                   }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Icon name="x" size={14} color={themeColors.textMuted} />
+                  <Icon name="x" size={14} color={themeColors.iconMuted} />
                 </TouchableOpacity>
               </View>
 
@@ -246,16 +249,16 @@ export const FeedAnnouncementWidget: React.FC<FeedAnnouncementWidgetProps> = ({
                   ]}
                 >
                   <Text style={[styles.fromBadgeText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                    FROM // {authorName.toUpperCase()}
+                    From {authorName}
                   </Text>
                 </View>
 
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share"
                   style={styles.shareBtn}
                   onPress={() => handleShare(ann)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Icon name="share" size={15} color={themeColors.textMuted} />
+                  <Icon name="share" size={15} color={themeColors.iconMuted} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -283,7 +286,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   titleGroup: {
     flexDirection: 'row',
@@ -292,14 +295,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0D0D0D',
-    fontSize: 16,
+    fontSize: WT.sectionTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   seeAllText: {
     color: '#4B5563',
-    fontSize: 12,
+    fontSize: WT.seeAll,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -311,7 +314,7 @@ const styles = StyleSheet.create({
     width: 290,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 16,
+    padding: WT.cardPad,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#000',
@@ -352,7 +355,7 @@ const styles = StyleSheet.create({
   },
   annTitle: {
     color: '#0D0D0D',
-    fontSize: 15,
+    fontSize: WT.cardTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     marginBottom: 2,
@@ -364,7 +367,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     color: MUTED,
-    fontSize: 11,
+    fontSize: WT.meta,
     fontFamily: 'WorkSans-Regular',
     fontWeight: '400',
   },
@@ -417,20 +420,18 @@ const styles = StyleSheet.create({
   },
   spotifyBrandText: {
     color: '#1DB954',
-    fontSize: 10,
-    fontFamily: 'Inconsolata-Bold',
+    fontSize: WT.badge,
     fontWeight: '700',
-    letterSpacing: 0.8,
-  },
+      },
   spotifyTrackTitle: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: WT.cardTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
   },
   spotifyArtist: {
     color: 'rgba(255, 255, 255, 0.75)',
-    fontSize: 11,
+    fontSize: WT.body,
     fontFamily: 'WorkSans-Regular',
     marginTop: 2,
   },
@@ -462,7 +463,7 @@ const styles = StyleSheet.create({
   },
   captionText: {
     color: '#4B5563',
-    fontSize: 13,
+    fontSize: WT.body,
     fontFamily: 'WorkSans-Regular',
     fontWeight: '400',
     lineHeight: 18,
@@ -481,17 +482,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFE5DF',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
     maxWidth: '80%',
   },
   fromBadgeText: {
     color: '#FF4B33',
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   shareBtn: {
     padding: 4,
   },

@@ -5,7 +5,7 @@ import VerificationBadge from "../common/VerificationBadge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppNavigation } from "@/contexts/NavigationContext";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import CommentSection from "./CommentSection";
@@ -29,10 +29,12 @@ import { getOptimizedImage } from "@/utils/image-optimization";
 import { StaffBadge } from "../internal/shared/StaffBadge";
 import { CachedImage } from "@/components/common/CachedImage";
 import { CachedVideo } from "@/components/common/CachedVideo";
+import { FeedVideo } from "@/components/common/FeedVideo";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -54,6 +56,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { extractHashtags, friendlyError, mediaItemRatio } from '@cinecraft/core';
+import { PostPoll } from './PostPoll';
+import { ScheduledBanner, CollaboratorsLine, LinkPreviewCard } from './PostExtras';
+import type { LinkPreview } from '@cinecraft/core';
+import { PostInsightsDialog } from './PostInsightsDialog';
+import { hidePost, unhidePost, muteAuthor, unmuteAuthor, removeMutedWord, blockUser, postLink, addMutedWord, feedReasonText } from '@cinecraft/core';
+// the full-screen viewer is only needed when someone taps a picture, so it loads on demand
+const ImageLightboxModal = lazy(() => import("@/components/chat/ImageLightboxModal"));
 
 interface PostAuthor {
   id?: string;
@@ -88,6 +98,10 @@ interface PostProps {
   mediaItems?: { url: string; type: "image" | "video"; crop?: any; zoom?: number; pan?: any; filter?: string; filterName?: string; adjustments?: any; text_overlays?: any[]; aspectRatio?: string }[];
   createdAt?: string;
   onDelete?: (postId: string) => void;
+  /** the post (or everything by its author) was hidden from my feed */
+  onHidden?: (postId: string, authorId: string | null, scope: 'post' | 'author') => void;
+  /** why this post is in my feed (sent by the database) */
+  feedReason?: string | null;
   pageInfo?: {
     id: string;
     name: string;
@@ -100,6 +114,18 @@ interface PostProps {
   comments_disabled?: boolean;
   hide_likes?: boolean;
   tagged_users?: any[];
+  /** public (default), connections or private: shown as a small label so the author remembers who can see it */
+  audience?: string | null;
+  /** this post has a poll: it is loaded and shown under the text */
+  has_poll?: boolean;
+  /** when the post goes live (only the author sees a post before that) */
+  scheduled_at?: string | null;
+  /** the post credits collaborators: they are loaded and shown under the text */
+  has_collabs?: boolean;
+  /** title, description and picture of the first link */
+  link_preview?: LinkPreview | null;
+  /** set when the caption or media was changed after posting */
+  edited_at?: string | null;
 }
 
 const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: { 
@@ -128,6 +154,8 @@ const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: {
     <button
       onClick={handleClick}
       disabled={isLiking}
+      aria-label={isLiked ? 'Unlike' : 'Like'}
+      aria-pressed={isLiked}
       className={`flex items-center gap-1.5 group/like focus:outline-none transition-colors ${
         isLiked ? 'text-primary' : 'text-foreground/80 hover:text-primary'
       }`}
@@ -204,7 +232,7 @@ const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: {
       </div>
 
       {/* Animated Like Count */}
-      <div className={`overflow-hidden h-5 relative flex items-center ${hideLikes ? 'min-w-[3.5rem]' : 'min-w-[1.5rem]'}`}>
+      <div className={`overflow-hidden h-5 relative flex items-center ${hideLikes ? 'min-w-[3.5rem]' : 'min-w-[3ch]'}`}>
         <AnimatePresence mode="popLayout" initial={false}>
           {hideLikes ? (
             <motion.span
@@ -213,7 +241,7 @@ const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -20, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="text-[13px] font-semibold whitespace-nowrap"
+              className="text-sm font-semibold whitespace-nowrap"
             >
               {isLiked ? 'Liked' : 'Likes'}
             </motion.span>
@@ -224,9 +252,9 @@ const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -20, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="text-[13px] font-semibold absolute"
+              className="text-sm font-semibold absolute"
             >
-              {likeCount}
+              {new Intl.NumberFormat(undefined, { notation: 'compact' }).format(likeCount || 0)}
             </motion.span>
           )}
         </AnimatePresence>
@@ -239,6 +267,12 @@ const PostCard = ({
   id,
   author,
   timeAgo,
+  audience,
+  edited_at,
+  has_poll,
+  scheduled_at,
+  has_collabs,
+  link_preview,
   content: initialContent,
   hasImage,
   imageAlt,
@@ -254,6 +288,8 @@ const PostCard = ({
   mediaItems: initialMediaItems,
   createdAt,
   onDelete,
+  onHidden,
+  feedReason,
   pageInfo,
   authorId,
   location,
@@ -394,7 +430,7 @@ const PostCard = ({
     } catch (error: any) {
       toast({
         title: "Upload failed",
-        description: error.message || "Failed to upload file",
+        description: friendlyError(error, "Failed to upload file"),
         variant: "destructive",
       });
     } finally {
@@ -453,7 +489,7 @@ const PostCard = ({
       }
 
       const items = Array.isArray(mediaItems) ? [...mediaItems] : [];
-      if (items.length === 0 && (hasImage || hasVideo)) {
+      if (items.length === 0 && mediaUrl && (hasImage || hasVideo)) {
         items.push({ url: mediaUrl || "", type: hasImage ? "image" : "video" });
       }
       setEditMediaItems(items);
@@ -461,6 +497,63 @@ const PostCard = ({
   }, [isEditOpen, content, mediaItems, hasImage, hasVideo, mediaUrl]);
 
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isInsightsOpen, setIsInsightsOpen] = useState(false);
+  const [hiddenLocal, setHiddenLocal] = useState(false);
+
+  const targetAuthorId: string | null = author.id || authorId || null;
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(postLink(id, window.location.origin)); toast({ title: 'Link copied' }); }
+    catch { toast({ title: 'Could not copy the link', variant: 'destructive' }); }
+  };
+  // The card goes away at once. The feed forgets it a few seconds later, so Undo can still bring it back.
+  const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
+  const hideWithUndo = (scope: 'post' | 'author', title: string, description: string, undo: () => Promise<void>) => {
+    setHiddenLocal(true);
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => onHidden?.(id, targetAuthorId, scope), 8000);
+    toast.undo(title, async () => {
+      clearTimeout(hideTimer.current);
+      try {
+        await undo();
+        setHiddenLocal(false);
+      } catch (e: any) {
+        toast({ title: 'Could not undo that', description: friendlyError(e), variant: 'destructive' });
+        onHidden?.(id, targetAuthorId, scope);
+      }
+    }, description);
+  };
+  const notInterested = async () => {
+    if (!user) return;
+    try {
+      await hidePost(supabase, user.id, id);
+      hideWithUndo('post', 'Post hidden', "We'll show fewer posts like this.", () => unhidePost(supabase, user.id, id));
+    } catch (e: any) { toast({ title: 'Could not hide the post', description: friendlyError(e), variant: 'destructive' }); }
+  };
+  const muteTopic = async (tag: string) => {
+    if (!user) return;
+    try {
+      const word = await addMutedWord(supabase, user.id, tag);
+      hideWithUndo('post', `Muted "${word}"`, 'Posts with it will not show in your feed.', () => removeMutedWord(supabase, user.id, word));
+    } catch (e: any) { toast({ title: 'Could not mute', description: friendlyError(e), variant: 'destructive' }); }
+  };
+  const muteThisAuthor = async () => {
+    if (!user || !targetAuthorId) return;
+    try {
+      await muteAuthor(supabase, user.id, targetAuthorId);
+      hideWithUndo('author', `Muted ${author.name}`, 'Their posts will not show in your feed.', () => unmuteAuthor(supabase, user.id, targetAuthorId));
+    } catch (e: any) { toast({ title: 'Could not mute', description: friendlyError(e), variant: 'destructive' }); }
+  };
+  const blockThisAuthor = async () => {
+    if (!user || !targetAuthorId) return;
+    try {
+      await blockUser(supabase, user.id, targetAuthorId);
+      hideWithUndo('author', `Blocked ${author.name}`, 'They can no longer message you. Undo to unblock.', async () => {
+        const { error } = await (supabase as any).from('blocked_users').delete().eq('user_id', user.id).eq('blocked_user_id', targetAuthorId);
+        if (error) throw error;
+      });
+    } catch (e: any) { toast({ title: 'Could not block', description: friendlyError(e), variant: 'destructive' }); }
+  };
 
   const { isAdmin, isInternal } = useAppRole();
   const isOwner = user?.id === author.id || user?.id === authorId;
@@ -469,47 +562,70 @@ const PostCard = ({
   // View States
   const [viewIndex, setViewIndex] = useState(0);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  // full-screen picture viewer: null = closed, otherwise the index (among this post's pictures) to open at
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const viewerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressX = useRef(0);
+  // Carousel drag lives in refs: the track follows the finger 1:1 without re-rendering this big component on every move.
+  const dragStartRef = useRef<number | null>(null);
+  const dragEndRef = useRef<number | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
   const wheelTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const settleTrack = (index: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    el.style.transition = '';
+    el.style.transform = `translateX(-${index * 100}%)`;
+  };
 
   // Common handler for touch and mouse ends
   const processSwipe = (max: number, isViewer: boolean) => {
-    if (touchStart === null || touchEnd === null) return;
-    const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > 50;
-    const isRightSwipe = distance < -50;
-
-    if (isViewer) {
-      // In viewer (PostDialog) we don't handle swiping here anymore
-      // But we still need this for inline if we use it
-    } else {
-      if (isLeftSwipe && currentMediaIndex < max - 1) setCurrentMediaIndex(prev => prev + 1);
-      if (isRightSwipe && currentMediaIndex > 0) setCurrentMediaIndex(prev => prev - 1);
+    const start = dragStartRef.current;
+    const end = dragEndRef.current;
+    dragStartRef.current = null;
+    dragEndRef.current = null;
+    let next = currentMediaIndex;
+    if (start !== null && end !== null && !isViewer) {
+      const distance = start - end;
+      if (distance > 50 && currentMediaIndex < max - 1) next = currentMediaIndex + 1;
+      if (distance < -50 && currentMediaIndex > 0) next = currentMediaIndex - 1;
     }
+    settleTrack(next);
+    if (next !== currentMediaIndex) setCurrentMediaIndex(next);
+  };
 
-    setTouchStart(null);
-    setTouchEnd(null);
+  const dragTo = (x: number, max: number) => {
+    const start = dragStartRef.current;
+    const el = trackRef.current;
+    if (start === null) return;
+    dragEndRef.current = x;
+    if (!el) return;
+    let dx = x - start;
+    // rubber-band at the first and last slide
+    if ((currentMediaIndex === 0 && dx > 0) || (currentMediaIndex === max - 1 && dx < 0)) dx *= 0.3;
+    el.style.transition = 'none';
+    el.style.transform = `translateX(calc(-${currentMediaIndex * 100}% + ${dx}px))`;
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
+    pressX.current = e.targetTouches[0].clientX;
+    dragEndRef.current = null;
+    dragStartRef.current = e.targetTouches[0].clientX;
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    setTouchEnd(e.targetTouches[0].clientX);
+  const handleTouchMove = (e: React.TouchEvent, max: number) => {
+    dragTo(e.targetTouches[0].clientX, max);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    setTouchEnd(null);
-    setTouchStart(e.clientX);
+    pressX.current = e.clientX;
+    dragEndRef.current = null;
+    dragStartRef.current = e.clientX;
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (touchStart !== null) {
-      setTouchEnd(e.clientX);
-    }
+  const handleMouseMove = (e: React.MouseEvent, max: number) => {
+    if (dragStartRef.current !== null) dragTo(e.clientX, max);
   };
 
   const handleWheel = (e: React.WheelEvent, max: number, isViewer: boolean = false) => {
@@ -564,7 +680,21 @@ const PostCard = ({
     }
   };
 
+  // A tap on a picture opens the viewer. It waits a moment so a double tap (like) does not also open it, and a swipe never counts as a tap.
+  const openViewerOnTap = (imageIndex: number, e: React.MouseEvent) => {
+    if (Math.abs(e.clientX - pressX.current) > 8) return;
+    if (viewerTimer.current) clearTimeout(viewerTimer.current);
+    viewerTimer.current = setTimeout(() => setViewerIndex(imageIndex), 260);
+  };
+  // pictures can be looked at, not opened as a bare storage address or dragged out of the page
+  const guardImage = {
+    draggable: false as const,
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    onDragStart: (e: React.DragEvent) => e.preventDefault(),
+  };
+
   const handleMediaDoubleTap = (e: React.MouseEvent) => {
+    if (viewerTimer.current) { clearTimeout(viewerTimer.current); viewerTimer.current = null; }
     e.stopPropagation();
     e.preventDefault();
     if (!isLiking) {
@@ -667,6 +797,7 @@ const PostCard = ({
         .update({
           content: finalContent,
           media_items: editMediaItems,
+          tags: extractHashtags(finalContent),
           updated_at: new Date().toISOString()
         })
         .eq('id', id);
@@ -708,27 +839,10 @@ const PostCard = ({
     const styles: React.CSSProperties = {};
     const wrapperStyles: React.CSSProperties = {};
 
-    const FILTER_CSS_MAP: Record<string, string> = {
-      Clarendon: 'contrast(1.2) saturate(1.3) brightness(1.05)',
-      Gingham: 'sepia(0.15) contrast(0.9) saturate(0.9) brightness(0.95)',
-      Moon: 'grayscale(1) contrast(1.2) brightness(0.9)',
-      Lark: 'saturate(1.2) contrast(1.1) brightness(1.05)',
-      Reyes: 'sepia(0.2) contrast(0.9) brightness(1.1) saturate(0.9)',
-      Juno: 'contrast(1.15) saturate(1.25) brightness(1.02)',
-      Slumber: 'sepia(0.2) contrast(0.85) saturate(0.85)',
-      Crema: 'sepia(0.1) contrast(0.95) saturate(1.1) brightness(1.05)',
-      Paris: 'contrast(1.1) brightness(1.08) saturate(1.05)',
-      'Los Angeles': 'saturate(1.25) contrast(1.1) hue-rotate(5deg)',
-      Boost: 'contrast(1.3) saturate(1.35) brightness(1.05)',
-    };
-
-    // Apply filter: prefer filterName (cross-platform preset name), then CSS string
-    const filterName = item.filterName;
-    if (filterName && FILTER_CSS_MAP[filterName]) {
-      styles.filter = FILTER_CSS_MAP[filterName];
-    } else if (isFilterEdited(item.filter)) {
-      styles.filter = FILTER_CSS_MAP[item.filter!] || item.filter;
-    }
+    // Filters, colour changes and text are already part of the saved picture (posts since the new editor have nothing
+    // else saved with them). Older posts also carry a filter name from when the picture was edited before saving, and
+    // replaying it would apply the filter a second time, so it is not replayed. Only the old crop/zoom/pan of posts
+    // made before the new editor is still replayed below, because those were never saved into the picture.
 
     // Apply zoom and pan via transform
     const hasZoom = item.zoom !== undefined && item.zoom !== null && item.zoom !== 100;
@@ -759,18 +873,26 @@ const PostCard = ({
       }
     }
 
-    const hasAnyEdits = isFilterEdited(item.filter) || hasZoom || hasPan || hasCrop || hasAspectRatio;
+    const hasAnyEdits = hasZoom || hasPan || hasCrop || hasAspectRatio;
 
     return { imageStyles: styles, wrapperStyles, hasAnyEdits, hasAspectRatio: !!hasAspectRatio };
   };
 
+  // The pictures of this post, larger than the feed copies, for the full-screen viewer (same item rules as the gallery below)
+  const viewerImages = (() => {
+    const list: any[] = (Array.isArray(mediaItems) ? [...mediaItems] : []).filter((i: any) => i && i.url);
+    if (list.length === 0 && mediaUrl && hasImage) list.push({ url: mediaUrl, type: 'image' });
+    return list.filter((i) => i.type === 'image').map((i) => getOptimizedImage(i.url, { width: 1600, quality: 90 }));
+  })();
+
   // Helper to render media items
   const renderMediaGallery = () => {
     // Standardize to an array, checking both prop names just in case
-    const items = Array.isArray(mediaItems) ? [...mediaItems] : [];
+    // details-only items (no url) are not media: skip them
+    const items = (Array.isArray(mediaItems) ? [...mediaItems] : []).filter((i: any) => i && i.url);
 
     // Fallback to legacy single media only if the new system didn't catch any items
-    if (items.length === 0 && (hasImage || hasVideo)) {
+    if (items.length === 0 && mediaUrl && (hasImage || hasVideo)) {
       items.push({ url: mediaUrl || "", type: hasImage ? "image" : "video" });
     }
 
@@ -781,26 +903,24 @@ const PostCard = ({
       const item = items[0];
       return (
         <div 
-          className="group/media -mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden cursor-pointer select-none"
+          className="group/media [container-type:inline-size] bg-black w-full relative ring-1 ring-foreground/10 group-hover:ring-primary/20 transition duration-300 overflow-hidden cursor-pointer select-none"
           onDoubleClick={handleMediaDoubleTap}
         >
           {item.type === 'image' ? (
             <CachedImage
               src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
-              alt={imageAlt || "Post content"}
-              className="w-full block h-auto hover:scale-[1.01] transition-transform duration-700"
+              alt={(item as any).alt || imageAlt || "Post content"}
+              className="w-full block h-auto max-h-[125cqw] object-cover hover:scale-[1.01] transition-transform duration-700 select-none [-webkit-user-drag:none] [-webkit-touch-callout:none]"
+              style={mediaItemRatio(item) ? { aspectRatio: String(mediaItemRatio(item)) } : undefined}
+              role="button"
+              tabIndex={0}
+              aria-label="Open picture"
+              onClick={(e) => openViewerOnTap(0, e)}
+              onKeyDown={(e) => { if (e.key === 'Enter') setViewerIndex(0); }}
+              {...guardImage}
             />
           ) : (
-            <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-              <CachedVideo
-                src={item.url}
-                controls
-                className="w-full block h-auto"
-                preload="metadata"
-              >
-                Your browser does not support video playback.
-              </CachedVideo>
-            </div>
+            <FeedVideo src={item.url} delayClick aspectHint={mediaItemRatio(item)} />
           )}
           
           {/* Floating Heart for double tap */}
@@ -819,8 +939,8 @@ const PostCard = ({
           </AnimatePresence>
 
           {isAIGenerated && (
-            <div className="font-mono absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded z-10 shadow-lg">
-              TYPE // AI GENERATED
+            <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[12px] font-medium px-3 py-1.5 rounded z-10 shadow-lg">
+              AI generated
             </div>
           )}
 
@@ -831,7 +951,7 @@ const PostCard = ({
                 e.stopPropagation();
                 setShowTaggedSheet(true);
               }}
-              className="absolute bottom-3 left-5 z-30 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/25 text-white shadow-xl transition-all active:scale-90"
+              className="absolute bottom-3 left-5 z-30 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/25 text-white shadow-xl transition active:scale-90"
               title="See tagged people"
             >
               <User className="h-4 w-4 text-white" />
@@ -844,19 +964,21 @@ const PostCard = ({
     // Carousel for multiple items
     return (
       <div
-        className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] bg-black/5 sm:bg-black relative overflow-hidden group/carousel ring-1 ring-white/10 cursor-pointer select-none"
+        className="w-full bg-black/5 sm:bg-black relative overflow-hidden group/carousel ring-1 ring-white/10 cursor-pointer select-none touch-pan-y"
         onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
+        onTouchMove={(e) => handleTouchMove(e, items.length)}
         onTouchEnd={() => processSwipe(items.length, false)}
+        onTouchCancel={() => processSwipe(items.length, false)}
         onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
+        onMouseMove={(e) => handleMouseMove(e, items.length)}
         onMouseUp={() => processSwipe(items.length, false)}
-        onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, false); }}
+        onMouseLeave={() => { if (dragStartRef.current !== null) processSwipe(items.length, false); }}
         onWheel={(e) => handleWheel(e, items.length, false)}
         onDoubleClick={handleMediaDoubleTap}
       >
         <div
-          className="relative flex transition-transform duration-500 ease-out h-auto w-full"
+          ref={trackRef}
+          className="relative flex transition-transform duration-300 ease-drawer h-auto w-full"
           style={{ transform: `translateX(-${currentMediaIndex * 100}%)` }}
         >
           {items.map((item, idx) => (
@@ -867,26 +989,18 @@ const PostCard = ({
               {item.type === 'image' ? (
                 <CachedImage
                   src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
-                  alt={`Media ${idx + 1}`}
-                  className="w-full block h-auto"
+                  alt={(item as any).alt || `Media ${idx + 1}`}
+                  className="w-full block h-auto max-h-[850px] object-cover select-none [-webkit-user-drag:none] [-webkit-touch-callout:none]"
+                  style={mediaItemRatio(item) ? { aspectRatio: String(mediaItemRatio(item)) } : undefined}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open picture ${idx + 1}`}
+                  onClick={(e) => openViewerOnTap(items.slice(0, idx).filter((x: any) => x.type === 'image').length, e)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') setViewerIndex(items.slice(0, idx).filter((x: any) => x.type === 'image').length); }}
+                  {...guardImage}
                 />
               ) : (
-                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-                  <CachedVideo
-                    src={item.url}
-                    className="w-full block h-auto"
-                    muted
-                    loop
-                    preload="metadata"
-                    onMouseOver={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.play()}
-                    onMouseOut={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.pause()}
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="bg-black/50 backdrop-blur-md p-2.5 rounded-full ring-1 ring-white/30">
-                      <Play className="w-5 h-5 text-white fill-white ml-0.5" />
-                    </div>
-                  </div>
-                </div>
+                <FeedVideo src={item.url} delayClick aspectHint={mediaItemRatio(item)} />
               )}
             </div>
           ))}
@@ -908,12 +1022,12 @@ const PostCard = ({
         </AnimatePresence>
 
         {/* Navigation Buttons */}
-        <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 opacity-0 group-hover/carousel:opacity-100 transition-opacity pointer-events-none z-20">
+        <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 pointer-events-none z-20">
           {currentMediaIndex > 0 && (
-            <Button
+            <Button aria-label="Back"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60 pointer-events-auto shadow-lg"
+              className="h-10 w-10 rounded-full bg-black/55 text-white hover:bg-black/75 pointer-events-auto shadow-lg"
               onClick={(e) => { e.stopPropagation(); setCurrentMediaIndex(prev => prev - 1); }}
             >
               <ChevronLeft className="h-5 w-5" />
@@ -921,10 +1035,10 @@ const PostCard = ({
           )}
           <div className="flex-1" />
           {currentMediaIndex < items.length - 1 && (
-            <Button
+            <Button aria-label="Next"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60 pointer-events-auto shadow-lg"
+              className="h-10 w-10 rounded-full bg-black/55 text-white hover:bg-black/75 pointer-events-auto shadow-lg"
               onClick={(e) => { e.stopPropagation(); setCurrentMediaIndex(prev => prev + 1); }}
             >
               <ChevronRight className="h-5 w-5" />
@@ -939,25 +1053,30 @@ const PostCard = ({
               e.stopPropagation();
               setShowTaggedSheet(true);
             }}
-            className="absolute bottom-3 left-5 z-30 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/25 text-white shadow-xl transition-all active:scale-90"
+            className="absolute bottom-3 left-5 z-30 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/25 text-white shadow-xl transition active:scale-90"
             title="See tagged people"
           >
             <User className="h-4 w-4 text-white" />
           </button>
         )}
 
+        {/* Which picture of how many */}
+        <div className="absolute top-3 left-3 z-20 rounded-full bg-black/60 backdrop-blur-md px-2.5 py-1 text-[12px] font-bold text-white tabular-nums" aria-label={`Picture ${currentMediaIndex + 1} of ${items.length}`}>
+          {currentMediaIndex + 1}/{items.length}
+        </div>
+
         {/* Dots Indicator */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm z-10">
           {items.map((_, i) => (
             <div
               key={i}
-              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentMediaIndex ? 'bg-primary scale-125 w-3' : 'bg-white/40'}`}
+              className={`w-1.5 h-1.5 rounded-full transition-[background-color,transform] duration-200 ${i === currentMediaIndex ? 'bg-primary scale-x-[2] scale-y-125' : 'bg-white/40'}`}
             />
           ))}
         </div>
 
         {isAIGenerated && (
-          <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded-full z-20 shadow-lg">
+          <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[12px] font-bold tracking-widest uppercase px-3 py-1.5 rounded-full z-20 shadow-lg">
             AI Generated
           </div>
         )}
@@ -965,10 +1084,12 @@ const PostCard = ({
     );
   };
 
+  if (hiddenLocal) return null;
+
   return (
     <>
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="sm:max-w-lg bg-background/95 backdrop-blur-3xl border-white/10 shadow-2xl rounded-[32px]">
+        <DialogContent className="sm:max-w-lg bg-background/95 border-white/10 shadow-2xl rounded-[32px]">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Edit Post</DialogTitle>
             <DialogDescription className="text-muted-foreground">
@@ -980,15 +1101,15 @@ const PostCard = ({
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               placeholder="What's happening?"
-              className="min-h-[150px] bg-white/5 border-white/10 rounded-2xl focus:ring-primary/50 text-foreground resize-none"
+              className="min-h-[150px] bg-foreground/5 border-foreground/10 rounded-2xl focus:ring-primary/50 text-foreground resize-none"
               autoFocus
             />
 
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest px-1">Manage Media ({editMediaItems.length})</p>
               <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
-                {editMediaItems.map((item: { url: string, type: 'image' | 'video' }, idx: number) => (
-                  <div key={idx} className="relative group/edit flex-shrink-0 w-24 aspect-square rounded-xl overflow-hidden border border-white/10 hover:border-primary/50 transition-all duration-300">
+                {editMediaItems.map((item: { url: string, type: 'image' | 'video' }, idx: number) => !item.url ? null : (
+                  <div key={idx} className="relative group/edit flex-shrink-0 w-24 aspect-square rounded-xl overflow-hidden border border-foreground/10 hover:border-primary/50 transition duration-300">
                     {item.type === 'image' ? (
                       <CachedImage src={item.url} className="w-full h-full object-cover" alt="Edit thumbnail" />
                     ) : (
@@ -999,7 +1120,7 @@ const PostCard = ({
                     )}
 
                     {/* Delete button for individual media */}
-                    <button
+                    <button aria-label="Close"
                       onClick={() => setEditMediaItems((prev: { url: string, type: 'image' | 'video' }[]) => prev.filter((_: any, i: number) => i !== idx))}
                       className="absolute top-1 right-1 h-6 w-6 bg-red-500 rounded-full flex items-center justify-center text-white p-1 shadow-lg transform translate-x-8 group-hover/edit:translate-x-0 transition-transform duration-300 hover:bg-black"
                     >
@@ -1014,7 +1135,7 @@ const PostCard = ({
                 <div
                   onClick={() => !isUploading && fileInputRef.current?.click()}
                   className={cn(
-                    "w-24 aspect-square rounded-xl border-2 border-dashed border-white/10 hover:border-primary/50 flex flex-col items-center justify-center cursor-pointer transition-all group/add shrink-0 bg-white/5 hover:bg-primary/5",
+                    "w-24 aspect-square rounded-xl border-2 border-dashed border-foreground/10 hover:border-primary/50 flex flex-col items-center justify-center cursor-pointer transition group/add shrink-0 bg-foreground/5 hover:bg-primary/5",
                     isUploading && "cursor-not-allowed opacity-70"
                   )}
                 >
@@ -1023,7 +1144,7 @@ const PostCard = ({
                   ) : (
                     <>
                       <Plus className="h-6 w-6 text-muted-foreground group-hover/add:text-primary transition-colors" />
-                      <span className="text-[9px] font-black text-muted-foreground group-hover/add:text-primary mt-1 uppercase tracking-[0.2em]">Add</span>
+                      <span className="text-[12px] font-black text-muted-foreground group-hover/add:text-primary mt-1 uppercase tracking-[0.2em]">Add</span>
                     </>
                   )}
                 </div>
@@ -1038,7 +1159,7 @@ const PostCard = ({
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setIsEditOpen(false)} className="rounded-xl hover:bg-white/5">
+            <Button variant="ghost" onClick={() => setIsEditOpen(false)} className="rounded-xl hover:bg-foreground/5">
               Cancel
             </Button>
             <Button onClick={handleUpdate} disabled={isSaving} className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl px-8 shadow-lg shadow-primary/20">
@@ -1050,7 +1171,7 @@ const PostCard = ({
       </Dialog>
 
       <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <AlertDialogContent className="bg-background/95 backdrop-blur-3xl border-white/10 shadow-2xl rounded-[32px]">
+        <AlertDialogContent className="bg-background/95 border-white/10 shadow-2xl rounded-[32px]">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-xl font-bold text-red-500">Delete Post?</AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
@@ -1058,7 +1179,7 @@ const PostCard = ({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-0">
-            <AlertDialogCancel className="rounded-xl hover:bg-white/5 border-white/10">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-xl hover:bg-foreground/5 border-foreground/10">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl px-8 shadow-lg shadow-red-600/20 border-none">
               {isDeleting ? "Deleting..." : "Delete Post"}
             </AlertDialogAction>
@@ -1108,7 +1229,7 @@ const PostCard = ({
                           else { try { sendConnectionRequest(u.id); } catch (_) {} }
                         }
                       }}
-                      className={`shrink-0 text-xs font-bold px-4 py-1.5 rounded-lg transition-all border ${
+                      className={`shrink-0 text-xs font-bold px-4 py-1.5 rounded-lg transition border ${
                         isActioned
                           ? 'bg-muted text-muted-foreground border-border'
                           : 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
@@ -1149,7 +1270,7 @@ const PostCard = ({
               <div className="w-8 h-1 bg-muted-foreground/30 rounded-full mx-auto mt-2.5 mb-1" />
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60">
                 <h3 className="text-foreground font-bold text-sm tracking-tight">In this post</h3>
-                <button onClick={() => setShowTaggedSheet(false)} className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-muted transition-colors">
+                <button aria-label="Close" onClick={() => setShowTaggedSheet(false)} className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-muted transition-colors">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -1167,81 +1288,82 @@ const PostCard = ({
           {/* Header - Padded */}
           <div className="flex items-center px-3 lg:px-4 py-2 lg:py-3">
             <div
+              role="link"
+              tabIndex={0}
+              aria-label={pageInfo ? pageInfo.name : author.name}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.click(); }}
               onClick={() => {
                 const path = pageInfo ? `/pages/${pageInfo.slug}` : (author.id ? `/profile/${author.id}` : '#');
                 if (path !== '#') push(path);
               }}
-              className="hover:opacity-80 transition-opacity relative z-10 cursor-pointer"
+              className="group/avatar relative z-10 cursor-pointer shrink-0 mr-3 transition-transform duration-150 active:scale-95 focus-visible:outline-none"
             >
-              <Avatar className={`h-8 w-8 lg:h-9 lg:w-9 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300 ${pageInfo ? 'rounded-lg' : ''}`}>
-                <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || undefined} className={pageInfo ? 'rounded-lg' : ''} />
-                <AvatarFallback className={`bg-gradient-to-br from-primary to-secondary text-primary-foreground text-xs ${pageInfo ? 'rounded-lg' : ''}`}>
-                  {pageInfo ? pageInfo.name.charAt(0).toUpperCase() : (author.initials || author.name?.slice(0, 2).toUpperCase() || '??')}
-                </AvatarFallback>
-              </Avatar>
+              {/* a thin ring that warms to an orange gradient on hover or focus, like a story ring */}
+              <span aria-hidden className={`absolute -inset-[2px] bg-gradient-to-tr from-[#FFB347] via-primary to-[#E63E28] opacity-0 transition-opacity duration-300 group-hover/avatar:opacity-100 group-focus-visible/avatar:opacity-100 ${pageInfo ? 'rounded-xl' : 'rounded-full'}`} />
+              <span className={`relative block bg-background p-[2px] ring-1 ring-border/60 transition-transform duration-300 group-hover/avatar:scale-[1.04] ${pageInfo ? 'rounded-[10px]' : 'rounded-full'}`}>
+                <Avatar className={`h-9 w-9 lg:h-10 lg:w-10 ${pageInfo ? 'rounded-lg' : ''}`}>
+                  <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || undefined} className={pageInfo ? 'rounded-lg' : ''} />
+                  <AvatarFallback className={`bg-gradient-to-br from-primary to-secondary text-primary-foreground text-xs ${pageInfo ? 'rounded-lg' : ''}`}>
+                    {pageInfo ? pageInfo.name.charAt(0).toUpperCase() : (author.initials || author.name?.slice(0, 2).toUpperCase() || '??')}
+                  </AvatarFallback>
+                </Avatar>
+              </span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <div className="truncate">
-                  {pageInfo ? (
-                    <div className="flex items-center gap-1.5 truncate">
-                      <div onClick={() => push(`/pages/${pageInfo.slug}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer">
-                        <p className="font-serif font-bold truncate text-[10px] lg:text-[11px] uppercase tracking-tight">{pageInfo.name}</p>
-                        {pageInfo.is_verified && <VerificationBadge size="sm" />}
-                        {shouldShowInlineAction && (
-                          <>
-                            <span className="text-muted-foreground/50 mx-0.5">•</span>
-                            <button
-                              onClick={handleInlineAction}
-                              disabled={toggleFollowPage.isPending}
-                              className="text-primary hover:text-primary/80 font-bold text-[12px] lg:text-[13px] transition-colors focus:outline-none"
-                            >
-                              Follow
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ) : author.id ? (
-                    <div onClick={() => push(`/profile/${author.id}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer group/name">
-                      <p className="font-serif font-bold truncate text-[10px] lg:text-[11px] uppercase tracking-tight">{author.name}</p>
-                      {author.isVerified && <VerificationBadge size="sm" />}
-                      {['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
+                <div className="min-w-0">
+                  {/* line 1: name, tick, time and the one action, like Instagram */}
+                  <div className="flex items-center gap-1.5 min-w-0 text-[13px] lg:text-sm leading-tight">
+                    <div
+                      role={pageInfo || author.id ? 'link' : undefined}
+                      tabIndex={pageInfo || author.id ? 0 : undefined}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.click(); }}
+                      onClick={() => { if (pageInfo) push(`/pages/${pageInfo.slug}`); else if (author.id) push(`/profile/${author.id}`); }}
+                      className="relative z-10 flex items-center gap-1 min-w-0 cursor-pointer transition-opacity duration-150 hover:opacity-70 active:opacity-50"
+                    >
+                      <p className="font-serif font-semibold truncate normal-case tracking-tight">{pageInfo ? pageInfo.name : author.name}</p>
+                      {(pageInfo ? pageInfo.is_verified : author.isVerified) && <VerificationBadge size="sm" />}
+                      {!pageInfo && ['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
                         <StaffBadge role={author.role} showLabel={false} className="h-4 px-1" />
                       )}
-                      {shouldShowInlineAction && (
-                        <>
-                          <span className="text-muted-foreground/50 mx-0.5">•</span>
-                          <button
-                            onClick={handleInlineAction}
-                            disabled={isSendingFollow}
-                            className="text-primary hover:text-primary/80 font-bold text-[12px] lg:text-[13px] transition-colors focus:outline-none"
-                          >
-                            {isFollowRelationship ? 'Follow' : 'Connect'}
-                          </button>
-                        </>
-                      )}
                     </div>
-                  ) : (
-                    <p className="font-serif font-bold truncate text-[10px] lg:text-[11px] uppercase tracking-tight">{author.name}</p>
-                  )}
-                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                    <p className="text-[8px] text-muted-foreground truncate uppercase tracking-widest font-mono font-bold opacity-80">
-                      {pageInfo ? "Company Page" : author.role} • {timeAgo}
-                    </p>
+                    <span className="text-muted-foreground shrink-0 whitespace-nowrap" title={edited_at ? 'Edited' : undefined}>
+                      <span aria-hidden className="mr-1.5">•</span>{timeAgo}{edited_at ? " · Edited" : ""}
+                    </span>
+                    {(audience === "connections" || audience === "private") && (
+                      <span className="text-muted-foreground/80 shrink-0 text-xs border border-border/60 rounded-full px-1.5 py-px">
+                        {audience === "connections" ? "Connections" : "Only me"}
+                      </span>
+                    )}
+                    {shouldShowInlineAction && (
+                      <>
+                        <span aria-hidden className="text-muted-foreground shrink-0">•</span>
+                        <button
+                          onClick={handleInlineAction}
+                          disabled={pageInfo ? toggleFollowPage.isPending : isSendingFollow}
+                          className="shrink-0 text-primary font-semibold transition duration-150 hover:text-primary/70 active:scale-95 disabled:opacity-60 focus-visible:outline-none focus-visible:underline py-2 -my-2 px-1 -mx-1 animate-in fade-in duration-200"
+                        >
+                          {(pageInfo ? toggleFollowPage.isPending : isSendingFollow) ? 'Sending…' : (pageInfo || isFollowRelationship ? 'Follow' : 'Connect')}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {/* line 2: role and place, quiet */}
+                  <div className="flex items-center gap-1.5 min-w-0 mt-0.5 text-[12px] text-muted-foreground">
+                    <span className="truncate">{pageInfo ? "Company Page" : author.role}</span>
                     {(() => {
                       const displayLoc = location || (mediaItems && (mediaItems[0] as any)?.location);
                       if (!displayLoc) return null;
                       return (
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             push(`/search?q=${encodeURIComponent(displayLoc)}`);
                           }}
-                          className="text-[9px] font-bold text-primary hover:underline flex items-center gap-0.5 transition-all cursor-pointer relative z-10"
+                          className="shrink-0 min-w-0 flex items-center gap-1 transition-colors duration-150 hover:text-foreground hover:underline cursor-pointer relative z-10 py-1 -my-1"
                         >
-                          <MapPin className="h-2.5 w-2.5 shrink-0" />
-                          <span>{displayLoc}</span>
+                          <MapPin className="h-3 w-3 shrink-0 text-primary" />
+                          <span className="truncate max-w-[40vw] sm:max-w-[220px]">{displayLoc}</span>
                         </button>
                       );
                     })()}
@@ -1251,16 +1373,24 @@ const PostCard = ({
                 <div className="flex-shrink-0 relative z-20">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-white/10 rounded-full transition-all">
+                      <Button aria-label="More options" variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground hover:text-foreground hover:bg-foreground/10 rounded-full transition">
                         <MoreVertical className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-background/95 backdrop-blur-xl border-white/10 rounded-2xl shadow-xl">
+                    <DropdownMenuContent align="end" className="bg-background/95 border-white/10 rounded-2xl shadow-xl">
                       {canManage ? (
                         <>
-                          <DropdownMenuItem onClick={() => navigate(`/create?editPostId=${id}`)} className="rounded-lg gap-2 cursor-pointer focus:bg-white/5">
+                          <DropdownMenuItem onClick={() => navigate(`/create?editPostId=${id}`)} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
                             <Edit className="h-4 w-4 text-primary" />
                             <span>Edit Post</span>
+                          </DropdownMenuItem>
+                          {isOwner && (
+                            <DropdownMenuItem onClick={() => setIsInsightsOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
+                              <span>View insights</span>
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={copyLink} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
+                            <span>Copy link</span>
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-red-500/10 text-red-500 focus:text-red-500">
                             <Trash2 className="h-4 w-4" />
@@ -1268,14 +1398,48 @@ const PostCard = ({
                           </DropdownMenuItem>
                         </>
                       ) : (
-                        <DropdownMenuItem onClick={() => setIsReportOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-rose-500/10 text-rose-500 focus:text-rose-500">
-                          <Flag className="h-4 w-4" />
-                          <span>Report Content</span>
-                        </DropdownMenuItem>
+                        <>
+                          <DropdownMenuItem onClick={copyLink} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
+                            <span>Copy link</span>
+                          </DropdownMenuItem>
+                          {user && feedReason && (
+                            <DropdownMenuItem onClick={() => toast({ title: 'Why you are seeing this', description: feedReasonText(feedReason), duration: 8000 })} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
+                              <span>Why am I seeing this?</span>
+                            </DropdownMenuItem>
+                          )}
+                          {user && (
+                            <>
+                              <DropdownMenuItem onClick={notInterested} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
+                                <span>Not interested</span>
+                              </DropdownMenuItem>
+                              {(tags || []).slice(0, 2).map((t: string) => (
+                                <DropdownMenuItem key={t} onClick={() => muteTopic(t)} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
+                                  <span>Mute #{t.replace(/^#/, '')}</span>
+                                </DropdownMenuItem>
+                              ))}
+                              {targetAuthorId && (
+                                <>
+                                  <DropdownMenuItem onClick={muteThisAuthor} className="rounded-lg gap-2 cursor-pointer focus:bg-foreground/5">
+                                    <span>Mute {author.name}</span>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={blockThisAuthor} className="rounded-lg gap-2 cursor-pointer focus:bg-red-500/10 text-red-500 focus:text-red-500">
+                                    <span>Block {author.name}</span>
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
+                          <DropdownMenuItem onClick={() => setIsReportOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-rose-500/10 text-rose-500 focus:text-rose-500">
+                            <Flag className="h-4 w-4" />
+                            <span>Report Content</span>
+                          </DropdownMenuItem>
+                        </>
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
 
+                  <PostInsightsDialog postId={id} open={isInsightsOpen} onOpenChange={setIsInsightsOpen} />
                   <ReportDialog
                     open={isReportOpen}
                     onOpenChange={setIsReportOpen}
@@ -1290,7 +1454,7 @@ const PostCard = ({
           {/* Caption & Content - Now at the Top */}
           <div className="px-3 lg:px-4 py-2">
             <div className="space-y-2">
-              <div className="text-[11px] lg:text-[12px] leading-relaxed">
+              <div className="text-sm lg:text-base leading-relaxed">
                 {content.includes('JOB_SHARE::') ? (
                   (() => {
                     try {
@@ -1315,7 +1479,7 @@ const PostCard = ({
                                 e.stopPropagation();
                                 setIsExpanded(!isExpanded);
                               }}
-                              className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
+                              className="text-primary text-sm lg:text-sm font-semibold hover:underline mt-1.5 block"
                             >
                               {isExpanded ? "see less" : "...more"}
                             </button>
@@ -1343,7 +1507,7 @@ const PostCard = ({
                                 e.stopPropagation();
                                 setIsExpanded(!isExpanded);
                               }}
-                              className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
+                              className="text-primary text-sm lg:text-sm font-semibold hover:underline mt-1.5 block"
                             >
                               {isExpanded ? "see less" : "...more"}
                             </button>
@@ -1369,7 +1533,7 @@ const PostCard = ({
                           e.stopPropagation();
                           setIsExpanded(!isExpanded);
                         }}
-                        className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
+                        className="text-primary text-sm lg:text-sm font-semibold hover:underline mt-1.5 block"
                       >
                         {isExpanded ? "see less" : "...more"}
                       </button>
@@ -1385,9 +1549,9 @@ const PostCard = ({
                       key={tag}
                       onClick={(e) => {
                         e.stopPropagation();
-                        push(`/search?q=${encodeURIComponent(tag)}`);
+                        push(`/search?q=${encodeURIComponent(`#${String(tag).replace(/^#/, "")}`)}`);
                       }}
-                      className="text-[11px] lg:text-[12px] font-semibold text-primary/80 hover:underline cursor-pointer bg-primary/5 px-2 py-0.5 rounded-full relative z-10"
+                      className="text-[12px] lg:text-sm font-semibold text-primary/80 hover:underline cursor-pointer bg-primary/5 px-2 py-0.5 rounded-full relative z-10"
                     >
                       #{tag}
                     </div>
@@ -1400,6 +1564,10 @@ const PostCard = ({
 
           {/* Media - Full width */}
           <div className="w-full">
+            {isOwner && scheduled_at && <ScheduledBanner postId={id} scheduledAt={scheduled_at} />}
+            {has_collabs && <CollaboratorsLine postId={id} />}
+            {has_poll && <PostPoll postId={id} />}
+            {link_preview?.url && link_preview?.title && !hasImage && !hasVideo && <LinkPreviewCard preview={link_preview} />}
             {renderMediaGallery()}
           </div>
 
@@ -1420,7 +1588,7 @@ const PostCard = ({
                     <div className="p-2 -m-2 rounded-full">
                       <Heart size={24} />
                     </div>
-                    <span className="text-[13px] font-semibold">
+                    <span className="text-sm font-semibold">
                       {isHideLikes ? (isLiked ? 'Liked' : 'Likes') : displayLikeCount}
                     </span>
                   </div>
@@ -1429,17 +1597,18 @@ const PostCard = ({
                 {isCommentsDisabled ? (
                   <div className="flex items-center gap-1.5 text-muted-foreground/60 cursor-not-allowed text-xs font-semibold" title="Comments turned off">
                     <MessageCircle size={24} className="opacity-40" />
-                    <span className="text-[11px] italic">Off</span>
+                    <span className="text-[12px] italic">Off</span>
                   </div>
                 ) : (
                   <button
                     onClick={handleComment}
-                    className="flex items-center gap-1.5 transition-all duration-300 group/comment text-foreground/80 hover:text-primary"
+                    aria-label="Comments"
+                    className="flex items-center gap-1.5 transition duration-300 group/comment text-foreground/80 hover:text-primary"
                   >
                     <div className="p-2 -m-2 rounded-full group-hover/comment:bg-primary/10 transition-colors">
                       <MessageCircle size={24} />
                     </div>
-                    <span className="text-[13px] font-semibold">{displayCommentCount}</span>
+                    <span className="text-sm font-semibold">{displayCommentCount}</span>
                   </button>
                 )}
 
@@ -1459,7 +1628,7 @@ const PostCard = ({
               </div>
 
               {!isInternal && (
-                <button
+                <button aria-label="Save"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!user) {
@@ -1474,7 +1643,8 @@ const PostCard = ({
                     toggleBookmark.mutate({ postId: id, isBookmarked });
                   }}
                   disabled={isTogglingBookmark}
-                  className={`transition-all duration-300 ${isBookmarked ? 'text-primary' : 'text-foreground hover:text-muted-foreground'}`}
+                  aria-pressed={isBookmarked}
+                  className={`p-2 -m-2 transition-colors ${isBookmarked ? 'text-primary' : 'text-foreground hover:text-muted-foreground'}`}
                 >
                   <Bookmark size={22} className={isBookmarked ? 'fill-current' : ''} />
                 </button>
@@ -1484,7 +1654,7 @@ const PostCard = ({
             {isCommentsDisabled ? (
               <p className="text-muted-foreground text-xs italic pt-1 font-medium">Comments are turned off for this post.</p>
             ) : displayCommentCount > 0 ? (
-              <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
+              <button onClick={handleComment} className="text-muted-foreground text-sm lg:text-base hover:underline block pt-1">
                 View all {displayCommentCount} {displayCommentCount === 1 ? 'comment' : 'comments'}
               </button>
             ) : null}
@@ -1497,7 +1667,7 @@ const PostCard = ({
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="overflow-hidden border-t border-white/5 bg-black/5"
+              className="overflow-hidden border-t border-border bg-card"
             >
               <div className="p-3 sm:p-6 pt-2">
                 {isCommentsDisabled ? (
@@ -1511,6 +1681,20 @@ const PostCard = ({
         </AnimatePresence>
 
       </div>
+
+      {viewerIndex !== null && (
+        <Suspense fallback={null}>
+          <ImageLightboxModal
+            open
+            onOpenChange={(o) => { if (!o) setViewerIndex(null); }}
+            images={viewerImages}
+            initialIndex={viewerIndex}
+            senderName={pageInfo ? pageInfo.name : author.name}
+            allowDownload={false}
+            protectImages
+          />
+        </Suspense>
+      )}
     </>
   );
 };

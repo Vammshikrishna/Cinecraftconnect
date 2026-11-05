@@ -18,6 +18,7 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useFocusEffect } from '@react-navigation/native';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
@@ -28,6 +29,7 @@ import { getSupabaseClient } from '@cinecraft/api';
 import { CreatePitchModal } from '../../components/pitch/CreatePitchModal';
 import { CallCreatorPitchInbox } from '../../components/pitch/CallCreatorPitchInbox';
 import { WriterPitchTracker } from '../../components/pitch/WriterPitchTracker';
+import { PitchCallManager } from '../../components/pitch/PitchCallManager';
 import { StoryExchangeTab } from '../../components/pitch/StoryExchangeTab';
 import { CardSkeleton } from '../../components/common/Skeleton';
 import { CachedImage } from '../../components/common/CachedImage';
@@ -43,11 +45,13 @@ import {
   saveCache,
   resolveCurrentUserId,
 } from '../../services/offlineCache';
+import { hasGuildClaim, pitchCallIsClosed, canSubmitPitch, closeExpiredPitchCalls } from '@cinecraft/core';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
 
-type TabType = 'Discover' | 'Story Exchange' | 'My Pitches' | 'Review Inbox';
+type TabType = 'Discover' | 'Story Exchange' | 'My Pitches' | 'My Pitch Calls' | 'Review Inbox';
 
 const FORMAT_LABELS: Record<string, string> = {
   film: 'Feature Film', series: 'Web Series', short: 'Short Film',
@@ -56,11 +60,12 @@ const FORMAT_LABELS: Record<string, string> = {
 };
 
 const COMPENSATION_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  paid: { bg: '#F0FDF4', text: '#16A34A', border: '#BBF7D0' },
-  development_deal: { bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' },
-  revenue_share: { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' },
-  negotiable: { bg: '#F5F3FF', text: '#7C3AED', border: '#DDD6FE' },
-  unpaid: { bg: '#F8FAFC', text: '#64748B', border: '#E2E8F0' },
+  // translucent tints so the chips read on both light and dark cards
+  paid: { bg: 'rgba(22,163,74,0.15)', text: '#16A34A', border: 'rgba(22,163,74,0.35)' },
+  development_deal: { bg: 'rgba(37,99,235,0.15)', text: '#2563EB', border: 'rgba(37,99,235,0.35)' },
+  revenue_share: { bg: 'rgba(217,119,6,0.15)', text: '#D97706', border: 'rgba(217,119,6,0.35)' },
+  negotiable: { bg: 'rgba(124,58,237,0.15)', text: '#7C3AED', border: 'rgba(124,58,237,0.35)' },
+  unpaid: { bg: 'rgba(100,116,139,0.15)', text: '#64748B', border: 'rgba(100,116,139,0.35)' },
 };
 
 const formatTimeAgo = (dateStr: string) => {
@@ -115,8 +120,8 @@ const PitchCardItem = React.memo<{
   const isVerified = item.profiles?.is_verified;
 
   const isOwner = !!(currentUserId && item.creator_id === currentUserId);
-  const isExpired = item.deadline && new Date(item.deadline) < new Date();
-  const isGuildMember = !!item.attachments?.producers_guild_member_id;
+  const isExpired = pitchCallIsClosed(item);
+  const isGuildMember = hasGuildClaim(item.attachments);
   const formatTag = FORMAT_LABELS[item.project_type || ''] || item.project_type;
 
   const compColor = COMPENSATION_COLORS[item.compensation] || {
@@ -151,36 +156,36 @@ const PitchCardItem = React.memo<{
         {isGuildMember && (
           <View style={styles.guildBadge}>
             <Icon name="award" size={10} color="#D97706" />
-            <Text style={styles.guildBadgeText}>GUILD VERIFIED</Text>
+            <Text style={styles.guildBadgeText}>GUILD (CLAIMED)</Text>
           </View>
         )}
 
         {formatTag ? (
           <View style={styles.formatTagBadge}>
-            <Text style={styles.formatTagText}>TYPE // {formatTag.toUpperCase()}</Text>
+            <Text style={styles.formatTagText}>{formatTag}</Text>
           </View>
         ) : null}
 
         {Array.isArray(item.genre) && item.genre.length > 0 && (
           <View style={[styles.genreBadge, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
             <Text style={[styles.genreBadgeText, { color: themeColors.textSecondary }]}>
-              GENRE // {item.genre.join(', ').toUpperCase()}
+              {item.genre.join(', ')}
             </Text>
           </View>
         )}
 
         {Array.isArray(item.language) && item.language.length > 0 && (
           <View style={[styles.langBadge, { backgroundColor: themeColors.chipBg }]}>
-            <Icon name="globe" size={10} color={themeColors.textSecondary} />
+            <Icon name="globe" size={10} color={themeColors.iconSecondary} />
             <Text style={[styles.langBadgeText, { color: themeColors.textSecondary }]}>
-              LANGUAGE // {item.language.join(', ').toUpperCase()}
+              {item.language.join(', ')}
             </Text>
           </View>
         )}
       </View>
 
       {/* Details & Specs Row */}
-      {(item.budget_range || item.compensation || item.deadline) ? (
+      {(item.budget_range || item.compensation) ? (
         <View style={[styles.specsRow, { backgroundColor: themeColors.chipBg }]}>
           {item.budget_range ? (
             <Text style={[styles.specText, { color: themeColors.textSecondary }]}>
@@ -194,12 +199,6 @@ const PitchCardItem = React.memo<{
                 {item.compensation.replace(/_/g, ' ').toUpperCase()}
               </Text>
             </View>
-          ) : null}
-
-          {item.deadline ? (
-            <Text style={[styles.deadlineText, { color: themeColors.textSecondary }, isExpired && styles.expiredText]}>
-              {isExpired ? 'Expired' : `Due ${new Date(item.deadline).toLocaleDateString()}`}
-            </Text>
           ) : null}
         </View>
       ) : null}
@@ -230,12 +229,23 @@ const PitchCardItem = React.memo<{
         </View>
       ) : null}
 
-      {/* Posted Time (above buttons) */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 8 }}>
-        <Icon name="clock" size={11} color={themeColors.textSecondary} />
-        <Text style={{ fontSize: 11, color: themeColors.textSecondary, fontWeight: '500' }}>
-          {formatTimeAgo(item.created_at)}
-        </Text>
+      {/* Posted time on the left, due date straight opposite on the right (above buttons) */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4, marginBottom: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}>
+          <Icon name="clock" size={11} color={themeColors.iconSecondary} />
+          <Text style={{ fontSize: 12, color: themeColors.textSecondary, fontWeight: '500' }} numberOfLines={1}>
+            {formatTimeAgo(item.created_at)}
+          </Text>
+        </View>
+        {item.deadline ? (
+          <Text
+            style={[styles.deadlineText, { color: themeColors.textSecondary }, isExpired && styles.expiredText]}
+            numberOfLines={1}
+            accessibilityLabel={isExpired ? 'Call expired' : `Due ${new Date(item.deadline).toLocaleDateString()}`}
+          >
+            {isExpired ? 'Expired' : `Due ${new Date(item.deadline).toLocaleDateString()}`}
+          </Text>
+        ) : null}
       </View>
 
       {/* Security, CTA Footer & Actions */}
@@ -281,11 +291,11 @@ const PitchCardItem = React.memo<{
           />
         </TouchableOpacity>
 
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           style={[styles.iconActionBtnBeside, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
           onPress={() => onShare(item)}
         >
-          <Icon name="share" size={18} color={themeColors.textMuted} />
+          <Icon name="share" size={18} color={themeColors.iconMuted} />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -302,6 +312,8 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
   const [pitchCalls, setPitchCalls] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('Discover');
+  // the one "+" button in the header: on Story Exchange it lists a concept, on the other tabs it posts a pitch call
+  const [listConceptSignal, setListConceptSignal] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [createModalVisible, setCreateModalVisible] = useState(false);
@@ -327,7 +339,8 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
   });
 
   const userCanCreate = (isStudio || isCreator) && !isInternal;
-  const userCanSubmit = !isFan && !isInternal;
+  // Same rule as web (canSubmitPitch in @cinecraft/core): fans never, creators always, studios only with a writer-side craft.
+  const userCanSubmit = !isFan && !isInternal && canSubmitPitch(userCraft, accountType);
 
   // Instant offline cache hydration
   useEffect(() => {
@@ -402,13 +415,23 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
 
         // Fetch unread inbox count for Call Creators
         let inboxCount = unreadInboxCount;
-        const { count } = await (supabase.from('pitch_submissions') as any)
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'submitted');
-
-        if (count !== null && count !== undefined) {
-          inboxCount = count;
-          setUnreadInboxCount(inboxCount);
+        // only pitches sent to calls you own or to you directly (the same set the inbox lists), not your own pitches
+        const { data: ownCalls } = await (supabase.from('pitch_calls') as any)
+          .select('id')
+          .or(`creator_id.eq.${currentUser.id},attachments->>target_producer_id.eq.${currentUser.id}`);
+        const ownCallIds = (ownCalls || []).map((c: any) => c.id);
+        if (ownCallIds.length === 0) {
+          inboxCount = 0;
+          setUnreadInboxCount(0);
+        } else {
+          const { count } = await (supabase.from('pitch_submissions') as any)
+            .select('id', { count: 'exact', head: true })
+            .in('pitch_call_id', ownCallIds)
+            .eq('status', 'submitted');
+          if (count !== null && count !== undefined) {
+            inboxCount = count;
+            setUnreadInboxCount(inboxCount);
+          }
         }
 
         saveCache('pitch_user_info', {
@@ -420,6 +443,7 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
         });
       }
 
+      closeExpiredPitchCalls(supabase); // calls past their deadline close themselves (throttled)
       await fetchWithCache(
         'pitch_calls_list',
         async () => {
@@ -679,32 +703,26 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
         <View style={styles.pageHeaderRow}>
           <View style={styles.pageTitleGroup}>
             <Icon name="lightbulb" size={22} color={ORANGE} strokeWidth={2.2} />
-            <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Pitch Portal</Text>
+            <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Pitch Portal</Text>
           </View>
 
-          {userCanCreate && (
-            <TouchableOpacity
+          {(userCanCreate || activeTab === 'Story Exchange') && (
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.createPitchBtn}
-              onPress={() => setCreateModalVisible(true)}
-              accessibilityLabel="Post a Call"
+              onPress={() => (activeTab === 'Story Exchange' ? setListConceptSignal((n) => n + 1) : setCreateModalVisible(true))}
+              accessibilityRole="button"
+              accessibilityLabel={activeTab === 'Story Exchange' ? 'List a concept' : 'Post a Call'}
             >
               <Icon name="plus" size={18} color="#FFFFFF" strokeWidth={2.5} />
             </TouchableOpacity>
           )}
         </View>
 
-        <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+        <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
           Pitch screenplays, series bibles, and story treatments directly to verified studio executives.
         </Text>
 
-        {isFan && (
-          <View style={{ backgroundColor: isDark ? 'rgba(255, 75, 51, 0.1)' : '#FFF0ED', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: isDark ? 'rgba(255, 75, 51, 0.25)' : '#FFE5DF', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Icon name="eye" size={14} color={ORANGE} />
-            <Text style={{ flex: 1, fontSize: 11.5, color: themeColors.textSecondary }}>
-              <Text style={{ fontWeight: '700', color: ORANGE }}>Fan Account (Viewer Mode):</Text> Browse open pitch calls freely. Submitting scripts or posting pitch calls is reserved for Creator and Studio accounts.
-            </Text>
-          </View>
-        )}
+      {/* Fans have no Marketplace, Pitch or Vendors on the web or in the app, so there is no "viewer mode" banner here. */}
       </View>
 
       {/* Tabs Bar */}
@@ -714,10 +732,10 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
         style={[styles.tabsScrollView, isInsideList && { marginHorizontal: -14 }]}
         contentContainerStyle={styles.tabsContainer}
       >
-        {(['Discover', 'Story Exchange', 'My Pitches', 'Review Inbox'] as TabType[])
+        {(['Discover', 'Story Exchange', 'My Pitches', 'My Pitch Calls', 'Review Inbox'] as TabType[])
           .filter((tab) => {
             if (tab === 'My Pitches' && !userCanSubmit) return false;
-            if (tab === 'Review Inbox' && !userCanCreate) return false;
+            if ((tab === 'Review Inbox' || tab === 'My Pitch Calls') && !userCanCreate) return false;
             return true;
           })
           .map((tab) => {
@@ -750,17 +768,27 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
         /* Search Box + Filter Button */
         <View style={styles.searchBarRow}>
           <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-            <Icon name="search" size={16} color={themeColors.textMuted} />
-            <TextInput
+            <Icon name="search" size={16} color={themeColors.iconMuted} />
+            <TextInput returnKeyType="search" accessibilityLabel="Search pitch calls by title, requirement"
               style={[styles.searchInput, { color: themeColors.textPrimary }]}
               placeholder="Search pitch calls by title, requirement..."
               placeholderTextColor={themeColors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
+            {searchQuery ? (
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Icon name="x" size={16} color={themeColors.iconMuted} />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Filter" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={[
               styles.filterBtn,
               { backgroundColor: hasActiveFilters ? ORANGE : themeColors.inputBg, borderColor: hasActiveFilters ? ORANGE : themeColors.border },
@@ -804,6 +832,8 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
             </ScrollView>
           ) : (
             <FlashListAny
+              keyboardShouldPersistTaps="handled"
+              {...scrollChrome}
               key={`pitch-grid-${numColumns}`}
               data={filteredPitches}
               renderItem={renderPitchCard}
@@ -825,7 +855,7 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
                   <OfflineEmptyState />
                 ) : (
                   <View style={styles.emptyState}>
-                    <Icon name="lightbulb" size={40} color={themeColors.textMuted} />
+                    <Icon name="lightbulb" size={40} color={themeColors.iconMuted} />
                     <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Pitch Calls Found</Text>
                     <Text style={[styles.emptySubtitle, { color: themeColors.textSecondary }]}>
                       {hasActiveFilters
@@ -841,8 +871,11 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
       ) : (
         <View style={{ flex: 1 }}>
           {renderHeaderSection(false, false)}
-          {activeTab === 'Story Exchange' && <StoryExchangeTab navigation={navigation} />}
+          {activeTab === 'Story Exchange' && <StoryExchangeTab navigation={navigation} openListSignal={listConceptSignal} />}
           {activeTab === 'My Pitches' && <WriterPitchTracker navigation={navigation} />}
+          {activeTab === 'My Pitch Calls' && (
+            <PitchCallManager navigation={navigation} onReview={handleManageCall} onCreate={() => setCreateModalVisible(true)} />
+          )}
           {activeTab === 'Review Inbox' && (
             <CallCreatorPitchInbox
               navigation={navigation}
@@ -871,13 +904,19 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
         onRequestClose={() => setFilterModalOpen(false)}
       >
         <View style={styles.filterModalOverlay}>
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            accessibilityLabel="Close filters"
+            onPress={() => setFilterModalOpen(false)}
+          />
           <View style={[styles.filterModalSheet, { backgroundColor: themeColors.bgCard }]}>
             <View style={styles.handleBar} />
 
             <View style={[styles.filterModalHeader, { borderBottomColor: themeColors.divider }]}>
               <Text style={[styles.filterModalTitle, { color: themeColors.textPrimary }]}>Filter Pitch Calls</Text>
-              <TouchableOpacity onPress={() => setFilterModalOpen(false)}>
-                <Icon name="x" size={20} color={themeColors.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setFilterModalOpen(false)}>
+                <Icon name="x" size={20} color={themeColors.iconSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -952,6 +991,7 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={[styles.switchText, { color: themeColors.textPrimary }]}>Open to Debut Writers</Text>
                 <Switch
                   value={filters.openToDebut}
+                  accessibilityLabel="Open to Debut Writers"
                   onValueChange={(v) => setFilters((f) => ({ ...f, openToDebut: v }))}
                   trackColor={{ true: ORANGE }}
                 />
@@ -961,6 +1001,7 @@ export const PitchScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={[styles.switchText, { color: themeColors.textPrimary }]}>Regional Stories Welcome</Text>
                 <Switch
                   value={filters.regionalWelcome}
+                  accessibilityLabel="Regional Stories Welcome"
                   onValueChange={(v) => setFilters((f) => ({ ...f, regionalWelcome: v }))}
                   trackColor={{ true: ORANGE }}
                 />
@@ -1030,13 +1071,13 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 19,
+    fontSize: 20,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
   },
   createPitchBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1046,8 +1087,8 @@ const styles = StyleSheet.create({
     display: 'none',
   },
   pageSubtitle: {
-    color: '#6B7280',
-    fontSize: 11.5,
+    color: '#64748B',
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 8,
   },
@@ -1076,13 +1117,13 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   tabBtnText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
   tabBtnTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   badgeCounter: {
     backgroundColor: '#EF4444',
@@ -1092,8 +1133,8 @@ const styles = StyleSheet.create({
   },
   badgeCounterText: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchBarRow: {
     flexDirection: 'row',
@@ -1110,17 +1151,17 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
   },
   filterBtn: {
     width: 42,
-    height: 42,
+    height: 44,
     borderRadius: 12,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -1153,11 +1194,10 @@ const styles = StyleSheet.create({
   },
   webPitchCardTablet: {
     flex: 1,
+    marginHorizontal: 8,
     marginBottom: 16,
-    maxWidth: '48.8%',
   },
   webPitchCardTablet3Col: {
-    maxWidth: '32.2%',
   },
   skeletonTabletRow: {
     flexDirection: 'row',
@@ -1205,7 +1245,7 @@ const styles = StyleSheet.create({
   creatorAvatarText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   creatorNameRow: {
     flexDirection: 'row',
@@ -1214,7 +1254,7 @@ const styles = StyleSheet.create({
   },
   creatorName: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   creatorCraft: {
@@ -1237,13 +1277,13 @@ const styles = StyleSheet.create({
   webPitchTitle: {
     color: INK,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     lineHeight: 19,
     marginBottom: 4,
   },
   webPitchDesc: {
     color: '#475569',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 12,
   },
@@ -1256,9 +1296,9 @@ const styles = StyleSheet.create({
   guildBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'rgba(217,119,6,0.15)',
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: 'rgba(217,119,6,0.35)',
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 3,
@@ -1266,8 +1306,8 @@ const styles = StyleSheet.create({
   },
   guildBadgeText: {
     color: '#D97706',
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   formatTagBadge: {
     backgroundColor: '#FFF7F5',
@@ -1279,8 +1319,8 @@ const styles = StyleSheet.create({
   },
   formatTagText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   genreBadge: {
     backgroundColor: '#F8FAFC',
@@ -1292,7 +1332,7 @@ const styles = StyleSheet.create({
   },
   genreBadgeText: {
     color: '#64748B',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   langBadge: {
@@ -1306,7 +1346,7 @@ const styles = StyleSheet.create({
   },
   langBadgeText: {
     color: '#475569',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   specsRow: {
@@ -1320,11 +1360,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   specText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
   },
   specVal: {
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   compPill: {
@@ -1334,11 +1374,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   compPillText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   deadlineText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#475569',
   },
@@ -1354,43 +1394,43 @@ const styles = StyleSheet.create({
   debutPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
+    backgroundColor: 'rgba(22,163,74,0.15)',
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 3,
     gap: 4,
   },
   debutPillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#16A34A',
   },
   regionalPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: 'rgba(37,99,235,0.15)',
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 3,
     gap: 4,
   },
   regionalPillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#2563EB',
   },
   ndaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: 'rgba(217,119,6,0.15)',
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 3,
     gap: 4,
   },
   ndaPillText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
   },
   webPitchCtaFooter: {
@@ -1404,7 +1444,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ORANGE,
-    height: 38,
+    height: 44,
     paddingHorizontal: 16,
     borderRadius: 10,
     gap: 6,
@@ -1412,7 +1452,7 @@ const styles = StyleSheet.create({
   webPitchCtaBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   iconActionBtnBeside: {
     width: 38,
@@ -1425,9 +1465,9 @@ const styles = StyleSheet.create({
   submittedBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
+    backgroundColor: 'rgba(22,163,74,0.15)',
     borderWidth: 1,
-    borderColor: '#BBF7D0',
+    borderColor: 'rgba(22,163,74,0.35)',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -1436,7 +1476,7 @@ const styles = StyleSheet.create({
   submittedBoxText: {
     color: '#16A34A',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   closedBox: {
     backgroundColor: '#F1F5F9',
@@ -1447,7 +1487,7 @@ const styles = StyleSheet.create({
   closedBoxText: {
     color: '#64748B',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',
@@ -1457,10 +1497,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: INK,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptySubtitle: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 13,
     textAlign: 'center',
   },
@@ -1471,6 +1511,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   filterModalSheet: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -1496,8 +1539,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   filterModalTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     color: INK,
   },
   filterModalBody: {
@@ -1505,8 +1548,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   filterLabel: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 12,
@@ -1536,7 +1579,7 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   switchRow: {
     flexDirection: 'row',
@@ -1547,7 +1590,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F1F5F9',
   },
   switchText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     color: INK,
   },
@@ -1567,8 +1610,8 @@ const styles = StyleSheet.create({
   },
   clearFilterText: {
     color: '#64748B',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   applyFilterBtn: {
     flex: 1,
@@ -1580,8 +1623,8 @@ const styles = StyleSheet.create({
   },
   applyFilterText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
@@ -22,7 +22,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search, Flag, Info, Check, CheckCheck, ChevronDown, Star, Copy, Share2 } from 'lucide-react';
+import { rememberDirectPartner } from '@/lib/calls/callSystemMessages';
+import { useSenderRequestState } from '@/hooks/useMessageRequests';
+import { canSendWhileWaiting, WAITING_TEXT } from '@/lib/messageRequests';
+import { useAccountType } from '@/hooks/useAccountType';
+import { FAN_CALL_TOOLTIP } from '@/lib/calls/fanCallRule';
+import { User, BellOff, Pin, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search, Flag, Info, Check, CheckCheck, ChevronDown, Star, Copy, Pencil } from 'lucide-react';
 import { CallDetailsDialog } from '@/components/calls/CallDetailsDialog';
 import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { StarredMessagesDialog } from './StarredMessagesDialog';
@@ -31,6 +36,10 @@ import { cn } from '@/lib/utils';
 import { useCall } from '@/hooks/useCall';
 import { useGlobalCall } from '@/contexts/CallContext';
 import { useToast } from '@/hooks/use-toast';
+import { useConversationPrefs } from '@/hooks/useConversationPrefs';
+import { useBlockedUsers } from '@/hooks/useBlockedUsers';
+import { getChatClearedAt, isAfterChatClear, setChatClearedNow } from '@/lib/chatClearMarker';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import EmojiPicker, { EmojiStyle, Theme as EmojiTheme } from '@/components/common/LazyEmojiPicker';
 import type { EmojiClickData } from 'emoji-picker-react';
 import { PostShareCard } from './PostShareCard';
@@ -43,6 +52,7 @@ import { AnnouncementShareCard } from './AnnouncementShareCard';
 import { VendorShareCard } from './VendorShareCard';
 import { JobShareCard } from './JobShareCard';
 import { ProjectShareCard } from './ProjectShareCard';
+import { LinkifiedText } from './LinkifiedText';
 import { DiscussionShareCard } from './DiscussionShareCard';
 import { getReplyThumbnail, getReplySnippet } from './chatUtils';
 import { useSearchParams } from 'react-router-dom';
@@ -52,8 +62,11 @@ import VerificationBadge from '../common/VerificationBadge';
 import { TypingIndicator } from '../discussions/TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
+import { E2EEChatBanner } from '@/components/chat/E2EEChatBanner';
+import { needsDowngradeConfirmation, isEncryptedPayload } from '@cinecraft/core';
 import { decryptDirectMessage, encryptDirectMessage, E2EEProtocolService, getDeviceId } from '@/lib/e2ee';
 import { useE2EEBackup } from '@/contexts/E2EEBackupContext';
+import { canEditMessage, checkEditedText, editMinutesLeft } from '@/lib/messageEdit';
 
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/components/ui/input-otp';
 import { MessageReportDialog } from './MessageReportDialog';
@@ -61,12 +74,15 @@ import { CachedImage } from '@/components/common/CachedImage';
 import { CachedVideo } from '@/components/common/CachedVideo';
 import { MediaAttachment } from './MediaAttachment';
 import { ImageLightboxModal } from './ImageLightboxModal';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 interface Message {
   id: string;
   content: string;
   raw_content?: string;
   created_at: string;
+  edited_at?: string | null;
   sender_id: string;
   is_deleted?: boolean;
   reply_to_id?: string | null;
@@ -165,9 +181,9 @@ const scrollToMessage = (messageId: string) => {
   const element = document.querySelector(`[data-message-id="${messageId}"]`);
   if (element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const bubble = element.querySelector('.relative.transition-all.duration-300') || element.querySelector('.rounded-xl');
+    const bubble = element.querySelector('.relative.transition.duration-300') || element.querySelector('.rounded-xl');
     if (bubble) {
-      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition-all');
+      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition');
       setTimeout(() => {
         bubble.classList.remove('ring-4', 'ring-primary/40', 'scale-105');
       }, 1200);
@@ -191,8 +207,8 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const { push } = useAppNavigation();
   const { onlineUserIds } = usePresence();
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId || '');
-  const { privateKey, partnerPublicKey, userPublicKey, keysLoaded } = useE2EEChatKeys(partnerId);
-  const { recoverBackup, performReset, encryptedPrivateKey, backupSalt, isRecoveryRequired } = useE2EEBackup();
+  const { privateKey, partnerPublicKey, userPublicKey, keysLoaded, dmPolicy } = useE2EEChatKeys(partnerId);
+  const { recoverBackup, performReset, encryptedPrivateKey, backupSalt, isRecoveryRequired, openPrompt } = useE2EEBackup();
   const privateKeyRef = useRef(privateKey);
   useEffect(() => {
     privateKeyRef.current = privateKey;
@@ -218,8 +234,16 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const [selectedCallMessage, setSelectedCallMessage] = useState<any>(null);
   const { markAsRead } = useChatReadStatus();
   const { toast } = useToast();
+  const chatPrefs = useConversationPrefs();
   const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall } = useGlobalCall();
+  const { isFan: isFanAccount } = useAccountType();
+  // message requests (part GF): after the first message to someone who is not a connection, wait for them to accept
+  const [requestStateKey, setRequestStateKey] = useState(0);
+  const senderRequest = useSenderRequestState(partnerId, requestStateKey);
+  useEffect(() => { setRequestStateKey((k) => k + 1); }, [messages.length]);
   const { activeCall } = useCall('direct', roomId || '');
+  // calls started from this chat need to know who is on the other end, even before the first message is sent
+  useEffect(() => { rememberDirectPartner(roomId, partnerId); }, [roomId, partnerId]);
   const isInCall = callState.isActive && callState.roomId === roomId;
   
   const [searchParams] = useSearchParams();
@@ -246,6 +270,17 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const lastScrollHeight = useRef<number>(0);
   const isInitialLoad = useRef(true);
+  // WhatsApp-style opening: unread boundary captured BEFORE messages are marked read
+  const [unreadAnchor, setUnreadAnchor] = useState<{ id: string; count: number } | null>(null);
+  const unreadCapturedRoomRef = useRef<string | null>(null);
+  const partnerIdRef = useRef(partnerId);
+  partnerIdRef.current = partnerId;
+  const [chatVisible, setChatVisible] = useState(false);
+  const chatPositionedRef = useRef(false);
+  const userScrolledRef = useRef(false);
+  const nearBottomRef = useRef(true);
+  const lastSeenMsgIdRef = useRef<string | undefined>(undefined);
+  const placementCleanupRef = useRef<(() => void) | null>(null);
   const { isEmojiPickerOpen: showEmojiPicker, setIsEmojiPickerOpen: setShowEmojiPicker, keyboardHeight } = useKeyboard();
   const [lightboxState, setLightboxState] = useState<{ open: boolean; images: string[]; initialIndex: number; senderName?: string }>({ open: false, images: [], initialIndex: 0 });
 
@@ -267,10 +302,13 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   });
   const [showForwardDialog, setShowForwardDialog] = useState(false);
   const [showStarredDialog, setShowStarredDialog] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const { block: blockPartner } = useBlockedUsers();
 
   const [activeMobileReactionMessageId, setActiveMobileReactionMessageId] = useState<string | null>(null);
   const [swipeMessageId, setSwipeMessageId] = useState<string | null>(null);
-  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+  // the drag offset lives in a ref and is written straight to the DOM: no React render per touchmove
+  const swipeOffsetRef = useRef(0);
 
   const longPressTimerRef = useRef<any>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -365,10 +403,21 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       }
     }
     
-    if (isSwipingRef.current && swipeMessageId === messageId) {
-      const offset = Math.max(0, Math.min(diffX, 80));
-      setSwipeOffset(offset);
-      if (offset >= 55 && swipeOffset < 55) {
+    if (isSwipingRef.current) {
+      // 1:1 with the finger up to the reply threshold, then a soft rubber band
+      const over = diffX - 55;
+      const offset = diffX <= 0 ? 0 : diffX <= 55 ? diffX : 55 + Math.min(over * 0.35, 25);
+      const prev = swipeOffsetRef.current;
+      swipeOffsetRef.current = offset;
+      const el = e.currentTarget as HTMLElement;
+      el.style.transition = 'none';
+      el.style.transform = `translateX(${offset}px)`;
+      const icon = el.parentElement?.querySelector<HTMLElement>('[data-swipe-icon]');
+      if (icon) {
+        icon.style.opacity = String(Math.min(offset / 55, 1));
+        icon.style.transform = `translateY(-50%) scale(${Math.min(0.5 + (offset / 110), 1)})`;
+      }
+      if (offset >= 55 && prev < 55) {
         if (navigator.vibrate) {
           navigator.vibrate(30);
         }
@@ -382,18 +431,22 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     }
   };
 
-  const handleTouchEnd = (message: Message) => () => {
+    const handleTouchEnd = (message: Message) => (e: React.TouchEvent) => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
     }
-    
-    if (isSwipingRef.current && swipeMessageId === message.id) {
-      if (swipeOffset >= 55) {
+
+    if (isSwipingRef.current) {
+      if (swipeOffsetRef.current >= 55) {
         setReplyingTo(message);
       }
+      // ease back only on release (the transition is off while dragging)
+      const el = e.currentTarget as HTMLElement;
+      el.style.transition = 'transform 220ms cubic-bezier(0.23, 1, 0.32, 1)';
+      el.style.transform = '';
     }
-    
-    setSwipeOffset(0);
+
+    swipeOffsetRef.current = 0;
     setSwipeMessageId(null);
     isSwipingRef.current = false;
     touchStartRef.current = null;
@@ -449,8 +502,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
 
 
-  const processMessages = async (msgs: Message[]) => {
-    if (!user) return msgs;
+  const processMessages = async (allMsgs: Message[]) => {
+    if (!user) return allMsgs;
+    // messages from before this person cleared the chat on this device stay hidden (nothing is deleted)
+    const clearedAt = getChatClearedAt(user.id, partnerId);
+    const msgs = allMsgs.filter((m) => isAfterChatClear(m.created_at, clearedAt));
     let anyFailed = false;
     const processed = await Promise.all(msgs.map(async m => {
       try {
@@ -536,12 +592,23 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const fetchReactions = async (msgs: Message[]) => {
     const msgIds = msgs.map(m => m.id);
     if (msgIds.length === 0) return msgs;
-    
+
+    // The message-list functions do not return edited_at, so read it separately: this is what makes "(edited)"
+    // show after a reload for edits made anywhere (the live UPDATE event already carries it).
+    try {
+      const realIds = msgIds.filter((id) => !String(id).startsWith('temp-'));
+      const { data: edits } = await supabase.from('direct_messages').select('id, edited_at').in('id', realIds).not('edited_at', 'is', null);
+      if (edits && edits.length) {
+        const editedMap = new Map<string, string>(edits.map((e: any) => [e.id, e.edited_at]));
+        msgs = msgs.map((m) => (editedMap.has(m.id) ? { ...m, edited_at: editedMap.get(m.id) } : m));
+      }
+    } catch { /* label is cosmetic; ignore */ }
+
     const { data, error } = await supabase
       .from('direct_message_reactions')
       .select('*, profiles:user_id(full_name, avatar_url)')
       .in('message_id', msgIds);
-      
+
     if (error) {
       console.error('Error fetching reactions:', error);
       return msgs;
@@ -566,6 +633,17 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     }));
   };
 
+  // Called once per room with the first page, before the mark-as-read effect runs
+  const captureUnreadBoundary = (msgs: Message[]) => {
+    if (!roomId || unreadCapturedRoomRef.current === roomId) return;
+    unreadCapturedRoomRef.current = roomId;
+    const pid = partnerIdRef.current;
+    const unread = msgs.filter(m =>
+      m.sender_id === pid && m.sender_id !== user?.id && !m.is_read && !m.read_at &&
+      !String(m.id).startsWith('temp-') && !m.deleted_for_users?.includes(user?.id || ''));
+    setUnreadAnchor(unread.length > 0 ? { id: unread[0].id, count: unread.length } : null);
+  };
+
   const fetchMessages = useCallback(async (isNewRoom = true) => {
     if (!roomId || !keysLoaded) return;
     
@@ -588,6 +666,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       } else {
         const processed = await processMessages(fallbackData as Message[]);
         const withReactions = await fetchReactions(processed);
+        captureUnreadBoundary(withReactions);
         setMessages(withReactions);
         setHasMore(false);
       }
@@ -598,6 +677,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       );
       const processed = await processMessages(sortedMessages);
       const withReactions = await fetchReactions(processed);
+      captureUnreadBoundary(withReactions);
       setMessages(withReactions);
       setHasMore(fetchedMessages.length === 30);
     }
@@ -644,7 +724,88 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     setLoading(true);
     setMessages([]);
     isInitialLoad.current = true;
+    unreadCapturedRoomRef.current = null;
+    setUnreadAnchor(null);
+    setChatVisible(false);
+    chatPositionedRef.current = false;
+    userScrolledRef.current = false;
+    nearBottomRef.current = true;
+    placementCleanupRef.current?.();
+    placementCleanupRef.current = null;
   }, [roomId]);
+
+  useEffect(() => () => {
+    placementCleanupRef.current?.();
+    placementCleanupRef.current = null;
+  }, []);
+
+  // Place the list BEFORE the first paint so nothing is ever seen scrolling
+  useLayoutEffect(() => {
+    if (loading || chatPositionedRef.current) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    chatPositionedRef.current = true;
+    if (messages.length === 0) {
+      setChatVisible(true);
+      return;
+    }
+    const apply = () => {
+      const c = scrollContainerRef.current;
+      if (!c) return;
+      const divider = unreadAnchor ? c.querySelector<HTMLElement>('[data-unread-divider]') : null;
+      if (divider) {
+        const top = divider.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop;
+        c.scrollTop = Math.max(0, top - c.clientHeight * 0.15);
+      } else {
+        c.scrollTop = c.scrollHeight;
+      }
+      nearBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight < 150;
+    };
+    apply();
+
+    // keep it placed while images/late content change the height, until the person scrolls.
+    // The list stays hidden until the height has stopped changing (and the pictures have loaded), so it never visibly shifts.
+    let revealed = false;
+    let lastHeight = -1;
+    let stableTicks = 0;
+    const startedAt = performance.now();
+    const reveal = () => { if (!revealed) { revealed = true; setChatVisible(true); } };
+    const stop = () => { userScrolledRef.current = true; reveal(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) stop();
+    };
+    const reapply = () => {
+      if (!userScrolledRef.current) apply();
+      const c = scrollContainerRef.current;
+      if (!c) return;
+      const pictures = Array.from(c.querySelectorAll('img')).some((img) => !img.complete);
+      stableTicks = c.scrollHeight === lastHeight && !pictures ? stableTicks + 1 : 0;
+      lastHeight = c.scrollHeight;
+      if (stableTicks >= 2 || performance.now() - startedAt > 1100) reveal();
+    };
+    container.addEventListener('wheel', stop, { passive: true });
+    container.addEventListener('touchmove', stop, { passive: true });
+    container.addEventListener('load', reapply, true);
+    window.addEventListener('keydown', onKey);
+    const interval = window.setInterval(reapply, 100);
+    const end = window.setTimeout(() => { reveal(); placementCleanupRef.current?.(); }, 2500);
+    placementCleanupRef.current = () => {
+      container.removeEventListener('wheel', stop);
+      container.removeEventListener('touchmove', stop);
+      container.removeEventListener('load', reapply, true);
+      window.removeEventListener('keydown', onKey);
+      window.clearInterval(interval);
+      window.clearTimeout(end);
+      placementCleanupRef.current = null;
+    };
+  }, [loading, messages, unreadAnchor]);
+
+  // safety net: the list can never stay hidden
+  useEffect(() => {
+    if (chatVisible) return;
+    const t = window.setTimeout(() => setChatVisible(true), 1800);
+    return () => window.clearTimeout(t);
+  }, [chatVisible, roomId]);
 
   useEffect(() => {
     fetchMessages();
@@ -704,8 +865,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   useEffect(() => {
     if (messages.length > 0) {
       if (isInitialLoad.current) {
-        scrollToBottom('auto');
-        isInitialLoad.current = false;
+        // initial placement is done before paint by the layout effect above
+        if (!loading) isInitialLoad.current = false;
+        lastSeenMsgIdRef.current = messages[messages.length - 1]?.id;
       } else {
         if (scrollContainerRef.current && lastScrollHeight.current > 0) {
           const newScrollHeight = scrollContainerRef.current.scrollHeight;
@@ -713,14 +875,26 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           scrollContainerRef.current.scrollTop += heightDiff;
           lastScrollHeight.current = 0;
         } else {
-          scrollToBottom('smooth');
+          // follow new messages only if already near the bottom (or when I just sent one)
+          const last = messages[messages.length - 1];
+          const lastChanged = last?.id !== lastSeenMsgIdRef.current;
+          lastSeenMsgIdRef.current = last?.id;
+          if (nearBottomRef.current || (lastChanged && last?.sender_id === user?.id)) {
+            scrollToBottom('smooth');
+            nearBottomRef.current = true;
+          }
         }
       }
     }
   }, [messages]);
 
   const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current || loadingMore || !hasMore) return;
+    if (!scrollContainerRef.current) return;
+    {
+      const c = scrollContainerRef.current;
+      nearBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight < 150;
+    }
+    if (loadingMore || !hasMore) return;
     const { scrollTop } = scrollContainerRef.current;
     if (scrollTop < 100) {
       loadMoreMessages();
@@ -871,6 +1045,8 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
           ...m,
           content: decryptedContent,
+          raw_content: updatedMsg.content,
+          edited_at: updatedMsg.edited_at ?? m.edited_at,
           is_deleted: updatedMsg.is_deleted,
           attachment_url: updatedMsg.attachment_url,
           attachment_type: updatedMsg.attachment_type,
@@ -1060,7 +1236,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
       if (uploadError || !url) throw new Error(uploadError || 'Failed to upload media');
 
-      return url;
+      // documents are stored under a generated name: keep the real file name in the link so the card can show it
+      const isMedia = file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/');
+      return isMedia || url.includes('?') ? url : `${url}?name=${encodeURIComponent(file.name)}`;
     } catch (error) {
       console.error('Error uploading media:', error);
       toast({ title: "Upload failed", description: "Failed to upload media", variant: "destructive" });
@@ -1068,9 +1246,33 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     }
   };
 
+  const sendingRef = useRef(false); // in-flight guard: a second Enter / click while a send is running is ignored
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (sendingRef.current) return;
     if ((newMessage.trim() === '' && selectedFiles.length === 0) || !user || !roomId) return;
+    sendingRef.current = true;
+    try {
+      await sendMessageInner();
+    } finally {
+      sendingRef.current = false;
+    }
+  };
+
+  const sendMessageInner = async () => {
+    if (!user || !roomId) return;
+
+    if (!canSendWhileWaiting(senderRequest)) {
+      toast({ title: WAITING_TEXT, description: 'You can send more once they accept your message request.' });
+      return;
+    }
+
+    // Offline: keep the draft in the box and say so (the message used to vanish without a word).
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast({ title: "You're offline", description: "Your message was not sent. It is still in the box: reconnect and press send.", variant: "destructive" });
+      return;
+    }
 
     stopTyping();
     setUploading(true);
@@ -1105,10 +1307,30 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
       const contentToSend = textInput.trim() || (attachmentType ? `Shared ${filesToSend.length > 1 ? `${filesToSend.length} photos` : attachmentType === 'image' ? 'an image' : attachmentType === 'video' ? 'a video' : 'a file'}` : '');
 
+      // How this message goes out depends on both people's settings (docs/E2EE_OPT_IN_DESIGN.md).
       let finalContent = contentToSend;
-      if (keysLoaded && userPublicKey && partnerPublicKey) {
+      if (!keysLoaded) {
+        toast({ title: "Just a moment", description: "Security settings are still loading. Please try again.", variant: "destructive" });
+        return;
+      }
+      if (dmPolicy.mode === 'blocked_locked') {
+        toast({ title: "Unlock encrypted messages", description: "Enter your PIN to send messages from this device.", variant: "destructive" });
+        openPrompt();
+        return;
+      }
+      if (dmPolicy.mode === 'plaintext') {
+        // a chat that used to be encrypted must not quietly become plain text
+        const wasEncrypted = messages.some(m => isEncryptedPayload(m.raw_content) || (m.content || '').startsWith('🔒'));
+        if (needsDowngradeConfirmation(dmPolicy.mode, wasEncrypted)) {
+          const proceed = await confirmDialog(
+            `This conversation was end-to-end encrypted, but ${partnerName || 'the other person'} can't receive encrypted messages right now. If you continue, this message will be sent without encryption.`,
+            { title: 'Send without encryption?', confirmLabel: 'Send anyway', destructive: true },
+          );
+          if (!proceed) return;
+        }
+      } else {
         try {
-          finalContent = await encryptDirectMessage(contentToSend, userPublicKey, partnerPublicKey);
+          finalContent = await encryptDirectMessage(contentToSend, userPublicKey!, partnerPublicKey!);
         } catch (err) {
           console.error('Error encrypting message payload:', err);
           toast({
@@ -1118,13 +1340,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           });
           return;
         }
-      } else {
-        toast({
-          title: "Encryption Keys Unavailable",
-          description: "Cannot send message: Security keys are loading or PIN recovery is required.",
-          variant: "destructive"
-        });
-        return;
       }
 
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
@@ -1160,11 +1375,22 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       if (sendError || !insertedMsg) {
         console.error('Error sending message:', sendError);
         setMessages(prev => prev.filter(m => m.id !== tempId));
-        toast({ title: "Failed to send", description: "Message could not be saved to server", variant: "destructive" });
+        // give the text (and attachments) back so nothing typed is lost
+        setNewMessage((cur) => cur || textInput);
+        setSelectedFiles((cur) => (cur.length ? cur : filesToSend));
+        const notAccepting = /not accepting messages/i.test(sendError?.message || '');
+        const stillWaiting = /waiting for them to accept/i.test(sendError?.message || '');
+        if (stillWaiting) setRequestStateKey((k) => k + 1);
+        toast(stillWaiting
+          ? { title: WAITING_TEXT, description: 'You can send more once they accept your message request.' }
+          : notAccepting
+          ? { title: "This person is not accepting messages from you", description: "They only take messages from their connections. Send a connection request first.", variant: "destructive" }
+          : { title: "Failed to send", description: "Message could not be saved to server. Your message is still in the box.", variant: "destructive" });
         return;
       }
 
       setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: insertedMsg.id, created_at: insertedMsg.created_at } : m));
+      setRequestStateKey((k) => k + 1); // the message-request count of messages left changed on the server
 
       if (channelRef.current) {
         channelRef.current.send({
@@ -1200,6 +1426,62 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     } finally {
       setUploading(false);
     }
+  };
+
+  // ── edit my own message (plain text only, 15 minutes; the database enforces the same rules, part GE) ──
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const canEditDm = (m: Message): boolean =>
+    canEditMessage(
+      { id: m.id, user_id: m.sender_id, content: m.content, created_at: m.created_at, is_deleted: m.is_deleted, media_url: m.attachment_url || m.media_url, media_type: m.attachment_type || m.media_type || 'text' },
+      user?.id,
+    ) && !(m.content || '').startsWith('🔒') && !(m.content || '').startsWith('FORWARDED::');
+
+  const saveEdit = async () => {
+    if (!editing || !user || savingEdit) return;
+    const original = messages.find((m) => m.id === editing.id);
+    if (!original) { setEditing(null); return; }
+    const check = checkEditedText(original.content, editing.text);
+    if (!check.ok) {
+      toast({ title: check.reason === 'unchanged' ? 'Nothing changed' : 'Cannot save', description: check.message, variant: 'destructive' });
+      if (check.reason === 'unchanged') setEditing(null);
+      return;
+    }
+    if (!canEditDm(original)) {
+      toast({ title: 'Cannot edit', description: 'The 15 minutes for editing this message have passed.', variant: 'destructive' });
+      setEditing(null);
+      return;
+    }
+    // an encrypted message stays encrypted: the new text goes out through the same encryption as a new message
+    let finalContent = check.text;
+    if (isEncryptedPayload(original.raw_content)) {
+      if (dmPolicy.mode === 'blocked_locked') {
+        toast({ title: 'Unlock encrypted messages', description: 'Enter your PIN to edit this message.', variant: 'destructive' });
+        openPrompt();
+        return;
+      }
+      if (dmPolicy.mode !== 'encrypt' || !userPublicKey || !partnerPublicKey) {
+        toast({ title: 'Cannot edit right now', description: "This message is encrypted and the chat cannot encrypt the new text right now, so it was left as it is.", variant: 'destructive' });
+        return;
+      }
+      try {
+        finalContent = await encryptDirectMessage(check.text, userPublicKey, partnerPublicKey);
+      } catch {
+        toast({ title: 'Encryption failed', description: 'The edited message was not saved.', variant: 'destructive' });
+        return;
+      }
+    }
+    setSavingEdit(true);
+    const { error } = await supabase.from('direct_messages').update({ content: finalContent } as any).eq('id', editing.id).eq('sender_id', user.id);
+    setSavingEdit(false);
+    if (error) {
+      const msg = /15 minutes|edit window/i.test(error.message || '') ? 'The 15 minutes for editing this message have passed.' : /photo|video|file/i.test(error.message || '') ? 'Messages with a photo, video or file cannot be edited.' : 'The message could not be edited. Try again.';
+      toast({ title: 'Not saved', description: msg, variant: 'destructive' });
+      return;
+    }
+    setMessages((prev) => prev.map((m) => (m.id === editing.id ? { ...m, content: check.text, raw_content: finalContent, edited_at: new Date().toISOString() } : m)));
+    setEditing(null);
   };
 
   const handleUndoMessage = async (messageId: string) => {
@@ -1278,42 +1560,32 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
   const handleDeleteChat = async () => {
     if (!user || !roomId) return;
-    const confirmDelete = window.confirm("Are you sure you want to delete this specific conversation? This cannot be undone.");
-    if (!confirmDelete) return;
+    // Same as "Clear chat" on mobile: only THIS person's view is cleared. No rows are deleted, the other person keeps everything.
+    const confirmClear = await confirmDialog(
+      'Clear this chat on this device? The other person keeps their copy.',
+      { title: 'Clear chat', confirmLabel: 'Clear chat', destructive: true },
+    );
+    if (!confirmClear) return;
 
-    const { error } = await supabase
-      .from('direct_messages')
-      .delete()
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`);
-    
-    if (error) {
-      console.error('Error deleting chat history:', error);
-      alert('Failed to delete history. Please try again.');
-    } else {
-      setMessages([]);
-      
-      // Dispatch local event for instant UI update
-      console.log('[EnhancedRealTimeChat] Dispatching local chat_list_update event for delete');
-      window.dispatchEvent(new CustomEvent('chat_list_update', {
-        detail: { senderId: user.id, receiverId: partnerId }
-      }));
-
-      // Broadcast globally to other sessions
-      if (globalUpdatesChannelRef.current) {
-        console.log('[EnhancedRealTimeChat] Broadcasting chat_list_update (delete) to global updates channel');
-        globalUpdatesChannelRef.current.send({
-          type: 'broadcast',
-          event: 'chat_list_update',
-          payload: { senderId: user.id, receiverId: partnerId }
-        }).catch(console.error);
-      }
-
-      onBackClick();
-    }
+    setChatClearedNow(user.id, partnerId);
+    setMessages([]);
+    // refresh the chat list so its preview no longer shows a cleared message
+    window.dispatchEvent(new CustomEvent('chat_list_update', {
+      detail: { senderId: user.id, receiverId: partnerId }
+    }));
+    toast({ title: 'Chat cleared', description: 'Cleared on this device. The other person keeps their copy.' });
   };
 
   const handleStartCall = async () => {
     if (!roomId) return;
+    // part GE: do not ring someone who is in a live call. If the function is not installed yet the check is skipped.
+    try {
+      const { data: busy, error: busyErr } = await (supabase as any).rpc('is_partner_busy', { p_partner: partnerId });
+      if (!busyErr && busy === true) {
+        toast({ title: `${partnerName || 'This person'} is on another call`, description: 'Try again in a little while, or send a message.' });
+        return;
+      }
+    } catch { /* keep going: the call itself is still checked on the server */ }
     const success = await startGlobalCall('direct', roomId, partnerName || 'Direct Call');
     if (!success) {
       toast({ title: "Failed to start call", variant: "destructive" });
@@ -1448,7 +1720,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 setSelectedMessageIds([]);
                 setSelectedMessage(null);
               }}
-              className="p-1 sm:p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors focus:outline-none shrink-0"
+              className="h-11 w-11 -ml-2 grid place-items-center rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors focus:outline-none shrink-0"
               title="Close selection"
             >
               <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -1456,7 +1728,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
             <span className="font-bold text-xs sm:text-sm select-none">{selectedMessageIds.length}</span>
           </div>
 
-          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             {/* Reply Icon */}
             <Button
               variant="ghost"
@@ -1468,7 +1740,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 setSelectedMessageIds([]);
                 setSelectedMessage(null);
               }}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              className="h-11 w-11 md:h-8 md:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
               title="Reply"
             >
               <Reply className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -1479,7 +1751,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               variant="ghost"
               size="icon"
               onClick={() => handleToggleStarMessages()}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              className="h-11 w-11 md:h-8 md:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               title="Star / Unstar"
             >
               <Star className={cn(
@@ -1499,7 +1771,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 }
                 setShowForwardDialog(true);
               }}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              className="h-11 w-11 md:h-8 md:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               title="Forward Message(s)"
             >
               <Reply className="h-3.5 w-3.5 sm:h-4 sm:w-4 scale-x-[-1]" />
@@ -1510,7 +1782,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               variant="ghost"
               size="icon"
               onClick={handleBatchCopy}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              className="h-11 w-11 md:h-8 md:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               title="Copy"
             >
               <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -1521,7 +1793,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               variant="ghost"
               size="icon"
               onClick={handleBatchDelete}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
+              className="h-11 w-11 md:h-8 md:w-8 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
               title="Delete"
             >
               <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -1541,7 +1813,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 setSelectedMessageIds([]);
                 setSelectedMessage(null);
               }}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              className="h-11 w-11 md:h-8 md:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
               title="Message Info"
             >
               <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
@@ -1551,7 +1823,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       ) : (
         <header className="flex items-center justify-between px-2.5 sm:px-3.5 py-1.5 sm:py-2 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0 gap-2">
           <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
-            <button onClick={onBackClick} className="p-1 sm:p-1.5 rounded-full hover:bg-muted shrink-0 lg:hidden">
+            <button aria-label="Go back" onClick={onBackClick} className="p-1 sm:p-1.5 rounded-full hover:bg-muted shrink-0 lg:hidden">
               <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
             {partnerName && (
@@ -1570,7 +1842,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
                     <div className={`h-1.5 w-1.5 rounded-full ${isPartnerOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-muted-foreground/30'}`} />
-                    <span className="text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-widest font-medium opacity-70 truncate">
+                    <span className="text-[12px] sm:text-[12px] text-muted-foreground uppercase tracking-widest font-medium opacity-70 truncate">
                       {isPartnerOnline ? "Active Now" : "Away"}
                     </span>
                   </div>
@@ -1579,11 +1851,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
             )}
           </div>
           
-          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             {activeCall && !isInCall ? (
               <Button 
                   onClick={handleJoinCall} 
-                  className="bg-green-600 hover:bg-green-700 text-white rounded-full px-2.5 sm:px-3 text-xs h-7 sm:h-8 gap-1 animate-bounce-subtle"
+                  className="bg-green-600 hover:bg-green-700 text-white rounded-full px-2.5 sm:px-3 text-xs h-7 sm:h-8 gap-1-subtle"
               >
                   <Video className="h-3.5 w-3.5" /> Join Call
               </Button>
@@ -1601,8 +1873,10 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   variant="ghost" 
                   size="icon" 
                   onClick={handleStartCall}
-                  className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted"
-                  title="Start Call"
+                  disabled={isFanAccount}
+                  className="h-11 w-11 md:h-8 md:w-8 rounded-full text-muted-foreground hover:bg-muted"
+                  title={isFanAccount ? FAN_CALL_TOOLTIP : 'Start Call'}
+                  aria-label={isFanAccount ? FAN_CALL_TOOLTIP : 'Start Call'}
                 >
                   <Video className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </Button>
@@ -1613,7 +1887,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-muted/50 transition-colors">
+                  <Button aria-label="Settings" variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-muted/50 transition-colors">
                       <Settings className="h-4 w-4 sm:h-5 sm:w-5 opacity-70" />
                   </Button>
               </DropdownMenuTrigger>
@@ -1631,10 +1905,23 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       <span>Starred Messages</span>
                   </DropdownMenuItem>
 
+                  <DropdownMenuItem onClick={async () => { const r = await chatPrefs.toggleMute(partnerId); toast(r.ok ? { title: chatPrefs.prefs[partnerId]?.muted ? 'Chat unmuted' : 'Chat muted', description: chatPrefs.prefs[partnerId]?.muted ? undefined : 'No sounds or alerts from this chat.' } : { title: r.message, variant: 'destructive' }); }} className="cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <BellOff className="h-4 w-4" />
+                      <span>{chatPrefs.prefs[partnerId]?.muted ? 'Unmute' : 'Mute'}</span>
+                  </DropdownMenuItem>
 
-                  
+                  <DropdownMenuItem onClick={async () => { const r = await chatPrefs.togglePin(partnerId); toast(r.ok ? { title: chatPrefs.prefs[partnerId]?.pinned ? 'Chat unpinned' : 'Chat pinned' } : { title: r.message, variant: 'destructive' }); }} className="cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <Pin className="h-4 w-4" />
+                      <span>{chatPrefs.prefs[partnerId]?.pinned ? 'Unpin' : 'Pin'}</span>
+                  </DropdownMenuItem>
+
                   <DropdownMenuSeparator className="bg-border/50" />
-                  
+
+                  <DropdownMenuItem onClick={() => setShowBlockConfirm(true)} className="text-destructive focus:bg-destructive/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <ShieldBan className="h-4 w-4" />
+                      <span>Block {partnerName || 'this person'}</span>
+                  </DropdownMenuItem>
+
                   <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive focus:bg-destructive/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
                       <Trash2 className="h-4 w-4" />
                       <span>Clear Chat History</span>
@@ -1651,7 +1938,8 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>
       ) : (
         <>
-          <div 
+          <E2EEChatBanner reason={dmPolicy.reason} partnerName={partnerName} />
+          <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
             onClick={(e) => {
@@ -1668,6 +1956,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 setActiveMobileReactionMessageId(null);
               }
             }}
+            style={{ visibility: chatVisible ? 'visible' : 'hidden' }}
             className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide"
           >
             {loadingMore && hasMore && (
@@ -1733,7 +2022,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       </InputOTPGroup>
                     </InputOTP>
                     {recoveryError && <p className="text-xs text-destructive font-medium">{recoveryError}</p>}
-                    {recoveryLoading && <p className="text-xs text-muted-foreground animate-pulse">Recovering keys...</p>}
+                    {recoveryLoading && <p className="text-xs text-muted-foreground">Recovering keys...</p>}
                     <div className="flex gap-4 items-center mt-1">
                       <button onClick={() => setShowKeyRecovery(false)} className="text-xs text-muted-foreground hover:underline">Cancel</button>
                       <span className="text-muted-foreground">·</span>
@@ -1769,26 +2058,39 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
                 const isCallEvent = message.attachment_type === 'call_event' || (message as any).media_type === 'call_event' || (typeof message.content === 'string' && (message.content.includes('Video call started') || message.content.includes('Call ended') || message.content.includes('call started') || message.content.includes('📞')));
 
+                const unreadDivider = unreadAnchor && unreadAnchor.id === message.id ? (
+                  <div data-unread-divider className="flex items-center gap-3 my-4" role="separator">
+                    <div className="flex-1 h-px bg-primary/50" />
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-primary">
+                      {unreadAnchor.count} new {unreadAnchor.count === 1 ? 'message' : 'messages'}
+                    </span>
+                    <div className="flex-1 h-px bg-primary/50" />
+                  </div>
+                ) : null;
+
                 if (isCallEvent) {
                   const isStarted = message.content?.includes('started');
-                  const cleanContent = message.content ? message.content.replace(/^📞\s*/, '') : '';
+                  const isMissedCall = typeof message.content === 'string' && message.content.includes('Missed call');
+                  // the same row reads "No answer" to the caller and "Missed call" to the person who was called
+                  const cleanContent = isMissedCall ? (message.sender_id === user?.id ? 'No answer' : 'Missed call') : (message.content ? message.content.replace(/^📞\s*/, '') : '');
                   return (
                     <Fragment key={message.id}>
                       {showDateSeparator && (
                         <div className="flex justify-center my-6">
                           <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/50 shadow-sm">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                               {getDateLabel(messageDate)}
                             </span>
                           </div>
                         </div>
                       )}
-                      <div 
+                      {unreadDivider}
+                      <div
                         onClick={() => setSelectedCallMessage(message)}
-                        className="flex justify-center my-3 cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        className="flex justify-center my-3 cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition"
                         title="Click to view call details"
                       >
-                        <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 hover:bg-secondary/80 border border-border/40 backdrop-blur-md shadow-sm transition-all">
+                        <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 hover:bg-secondary/80 border border-border/40 shadow-sm transition">
                           <div className={cn(
                             "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
                             isStarted ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-400"
@@ -1798,7 +2100,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                           <span className="text-xs font-medium text-foreground">
                             {cleanContent}
                           </span>
-                          <span className="text-[10px] text-muted-foreground ml-1">
+                          <span className="text-[12px] text-muted-foreground ml-1">
                             {format(messageDate, 'h:mm a')}
                           </span>
                         </div>
@@ -1812,13 +2114,14 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     {showDateSeparator && (
                       <div className="flex justify-center my-8">
                         <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/50 shadow-sm">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                             {getDateLabel(messageDate)}
                           </span>
                         </div>
                       </div>
                     )}
-                    <div 
+                    {unreadDivider}
+                    <div
                       data-message-id={message.id}
                       data-unread={!message.is_read && !message.read_at}
                   data-sender-id={message.sender_id}
@@ -1835,22 +2138,17 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
                     <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-center gap-1 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
                       {/* Swipe to reply indicator icon behind message */}
-                      {swipeMessageId === message.id && swipeOffset > 0 && (
-                        <div 
-                          className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition-all flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in duration-100"
-                          style={{
-                            opacity: Math.min(swipeOffset / 55, 1),
-                            transform: `translateY(-50%) scale(${Math.min(0.5 + (swipeOffset / 110), 1)})`
-                          }}
+                                            {swipeMessageId === message.id && (
+                        <div
+                          data-swipe-icon
+                          className="absolute left-[-35px] top-1/2 -translate-y-1/2 flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30"
+                          style={{ opacity: 0, transform: 'translateY(-50%) scale(0.5)' }}
                         >
                           <Reply className="h-3.5 w-3.5" />
                         </div>
                       )}
                       <div 
-                        className="relative select-none transition-transform duration-200"
-                        style={{
-                          transform: swipeMessageId === message.id ? `translateX(${swipeOffset}px)` : undefined
-                        }}
+                        className="relative select-none"
                         onClick={(e) => {
                           if (selectedMessageIds.length > 0) {
                             e.stopPropagation();
@@ -1870,7 +2168,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                         onTouchEnd={handleTouchEnd(message)}
                       >
                         <div className={cn(
-                          "relative transition-all duration-300",
+                          "relative transition-[transform,box-shadow] duration-150",
                           selectedMessageIds.includes(message.id) ? "ring-2 ring-primary ring-offset-1 ring-offset-background scale-[0.98]" : "",
                           message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
                           (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.includes('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
@@ -1890,10 +2188,10 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                           return (
                             <div 
                               onClick={() => scrollToMessage(targetReply.id)}
-                              className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all flex items-center justify-between gap-2.5 ${isSender ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
+                              className={`mb-2 p-2 rounded-xl text-[12px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition flex items-center justify-between gap-2.5 ${isSender ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
                             >
                               <div className="flex-1 min-w-0">
-                                <div className={`font-semibold text-[10px] mb-0.5 truncate ${isSender ? 'text-white font-bold' : getUserColor(author)}`}>
+                                <div className={`font-semibold text-[12px] mb-0.5 truncate ${isSender ? 'text-white font-bold' : getUserColor(author)}`}>
                                   {author}
                                 </div>
                                 <div className={`opacity-80 line-clamp-1 truncate ${isSender ? 'text-white/80' : 'text-muted-foreground'}`}>
@@ -1913,7 +2211,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
                         {/* Forwarded Tag */}
                         {!message.is_deleted && message.content && message.content.startsWith('FORWARDED::') && (
-                          <div className="flex items-center gap-1 text-[10px] italic opacity-75 mb-1 font-medium select-none">
+                          <div className="flex items-center gap-1 text-[12px] italic opacity-75 mb-1 font-medium select-none">
                             <Reply className="h-3 w-3 scale-x-[-1] inline shrink-0" />
                             <span>Forwarded</span>
                           </div>
@@ -1941,7 +2239,30 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                 />
                               </div>
                             )}
-                            {message.content && 
+                            {editing?.id === message.id && (
+                              <div className="min-w-[220px] space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                                <textarea
+                                  autoFocus
+                                  aria-label="Edit message"
+                                  value={editing.text}
+                                  onChange={(e) => setEditing({ id: editing.id, text: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Escape') { e.preventDefault(); setEditing(null); }
+                                    else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void saveEdit(); }
+                                  }}
+                                  rows={Math.min(6, Math.max(2, editing.text.split(String.fromCharCode(10)).length))}
+                                  className="w-full resize-none rounded-lg border border-border bg-background text-foreground text-sm p-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                                <div className="flex items-center justify-between gap-2 text-[12px]">
+                                  <span className="opacity-80">{editMinutesLeft(message.created_at)} min left to edit</span>
+                                  <span className="flex gap-1.5">
+                                    <button type="button" className="px-2.5 py-1 rounded-md bg-muted text-foreground" onClick={() => setEditing(null)}>Cancel</button>
+                                    <button type="button" disabled={savingEdit} className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground disabled:opacity-60" onClick={() => void saveEdit()}>{savingEdit ? 'Saving…' : 'Save'}</button>
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                            {editing?.id !== message.id && message.content &&
                              !isDefaultMediaContent(message.content) && (() => {
                               const cleanContent = message.content.replace('FORWARDED::', '');
                               return cleanContent.startsWith('POST_SHARE::') ? (
@@ -1950,7 +2271,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('POST_SHARE::', ''));
                                     return <PostShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('PROFILE_SHARE::') ? (
@@ -1959,7 +2280,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('PROFILE_SHARE::', ''));
                                     return <ProfileShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('PITCH_SHARE::') ? (
@@ -1968,7 +2289,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('PITCH_SHARE::', ''));
                                     return <PitchShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('COMPANY_SHARE::') ? (
@@ -1977,7 +2298,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('COMPANY_SHARE::', ''));
                                     return <CompanyShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('MARKETPLACE_SHARE::') ? (
@@ -1986,7 +2307,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('MARKETPLACE_SHARE::', ''));
                                     return <MarketplaceShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('ANNOUNCEMENT_SHARE::') ? (
@@ -1995,7 +2316,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('ANNOUNCEMENT_SHARE::', ''));
                                     return <AnnouncementShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('VENDOR_SHARE::') ? (
@@ -2004,7 +2325,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('VENDOR_SHARE::', ''));
                                     return <VendorShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('PROJECT_SHARE::') ? (
@@ -2013,7 +2334,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('PROJECT_SHARE::', ''));
                                     return <ProjectShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.startsWith('CONTENT_SHARE::') ? (
@@ -2022,7 +2343,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace('CONTENT_SHARE::', ''));
                                     return <ContentShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : (cleanContent.startsWith('DISCUSSION_SHARE::') || cleanContent.startsWith('ROOM_SHARE::')) ? (
@@ -2032,7 +2353,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(cleanContent.replace(prefix, ''));
                                     return <DiscussionShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
                               ) : cleanContent.includes('JOB_SHARE::') ? (
@@ -2044,26 +2365,27 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                     const shareData = JSON.parse(jsonStr);
                                     return (
                                       <div className="space-y-2">
-                                        {caption && <p className="text-[13px] sm:text-sm px-3 pt-2">{caption}</p>}
+                                        {caption && <p className="text-sm sm:text-sm px-3 pt-2">{caption}</p>}
                                         <JobShareCard {...shareData} />
                                       </div>
                                     );
                                   } catch (e) {
-                                    return <p className="text-[13px] sm:text-sm break-words px-3 pt-2">{cleanContent}</p>;
+                                    return <p className="text-sm sm:text-sm break-words px-3 pt-2">{cleanContent}</p>;
                                   }
                                 })()
                               ) : (
-                                <span className="text-[13px] sm:text-sm break-words">{cleanContent}</span>
+                                <span className="text-sm sm:text-sm break-words"><LinkifiedText text={cleanContent} /></span>
                               );
                             })()}
 
                               {/* WhatsApp style inline timestamp & status ticks / dropdown chevron overlay */}
                               <span className={cn(
-                                "inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80"
+                                "inline-flex items-center gap-1 float-right text-[12px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80"
                               )}>
                                 {starredMessageIds.has(message.id) && (
                                   <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
                                 )}
+                                {message.edited_at && <span className="italic opacity-80">(edited)</span>}
                                 <span>{formatMessageTime(message.created_at)}</span>
 
                                 {!message.is_deleted ? (
@@ -2119,11 +2441,16 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                         setSelectedMessageIds([message.id]);
                                         setShowForwardDialog(true);
                                       }}>
-                                        <Share2 className="h-4 w-4 mr-2" /> Forward
+                                        <ShareIcon className="h-4 w-4 mr-2" /> Forward
                                       </DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => setSelectedMessageIds(prev => prev.includes(message.id) ? prev : [...prev, message.id])}>
                                         <Check className="h-4 w-4 mr-2" /> Select
                                       </DropdownMenuItem>
+                                      {isSender && canEditDm(message) && (
+                                        <DropdownMenuItem onClick={() => setEditing({ id: message.id, text: message.content.replace('FORWARDED::', '') })}>
+                                          <Pencil className="h-4 w-4 mr-2" /> Edit
+                                        </DropdownMenuItem>
+                                      )}
                                       {isSender && (
                                         <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
                                           <Trash2 className="h-4 w-4 mr-2" /> Undo
@@ -2173,7 +2500,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                   )}
                                 >
                                   <span className="text-sm leading-none">{emoji}</span>
-                                  {count > 1 && <span className="text-[10px] font-extrabold pr-0.5">{count}</span>}
+                                  {count > 1 && <span className="text-[12px] font-extrabold pr-0.5">{count}</span>}
                                 </button>
                               );
                             })}
@@ -2189,11 +2516,12 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                             setActiveMobileReactionMessageId(activeMobileReactionMessageId === message.id ? null : message.id);
                           }}
                           className={cn(
-                            "opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-muted text-muted-foreground/70 hover:text-foreground self-center shrink-0 z-20",
+                            "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity p-1 rounded-full hover:bg-muted text-muted-foreground/70 hover:text-foreground self-center shrink-0 z-20",
                             isSender ? "mr-3" : "ml-3",
                             activeMobileReactionMessageId === message.id && "opacity-100"
                           )}
                           title="React"
+                          aria-label="React to message"
                         >
                           <Smile className="h-4 w-4" />
                         </button>
@@ -2217,7 +2545,8 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                 handleToggleReaction(message.id, emoji);
                                 setActiveMobileReactionMessageId(null);
                               }} 
-                              className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
+                              aria-label={`React ${emoji}`}
+                              className="h-10 w-10 grid place-items-center rounded-full active:scale-90 transition-transform duration-100 text-lg leading-none"
                             >
                               {emoji}
                             </button>
@@ -2255,7 +2584,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       className="w-8 h-8 rounded-md object-cover shrink-0 border border-border"
                     />
                   )}
-                  <button 
+                  <button aria-label="Close" 
                     onClick={() => setReplyingTo(null)}
                     className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors shrink-0"
                   >
@@ -2278,7 +2607,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                         <FileText className="h-8 w-8 text-primary" />
                       </div>
                     )}
-                    <button 
+                    <button aria-label="Close" 
                       type="button"
                       onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
                       className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black transition-colors z-10"
@@ -2286,13 +2615,21 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       <X className="h-3 w-3" />
                     </button>
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-                      <span className="text-[9px] font-black text-white uppercase tracking-widest">{Math.round(item.file.size / 1024)}KB</span>
+                      <span className="text-[12px] font-black text-white uppercase tracking-widest">{Math.round(item.file.size / 1024)}KB</span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
             <TypingIndicator typingUsers={typingUsers} />
+            {senderRequest.waiting && (
+              <p role="status" className="px-4 py-2 text-xs text-center text-muted-foreground bg-muted/30 border-t border-border/40">
+                {WAITING_TEXT}
+                {!senderRequest.closed && senderRequest.remaining > 0
+                  ? ` · you can send ${senderRequest.remaining} more message${senderRequest.remaining === 1 ? '' : 's'} until then`
+                  : ' · you can send more once they accept'}
+              </p>
+            )}
             <form onSubmit={handleSendMessage} className="flex items-center gap-1 sm:gap-2 p-1.5 sm:p-2 bg-background border-t border-border/40">
               <input 
                 type="file" 
@@ -2308,7 +2645,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 size="icon"
                 variant="ghost"
                 onClick={() => fileInputRef.current?.click()}
-                className="rounded-full text-muted-foreground h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
+                className="rounded-full text-muted-foreground h-11 w-11 md:h-10 md:w-10 p-0 shrink-0"
                 title="Attach media"
                 disabled={uploading}
               >
@@ -2322,7 +2659,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   size="icon"
                   variant="ghost"
                   onClick={openKeyboard}
-                  className="rounded-full text-primary bg-primary/10 h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
+                  className="rounded-full text-primary bg-primary/10 h-11 w-11 md:h-10 md:w-10 p-0 shrink-0"
                   title="Open keyboard"
                   disabled={uploading}
                 >
@@ -2341,7 +2678,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     e.stopPropagation();
                     e.preventDefault();
                   }}
-                  className="rounded-full text-muted-foreground emoji-toggle-button h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
+                  className="rounded-full text-muted-foreground emoji-toggle-button h-11 w-11 md:h-10 md:w-10 p-0 shrink-0"
                   title="Open emoji picker"
                   disabled={uploading}
                 >
@@ -2358,17 +2695,17 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 onBlur={() => stopTyping()}
                 onFocus={() => {
                   if (showEmojiPicker) {
-                    setTimeout(() => setShowEmojiPicker(false), 200);
+                    setShowEmojiPicker(false);
                   }
                 }}
                 placeholder="Message..."
-                className="flex-1 rounded-full bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary/20 h-8 sm:h-10 text-[13px] sm:text-sm px-3 sm:px-4"
+                className="flex-1 rounded-full bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary/20 h-11 md:h-10 text-base md:text-sm px-3 sm:px-4"
                 autoComplete="off"
               />
-              <Button 
+              <Button aria-label="Send" 
                 type="submit" 
                 size="icon" 
-                className="rounded-full h-8 w-8 sm:h-10 sm:w-10 shrink-0 p-0" 
+                className="rounded-full h-11 w-11 md:h-10 md:w-10 shrink-0 p-0" 
                 disabled={(!newMessage.trim() && selectedFiles.length === 0) || uploading}
               >
                 {uploading ? (
@@ -2383,14 +2720,15 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           <div
             ref={emojiPickerRef}
             className={cn(
-              "w-full bg-background border-t border-border overflow-hidden h-[300px] transition-all duration-300",
-              showEmojiPicker ? "block animate-in slide-in-from-bottom" : "hidden"
+              "w-full bg-background border-t border-border overflow-hidden",
+              showEmojiPicker ? "block" : "hidden"
             )}
+            style={{ height: Math.max(300, keyboardHeight || 350) }}
           >
             <EmojiPicker 
               onEmojiClick={onEmojiClick}
               autoFocusSearch={false}
-              theme={EmojiTheme.DARK}
+              theme={EmojiTheme.AUTO}
               emojiStyle={EmojiStyle.APPLE}
               width="100%"
               height={Math.max(300, keyboardHeight || 350)}
@@ -2450,10 +2788,10 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       </div>
                       <div>
                         <p className="text-xs font-bold leading-tight">Sent Time</p>
-                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Dispatched to server</p>
+                        <p className="text-[12px] text-muted-foreground leading-tight mt-0.5">Dispatched to server</p>
                       </div>
                     </div>
-                    <span className="text-[11px] sm:text-xs font-mono font-medium text-foreground shrink-0 ml-2">
+                    <span className="text-[12px] sm:text-xs font-medium text-foreground shrink-0 ml-2">
                       {sentTime ? format(sentTime, 'p (MMM d)') : 'N/A'}
                     </span>
                   </div>
@@ -2469,13 +2807,13 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold leading-tight truncate">{partnerName}</p>
-                        <p className={cn("text-[10px] leading-tight font-semibold mt-0.5 flex items-center gap-1", isRead ? "text-primary" : "text-muted-foreground")}>
+                        <p className={cn("text-[12px] leading-tight font-semibold mt-0.5 flex items-center gap-1", isRead ? "text-primary" : "text-muted-foreground")}>
                           {isRead ? <CheckCheck className="h-3 w-3 inline text-primary" /> : <Check className="h-3 w-3 inline text-muted-foreground" />}
                           {isRead ? "Seen / Read" : "Delivered"}
                         </p>
                       </div>
                     </div>
-                    <span className="text-[11px] sm:text-xs font-mono font-medium text-primary shrink-0 ml-2">
+                    <span className="text-[12px] sm:text-xs font-medium text-primary shrink-0 ml-2">
                       {displayReadTime}
                     </span>
                   </div>
@@ -2498,6 +2836,33 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           setSelectedMessage(null);
         }}
       />
+
+      <AlertDialog open={showBlockConfirm} onOpenChange={setShowBlockConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Block {partnerName || 'this person'}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              They will no longer be able to message you or see your profile. You can unblock them any time in Settings, Blocked users.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                const { error } = await blockPartner(partnerId);
+                if (error) {
+                  toast({ title: 'Could not block', description: 'Please try again.', variant: 'destructive' });
+                } else {
+                  toast({ title: 'Blocked', description: `${partnerName || 'This person'} was blocked.` });
+                  push('/messages');
+                }
+              }}
+            >
+              Block
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Starred Messages Dialog */}
       <StarredMessagesDialog

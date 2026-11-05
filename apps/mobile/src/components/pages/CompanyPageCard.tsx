@@ -140,7 +140,7 @@ export const CompanyPageCard: React.FC<CompanyPageCardProps> = ({ page, onPress,
         <View style={styles.metaRow}>
           {page.headquarters ? (
             <View style={styles.metaItem}>
-              <Icon name="map-pin" size={11} color={themeColors.textMuted} />
+              <Icon name="map-pin" size={11} color={themeColors.iconMuted} />
               <Text style={[styles.metaText, { color: themeColors.textMuted }]} numberOfLines={1}>
                 {page.headquarters}
               </Text>
@@ -148,7 +148,7 @@ export const CompanyPageCard: React.FC<CompanyPageCardProps> = ({ page, onPress,
           ) : null}
 
           <View style={styles.metaItem}>
-            <Icon name="users" size={11} color={themeColors.textMuted} />
+            <Icon name="users" size={11} color={themeColors.iconMuted} />
             <Text style={[styles.metaText, { color: themeColors.textMuted }]}>{followerCount.toLocaleString()} followers</Text>
           </View>
         </View>
@@ -158,7 +158,7 @@ export const CompanyPageCard: React.FC<CompanyPageCardProps> = ({ page, onPress,
           <View style={styles.industriesRow}>
             {industries.slice(0, 2).map((ind, idx) => (
               <View key={idx} style={[styles.indPill, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                <Text style={[styles.indPillText, { color: themeColors.textSecondary }]}>IND // {String(ind).trim().toUpperCase()}</Text>
+                <Text style={[styles.indPillText, { color: themeColors.textSecondary }]}>{String(ind).trim()}</Text>
               </View>
             ))}
           </View>
@@ -253,8 +253,8 @@ const styles = StyleSheet.create({
   },
   logoFallbackText: {
     color: ORANGE,
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
   },
   contentSection: {
     paddingTop: 30,
@@ -268,8 +268,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   titleText: {
-    fontSize: 15.5,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '600',
   },
@@ -311,14 +311,14 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   indPillText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
   },
   followBtn: {
     backgroundColor: ORANGE,
     borderRadius: 10,
-    height: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -329,8 +329,8 @@ const styles = StyleSheet.create({
   },
   followBtnText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   followBtnTextActive: {
     color: '#64748B',
@@ -338,14 +338,14 @@ const styles = StyleSheet.create({
   manageBtn: {
     backgroundColor: '#F1F5F9',
     borderRadius: 10,
-    height: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   manageBtnText: {
     color: INK,
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
 

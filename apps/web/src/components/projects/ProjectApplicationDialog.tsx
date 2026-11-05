@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { useAppRole } from '@/hooks/useAppRole';
+import { friendlyError } from '@cinecraft/core';
 
 interface Project {
   id: string;
@@ -75,7 +76,8 @@ export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplic
         project_space_id: spaceData.id,
         user_id: user.id,
         status: 'pending',
-        message: message || null
+        // the table has no role column: keep the chosen role in the message so the creator can see what the person applied for
+        message: `Applying for ${selectedRole}${message.trim() ? ` — ${message.trim()}` : ''}`
       });
 
       if (error) {
@@ -91,7 +93,7 @@ export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplic
       onApplicationSent();
       onOpenChange(false);
     } catch (error: any) {
-      toast({ title: 'Submission Error', description: error.message || 'An error occurred.', variant: 'destructive' });
+      toast({ title: 'Submission Error', description: friendlyError(error, 'An error occurred.'), variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }

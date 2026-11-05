@@ -34,7 +34,7 @@ export const AnnouncementHistoryDialog = ({ announcementId, open, onOpenChange }
           <div className="space-y-3">
             {rows.map((r) => (
               <div key={r.id} className="rounded-2xl border border-border/60 p-4 space-y-1">
-                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Before {format(new Date(r.edited_at), 'd MMM yyyy, h:mm a')}</p>
+                <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Before {format(new Date(r.edited_at), 'd MMM yyyy, h:mm a')}</p>
                 <p className="font-bold">{r.old_title}</p>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">{r.old_content}</p>
               </div>

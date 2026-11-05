@@ -3,6 +3,7 @@ import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import {
   STORAGE_BUCKETS,
+  PROJECT_FILE_FOLDERS,
   buildUserFilePath,
   extractStoragePath,
   signAndDownload,
@@ -15,7 +16,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, FileText, Download, Trash2, Shield, Loader2, Calendar, Eye, FileCheck, Film } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { WorkspaceHero } from './WorkspaceUI';
 import { useAppRole } from '@/hooks/useAppRole';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface LegalDoc {
     id: string;
@@ -67,11 +71,11 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                 const docsWithSignedUrls = await Promise.all(rawDocs.map(async (doc) => {
                 if (!doc.url) return doc;
                 try {
-                    const path = extractStoragePath(doc.url, STORAGE_BUCKETS.LEGAL_DOCUMENTS);
+                    const path = extractStoragePath(doc.url, bucketFor(doc.url));
                     if (!path) return { ...doc, signedUrl: doc.url || undefined };
 
                     const { data: signedData, error: signError } = await supabase.storage
-                        .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
+                        .from(bucketFor(doc.url))
                         .createSignedUrl(path, 3600);
 
                     if (!signError && signedData?.signedUrl) {
@@ -79,7 +83,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                     }
 
                     const { data: { publicUrl } } = supabase.storage
-                        .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
+                        .from(bucketFor(doc.url))
                         .getPublicUrl(path);
 
                     return { ...doc, signedUrl: publicUrl || doc.url || undefined };
@@ -112,8 +116,8 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             const { uploadFileToSupabase } = await import('@/utils/fileValidation');
             const { url, error: uploadError } = await uploadFileToSupabase(
                 selectedFile,
-                STORAGE_BUCKETS.LEGAL_DOCUMENTS,
-                project_id
+                STORAGE_BUCKETS.PROJECT_FILES,
+                `${PROJECT_FILE_FOLDERS.LEGAL}/${project_id}`
             );
 
             if (uploadError || !url) throw new Error(uploadError || 'Failed to upload document');
@@ -135,7 +139,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             setDialogOpen(false);
             resetForm();
         } catch (err: any) {
-            toast({ title: "Error", description: err.message || "Failed to upload document", variant: "destructive" });
+            toast({ title: "Error", description: friendlyError(err, "Failed to upload document"), variant: "destructive" });
         } finally {
             setUploading(false);
         }
@@ -146,20 +150,20 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
         const ext = doc.url.split('/').pop()?.split('?')[0].split('.').pop() ?? 'pdf';
         const fileName = `${doc.title.replace(/\s+/g, '_')}.${ext}`;
         try {
-            const ok = await signAndDownload(doc.url, STORAGE_BUCKETS.LEGAL_DOCUMENTS, fileName);
+            const ok = await signAndDownload(doc.url, bucketFor(doc.url), fileName);
             if (!ok) throw new Error('Could not generate secure download link');
             toast({ title: "Downloaded", description: doc.title + " is ready." });
         } catch (err: any) {
-            toast({ title: "Download Failed", description: err.message, variant: "destructive" });
+            toast({ title: "Download Failed", description: friendlyError(err), variant: "destructive" });
         }
     };
 
     const handleDelete = async (doc: LegalDoc) => {
-        if (!confirm(`Permanently delete "${doc.title}"?`)) return;
+        if (!await confirmDialog(`Permanently delete "${doc.title}"?`)) return;
 
         try {
             if (doc.url) {
-                const storageErr = await removeStorageFile(doc.url, STORAGE_BUCKETS.LEGAL_DOCUMENTS);
+                const storageErr = await removeStorageFile(doc.url, bucketFor(doc.url));
                 // Non-fatal: log but continue to DB delete
                 if (storageErr) console.warn('[LegalDocs] Storage delete:', storageErr.message);
             }
@@ -215,21 +219,29 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
 
     return (
         <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar bg-transparent">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-                <div className="flex flex-col gap-1">
-                    <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Legal</h1>
-                    <p className="text-2xl font-bold text-foreground text-gradient">Archived Documents</p>
-                </div>
+            <div className="mb-6">
+                <WorkspaceHero
+                    icon={Shield}
+                    title="Legal documents"
+                    description="Contracts, releases and agreements for this production."
+                    stats={[
+                        { label: 'Documents', value: docs.length },
+                        { label: 'Contracts', value: docs.filter((d: any) => d.document_type === 'contract').length, tone: 'primary' },
+                        { label: 'Other', value: docs.filter((d: any) => d.document_type !== 'contract').length },
+                    ]}
+                />
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3 mb-6">
                 
                 {!isInternal ? (
                     <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
                         <DialogTrigger asChild>
-                            <Button className="bg-primary hover:bg-primary/80 text-primary-foreground rounded-full px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                            <Button className="bg-primary hover:bg-primary/80 text-primary-foreground rounded-full px-6 h-12 font-bold shadow-sm transition">
                                 <Plus className="h-5 w-5 mr-2" /> 
                                 New Document
                             </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                        <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-2xl overflow-hidden shadow-md">
                             <DialogHeader className="p-6 border-b border-border">
                                 <DialogTitle className="text-xl font-bold text-foreground">Upload Legal Asset</DialogTitle>
                                 <DialogDescription className="text-muted-foreground mt-1">Archive contracts, NDAs, and permits for this production.</DialogDescription>
@@ -245,7 +257,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                         <SelectTrigger className="bg-background border-border rounded-xl h-12">
                                             <SelectValue />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-popover border border-border rounded-xl shadow-2xl backdrop-blur-3xl">
+                                        <SelectContent className="bg-popover border border-border rounded-xl shadow-md">
                                             <SelectItem value="contract" className="cursor-pointer text-foreground py-2.5">Contract</SelectItem>
                                             <SelectItem value="release" className="cursor-pointer text-foreground py-2.5">Release Form</SelectItem>
                                             <SelectItem value="nda" className="cursor-pointer text-foreground py-2.5">NDA</SelectItem>
@@ -262,16 +274,16 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                     <div className="relative group">
                                         <Input type="file" onChange={handleFileSelect} className="bg-background border-border rounded-xl h-12 py-3 file:bg-transparent file:text-primary file:font-bold file:border-0" />
                                     </div>
-                                    {selectedFile && <p className="text-[10px] text-primary/80 font-bold ml-1">{selectedFile.name}</p>}
+                                    {selectedFile && <p className="text-[12px] text-primary/80 font-bold ml-1">{selectedFile.name}</p>}
                                 </div>
-                                <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
+                                <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-sm">
                                     {uploading ? <Loader2 className="animate-spin" /> : 'Confirm Upload'}
                                 </Button>
                             </div>
                         </DialogContent>
                     </Dialog>
                 ) : (
-                    <div className="bg-muted/30 border border-border/50 px-6 py-2.5 rounded-full text-xs text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-2">
+                    <div className="bg-muted/30 border border-border/50 px-6 py-2.5 rounded-full text-xs text-muted-foreground font-bold flex items-center gap-2">
                         <Shield className="w-4 h-4" /> Observation Mode
                     </div>
                 )}
@@ -280,14 +292,14 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             {docs && docs.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-24">
                     {docs.map(doc => (
-                        <div key={doc.id} className="group bg-card border border-border rounded-[32px] overflow-hidden shadow-sm hover:shadow-2xl hover:bg-accent/50 transition-all duration-300 relative">
+                        <div key={doc.id} className="group bg-card border border-border rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:bg-accent/50 transition duration-300 relative">
                             {/* Card Content */}
                             <div className="p-6">
                                 <div className="flex items-start justify-between mb-4">
                                     <div className="p-3 bg-primary/10 rounded-2xl group-hover:bg-primary/20 transition-colors">
                                         {getFileIcon(doc.document_type)}
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
                                         <Button 
                                             size="sm" 
                                             variant="ghost" 
@@ -297,7 +309,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                             <Eye className="h-4 w-4" />
                                         </Button>
                                         {!isInternal && (
-                                            <Button 
+                                            <Button aria-label="Delete" 
                                                 size="sm" 
                                                 variant="ghost" 
                                                 onClick={() => handleDelete(doc)}
@@ -312,11 +324,11 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                 <div className="space-y-1 mb-4">
                                     <div className="flex items-center gap-2 text-primary/60">
                                         <Calendar className="h-3.5 w-3.5" />
-                                        <span className="text-[10px] font-bold tracking-[0.2em] uppercase">{formatDate(doc.created_at)}</span>
+                                        <span className="text-[12px] font-bold">{formatDate(doc.created_at)}</span>
                                     </div>
                                     <h3 className="font-bold text-foreground text-lg truncate group-hover:text-primary transition-colors">{doc.title}</h3>
                                     {doc.document_type && (
-                                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{doc.document_type}</p>
+                                        <p className="text-[12px] font-bold text-muted-foreground/60">{doc.document_type}</p>
                                     )}
                                 </div>
 
@@ -331,7 +343,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                         size="sm" 
                                         variant="outline" 
                                         onClick={() => handleDownload(doc)} 
-                                        className="w-full h-12 bg-accent/30 hover:bg-primary hover:text-primary-foreground border-border rounded-xl font-bold transition-all"
+                                        className="w-full h-12 bg-accent/30 hover:bg-primary hover:text-primary-foreground border-border rounded-xl font-bold transition"
                                     >
                                         <Download className="h-4 w-4 mr-2" /> Download Document
                                     </Button>
@@ -343,14 +355,14 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             ) : (
                 <div className="flex flex-col items-center justify-center py-32 text-center opacity-50">
                     <Shield className="w-16 h-16 mb-4" />
-                    <p className="text-lg font-bold uppercase tracking-widest">Registry Empty</p>
+                    <p className="text-lg font-bold">Registry Empty</p>
                     <p className="text-sm">Safeguard your project by archiving its legal papers here.</p>
                 </div>
             )}
 
             {/* Quick Look Dialog */}
             <Dialog open={!!previewId} onOpenChange={(open) => !open && setPreviewId(null)}>
-                <DialogContent className="max-w-5xl w-[95vw] h-[85vh] bg-card border border-border p-0 rounded-[32px] overflow-hidden flex flex-col shadow-3xl">
+                <DialogContent className="max-w-5xl w-[95vw] h-[85vh] bg-card border border-border p-0 rounded-2xl overflow-hidden flex flex-col shadow-md">
                     <DialogHeader className="p-6 border-b border-border flex flex-row items-center justify-between shrink-0">
                         <div className="flex items-center gap-3 min-w-0">
                             {previewDoc && getFileIcon(previewDoc.document_type)}
@@ -379,7 +391,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                 <img loading="lazy" decoding="async" 
                                     src={previewDoc.signedUrl || previewDoc.url || ''} 
                                     alt={previewDoc.title} 
-                                    className="max-w-full max-h-full object-contain p-4 shadow-2xl rounded-xl animate-in fade-in zoom-in-95 duration-500"
+                                    className="max-w-full max-h-full object-contain p-4 shadow-md rounded-xl animate-in fade-in zoom-in-95 duration-500"
                                 />
                             ) : isPdf(previewDoc.url) ? (
                                 <iframe 
@@ -391,7 +403,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                 <video 
                                     src={previewDoc.signedUrl || previewDoc.url || ''} 
                                     controls 
-                                    className="max-w-full max-h-full p-4 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-500"
+                                    className="max-w-full max-h-full p-4 rounded-xl shadow-md animate-in fade-in zoom-in-95 duration-500"
                                     autoPlay 
                                 />
                             ) : (
@@ -416,5 +428,11 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
         </div>
     );
 };
+
+/**
+ * New legal documents go in the project-files bucket (members of the project only; the 'legal-documents' bucket has no upload policy,
+ * so uploads there were refused). Documents saved earlier still live in 'legal-documents', so the bucket is chosen from the saved link.
+ */
+const bucketFor = (url?: string | null) => (url && url.includes(`/${STORAGE_BUCKETS.LEGAL_DOCUMENTS}/`) ? STORAGE_BUCKETS.LEGAL_DOCUMENTS : STORAGE_BUCKETS.PROJECT_FILES);
 
 export default LegalDocs;

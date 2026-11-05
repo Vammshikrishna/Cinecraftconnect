@@ -11,6 +11,7 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useUserSettings } from '../../hooks/useUserSettings';
 
 interface NetworkListModalProps {
   visible: boolean;
@@ -27,17 +28,18 @@ export const NetworkListModal: React.FC<NetworkListModalProps> = ({
   users,
   navigation,
 }) => {
+  const { themeColors } = useUserSettings();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
+        <View style={[styles.overlay, { backgroundColor: themeColors.overlay }]}>
           <TouchableWithoutFeedback>
-            <View style={styles.modalContent}>
-              <View style={styles.handleBar} />
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgElevated }]}>
+              <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
               <View style={styles.headerRow}>
-                <Text style={styles.title}>{title}</Text>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color="#6B7280" />
+                <Text style={[styles.title, { color: themeColors.textPrimary }]}>{title}</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -47,7 +49,7 @@ export const NetworkListModal: React.FC<NetworkListModalProps> = ({
                 contentContainerStyle={{ paddingBottom: 20 }}
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    style={styles.userRow}
+                    style={[styles.userRow, { borderBottomColor: themeColors.divider }]}
                     onPress={() => {
                       onClose();
                       navigation.navigate('PublicProfile', {
@@ -56,13 +58,13 @@ export const NetworkListModal: React.FC<NetworkListModalProps> = ({
                       });
                     }}
                   >
-                    <CachedImage uri={item.avatar} style={styles.avatar} />
+                    <CachedImage uri={item.avatar} style={[styles.avatar, { backgroundColor: themeColors.chipBg }]} />
                     <View style={styles.userMeta}>
-                      <Text style={styles.userName}>{item.name}</Text>
-                      <Text style={styles.userCraft}>{item.craft}</Text>
+                      <Text style={[styles.userName, { color: themeColors.textPrimary }]}>{item.name}</Text>
+                      <Text style={[styles.userCraft, { color: themeColors.textSecondary }]}>{item.craft}</Text>
                     </View>
-                    <View style={styles.viewBtn}>
-                      <Text style={styles.viewBtnText}>View →</Text>
+                    <View style={[styles.viewBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
+                      <Text style={[styles.viewBtnText, { color: themeColors.textPrimary }]}>View →</Text>
                     </View>
                   </TouchableOpacity>
                 )}
@@ -87,6 +89,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '75%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -104,8 +109,8 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#0D0D0D',
-    fontSize: 17,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
   },
   userRow: {
     flexDirection: 'row',
@@ -126,12 +131,12 @@ const styles = StyleSheet.create({
   },
   userName: {
     color: '#0D0D0D',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   userCraft: {
-    color: '#6B7280',
-    fontSize: 11,
+    color: '#64748B',
+    fontSize: 12,
     marginTop: 2,
   },
   viewBtn: {
@@ -144,7 +149,7 @@ const styles = StyleSheet.create({
   },
   viewBtnText: {
     color: '#0D0D0D',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

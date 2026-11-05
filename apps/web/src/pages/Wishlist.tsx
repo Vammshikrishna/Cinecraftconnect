@@ -7,16 +7,18 @@ import { useAppNavigation } from '@/contexts/NavigationContext';
 import { ListingCard } from '@/components/marketplace/ListingCard';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
-import { Share2, Grid, List as ListIcon, Loader2, CheckSquare, Heart } from 'lucide-react';
+import { ListingSkeleton } from '@/components/ui/enhanced-skeleton';
+import { Grid, List as ListIcon, Loader2, CheckSquare, Heart } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { BulkAddToProjectModal } from '@/components/marketplace/BulkAddToProjectModal';
+import { LoadError } from '@/components/settings/LoadError';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const Wishlist = () => {
     const { user, profile } = useAuth();
-    const { goBack } = useAppNavigation();
+    const { goBack, push } = useAppNavigation();
     const { toast } = useToast();
     
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -25,7 +27,7 @@ const Wishlist = () => {
     const [showBulkAdd, setShowBulkAdd] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    const { data: wishlist, isLoading, refetch } = useQuery({
+    const { data: wishlist, isLoading, isError, refetch } = useQuery({
         queryKey: ['marketplace_wishlist', user?.id],
         queryFn: async () => {
             if (!user) return [];
@@ -78,8 +80,8 @@ const Wishlist = () => {
     };
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-40">
-            <div className="max-w-7xl mx-auto px-4 md:px-8">
+        <div className="min-h-dvh bg-background pt-20 pb-40">
+            <div className="max-w-[1560px] mx-auto px-4 md:px-8">
                 <PageHeader
                     title="My Gear Wishlist"
                     subtitle="Saved equipment and bundles"
@@ -87,7 +89,7 @@ const Wishlist = () => {
                     actions={
                         <div className="flex gap-2">
                             <Button variant="outline" className="rounded-xl border-border/50 gap-2" onClick={generateShareToken}>
-                                <Share2 className="h-4 w-4" />
+                                <ShareIcon className="h-4 w-4" />
                                 <span className="hidden md:inline">Share</span>
                             </Button>
                         </div>
@@ -114,10 +116,12 @@ const Wishlist = () => {
 
                 <div className="mt-8 flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
                     <div className="flex items-center gap-4 w-full md:w-auto">
+                        {(wishlist?.length ?? 0) > 0 && (
                         <Button variant="ghost" onClick={toggleAll} className="gap-2">
                             <CheckSquare className="h-4 w-4" />
                             {selectedIds.size === wishlist?.length && wishlist?.length > 0 ? 'Deselect All' : 'Select All'}
                         </Button>
+                        )}
                         
                         {selectedIds.size > 0 && (
                             <Button onClick={() => setShowBulkAdd(true)} className="gap-2 shadow-lg shadow-primary/20 bg-primary text-primary-foreground hover:bg-primary/90">
@@ -130,16 +134,20 @@ const Wishlist = () => {
                         <Button
                             variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                             size="icon"
-                            className={`rounded-lg h-8 w-8 ${viewMode === 'grid' ? 'shadow-sm' : ''}`}
+                            className={`rounded-lg h-10 w-10 ${viewMode === 'grid' ? 'shadow-sm' : ''}`}
                             onClick={() => setViewMode('grid')}
+                            aria-label="Grid view"
+                            aria-pressed={viewMode === 'grid'}
                         >
                             <Grid size={14} />
                         </Button>
                         <Button
                             variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                             size="icon"
-                            className={`rounded-lg h-8 w-8 ${viewMode === 'list' ? 'shadow-sm' : ''}`}
+                            className={`rounded-lg h-10 w-10 ${viewMode === 'list' ? 'shadow-sm' : ''}`}
                             onClick={() => setViewMode('list')}
+                            aria-label="List view"
+                            aria-pressed={viewMode === 'list'}
                         >
                             <ListIcon size={14} />
                         </Button>
@@ -149,32 +157,36 @@ const Wishlist = () => {
                 {isLoading ? (
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
                         {[1, 2, 3, 4].map(i => (
-                            <EnhancedSkeleton key={i} className="h-80 rounded-3xl" />
+                            <ListingSkeleton key={i} />
                         ))}
                     </div>
-                ) : wishlist?.length === 0 ? (
+                ) : isError || !wishlist ? (
+                    <LoadError className="mt-8" title="Could not load your wishlist" onRetry={() => refetch()} />
+                ) : wishlist.length === 0 ? (
                     <div className="text-center py-20 bg-secondary/10 rounded-3xl border border-border/50 mt-8">
                         <Heart size={48} className="mx-auto text-muted-foreground/30 mb-4" />
                         <h3 className="text-xl font-bold text-foreground">Your wishlist is empty</h3>
                         <p className="text-muted-foreground mt-2 max-w-sm mx-auto">
                             Browse the marketplace and click the heart icon to save gear for your upcoming projects.
                         </p>
+                        <Button className="mt-5 rounded-xl" onClick={() => push('/marketplace')}>Browse marketplace</Button>
                     </div>
                 ) : (
                     <div className={
                         viewMode === 'grid'
-                            ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+                            ? "grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-6"
                             : "flex flex-col gap-4"
                     }>
                         {wishlist?.map((item) => (
                             <div key={item.id} className="relative group">
-                                <div className="absolute top-4 left-4 z-40 bg-background/80 backdrop-blur-md rounded-lg p-1 border border-border/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className={`absolute top-1.5 left-1.5 z-40 bg-background/80 backdrop-blur-md rounded-lg p-2.5 border border-border/50 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity ${selectedIds.size > 0 ? "md:opacity-100" : ""}`}>
                                     <Checkbox 
+                                        aria-label={`Select ${item.marketplace_listings?.title || 'item'}`}
                                         checked={selectedIds.has(item.listing_id)} 
                                         onCheckedChange={() => toggleSelection(item.listing_id)}
                                     />
                                 </div>
-                                <div className={selectedIds.has(item.listing_id) ? "ring-2 ring-primary rounded-3xl transition-all" : "transition-all"}>
+                                <div className={selectedIds.has(item.listing_id) ? "ring-2 ring-primary rounded-3xl transition-shadow" : "transition-shadow"}>
                                     {item.marketplace_listings && (
                                         <ListingCard listing={item.marketplace_listings} />
                                     )}

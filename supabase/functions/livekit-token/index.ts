@@ -10,6 +10,14 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Warm-up from the app: start the function early, make no token, and do not count against the rate limit
+  if (req.method === "POST") {
+    const peek = await req.clone().json().catch(() => null);
+    if (peek && peek.warm === true) {
+      return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+  }
+
   // Apply rate limiting: Limit token generation to 30 calls per minute
   const rateLimit = await handleRateLimit(req, "livekit-token", 30, 60000);
   if (!rateLimit.allowed) {
@@ -64,17 +72,28 @@ serve(async (req) => {
       );
     }
 
-    // Derive roomType and roomId from roomName if not explicitly provided
+    // The token is minted for roomName, so roomName decides what is checked. A roomType / roomId sent by the client
+    // is no longer trusted on its own: it could point at a room the user belongs to while the token is for another room.
     // Formats: CineCraft_project_<projectId>_<suffix>, CineCraft_discussion_<roomId>_<suffix>, CineCraft_direct_<dmId>_<suffix>
-    if (!roomType || !roomId) {
-      const match = roomName.match(/^CineCraft_(project|discussion|direct)_([a-zA-Z0-9-]+)/);
-      if (match) {
-        roomType = match[1];
-        roomId = match[2];
+    const nameMatch = String(roomName).match(/^CineCraft_(project|discussion|direct)_([a-zA-Z0-9-]+)/);
+    // What verify_call_room_membership is asked about: the whole room name (it strips the prefix itself and, for
+    // direct rooms, reads every id in it).
+    let verifyRoomId: string = roomName;
+    {
+      if (nameMatch) {
+        roomType = nameMatch[1];
+        roomId = nameMatch[2];
       } else {
-        // A plain id with no CineCraft_ prefix (older join path). Treating it as a direct chat made every discussion
-        // or project call fail the membership check, so work out what it really is.
-        roomId = roomId || roomName;
+        // A plain id with no CineCraft_ prefix (older join path). It must be the room itself.
+        if (roomId && roomId !== roomName) {
+          return new Response(
+            JSON.stringify({ error: "BAD_REQUEST", message: "roomId must match roomName" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        roomId = roomName;
+        // Treating it as a direct chat made every discussion or project call fail the membership check,
+        // so work out what it really is.
         if (!roomType) {
           const { data: byName } = await adminSupabase
             .from("calls").select("room_type").eq("daily_room_name", roomName).limit(1).maybeSingle();
@@ -97,12 +116,21 @@ serve(async (req) => {
     }
 
     // 3. Server-Side Membership & Access Authorization Check
+    // The profile picture lookup does not depend on the access check, so both run at the same time.
+    // (a query builder only sends its request when awaited, so wrap it to start now)
+    const avatarLookup = Promise.resolve(adminSupabase.from("profiles").select("avatar_url").eq("id", authenticatedUser.id).maybeSingle());
+    if (!["project", "discussion", "direct"].includes(String(roomType))) {
+      return new Response(
+        JSON.stringify({ error: "BAD_REQUEST", message: "Unknown room type" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     const { data: isAuthorized, error: authRpcErr } = await adminSupabase.rpc(
       "verify_call_room_membership",
       {
         p_user_id: authenticatedUser.id,
         p_room_type: roomType,
-        p_room_id: roomId,
+        p_room_id: verifyRoomId,
       }
     );
 
@@ -110,8 +138,8 @@ serve(async (req) => {
       console.warn("verify_call_room_membership RPC notice:", authRpcErr);
     }
 
-    // If RPC returned false and membership is strict, reject unauthorized joins
-    if (isAuthorized === false) {
+    // Anything other than a clear "yes" (including an error) refuses the token.
+    if (isAuthorized !== true) {
       console.warn(`[livekit-token] Unauthorized access attempt by ${authenticatedUser.id} for ${roomType} ${roomId}`);
       return new Response(
         JSON.stringify({
@@ -163,10 +191,18 @@ serve(async (req) => {
     if (callRow?.call_mode === "audio_space") {
       const { data: partRow } = await adminSupabase
         .from("call_participants")
-        .select("role")
+        .select("role, status")
         .eq("call_id", callRow.id)
         .eq("user_id", authenticatedUser.id)
         .maybeSingle();
+
+      // Someone the host removed from this space cannot get a new token for it.
+      if (partRow?.status === "removed") {
+        return new Response(
+          JSON.stringify({ error: "REMOVED", message: "The host removed you from this space." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
       let role: string = callRow.started_by === authenticatedUser.id ? "host" : partRow?.role || "listener";
       if (!partRow) {
@@ -192,7 +228,7 @@ serve(async (req) => {
 
     // The profile picture travels with the participant (LiveKit metadata) so every client can show it instantly,
     // instead of each one having to look it up in the database (which was slow and could silently fail under RLS).
-    const { data: avatarRow } = await adminSupabase.from("profiles").select("avatar_url").eq("id", authenticatedUser.id).maybeSingle();
+    const { data: avatarRow } = await avatarLookup;
     const avatarUrl: string | undefined = avatarRow?.avatar_url || undefined;
 
     // Identity is strictly bound to the authenticated user ID

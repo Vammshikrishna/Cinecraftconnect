@@ -8,6 +8,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { STORAGE_BUCKETS, buildUserFilePath } from '@/lib/storage';
 import { toEmbedUrl } from '@/lib/jobs/showreel';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 const db = supabase as any;
 
@@ -51,7 +53,7 @@ export const PageShowcase = ({ pageId, canManage }: { pageId: string; canManage:
       await insert('image', publicUrl);
       refresh();
     } catch (e: any) {
-      toast({ title: 'Could not add the photo', description: e?.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: 'Could not add the photo', description: friendlyError(e, 'Please try again.'), variant: 'destructive' });
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -67,16 +69,16 @@ export const PageShowcase = ({ pageId, canManage }: { pageId: string; canManage:
       setLink('');
       refresh();
     } catch (e: any) {
-      toast({ title: 'Could not add the link', description: e?.message || 'Please try again.', variant: 'destructive' });
+      toast({ title: 'Could not add the link', description: friendlyError(e, 'Please try again.'), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async (id: string) => {
-    if (!window.confirm('Remove this from the showcase?')) return;
+    if (!await confirmDialog('Remove this from the showcase?')) return;
     const { error } = await db.from('company_page_showcase').delete().eq('id', id);
-    if (error) return toast({ title: 'Could not remove', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not remove', description: friendlyError(error), variant: 'destructive' });
     refresh();
   };
 
@@ -98,7 +100,7 @@ export const PageShowcase = ({ pageId, canManage }: { pageId: string; canManage:
             </div>
             <Button className="rounded-xl" disabled={busy || !link.trim()} onClick={addVideo}>Add</Button>
           </div>
-          <p className="text-[11px] text-muted-foreground md:w-40">Up to 12 items.</p>
+          <p className="text-[12px] text-muted-foreground md:w-40">Up to 12 items.</p>
         </div>
       )}
 
@@ -125,7 +127,7 @@ export const PageShowcase = ({ pageId, canManage }: { pageId: string; canManage:
                       </a>
                     )}
                     {canManage && (
-                      <Button size="icon" variant="destructive" className="absolute top-3 right-3 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => remove(v.id)}>
+                      <Button aria-label="Delete" size="icon" variant="destructive" className="absolute top-3 right-3 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => remove(v.id)}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     )}
@@ -140,7 +142,7 @@ export const PageShowcase = ({ pageId, canManage }: { pageId: string; canManage:
                 <div key={img.id} className="relative group aspect-[4/3] rounded-2xl overflow-hidden border border-border/60 bg-muted">
                   <img loading="lazy" decoding="async" src={img.url} alt={img.caption || 'Company photo'} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                   {canManage && (
-                    <Button size="icon" variant="destructive" className="absolute top-2 right-2 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => remove(img.id)}>
+                    <Button aria-label="Delete" size="icon" variant="destructive" className="absolute top-2 right-2 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => remove(img.id)}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   )}

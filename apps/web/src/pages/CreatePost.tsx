@@ -1,13 +1,25 @@
 import { orTerm } from '@/lib/postgrest';
+import {
+    extractHashtags, buildMediaItems, mediaColumns, mediaSizeFields, checkPost, describePostError, normalizeCategory, isVideoMedia, isImageMedia,
+    geocodeSearch, geocodeReverse,
+    schedulePresets, checkSchedule, formatSchedule, toLocalInputValue, inviteCollaborators, COLLAB_MAX,
+    firstUrl, fetchLinkPreview, searchGifs, GIF_CREDIT, type GifItem, type LinkPreview,
+    emptyPollDraft, checkPollDraft, pollDraftInUse, attachPoll, POLL_DURATIONS, POLL_MAX_OPTIONS, POLL_OPTION_MAX, POLL_QUESTION_MAX, type PollDraft,
+    POST_MEDIA_MAX, POST_VIDEO_MAX_SECONDS, POST_ALT_TEXT_MAX, POST_CAPTION_MAX, POST_CATEGORIES, POST_AUDIENCES, normalizeAudience,
+} from '@cinecraft/core';
+import { useBlockedUsers } from '@/hooks/useBlockedUsers';
+import { LinkPreviewCard } from '@/components/feed/PostExtras';
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ImagePlus, X, ArrowLeft, Loader2, MapPin, User, Building2, UploadCloud, Video, Maximize, ZoomIn, ZoomOut, Smile, Tag, Accessibility, Settings, ChevronRight, ChevronUp, Search, UserPlus, Check, Sparkles, Sun, Sliders, Crop, Thermometer, Droplets, Palette, Cloud, Circle, Type, Trash2 } from 'lucide-react';
+import { ImagePlus, X, ArrowLeft, Loader2, MapPin, User, UploadCloud, Video, Smile, Tag, Settings, ChevronRight, ChevronUp, Search, UserPlus, Check, BarChart3, CalendarClock, Plus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { usePostMutation } from '@/hooks/mutations/usePostMutation';
 import { MentionTextarea } from '@/components/ui/mention-textarea';
+import { PostLivePreview } from '@/components/create/PostLivePreview';
+import { JobShareCard } from '@/components/chat/JobShareCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useMyPages } from '@/hooks/useCompanyPages';
@@ -16,13 +28,54 @@ import EmojiPicker, { Theme, EmojiStyle } from '@/components/common/LazyEmojiPic
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { queryClient } from '@/lib/queryClient';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
+import { friendlyError, defaultRecipe, type PhotoRecipe } from '@cinecraft/core';
+import { PhotoEditor } from '@/components/create/PhotoEditor';
+import { VideoTrimmer } from '@/components/create/VideoTrimmer';
+import { CameraCaptureDialog } from '@/components/create/CameraCaptureDialog';
+import { processVideo, videoNeedsWork, canProcessVideo, readVideoInfo, type VideoEdit } from '@/lib/videoProcess';
+import { loadBitmap, exportPhoto } from '@/lib/photoRender';
+import { putPhoto, getPhoto, deletePhotos } from '@/lib/draftPhotos';
+import { cn } from '@/lib/utils';
+import { hasBlockedExtension } from '@/utils/fileValidation';
 
 type Step = 'select' | 'preview' | 'details';
+
+/** the shown size of a finished picture or video (from the file itself), so the post card has the right shape before anything loads */
+const readBlobSize = (blob: Blob, type: 'image' | 'video'): Promise<{ width: number; height: number } | null> =>
+    new Promise((resolve) => {
+        const url = URL.createObjectURL(blob);
+        const done = (v: { width: number; height: number } | null) => { URL.revokeObjectURL(url); resolve(v); };
+        const timer = setTimeout(() => done(null), 8000);
+        if (type === 'video') {
+            const v = document.createElement('video');
+            v.preload = 'metadata';
+            v.muted = true;
+            v.onloadedmetadata = () => { clearTimeout(timer); done(v.videoWidth > 0 ? { width: v.videoWidth, height: v.videoHeight } : null); };
+            v.onerror = () => { clearTimeout(timer); done(null); };
+            v.src = url;
+        } else {
+            const img = new Image();
+            img.onload = () => { clearTimeout(timer); done(img.naturalWidth > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null); };
+            img.onerror = () => { clearTimeout(timer); done(null); };
+            img.src = url;
+        }
+    });
 
 interface MediaItem {
     url: string;
     type: 'image' | 'video';
+    /** a photo that is still on this device: it is edited here and uploaded once, when the post is shared */
+    local?: boolean;
+    /** a GIF (kept as it is, so it keeps moving) */
+    passthrough?: boolean;
+    /** identifies a local photo in the draft */
+    key?: string;
+    /** length of a video in seconds */
+    duration?: number;
 }
+
+const newKey = () => `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 export interface TaggedUser {
     id: string;
@@ -52,34 +105,12 @@ export interface TextOverlayItem {
     y: number;
 }
 
-interface SubMenuSnapshot {
-    selectedFilterName: string;
-    filterVal: string;
-    filterIntensity: number;
-    adjustments: Record<string, number>;
-    aspectRatio: '1:1' | '4:5' | '16:9' | 'original' | 'free';
-    zoom: number;
-    pan: { x: number; y: number };
-    crop: { top: number; right: number; bottom: number; left: number };
-    textOverlays: TextOverlayItem[];
-}
-
-const TOOL_CONFIGS: Record<string, { key: 'brightness' | 'contrast' | 'saturate' | 'sepia' | 'warmth' | 'vignette' | 'fade' | 'lux' | 'structure' | 'colour' | 'sharpen'; name: string; min: number; max: number; defaultVal: number }> = {
-    'Sharpen': { key: 'sharpen', name: 'Sharpen', min: 0, max: 100, defaultVal: 0 },
-    'Lux': { key: 'lux', name: 'Lux', min: 0, max: 100, defaultVal: 0 },
-    'Brightness': { key: 'brightness', name: 'Brightness', min: 50, max: 150, defaultVal: 100 },
-    'Contrast': { key: 'contrast', name: 'Contrast', min: 50, max: 150, defaultVal: 100 },
-    'Structure': { key: 'structure', name: 'Structure', min: 0, max: 100, defaultVal: 0 },
-    'Warmth': { key: 'warmth', name: 'Warmth', min: -50, max: 50, defaultVal: 0 },
-    'Saturation': { key: 'saturate', name: 'Saturation', min: 50, max: 150, defaultVal: 100 },
-    'Colour': { key: 'colour', name: 'Colour', min: -50, max: 50, defaultVal: 0 },
-    'Fade': { key: 'fade', name: 'Fade', min: 0, max: 100, defaultVal: 0 },
-    'Vignette': { key: 'vignette', name: 'Vignette', min: 0, max: 100, defaultVal: 0 },
-};
-
 export default function CreatePost() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const routeLocation = useLocation();
+    // set when a job is shared to the feed: the job card is attached and the post opens at its details step
+    const sharedJob: any = (routeLocation.state as any)?.sharedJob || null;
     const editPostId = searchParams.get('editPostId') || searchParams.get('edit');
     const { user } = useAuth();
     const { toast } = useToast();
@@ -88,9 +119,26 @@ export default function CreatePost() {
     
     const [step, setStep] = useState<Step>('select');
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+    // new photos stay on this device while they are edited: the photo as picked, its edit settings, and the finished picture
+    const [recipes, setRecipes] = useState<Record<string, PhotoRecipe>>({});
+    const [videoEdits, setVideoEdits] = useState<Record<string, VideoEdit>>({}); // the part of each video to keep, and its sound
+    const [videoProgress, setVideoProgress] = useState<number | null>(null);
+    const sourcesRef = useRef<Map<string, Blob>>(new Map());
+    const finalsRef = useRef<Map<string, { blob: Blob; sig: string; previewUrl: string }>>(new Map());
+    const rawItemsRef = useRef<Map<string, any>>(new Map()); // a post being edited keeps what it was saved with
+    const persistedKeys = useRef<Set<string>>(new Set());
+    const [unreadable, setUnreadable] = useState<Set<string>>(new Set());
+    const [isPreparing, setIsPreparing] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [isLoadingEdit, setIsLoadingEdit] = useState(false);
     const [jobSharePart, setJobSharePart] = useState<string | null>(null);
+    useEffect(() => {
+        if (sharedJob && !editPostId) {
+            setJobSharePart(JSON.stringify(sharedJob));
+            setStep('details');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     
     // Details state
     const [caption, setCaption] = useState('');
@@ -135,7 +183,7 @@ export default function CreatePost() {
     }, [tagSearchQuery]);
 
     useEffect(() => {
-        if (!editPostId) return;
+        if (!editPostId || !user?.id) return;
         setIsLoadingEdit(true);
         const fetchPostForEdit = async () => {
             try {
@@ -143,9 +191,15 @@ export default function CreatePost() {
                     .from('posts')
                     .select('*')
                     .eq('id', editPostId)
-                    .single();
+                    .eq('author_id', user.id) // only the author can open a post in the editor
+                    .maybeSingle();
                 
                 if (error) throw error;
+                if (!post || (post as any).author_id !== user.id) {
+                    toast({ title: 'Cannot edit this post', description: 'This post does not exist or is not yours.', variant: 'destructive' });
+                    navigate('/create', { replace: true });
+                    return;
+                }
                 if (post) {
                     let textContent = post.content || '';
                     if (textContent.includes('JOB_SHARE::')) {
@@ -172,7 +226,20 @@ export default function CreatePost() {
                         const isVid = post.media_type === 'video' || (typeof post.media_url === 'string' && post.media_url.includes('video'));
                         items = [{ url: post.media_url, type: (isVid ? 'video' : 'image') as 'image' | 'video' }];
                     }
+                    items = items.filter((i) => !!i.url);
                     setMediaItems(items);
+                    if ((post as any).category) setCategory((post as any).category);
+                    setAudience(normalizeAudience((post as any).audience));
+                    if ((post as any).link_preview) { setLinkPreview((post as any).link_preview); setDismissedLink((post as any).link_preview.url); }
+                    const altMap: Record<string, string> = {};
+                    if (Array.isArray(post.media_items)) {
+                        (post.media_items as any[]).forEach((m) => { if (m && typeof m === 'object' && m.url && m.alt) altMap[m.url] = String(m.alt); });
+                    }
+                    setAltTexts(altMap);
+                    rawItemsRef.current = new Map();
+                    if (Array.isArray(post.media_items)) {
+                        (post.media_items as any[]).forEach((m) => { if (m && typeof m === 'object' && m.url) rawItemsRef.current.set(m.url, m); });
+                    }
 
                     const firstItem: any = Array.isArray(post.media_items) && post.media_items.length > 0 ? post.media_items[0] : {};
                     const postLoc = firstItem?.location || (post as any).location;
@@ -201,7 +268,7 @@ export default function CreatePost() {
                 console.error('Error fetching post for edit:', err);
                 toast({
                     title: 'Error loading post',
-                    description: err.message || 'Could not load post details for editing.',
+                    description: friendlyError(err, 'Could not load post details for editing.'),
                     variant: 'destructive',
                 });
             } finally {
@@ -210,42 +277,215 @@ export default function CreatePost() {
         };
 
         fetchPostForEdit();
-    }, [editPostId]);
+    }, [editPostId, user?.id]);
     
     // UI states
     const [activeIndex, setActiveIndex] = useState(0);
-    const [mediaFilters, setMediaFilters] = useState<Record<string, string>>({});
-    const [aspectRatio, setAspectRatio] = useState<'1:1' | '4:5' | '16:9' | 'original' | 'free'>('original');
-    const [activeTab, setActiveTab] = useState<'crop' | 'edit'>('crop');
     const [expandedSection, setExpandedSection] = useState<'adv' | null>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     
     // Advanced Settings states
     const [commentingOff, setCommentingOff] = useState(false);
     const [hideLikes, setHideLikes] = useState(false);
+    const [category, setCategory] = useState<string>('General');
+    const [audience, setAudience] = useState<string>('public');
+    const [poll, setPoll] = useState<PollDraft | null>(null); // null = no poll on this post
+    const [scheduleOn, setScheduleOn] = useState(false);
+    const [scheduleAt, setScheduleAt] = useState<Date | null>(null);
+    const [collabs, setCollabs] = useState<TaggedUser[]>([]);
+    const [collabQuery, setCollabQuery] = useState('');
+    const [collabResults, setCollabResults] = useState<TaggedUser[]>([]);
+    const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null);
+    const [dismissedLink, setDismissedLink] = useState<string | null>(null);
+    const [gifOpen, setGifOpen] = useState(false);
+    const [gifQuery, setGifQuery] = useState('');
+    const [gifs, setGifs] = useState<GifItem[]>([]);
+    const [gifState, setGifState] = useState<'idle' | 'loading' | 'error' | 'off'>('idle');
+
+    // people to credit: search by name or @username, never yourself or people you blocked
+    useEffect(() => {
+        if (!collabQuery.trim()) { setCollabResults([]); return; }
+        const t = window.setTimeout(async () => {
+            const { data } = await supabase
+                .from('profiles')
+                .select('id, username, full_name, avatar_url')
+                .or(`username.ilike.%${orTerm(collabQuery)}%,full_name.ilike.%${orTerm(collabQuery)}%`)
+                .limit(8);
+            setCollabResults(((data || []) as TaggedUser[]).filter((u) => u.id !== user?.id && !isBlocked(u.id) && !collabs.some((c) => c.id === u.id)));
+        }, 250);
+        return () => window.clearTimeout(t);
+    }, [collabQuery, collabs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // a card for the first link in the caption (fetched by the server; you can remove it)
+    useEffect(() => {
+        const url = firstUrl(caption);
+        if (!url) { setLinkPreview(null); return; }
+        if (linkPreview?.url === url || dismissedLink === url) return;
+        let cancelled = false;
+        const t = window.setTimeout(async () => {
+            const preview = await fetchLinkPreview(supabase, url);
+            if (!cancelled) setLinkPreview(preview);
+        }, 700);
+        return () => { cancelled = true; window.clearTimeout(t); };
+    }, [caption]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // GIF search (empty box = trending)
+    useEffect(() => {
+        if (!gifOpen) return;
+        let cancelled = false;
+        setGifState('loading');
+        const t = window.setTimeout(async () => {
+            const res = await searchGifs(supabase, gifQuery);
+            if (cancelled) return;
+            if (res.ok) { setGifs(res.items); setGifState('idle'); }
+            else { setGifs([]); setGifState((res as any).reason === 'not_configured' ? 'off' : 'error'); }
+        }, 350);
+        return () => { cancelled = true; window.clearTimeout(t); };
+    }, [gifOpen, gifQuery]);
+
+    const addGif = (g: GifItem) => {
+        if (mediaItems.length >= POST_MEDIA_MAX) {
+            toast({ title: 'Limit reached', description: `You can add up to ${POST_MEDIA_MAX} photos, videos or GIFs.`, variant: 'destructive' });
+            return;
+        }
+        setMediaItems((prev) => [...prev, { url: g.url, type: 'image' }]);
+        setAltTexts((prev) => ({ ...prev, [g.url]: g.title }));
+        setGifOpen(false);
+        if (step === 'select') setStep('preview');
+    };
+    const captionRef = useRef<HTMLTextAreaElement>(null);
+    const [altTexts, setAltTexts] = useState<Record<string, string>>({});
+    const [uploadStatus, setUploadStatus] = useState('');
+    const [dragOver, setDragOver] = useState(false);
+    const shared = useRef(false);
+    const { isBlocked } = useBlockedUsers();
+
+    // ── draft: caption, media and options are kept on this device until the post is shared or discarded ──
+    const draftKey = `create_post_draft_${user?.id}`;
+    const [pendingDraft, setPendingDraft] = useState<any | null>(null);
+    const draftPhotoKeys = (): string[] => {
+        try {
+            const d = JSON.parse(localStorage.getItem(draftKey) || 'null');
+            return (d?.mediaItems || []).filter((i: any) => i?.local && i.key).map((i: any) => i.key);
+        } catch { return []; }
+    };
+    const clearDraft = () => {
+        deletePhotos(draftPhotoKeys());
+        try { localStorage.removeItem(draftKey); } catch { /* storage unavailable */ }
+        setPendingDraft(null);
+    };
+    useEffect(() => {
+        if (!user || editPostId) return;
+        try {
+            const rawDraft = localStorage.getItem(draftKey);
+            if (rawDraft) {
+                const d = JSON.parse(rawDraft);
+                if (d && (d.caption || (Array.isArray(d.mediaItems) && d.mediaItems.length))) setPendingDraft(d);
+            }
+        } catch { /* ignore a corrupt draft */ }
+    }, [user?.id, editPostId]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (!user || editPostId || pendingDraft || shared.current) return;
+        if (!caption && mediaItems.length === 0) return;
+        const t = window.setTimeout(async () => {
+            try {
+                const saved: any[] = [];
+                const recipesByKey: Record<string, PhotoRecipe> = {};
+                const videoEditsByKey: Record<string, VideoEdit> = {};
+                const altsOut: Record<string, string> = {};
+                for (const m of mediaItems) {
+                    if (m.local && m.key) {
+                        const src = sourcesRef.current.get(m.url);
+                        if (m.type === 'video' && src && src.size > 150 * 1024 * 1024) continue; // too big to keep in a draft
+                        if (!persistedKeys.current.has(m.key)) {
+                            if (src) { await putPhoto(m.key, src); persistedKeys.current.add(m.key); }
+                        }
+                        saved.push({ key: m.key, type: m.type, local: true, passthrough: !!m.passthrough, duration: m.duration });
+                        if (recipes[m.url]) recipesByKey[m.key] = recipes[m.url];
+                        if (videoEdits[m.url]) videoEditsByKey[m.key] = videoEdits[m.url];
+                        if (altTexts[m.url]) altsOut['k:' + m.key] = altTexts[m.url];
+                    } else {
+                        saved.push({ url: m.url, type: m.type });
+                        if (altTexts[m.url]) altsOut[m.url] = altTexts[m.url];
+                    }
+                }
+                localStorage.setItem(draftKey, JSON.stringify({ caption, location, taggedUsers, category, audience, commentingOff, hideLikes, mediaItems: saved, recipes: recipesByKey, videoEdits: videoEditsByKey, altTexts: altsOut, savedAt: Date.now() }));
+            } catch { /* storage full or unavailable: the draft is a convenience */ }
+        }, 800);
+        return () => window.clearTimeout(t);
+    }, [caption, location, taggedUsers, category, audience, commentingOff, hideLikes, mediaItems, altTexts, recipes, videoEdits, pendingDraft]); // eslint-disable-line react-hooks/exhaustive-deps
+    const restoreDraft = async () => {
+        const d = pendingDraft;
+        if (!d) return;
+        setCaption(d.caption || '');
+        setLocation(d.location || '');
+        setTaggedUsers(Array.isArray(d.taggedUsers) ? d.taggedUsers : []);
+        setCategory(d.category || 'General');
+        setAudience(normalizeAudience(d.audience));
+        setCommentingOff(!!d.commentingOff);
+        setHideLikes(!!d.hideLikes);
+        // photos come back from this device, with the edits they had
+        const items: MediaItem[] = [];
+        const nextAlts: Record<string, string> = {};
+        const nextRecipes: Record<string, PhotoRecipe> = {};
+        const nextVideoEdits: Record<string, VideoEdit> = {};
+        for (const m of Array.isArray(d.mediaItems) ? d.mediaItems : []) {
+            if (m.local && m.key) {
+                const blob = await getPhoto(m.key);
+                if (!blob) continue; // the stored picture is gone (storage was cleared): it cannot be restored
+                const url = URL.createObjectURL(blob);
+                sourcesRef.current.set(url, m.type === 'video' ? new File([blob], 'video', { type: blob.type }) : blob);
+                persistedKeys.current.add(m.key);
+                items.push({ url, type: m.type, local: true, passthrough: !!m.passthrough, key: m.key, duration: m.duration });
+                if (d.recipes?.[m.key]) nextRecipes[url] = d.recipes[m.key];
+                if (d.videoEdits?.[m.key]) nextVideoEdits[url] = d.videoEdits[m.key];
+                if (d.altTexts?.['k:' + m.key]) nextAlts[url] = d.altTexts['k:' + m.key];
+            } else if (m.url) {
+                items.push({ url: m.url, type: m.type });
+                if (d.altTexts?.[m.url]) nextAlts[m.url] = d.altTexts[m.url];
+            }
+        }
+        setAltTexts(nextAlts);
+        setRecipes(nextRecipes);
+        setVideoEdits(nextVideoEdits);
+        setMediaItems(items);
+        setPendingDraft(null);
+        setStep(items.length > 0 ? 'preview' : 'details');
+    };
+    const discardDraft = () => {
+        // remove what was kept for the discarded draft: pictures on this device, and files from older drafts
+        const paths = (pendingDraft?.mediaItems || [])
+            .map((i: any) => String(i?.url || '').split('/portfolios/')[1])
+            .filter(Boolean)
+            .map((x: string) => decodeURIComponent(x.split('?')[0]));
+        if (paths.length > 0) supabase.storage.from('portfolios').remove(paths).catch(() => { });
+        clearDraft();
+    };
+
+    // do not close the tab in the middle of an upload or while posting
+    useEffect(() => {
+        const handler = (e: BeforeUnloadEvent) => {
+            if (isUploading || isSubmitting) { e.preventDefault(); e.returnValue = ''; }
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [isUploading, isSubmitting]);
+
+    const onDropFiles = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (isUploading) return;
+        const dropped = Array.from(e.dataTransfer.files || []);
+        const usable = dropped.filter((f) => isImageMedia(f.name, f.type) || isVideoMedia(f.name, f.type));
+        if (usable.length === 0) {
+            toast({ title: 'Unsupported file', description: 'Drop photos or videos.', variant: 'destructive' });
+            return;
+        }
+        if (usable.length < dropped.length) toast({ title: 'Some files were skipped', description: 'Only photos and videos can be added.' });
+        uploadFiles(usable);
+    };
     
-    // Zoom, Pan & Adjustments states
-    const [mediaZoom, setMediaZoom] = useState<Record<string, number>>({});
-    const [mediaPan, setMediaPan] = useState<Record<string, { x: number; y: number }>>({});
-    const [mediaCrop, setMediaCrop] = useState<Record<string, { top: number; right: number; bottom: number; left: number }>>({});
-    const [mediaAdjustments, setMediaAdjustments] = useState<Record<string, { brightness?: number; contrast?: number; saturate?: number; sepia?: number; warmth?: number; vignette?: number; fade?: number; lux?: number; structure?: number; colour?: number; sharpen?: number }>>({}); 
-    const [editMode, setEditMode] = useState<'main' | 'filter' | 'adjust' | 'crop' | 'text'>(window.innerWidth < 768 ? 'main' : 'filter');
-    const [isFilterIntensityOpen, setIsFilterIntensityOpen] = useState(false);
-    const [mediaFilterIntensity, setMediaFilterIntensity] = useState<Record<string, number>>({});
-    const [activeAdjustmentTool, setActiveAdjustmentTool] = useState<string | null>(null);
-    const [selectedFilterName, setSelectedFilterName] = useState<string>('Normal');
     const [detailsActiveIndex, setDetailsActiveIndex] = useState(0);
-    const [showZoomSlider, setShowZoomSlider] = useState(false);
-    const [isMobile, setIsMobile] = useState(false);
-    // Text Overlay States & SubMenu Snapshot
-    const [mediaTextOverlays, setMediaTextOverlays] = useState<Record<string, TextOverlayItem[]>>({});
-    const [newOverlayText, setNewOverlayText] = useState('');
-    const [selectedTextColor, setSelectedTextColor] = useState('#FFFFFF');
-    const [selectedTextBg, setSelectedTextBg] = useState('rgba(0,0,0,0.6)');
-    const [selectedFontSize, setSelectedFontSize] = useState(22);
-    const [editingTextId, setEditingTextId] = useState<string | null>(null);
-    const [subMenuSnapshot, setSubMenuSnapshot] = useState<SubMenuSnapshot | null>(null);
-    
     // Realtime Location Search & GPS states
     const [isFetchingLocation, setIsFetchingLocation] = useState(false);
     const [realtimeLocations, setRealtimeLocations] = useState<string[]>([]);
@@ -260,8 +500,7 @@ export default function CreatePost() {
         navigator.geolocation.getCurrentPosition(
             async (pos) => {
                 try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&addressdetails=1`);
-                    const data = await res.json();
+                    const data = await geocodeReverse(supabase, pos.coords.latitude, pos.coords.longitude);
                     if (data && data.address) {
                         const city = data.address.city || data.address.town || data.address.village || data.address.suburb || data.address.state || '';
                         const country = data.address.country || '';
@@ -293,8 +532,7 @@ export default function CreatePost() {
         const timer = setTimeout(async () => {
             setIsSearchingLocation(true);
             try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&limit=6&addressdetails=1`);
-                const data = await res.json();
+                const data = await geocodeSearch(supabase, location);
                 if (Array.isArray(data)) {
                     const parsed = data.map((item: any) => {
                         const addr = item.address || {};
@@ -313,287 +551,25 @@ export default function CreatePost() {
         return () => clearTimeout(timer);
     }, [location]);
 
-    const enterSubMenu = (mode: 'filter' | 'adjust' | 'crop' | 'text') => {
-        const url = mediaItems[activeIndex]?.url || '';
-        setSubMenuSnapshot({
-            selectedFilterName,
-            filterVal: mediaFilters[url] || 'none',
-            filterIntensity: mediaFilterIntensity[url] ?? 100,
-            adjustments: { ...(mediaAdjustments[url] || {}) },
-            aspectRatio,
-            zoom: mediaZoom[url] || 100,
-            pan: { ...(mediaPan[url] || { x: 0, y: 0 }) },
-            crop: { ...(mediaCrop[url] || { top: 0, right: 0, bottom: 0, left: 0 }) },
-            textOverlays: [...(mediaTextOverlays[url] || [])]
-        });
-        setEditMode(mode);
-    };
-
-    const cancelSubMenu = () => {
-        if (isFilterIntensityOpen) {
-            setMediaFilterIntensity(prev => ({
-                ...prev,
-                [mediaItems[activeIndex]?.url]: toolSnapshotValue
-            }));
-            setIsFilterIntensityOpen(false);
-            return;
-        }
-
-        if (activeAdjustmentTool) {
-            const config = TOOL_CONFIGS[activeAdjustmentTool];
-            const key = config ? config.key : activeAdjustmentTool.toLowerCase();
-            setMediaAdjustments(prev => {
-                const current = prev[mediaItems[activeIndex]?.url] || {};
-                return {
-                    ...prev,
-                    [mediaItems[activeIndex]?.url]: { ...current, [key]: toolSnapshotValue }
-                };
-            });
-            setActiveAdjustmentTool(null);
-            return;
-        }
-
-        if (subMenuSnapshot) {
-            const url = mediaItems[activeIndex]?.url || '';
-            setSelectedFilterName(subMenuSnapshot.selectedFilterName);
-            setMediaFilters(prev => ({ ...prev, [url]: subMenuSnapshot.filterVal }));
-            setMediaFilterIntensity(prev => ({ ...prev, [url]: subMenuSnapshot.filterIntensity }));
-            setMediaAdjustments(prev => ({ ...prev, [url]: { ...subMenuSnapshot.adjustments } }));
-            setAspectRatio(subMenuSnapshot.aspectRatio);
-            setMediaZoom(prev => ({ ...prev, [url]: subMenuSnapshot.zoom }));
-            setMediaPan(prev => ({ ...prev, [url]: subMenuSnapshot.pan }));
-            setMediaCrop(prev => ({ ...prev, [url]: { ...subMenuSnapshot.crop } }));
-            setMediaTextOverlays(prev => ({ ...prev, [url]: [...subMenuSnapshot.textOverlays] }));
-        }
-        setSubMenuSnapshot(null);
-        setEditMode('main');
-    };
-
-    const finishSubMenu = () => {
-        if (isFilterIntensityOpen) {
-            setIsFilterIntensityOpen(false);
-            return;
-        }
-
-        if (activeAdjustmentTool) {
-            setActiveAdjustmentTool(null);
-            return;
-        }
-
-        setSubMenuSnapshot(null);
-        setEditMode('main');
-    };
-
-    const handleTextOverlayDrag = (id: string, e: React.MouseEvent | React.TouchEvent) => {
-        e.stopPropagation();
-        const container = containerRef.current;
-        if (!container) return;
-        const rect = container.getBoundingClientRect();
-        
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        const startX = clientX;
-        const startY = clientY;
-
-        const url = mediaItems[activeIndex]?.url;
-        if (!url) return;
-        const overlays = mediaTextOverlays[url] || [];
-        const item = overlays.find(o => o.id === id);
-        if (!item) return;
-
-        const initialX = item.x;
-        const initialY = item.y;
-
-        const handleMove = (moveEv: MouseEvent | TouchEvent) => {
-            const moveX = 'touches' in moveEv ? moveEv.touches[0].clientX : moveEv.clientX;
-            const moveY = 'touches' in moveEv ? moveEv.touches[0].clientY : moveEv.clientY;
-            
-            const dx = ((moveX - startX) / rect.width) * 100;
-            const dy = ((moveY - startY) / rect.height) * 100;
-
-            const newX = Math.max(5, Math.min(95, initialX + dx));
-            const newY = Math.max(5, Math.min(95, initialY + dy));
-
-            setMediaTextOverlays(prev => ({
-                ...prev,
-                [url]: (prev[url] || []).map(o => o.id === id ? { ...o, x: newX, y: newY } : o)
-            }));
-        };
-
-        const handleUp = () => {
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-            window.removeEventListener('touchmove', handleMove);
-            window.removeEventListener('touchend', handleUp);
-        };
-
-        window.addEventListener('mousemove', handleMove);
-        window.addEventListener('mouseup', handleUp);
-        window.addEventListener('touchmove', handleMove);
-        window.addEventListener('touchend', handleUp);
-    };
-
-    React.useEffect(() => {
-        const media = window.matchMedia('(max-width: 768px)');
-        setIsMobile(media.matches);
-        const listener = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-        media.addEventListener('change', listener);
-        return () => media.removeEventListener('change', listener);
-    }, []);
-    
-    const isDraggingRef = useRef(false);
-    const dragStartRef = useRef({ x: 0, y: 0 });
-    const [toolSnapshotValue, setToolSnapshotValue] = useState<number>(0);
-    const containerRef = useRef<HTMLDivElement>(null);
-    
-    const getFilterString = (url: string) => {
-        const filterBase = mediaFilters[url] && mediaFilters[url] !== 'none' ? mediaFilters[url] : '';
-        const adj = mediaAdjustments[url] || {};
-        
-        const brightness = adj.brightness !== undefined ? adj.brightness : 100;
-        const contrast = adj.contrast !== undefined ? adj.contrast : 100;
-        const saturate = adj.saturate !== undefined ? adj.saturate : 100;
-        const sepia = adj.sepia !== undefined ? adj.sepia : 0;
-        
-        const warmthFilter = adj.warmth ? `sepia(${Math.abs(adj.warmth) / 100}) hue-rotate(${adj.warmth > 0 ? -adj.warmth / 2 : -adj.warmth / 2}deg)` : '';
-        const fadeFilter = adj.fade ? `brightness(${100 + adj.fade / 4}%) contrast(${100 - adj.fade / 3}%)` : '';
-        const luxFilter = adj.lux ? `brightness(${100 + adj.lux / 3}%) contrast(${100 + adj.lux / 4}%) saturate(${100 + adj.lux / 4}%)` : '';
-        const structureFilter = adj.structure ? `contrast(${100 + adj.structure * 0.6}%) saturate(${100 + adj.structure * 0.3}%)` : '';
-        const colourFilter = adj.colour ? `hue-rotate(${adj.colour * 3.6}deg)` : '';
-        const sharpenFilter = adj.sharpen ? `contrast(${100 + adj.sharpen * 0.5}%) saturate(${100 + adj.sharpen * 0.2}%)` : '';
-
-        const intensity = mediaFilterIntensity[url] !== undefined ? mediaFilterIntensity[url] / 100 : 1;
-        let finalFilterBase = filterBase;
-        if (intensity < 1 && filterBase) {
-            finalFilterBase = `opacity(${0.4 + intensity * 0.6}) ${filterBase}`;
-        }
-
-        return `${finalFilterBase} ${warmthFilter} ${fadeFilter} ${luxFilter} ${structureFilter} ${sharpenFilter} ${colourFilter} brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) sepia(${sepia}%)`.trim();
-    };
-
-    const getClipPathString = (url: string) => {
-        const crop = mediaCrop[url];
-        if (!crop) return 'inset(0% 0% 0% 0%)';
-        return `inset(${crop.top}% ${crop.right}% ${crop.bottom}% ${crop.left}%)`;
-    };
-
-    const handleCropDrag = (e: React.MouseEvent | React.TouchEvent, handle: 'tl' | 'tr' | 'bl' | 'br' | 'center') => {
-        e.stopPropagation();
-        if (e.cancelable) e.preventDefault();
-        
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-        
-        const container = containerRef.current;
-        if (!container) return;
-        const rect = container.getBoundingClientRect();
-        
-        const currentCrop = mediaCrop[mediaItems[activeIndex]?.url] || { top: 0, right: 0, bottom: 0, left: 0 };
-        const startX = clientX;
-        const startY = clientY;
-        
-        const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
-            if (moveEvent.cancelable) moveEvent.preventDefault();
-            const currentX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : moveEvent.clientX;
-            const currentY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : moveEvent.clientY;
-            
-            const dx = ((currentX - startX) / rect.width) * 100;
-            const dy = ((currentY - startY) / rect.height) * 100;
-            
-            setMediaCrop(prev => {
-                const url = mediaItems[activeIndex]?.url;
-                if (!url) return prev;
-                let next = { ...currentCrop };
-                
-                if (handle === 'tl') {
-                    next.left = Math.max(0, Math.min(100 - currentCrop.right - 10, currentCrop.left + dx));
-                    next.top = Math.max(0, Math.min(100 - currentCrop.bottom - 10, currentCrop.top + dy));
-                } else if (handle === 'tr') {
-                    next.right = Math.max(0, Math.min(100 - currentCrop.left - 10, currentCrop.right - dx));
-                    next.top = Math.max(0, Math.min(100 - currentCrop.bottom - 10, currentCrop.top + dy));
-                } else if (handle === 'bl') {
-                    next.left = Math.max(0, Math.min(100 - currentCrop.right - 10, currentCrop.left + dx));
-                    next.bottom = Math.max(0, Math.min(100 - currentCrop.top - 10, currentCrop.bottom - dy));
-                } else if (handle === 'br') {
-                    next.right = Math.max(0, Math.min(100 - currentCrop.left - 10, currentCrop.right - dx));
-                    next.bottom = Math.max(0, Math.min(100 - currentCrop.top - 10, currentCrop.bottom - dy));
-                } else if (handle === 'center') {
-                    const width = 100 - currentCrop.left - currentCrop.right;
-                    const height = 100 - currentCrop.top - currentCrop.bottom;
-                    let nextLeft = currentCrop.left + dx;
-                    let nextTop = currentCrop.top + dy;
-                    if (nextLeft < 0) nextLeft = 0;
-                    if (nextLeft + width > 100) nextLeft = 100 - width;
-                    if (nextTop < 0) nextTop = 0;
-                    if (nextTop + height > 100) nextTop = 100 - height;
-                    next.left = nextLeft;
-                    next.right = 100 - nextLeft - width;
-                    next.top = nextTop;
-                    next.bottom = 100 - nextTop - height;
-                }
-                return { ...prev, [url]: next };
-            });
-        };
-        
-        const handleUp = () => {
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-            window.removeEventListener('touchmove', handleMove);
-            window.removeEventListener('touchend', handleUp);
-        };
-        
-        window.addEventListener('mousemove', handleMove);
-        window.addEventListener('mouseup', handleUp);
-        window.addEventListener('touchmove', handleMove, { passive: false });
-        window.addEventListener('touchend', handleUp);
-    };
-
-    const handleMouseDown = (e: React.MouseEvent) => {
-        if (!mediaItems[activeIndex]) return;
-        isDraggingRef.current = true;
-        const currentPan = mediaPan[mediaItems[activeIndex].url] || { x: 0, y: 0 };
-        dragStartRef.current = { x: e.clientX - currentPan.x, y: e.clientY - currentPan.y };
-    };
-
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDraggingRef.current || !mediaItems[activeIndex]) return;
-        const x = e.clientX - dragStartRef.current.x;
-        const y = e.clientY - dragStartRef.current.y;
-        setMediaPan(prev => ({
-            ...prev,
-            [mediaItems[activeIndex].url]: { x, y }
-        }));
-    };
-
-    const handleTouchStart = (e: React.TouchEvent) => {
-        if (!mediaItems[activeIndex]) return;
-        isDraggingRef.current = true;
-        const currentPan = mediaPan[mediaItems[activeIndex].url] || { x: 0, y: 0 };
-        const touch = e.touches[0];
-        dragStartRef.current = { x: touch.clientX - currentPan.x, y: touch.clientY - currentPan.y };
-    };
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-        if (!isDraggingRef.current || !mediaItems[activeIndex]) return;
-        const touch = e.touches[0];
-        const x = touch.clientX - dragStartRef.current.x;
-        const y = touch.clientY - dragStartRef.current.y;
-        setMediaPan(prev => ({
-            ...prev,
-            [mediaItems[activeIndex].url]: { x, y }
-        }));
-    };
-
-    const handleTouchEnd = () => { isDraggingRef.current = false; };
-    const handleMouseUpOrLeave = () => { isDraggingRef.current = false; };
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const photoCaptureRef = useRef<HTMLInputElement>(null);
+    const videoCaptureRef = useRef<HTMLInputElement>(null);
+    const [cameraMode, setCameraMode] = useState<'photo' | 'video' | null>(null);
+    // phones and tablets hand the job to the camera app (a file input with `capture`); computers get a recorder in the page
+    const openCamera = (m: 'photo' | 'video') => {
+        const touch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+        if (touch) (m === 'photo' ? photoCaptureRef : videoCaptureRef).current?.click();
+        else setCameraMode(m);
+    };
 
-    const uploadFiles = async (files: FileList) => {
+    const uploadFiles = async (files: FileList | File[]) => {
         if (!user) return;
-        if (mediaItems.length + files.length > 10) {
+        const list = Array.from(files);
+        if (list.length === 0) return;
+        if (mediaItems.length + list.length > POST_MEDIA_MAX) {
             toast({
                 title: 'Limit exceeded',
-                description: 'You can upload up to 10 images or videos.',
+                description: `You can add up to ${POST_MEDIA_MAX} photos or videos to a post.`,
                 variant: 'destructive',
             });
             return;
@@ -601,316 +577,291 @@ export default function CreatePost() {
 
         setIsUploading(true);
         const newItems: MediaItem[] = [];
+        const failed: string[] = [];
 
-        try {
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
-                const isVideo = file.type.startsWith('video/');
-                const isImage = file.type.startsWith('image/');
-                
-                if (!isVideo && !isImage) continue;
-                
-                let fileToUpload = file;
+        // one file at a time; a problem with one file never throws away the files that were already added
+        for (let i = 0; i < list.length; i++) {
+            const file = list[i];
+            try {
+                if (hasBlockedExtension(file.name)) { failed.push(`${file.name} (this file type is not allowed)`); continue; }
+                const isVideo = isVideoMedia(file.name, file.type);
+                const isImage = isImageMedia(file.name, file.type);
+                if (!isVideo && !isImage) { failed.push(`${file.name} (not a photo or video)`); continue; }
+
                 if (isImage) {
-                    const { compressImage } = await import('@/utils/imageCompression');
-                    fileToUpload = await compressImage(file);
-                } else if (isVideo) {
-                    // Check video duration (max 3:59 mins = 239 seconds)
-                    const duration = await new Promise<number>((resolve) => {
-                        const v = document.createElement('video');
-                        v.preload = 'metadata';
-                        v.onloadedmetadata = () => {
-                            URL.revokeObjectURL(v.src);
-                            resolve(v.duration || 0);
-                        };
-                        v.onerror = () => resolve(0);
-                        v.src = URL.createObjectURL(file);
-                    });
-
-                    if (duration > 239) {
-                        toast({
-                            title: 'Video Too Long',
-                            description: `"${file.name}" is longer than 3:59 minutes. Please trim your video.`,
-                            variant: 'destructive',
-                        });
-                        continue;
-                    }
-
-                    const { compressVideo } = await import('@/utils/videoCompression');
-                    fileToUpload = await compressVideo(file);
+                    if (file.size > 40 * 1024 * 1024) { failed.push(`${file.name} (bigger than 40 MB)`); continue; }
+                    // the photo stays here, at full size, while it is edited; it is uploaded once, when the post is shared
+                    const url = URL.createObjectURL(file);
+                    sourcesRef.current.set(url, file);
+                    newItems.push({ url, type: 'image', local: true, passthrough: file.type === 'image/gif', key: newKey() });
+                    continue;
                 }
 
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
-                const filePath = `posts/${fileName}`;
-
-                const { error } = await supabase.storage.from('portfolios').upload(filePath, fileToUpload, { cacheControl: '31536000' });
-                if (error) throw error;
-
-                const { data } = supabase.storage.from('portfolios').getPublicUrl(filePath);
-                newItems.push({ url: data.publicUrl, type: isVideo ? 'video' : 'image' });
+                // a video stays here too: it is cut and shrunk when you tap Next, and uploaded once when the post is shared
+                let info: { duration: number };
+                try { info = await readVideoInfo(file); } catch { failed.push(`${file.name} (this video cannot be read)`); continue; }
+                if (info.duration > POST_VIDEO_MAX_SECONDS) {
+                    failed.push(`${file.name} (longer than 3:59, please trim it first)`);
+                    continue;
+                }
+                const vurl = URL.createObjectURL(file);
+                sourcesRef.current.set(vurl, file);
+                newItems.push({ url: vurl, type: 'video', local: true, key: newKey(), duration: info.duration });
+            } catch (error: any) {
+                console.error('Add file error:', error);
+                failed.push(`${file.name} (${error?.message || 'could not be added'})`);
             }
-            
-            if (newItems.length > 0) {
-                setMediaItems(prev => [...prev, ...newItems]);
-                setStep('preview');
-            }
-        } catch (error: any) {
-            console.error('Upload error:', error);
-            toast({ title: 'Upload failed', description: error.message, variant: 'destructive' });
-        } finally {
-            setIsUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-    };
-
-    const isFilterEdited = (filter?: string) => {
-        if (!filter || filter === 'none') return false;
-        const normalized = filter.trim();
-        if (normalized === 'brightness(100%) contrast(100%) saturate(100%) sepia(0%)') return false;
-        return true;
-    };
-
-    const bakeEditedImageCanvas = async (
-        imageUrl: string,
-        filterStr: string,
-        adj: any,
-        overlays: TextOverlayItem[]
-    ): Promise<string> => {
-        const hasFilter = filterStr && isFilterEdited(filterStr);
-        const hasOverlays = Array.isArray(overlays) && overlays.length > 0;
-        const hasAdjustments = adj && (
-            (adj.brightness !== undefined && adj.brightness !== 100 && adj.brightness !== 0) ||
-            (adj.contrast !== undefined && adj.contrast !== 100 && adj.contrast !== 0) ||
-            (adj.saturate !== undefined && adj.saturate !== 100 && adj.saturate !== 0) ||
-            (adj.sepia !== undefined && adj.sepia > 0) ||
-            (adj.vignette !== undefined && adj.vignette > 0)
-        );
-
-        if (!imageUrl || (!hasFilter && !hasOverlays && !hasAdjustments)) {
-            return imageUrl;
         }
 
-        try {
-            // 1. Fetch image as Blob to bypass CORS taint restriction on Canvas export
-            let objectUrl = imageUrl;
-            let createdObjectURL = false;
-            try {
-                const res = await fetch(imageUrl, { mode: 'cors' });
-                const blob = await res.blob();
-                objectUrl = URL.createObjectURL(blob);
-                createdObjectURL = true;
-            } catch (e) {
-                console.warn('[BakeCanvas] Fetch blob failed, falling back to direct URL:', e);
-            }
-
-            return await new Promise<string>((resolve) => {
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.onload = () => {
-                    try {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = img.naturalWidth || 1080;
-                        canvas.height = img.naturalHeight || 1080;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) {
-                            if (createdObjectURL) URL.revokeObjectURL(objectUrl);
-                            return resolve(imageUrl);
-                        }
-
-                        // Apply CSS filter string if present
-                        if (hasFilter || hasAdjustments) {
-                            ctx.filter = filterStr;
-                        }
-
-                        // Draw base photo onto canvas
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        ctx.filter = 'none'; // Reset filter so text overlays aren't filtered
-
-                        // Draw text overlay pills
-                        if (hasOverlays) {
-                            overlays.forEach((t) => {
-                                const xPx = ((t.x ?? 40) / 100) * canvas.width;
-                                const yPx = ((t.y ?? 40) / 100) * canvas.height;
-                                const fontSizePx = Math.max(20, Math.round((canvas.width / 500) * (t.fontSize || 22)));
-
-                                ctx.font = `900 ${fontSizePx}px Inter, system-ui, sans-serif`;
-                                const textMetrics = ctx.measureText(t.text);
-                                const paddingX = fontSizePx * 0.6;
-                                const paddingY = fontSizePx * 0.35;
-                                const boxWidth = textMetrics.width + paddingX * 2;
-                                const boxHeight = fontSizePx * 1.2 + paddingY * 2;
-
-                                // Draw pill background box
-                                ctx.fillStyle = t.bgColor || 'rgba(0,0,0,0.65)';
-                                const radius = 8;
-                                if (typeof ctx.roundRect === 'function') {
-                                    ctx.beginPath();
-                                    ctx.roundRect(xPx, yPx, boxWidth, boxHeight, radius);
-                                    ctx.fill();
-                                } else {
-                                    ctx.fillRect(xPx, yPx, boxWidth, boxHeight);
-                                }
-
-                                // Draw text content
-                                ctx.fillStyle = t.color || '#FFFFFF';
-                                ctx.textBaseline = 'top';
-                                ctx.fillText(t.text, xPx + paddingX, yPx + paddingY);
-                            });
-                        }
-
-                        // Export canvas to high-res WebP Blob
-                        canvas.toBlob(async (bakedBlob) => {
-                            if (createdObjectURL) URL.revokeObjectURL(objectUrl);
-                            if (!bakedBlob || !user) return resolve(imageUrl);
-
-                            try {
-                                const fileName = `baked/${user.id}/${Date.now()}_baked.webp`;
-                                const { error: uploadErr } = await supabase.storage
-                                    .from('portfolios')
-                                    .upload(fileName, bakedBlob, {
-                                        contentType: 'image/webp',
-                                        cacheControl: '31536000',
-                                        upsert: true,
-                                    });
-
-                                if (uploadErr) {
-                                    console.error('[BakeCanvas] Supabase upload failed:', uploadErr);
-                                    return resolve(imageUrl);
-                                }
-
-                                const { data } = supabase.storage.from('portfolios').getPublicUrl(fileName);
-                                console.log('[BakeCanvas] Successfully baked & uploaded image:', data.publicUrl);
-                                resolve(data.publicUrl || imageUrl);
-                            } catch (uploadExc) {
-                                console.error('[BakeCanvas] Exception uploading baked image:', uploadExc);
-                                resolve(imageUrl);
-                            }
-                        }, 'image/webp', 0.90);
-                    } catch (drawExc) {
-                        console.error('[BakeCanvas] Error drawing on canvas:', drawExc);
-                        if (createdObjectURL) URL.revokeObjectURL(objectUrl);
-                        resolve(imageUrl);
-                    }
-                };
-
-                img.onerror = (err) => {
-                    console.error('[BakeCanvas] Image load error:', err);
-                    if (createdObjectURL) URL.revokeObjectURL(objectUrl);
-                    resolve(imageUrl);
-                };
-
-                img.src = objectUrl;
+        if (newItems.length > 0) {
+            setMediaItems(prev => [...prev, ...newItems]);
+            setStep('preview');
+        }
+        if (failed.length > 0) {
+            toast({
+                title: failed.length === list.length ? 'Could not add' : `${failed.length} file${failed.length > 1 ? 's' : ''} could not be added`,
+                description: failed.slice(0, 3).join('; '),
+                variant: 'destructive',
             });
-        } catch (exc) {
-            console.error('[BakeCanvas] Outer exception:', exc);
-            return imageUrl;
+        }
+        setIsUploading(false);
+        setUploadStatus('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const removeMedia = (idx: number) => {
+        const item = mediaItems[idx];
+        if (!item) return;
+        if (item.local) {
+            URL.revokeObjectURL(item.url);
+            const fin = finalsRef.current.get(item.url);
+            if (fin) URL.revokeObjectURL(fin.previewUrl);
+            finalsRef.current.delete(item.url);
+            sourcesRef.current.delete(item.url);
+            if (item.key) { persistedKeys.current.delete(item.key); deletePhotos([item.key]); }
+        }
+        setRecipes((prev) => { const n = { ...prev }; delete n[item.url]; return n; });
+        setVideoEdits((prev) => { const n = { ...prev }; delete n[item.url]; return n; });
+        const remaining = mediaItems.filter((_, i) => i !== idx);
+        setMediaItems(remaining);
+        setActiveIndex((a) => Math.max(0, Math.min(a >= idx ? a - 1 : a, remaining.length - 1)));
+        if (remaining.length === 0) setStep('select');
+    };
+
+    /** finishes every new photo (turn, crop, colour, text, resize) so it is ready to preview and upload; false if something failed */
+    const prepareMedia = async (): Promise<boolean> => {
+        setIsPreparing(true);
+        try {
+            for (const item of mediaItems) {
+                if (!item.local) continue;
+                const src = sourcesRef.current.get(item.url);
+                if (!src) continue;
+
+                if (item.type === 'video') {
+                    const edit = videoEdits[item.url];
+                    const sig = `${JSON.stringify(edit || null)}:${src.size}`;
+                    const have = finalsRef.current.get(item.url);
+                    if (have && have.sig === sig) continue;
+                    if (have) URL.revokeObjectURL(have.previewUrl);
+                    let blob: Blob = src;
+                    if (videoNeedsWork(src as File, edit)) {
+                        const trimmed = !!edit && (edit.mute || edit.start > 0.1 || edit.end < edit.duration - 0.1);
+                        if (!canProcessVideo()) {
+                            if (trimmed) throw new Error('This browser cannot cut videos. Remove the trim, or use Chrome or Edge.');
+                        } else {
+                            const info = edit ? null : await readVideoInfo(src as File);
+                            const use: VideoEdit = edit || { start: 0, end: info!.duration, duration: info!.duration, mute: false };
+                            setVideoProgress(0);
+                            blob = await processVideo(src as File, use, { onProgress: (p) => setVideoProgress(p) });
+                        }
+                    }
+                    finalsRef.current.set(item.url, { blob, sig, previewUrl: URL.createObjectURL(blob) });
+                    continue;
+                }
+
+                if (item.type !== 'image') continue;
+                const recipe = recipes[item.url] || defaultRecipe();
+                const sig = JSON.stringify(recipe);
+                const have = finalsRef.current.get(item.url);
+                if (have && have.sig === sig) continue;
+                if (have) URL.revokeObjectURL(have.previewUrl);
+                let blob: Blob = src;
+                if (!item.passthrough && !unreadable.has(item.url)) {
+                    try {
+                        const bmp = await loadBitmap(src);
+                        blob = (await exportPhoto(bmp, recipe)).blob;
+                        bmp.close?.();
+                    } catch (err) {
+                        console.warn('Could not finish a photo, posting it as it is:', err);
+                        blob = src;
+                    }
+                }
+                finalsRef.current.set(item.url, { blob, sig, previewUrl: URL.createObjectURL(blob) });
+            }
+            return true;
+        } catch (err: any) {
+            toast({ title: 'Could not prepare your media', description: friendlyError(err, 'Please try again.'), variant: 'destructive' });
+            return false;
+        } finally {
+            setIsPreparing(false);
+            setVideoProgress(null);
         }
     };
 
     const handleShare = async () => {
-        if (!caption.trim() && mediaItems.length === 0) return;
+        const pollInUse = !editPostId && pollDraftInUse(poll);
+        const check = checkPost({ caption, mediaCount: mediaItems.length, busy: isUploading, hasPoll: pollInUse || (!editPostId && !!jobSharePart) });
+        if (!check.ok) {
+            toast({ title: 'Cannot post yet', description: check.message, variant: 'destructive' });
+            return;
+        }
+        if (pollInUse) {
+            const pc = checkPollDraft(poll!);
+            if (!pc.ok) { toast({ title: 'Check your poll', description: pc.message, variant: 'destructive' }); return; }
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                toast({ title: 'Polls need a connection', description: 'Connect to the internet to post a poll, or remove the poll to save the post offline.', variant: 'destructive' });
+                return;
+            }
+        }
+        if (!editPostId && scheduleOn) {
+            const sc = checkSchedule(scheduleAt);
+            if (!sc.ok) { toast({ title: 'Check the schedule', description: sc.message, variant: 'destructive' }); return; }
+        }
+        if (!editPostId && (scheduleOn || collabs.length > 0) && typeof navigator !== 'undefined' && navigator.onLine === false) {
+            toast({ title: 'You are offline', description: 'Scheduling and collaborators need a connection. Connect, or remove them to save the post offline.', variant: 'destructive' });
+            return;
+        }
+        if (isSubmitting) return;
         setIsSubmitting(true);
+        const uploadedPaths: string[] = [];
         try {
-            const tags = (caption.match(/#[a-zA-Z0-9_]+/g) || []).map(t => t.replace('#', ''));
-            const baseItems = mediaItems.length > 0 ? mediaItems : [{ url: '', type: 'image' as const }];
-            
-            // Process base items: bake edited images asynchronously
-            const mediaItemsWithMetadata = await Promise.all(baseItems.map(async (item, idx) => {
-                const url = item.url;
-                const adj = mediaAdjustments[url] || {};
-                const overlays = mediaTextOverlays[url] || [];
-                const currentFilterCSS = mediaFilters[url] || 'none';
-                const filterStr = getFilterString(url);
+            const tags = extractHashtags(caption);
 
-                // Bake canvas image if image has edits
-                let finalUrl = item.url;
-                if (item.type === 'image' && item.url) {
-                    finalUrl = await bakeEditedImageCanvas(item.url, filterStr, adj, overlays);
+            // new photos: finish them, then upload only the finished pictures (the photo as picked never leaves this device)
+            if (mediaItems.some((i) => i.local)) {
+                if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                    toast({ title: 'You are offline', description: 'Photos are uploaded when you share. Your draft is saved on this device; connect and try again.', variant: 'destructive' });
+                    return;
                 }
+                if (!(await prepareMedia())) return;
+            }
+            const localTotal = mediaItems.filter((i) => i.local).length;
+            let uploadedCount = 0;
+            const processed: any[] = [];
+            for (const item of mediaItems) {
+                let finalUrl = item.url;
+                let size: { width: number; height: number } | null = null;
+                if (item.local && (item.type === 'image' || item.type === 'video')) {
+                    const fin = finalsRef.current.get(item.url);
+                    if (!fin) throw new Error('A photo is not ready yet. Please try again.');
+                    size = await readBlobSize(fin.blob, item.type).catch(() => null);
+                    uploadedCount++;
+                    setUploadStatus(localTotal > 1 ? `Uploading ${uploadedCount} of ${localTotal}…` : 'Uploading…');
+                    const ext = fin.blob.type === 'image/jpeg' ? 'jpg' : fin.blob.type === 'image/png' ? 'png' : fin.blob.type === 'image/gif' ? 'gif' : fin.blob.type === 'video/mp4' ? 'mp4' : fin.blob.type.startsWith('video/') ? 'webm' : 'webp';
+                    const path = `posts/${user!.id}/${Date.now()}_${uploadedCount}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+                    const { error: upErr } = await supabase.storage.from('portfolios').upload(path, fin.blob, { cacheControl: '31536000', contentType: fin.blob.type || undefined });
+                    if (upErr) throw upErr;
+                    uploadedPaths.push(path);
+                    finalUrl = supabase.storage.from('portfolios').getPublicUrl(path).data.publicUrl;
+                }
+                const alt = (altTexts[item.url] || '').trim().slice(0, POST_ALT_TEXT_MAX);
+                // a post being edited keeps whatever it was saved with (nothing is replaced by defaults)
+                const raw = editPostId ? rawItemsRef.current.get(item.url) : null;
+                const base = raw ? { ...raw } : {};
+                delete (base as any).alt;
+                processed.push({ ...base, ...(size ? mediaSizeFields(size.width, size.height) : {}), url: finalUrl, type: item.type, ...(alt ? { alt } : {}) });
+            }
 
-                // Reverse-lookup filter preset name
-                const FILTER_PRESETS: Record<string, string> = {
-                    'none': 'Normal',
-                    'contrast(1.1) brightness(1.08) saturate(1.05)': 'Paris',
-                    'saturate(1.25) contrast(1.1) hue-rotate(5deg)': 'Los Angeles',
-                    'sepia(0.1) contrast(0.95) saturate(1.1) hue-rotate(-15deg)': 'Simple Cool',
-                    'contrast(1.3) saturate(1.35) brightness(1.05)': 'Boost',
-                    'sepia(0.2) contrast(1.2) saturate(1.2) brightness(1.05)': 'Boost Warm',
-                    'hue-rotate(-20deg) contrast(1.2) saturate(1.2)': 'Boost Cool',
-                    'contrast(1.2) saturate(1.3) brightness(1.05)': 'Clarendon',
-                    'sepia(0.15) contrast(0.9) saturate(0.9) brightness(0.95)': 'Gingham',
-                };
-                const filterName = FILTER_PRESETS[currentFilterCSS] || selectedFilterName || 'Normal';
-
-                return {
-                    url: finalUrl,
-                    type: item.type,
-                    crop: mediaCrop[item.url] || null,
-                    zoom: mediaZoom[item.url] || 100,
-                    pan: mediaPan[item.url] || { x: 0, y: 0 },
-                    filter: filterStr,
-                    filterName: filterName,
-                    adjustments: {
-                        brightness: adj.brightness ?? 100,
-                        contrast: adj.contrast ?? 100,
-                        saturate: adj.saturate ?? 100,
-                        sepia: adj.sepia ?? 0,
-                        warmth: adj.warmth ?? 0,
-                        vignette: adj.vignette ?? 0,
-                    },
-                    text_overlays: overlays.map(o => ({
-                        id: o.id,
-                        text: o.text,
-                        color: o.color,
-                        bgColor: o.bgColor,
-                        fontSize: o.fontSize,
-                        x: o.x,
-                        y: o.y,
-                    })),
-                    aspectRatio: aspectRatio,
-                    ...(idx === 0 ? {
-                        location: location.trim() || null,
-                        tagged_users: taggedUsers,
-                        comments_disabled: commentingOff,
-                        hide_likes: hideLikes
-                    } : {})
-                };
-            }));
+            // details (place, tagged people, comment/like switches) ride on the first item; a text post gets a details-only item, never a fake image
+            const items = buildMediaItems(processed as any[], {
+                location,
+                tagged_users: taggedUsers,
+                comments_disabled: commentingOff,
+                hide_likes: hideLikes,
+            });
+            const columns = mediaColumns(processed as any[]);
 
             let finalContent = caption.trim();
             if (jobSharePart) {
                 finalContent = finalContent ? `${finalContent}\n\nJOB_SHARE::${jobSharePart}` : `JOB_SHARE::${jobSharePart}`;
             }
+            const pageId = selectedPageId === 'user' ? null : selectedPageId;
+            const previewToSave = linkPreview && caption.includes(linkPreview.url) ? linkPreview : null;
+            const scheduledIso = !editPostId && scheduleOn && scheduleAt ? scheduleAt.toISOString() : null;
+            const categoryValue = normalizeCategory(category);
 
             if (editPostId) {
-                const updatePayload: any = {
-                    content: finalContent,
-                    media_items: mediaItemsWithMetadata,
-                    updated_at: new Date().toISOString()
-                };
-                if (selectedPageId && selectedPageId !== 'user') {
-                    updatePayload.page_id = selectedPageId;
-                }
-
                 const { error } = await supabase
                     .from('posts')
-                    .update(updatePayload)
-                    .eq('id', editPostId);
-
+                    .update({
+                        content: finalContent,
+                        media_items: items,
+                        ...columns,
+                        tags,
+                        category: categoryValue,
+                        audience: normalizeAudience(audience),
+                        link_preview: previewToSave,
+                        page_id: pageId, // choosing "Personal Profile" really switches back
+                        updated_at: new Date().toISOString(),
+                    } as any)
+                    .eq('id', editPostId)
+                    .eq('author_id', user!.id);
                 if (error) throw error;
-                toast({ title: 'Success', description: 'Post updated successfully!' });
+                toast({ title: 'Updated', description: 'Your post was updated.' });
             } else {
-                await createPostMutation(finalContent, {
-                    mediaItems: mediaItemsWithMetadata,
-                    tags,
-                    pageId: selectedPageId === 'user' ? null : selectedPageId,
-                    location: location.trim() || null,
-                    taggedUsers
-                } as any);
-                toast({ title: 'Success', description: 'Post shared successfully!' });
+                const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+                const queueIt = async () => {
+                    await createPostMutation(finalContent, { mediaItems: items, tags, pageId, category: categoryValue, audience: normalizeAudience(audience) } as any);
+                    toast({ title: 'Saved on this device', description: 'You are offline. Your post will be published automatically when you are back online.' });
+                };
+                if (offline) {
+                    await queueIt();
+                } else {
+                    // publish now, so a refusal (limit, permission, rate limit) is shown here instead of vanishing later
+                    const { data: created, error } = await supabase
+                        .from('posts')
+                        .insert({
+                            author_id: user!.id,
+                            content: finalContent,
+                            page_id: pageId,
+                            ...columns,
+                            media_items: items,
+                            tags,
+                            category: categoryValue,
+                            audience: normalizeAudience(audience),
+                            link_preview: previewToSave,
+                            scheduled_at: scheduledIso,
+                        } as any)
+                        .select('id')
+                        .single();
+                    if (error) {
+                        if (/failed to fetch|network|load failed/i.test(error.message || '') && !pollInUse) await queueIt();
+                        else throw error;
+                    } else {
+                        if (pollInUse && created?.id) {
+                            try {
+                                await attachPoll(supabase, created.id, poll!);
+                            } catch (pollErr: any) {
+                                await supabase.from('posts').delete().eq('id', created.id); // do not leave a post without the poll the author asked for
+                                throw new Error(`Your post was not published because the poll could not be added: ${pollErr?.message || 'please try again'}`);
+                            }
+                        }
+                        if (collabs.length > 0 && created?.id) {
+                            try {
+                                await inviteCollaborators(supabase, created.id, collabs.map((c) => c.id));
+                            } catch (collabErr: any) {
+                                toast({ title: 'Posted, but the invitations were not sent', description: collabErr?.message, variant: 'destructive' });
+                            }
+                        }
+                        toast(scheduledIso
+                            ? { title: 'Scheduled', description: `Your post will go live ${formatSchedule(scheduledIso)}.` }
+                            : { title: 'Posted', description: 'Your post is live.' });
+                    }
+                }
             }
-            
+
+            shared.current = true;
+            clearDraft();
             if (user?.id) {
                 queryClient.invalidateQueries({ queryKey: ['home-feed-posts', user.id] });
             }
@@ -919,15 +870,18 @@ export default function CreatePost() {
             navigate('/feed');
         } catch (error: any) {
             console.error('Error saving post:', error);
-            toast({ title: 'Error', description: error.message || 'Failed to save post', variant: 'destructive' });
+            // pictures uploaded for a post that was not saved are removed again
+            if (uploadedPaths.length > 0) supabase.storage.from('portfolios').remove(uploadedPaths).catch(() => { });
+            toast({ title: 'Could not post', description: describePostError(error), variant: 'destructive' });
         } finally {
             setIsSubmitting(false);
+            setUploadStatus('');
         }
     };
 
     if (isLoadingEdit) {
         return (
-            <div className="min-h-screen bg-background pt-[68px] md:pt-24 flex items-center justify-center">
+            <div className="min-h-dvh bg-background pt-[68px] md:pt-24 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     <p className="text-sm font-medium text-muted-foreground">Loading post details...</p>
@@ -938,16 +892,16 @@ export default function CreatePost() {
 
     return (
         <>
-        <div className={`min-h-screen flex flex-col items-center justify-center px-0 md:px-4 ${isMobile && step === 'preview' ? 'bg-zinc-950 pt-0 pb-0 h-[100dvh] overflow-hidden fixed inset-0 z-[100]' : 'bg-background pt-[68px] md:pt-24 pb-12'}`}>
-            <div className={`w-full md:max-w-6xl lg:max-w-7xl md:border md:border-border/50 md:rounded-2xl overflow-hidden md:shadow-2xl flex flex-col md:h-[88vh] ${isMobile && step === 'preview' ? 'h-full bg-zinc-950 flex-1' : 'h-auto min-h-[calc(100vh-68px)] md:min-h-[550px] bg-card'}`}>
+        <div className={`min-h-dvh flex flex-col items-center justify-center px-0 md:px-4 bg-background pt-[68px] md:pt-24 pb-12`}>
+            <div className={`w-full md:max-w-6xl lg:max-w-7xl md:border md:border-border/50 md:rounded-2xl overflow-hidden md:shadow-2xl flex flex-col md:h-[88vh] h-auto min-h-[calc(100vh-68px)] md:min-h-[550px] bg-card`}>
                 
                 {/* Header */}
-                {!(step === 'preview' && editMode === 'main') && (
+                {(
                     <div className="h-14 border-b border-border/50 flex items-center justify-between px-4 shrink-0 bg-background/50 backdrop-blur-sm z-10">
-                    <Button variant="ghost" size="icon" onClick={() => {
+                    <Button aria-label="Back" variant="ghost" size="icon" onClick={() => {
                         if (step === 'details' && !editPostId) {
                             setActiveIndex(detailsActiveIndex);
-                            setStep('preview');
+                            setStep(mediaItems.length > 0 ? 'preview' : 'select');
                         }
                         else if (step === 'preview' && !editPostId) setStep('select');
                         else navigate(-1);
@@ -957,20 +911,26 @@ export default function CreatePost() {
                     <h2 className="text-sm font-bold tracking-tight">
                         {editPostId ? (step === 'details' ? 'Edit info' : 'Edit post') : (
                             step === 'select' ? 'Create new post' :
-                            step === 'preview' ? 'Crop & Adjust' : 'New post details'
+                            step === 'preview' ? 'Edit' : 'New post details'
                         )}
                     </h2>
                     <div>
                         {step === 'preview' && (
-                            <Button variant="ghost" className="text-primary font-bold hover:text-primary/80" onClick={() => {
-                                setDetailsActiveIndex(activeIndex);
-                                setStep('details');
-                            }}>
-                                Next
+                            <Button
+                                variant="ghost"
+                                className="text-primary font-bold hover:text-primary/80"
+                                disabled={isPreparing || isUploading || mediaItems.length === 0}
+                                onClick={async () => {
+                                    if (!(await prepareMedia())) return;
+                                    setDetailsActiveIndex(Math.min(activeIndex, Math.max(0, mediaItems.length - 1)));
+                                    setStep('details');
+                                }}
+                            >
+                                {isPreparing ? (videoProgress !== null ? <span className="tabular-nums">{Math.round(videoProgress * 100)}%</span> : <Loader2 className="h-4 w-4 animate-spin" />) : 'Next'}
                             </Button>
                         )}
                         {step === 'details' && (
-                            <Button variant="ghost" className="text-primary font-bold hover:text-primary/80" onClick={handleShare} disabled={isSubmitting}>
+                            <Button variant="ghost" className="text-primary font-bold hover:text-primary/80" onClick={handleShare} disabled={isSubmitting || isUploading || (!caption.trim() && mediaItems.length === 0 && !(!editPostId && (pollDraftInUse(poll) || !!jobSharePart)))}>
                                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : (editPostId ? 'Done' : 'Share')}
                             </Button>
                         )}
@@ -984,1246 +944,180 @@ export default function CreatePost() {
                     
                     {/* Step 1: Select */}
                     {step === 'select' && (
-                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-300">
-                            <UploadCloud className="h-20 w-20 text-muted-foreground mb-6 opacity-80" />
-                            <h3 className="text-xl font-medium mb-4">Drag photos and videos here</h3>
+                        <div
+                            className={`flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-300 transition-colors ${dragOver ? 'bg-primary/10' : ''}`}
+                            onDragOver={(e) => { e.preventDefault(); if (!isUploading) setDragOver(true); }}
+                            onDragLeave={() => setDragOver(false)}
+                            onDrop={onDropFiles}
+                        >
+                            {pendingDraft && (
+                                <div className="w-full max-w-md mb-8 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-left" role="region" aria-label="Saved draft">
+                                    <p className="font-semibold text-sm">Continue your draft?</p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        You started a post{pendingDraft.savedAt ? ` on ${new Date(pendingDraft.savedAt).toLocaleString()}` : ''}
+                                        {Array.isArray(pendingDraft.mediaItems) && pendingDraft.mediaItems.length > 0 ? ` with ${pendingDraft.mediaItems.length} photo${pendingDraft.mediaItems.length > 1 ? 's' : ''}/videos` : ''}.
+                                    </p>
+                                    <div className="flex gap-2 mt-3">
+                                        <Button size="sm" onClick={restoreDraft}>Continue</Button>
+                                        <Button size="sm" variant="ghost" onClick={discardDraft}>Discard</Button>
+                                    </div>
+                                </div>
+                            )}
+                            <UploadCloud className="h-20 w-20 text-muted-foreground mb-6 opacity-80" aria-hidden="true" />
+                            <h3 className="text-xl font-medium mb-1">Choose photos and videos</h3>
+                            <p className="text-sm text-muted-foreground mb-4">Up to {POST_MEDIA_MAX} items. Videos up to 3:59.</p>
                             <Button size="lg" className="rounded-full px-8 font-semibold" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-                                {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading...</> : 'Select from computer'}
+                                {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {uploadStatus || 'Uploading...'}</> : 'Select from device'}
                             </Button>
+                            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                                <Button type="button" variant="outline" className="rounded-full" onClick={() => openCamera('photo')} disabled={isUploading}>
+                                    <ImagePlus className="mr-2 h-4 w-4" aria-hidden="true" /> Take photo
+                                </Button>
+                                <Button type="button" variant="outline" className="rounded-full" onClick={() => openCamera('video')} disabled={isUploading}>
+                                    <Video className="mr-2 h-4 w-4" aria-hidden="true" /> Record video
+                                </Button>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setStep('details')}
+                                disabled={isUploading}
+                                className="mt-4 text-sm font-semibold text-primary hover:underline underline-offset-4 min-h-[44px]"
+                            >
+                                or write a text post or poll
+                            </button>
                         </div>
                     )}
 
-                    
-                    {/* Step 2: Combined Preview/Editor Layout */}
-                    {step === 'preview' && (
-                        !isMobile ? (
-                            <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden animate-in slide-in-from-right-8 duration-300">
-                            <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-6 border-b md:border-b-0 md:border-r border-border/50 min-h-0">
-                                <div className="w-full max-w-2xl flex flex-col items-center justify-center min-h-0">
-                                    <div 
-                                        ref={containerRef}
-                                        className="bg-black rounded-xl overflow-hidden shadow-inner relative group border border-white/10 transition-all duration-300 flex items-center justify-center select-none"
-                                        style={{ 
-                                            height: isMobile ? '280px' : '450px',
-                                            width: aspectRatio === '1:1' 
-                                                ? (isMobile ? '280px' : '450px') 
-                                                : aspectRatio === '4:5' 
-                                                    ? (isMobile ? '224px' : '360px') 
-                                                    : aspectRatio === '16:9' 
-                                                        ? (isMobile ? '320px' : '600px') 
-                                                        : 'auto',
-                                            maxWidth: '100%',
-                                            aspectRatio: aspectRatio === 'original' ? 'auto' : undefined,
-                                        }}
-                                        onMouseDown={handleMouseDown}
-                                        onMouseMove={handleMouseMove}
-                                        onMouseUp={handleMouseUpOrLeave}
-                                        onMouseLeave={handleMouseUpOrLeave}
-                                    >
-                                        {mediaItems[activeIndex]?.type === 'video' ? (
-                                            <video 
-                                                src={mediaItems[activeIndex].url} 
-                                                className={`w-full h-full ${aspectRatio !== 'original' && aspectRatio !== 'free' ? 'object-cover' : 'object-contain'}`} 
-                                                autoPlay loop muted 
-                                                style={{
-                                                    transform: `translate(${mediaPan[mediaItems[activeIndex]?.url]?.x || 0}px, ${mediaPan[mediaItems[activeIndex]?.url]?.y || 0}px) scale(${(mediaZoom[mediaItems[activeIndex]?.url] || 100) / 100})`,
-                                                    filter: getFilterString(mediaItems[activeIndex]?.url),
-                                                    clipPath: aspectRatio === 'free' ? getClipPathString(mediaItems[activeIndex]?.url) : undefined,
-                                                    pointerEvents: 'none'
-                                                }}
-                                            />
-                                        ) : (
-                                            <img loading="lazy" decoding="async" 
-                                                src={mediaItems[activeIndex]?.url} 
-                                                className={`w-full h-full ${aspectRatio !== 'original' && aspectRatio !== 'free' ? 'object-cover' : 'object-contain'}`} 
-                                                alt="Preview" 
-                                                style={{
-                                                    transform: `translate(${mediaPan[mediaItems[activeIndex]?.url]?.x || 0}px, ${mediaPan[mediaItems[activeIndex]?.url]?.y || 0}px) scale(${(mediaZoom[mediaItems[activeIndex]?.url] || 100) / 100})`,
-                                                    filter: getFilterString(mediaItems[activeIndex]?.url),
-                                                    clipPath: aspectRatio === 'free' ? getClipPathString(mediaItems[activeIndex]?.url) : undefined,
-                                                    pointerEvents: 'none'
-                                                }}
-                                            />
-                                        )}
-                                        {mediaItems.length > 1 && (
-                                            <div className="absolute top-4 right-4 bg-black/60 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-white z-10 pointer-events-none">
-                                                {activeIndex + 1} / {mediaItems.length}
-                                            </div>
-                                        )}
 
-                                        {((mediaAdjustments[mediaItems[activeIndex]?.url]?.vignette) || 0) > 0 && (
-                                            <div 
-                                                className="absolute inset-0 pointer-events-none z-10" 
-                                                style={{
-                                                    background: `radial-gradient(circle, transparent 30%, rgba(0,0,0,${(mediaAdjustments[mediaItems[activeIndex]?.url]?.vignette || 0) / 100}) 100%)`
-                                                }}
-                                            />
-                                        )}
-
-                                        {(mediaTextOverlays[mediaItems[activeIndex]?.url] || []).map(overlay => (
-                                            <div
-                                                key={overlay.id}
-                                                onMouseDown={(e) => handleTextOverlayDrag(overlay.id, e)}
-                                                onTouchStart={(e) => handleTextOverlayDrag(overlay.id, e)}
-                                                className="absolute z-20 cursor-move select-none px-3 py-1.5 rounded-lg shadow-lg font-bold text-center transition-transform hover:scale-105"
-                                                style={{
-                                                    left: `${overlay.x}%`,
-                                                    top: `${overlay.y}%`,
-                                                    transform: 'translate(-50%, -50%)',
-                                                    color: overlay.color,
-                                                    backgroundColor: overlay.bgColor,
-                                                    fontSize: `${overlay.fontSize}px`,
-                                                    maxWidth: '85%',
-                                                    wordBreak: 'break-word',
-                                                    textShadow: overlay.bgColor === 'transparent' ? '0 2px 4px rgba(0,0,0,0.8)' : 'none'
-                                                }}
+                    {/* Step 2: edit the photo (it stays on this device until the post is shared) */}
+                    {step === 'preview' && (() => {
+                        const active = mediaItems[Math.min(activeIndex, Math.max(0, mediaItems.length - 1))];
+                        const canEdit = !!active && active.type === 'image' && !!active.local && !active.passthrough && !unreadable.has(active.url) && sourcesRef.current.has(active.url);
+                        return (
+                            <div className="flex-1 min-h-0 flex flex-col animate-in fade-in duration-300">
+                                <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50 overflow-x-auto no-scrollbar shrink-0" role="list" aria-label="Photos and videos in this post">
+                                    {mediaItems.map((m, i) => (
+                                        <div key={m.url} role="listitem" className="relative shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveIndex(i)}
+                                                aria-label={`Item ${i + 1} of ${mediaItems.length}`}
+                                                aria-pressed={i === activeIndex}
+                                                className={cn('block h-14 w-14 rounded-lg overflow-hidden bg-muted transition-[box-shadow]', i === activeIndex && 'ring-2 ring-primary ring-offset-2 ring-offset-background')}
                                             >
-                                                {overlay.text}
-                                            </div>
-                                        ))}
-
-                                        {aspectRatio === 'free' && (() => {
-                                            const crop = mediaCrop[mediaItems[activeIndex]?.url] || { top: 0, right: 0, bottom: 0, left: 0 };
-                                            return (
-                                                <div className="absolute inset-0 z-20 pointer-events-none">
-                                                    <div className="absolute bg-black/50 pointer-events-none" style={{ top: 0, left: 0, right: 0, height: `${crop.top}%` }} />
-                                                    <div className="absolute bg-black/50 pointer-events-none" style={{ bottom: 0, left: 0, right: 0, height: `${crop.bottom}%` }} />
-                                                    <div className="absolute bg-black/50 pointer-events-none" style={{ top: `${crop.top}%`, bottom: `${crop.bottom}%`, left: 0, width: `${crop.left}%` }} />
-                                                    <div className="absolute bg-black/50 pointer-events-none" style={{ top: `${crop.top}%`, bottom: `${crop.bottom}%`, right: 0, width: `${crop.right}%` }} />
-                                                    <div
-                                                        className="absolute border-2 border-white shadow-2xl cursor-move select-none pointer-events-auto"
-                                                        style={{
-                                                            top: `${crop.top}%`,
-                                                            right: `${crop.right}%`,
-                                                            bottom: `${crop.bottom}%`,
-                                                            left: `${crop.left}%`,
-                                                        }}
-                                                        onMouseDown={(e) => handleCropDrag(e, 'center')}
-                                                        onTouchStart={(e) => handleCropDrag(e, 'center')}
-                                                    >
-                                                        <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.2) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.2) 1px, transparent 1px)', backgroundSize: '33.33% 33.33%' }} />
-                                                        {(['tl','tr','bl','br'] as const).map(h => (
-                                                            <div
-                                                                key={h}
-                                                                className={`absolute w-5 h-5 z-30 pointer-events-auto ${h.includes('t') ? '-top-1' : '-bottom-1'} ${h.includes('l') ? '-left-1' : '-right-1'}`}
-                                                                style={{ cursor: h === 'tl' || h === 'br' ? 'nwse-resize' : 'nesw-resize' }}
-                                                                onMouseDown={(e) => { e.stopPropagation(); handleCropDrag(e, h); }}
-                                                                onTouchStart={(e) => { e.stopPropagation(); handleCropDrag(e, h); }}
-                                                            >
-                                                                <div className={`absolute w-4 h-4 border-white border-4 ${h.includes('t') ? 'border-b-0' : 'border-t-0'} ${h.includes('l') ? 'border-r-0' : 'border-l-0'} top-0 left-0`} />
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                    
-                                    <div className="mt-6 w-full max-w-lg overflow-x-auto flex gap-3 pb-2 shrink-0">
-                                        {mediaItems.map((item, idx) => (
-                                            <div 
-                                                key={idx} 
-                                                onClick={() => setActiveIndex(idx)}
-                                                className={`relative w-20 h-20 shrink-0 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${activeIndex === idx ? 'border-primary scale-105' : 'border-transparent hover:border-primary/50'}`}
-                                            >
-                                                <Button 
-                                                    size="icon" 
-                                                    variant="destructive" 
-                                                    className="absolute top-1 right-1 h-5 w-5 rounded-full p-0.5 opacity-0 group-hover:opacity-100 z-10"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const newItems = [...mediaItems];
-                                                        newItems.splice(idx, 1);
-                                                        setMediaItems(newItems);
-                                                        if (activeIndex >= newItems.length) {
-                                                            setActiveIndex(Math.max(0, newItems.length - 1));
-                                                        }
-                                                        if (newItems.length === 0) setStep('select');
-                                                    }}
-                                                >
-                                                    <X className="h-3 w-3" />
-                                                </Button>
-                                                {item.type === 'video' ? (
-                                                    <div className="w-full h-full bg-zinc-900 relative">
-                                                        <video src={item.url} className="w-full h-full object-cover opacity-80" />
-                                                        <Video className="absolute inset-0 m-auto h-4 w-4 text-white drop-shadow" />
-                                                    </div>
-                                                ) : (
-                                                    <img loading="lazy" decoding="async" 
-                                                        src={item.url} 
-                                                        className="w-full h-full object-cover" 
-                                                        alt={`Thumb ${idx}`}
-                                                        style={{ filter: getFilterString(item.url) }}
-                                                    />
-                                                )}
-                                            </div>
-                                        ))}
-                                        {mediaItems.length < 10 && (
-                                            <button 
-                                                onClick={() => fileInputRef.current?.click()}
-                                                className="w-20 h-20 shrink-0 rounded-lg border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center text-muted-foreground hover:bg-white/5 hover:text-white transition-all hover:border-primary/50"
-                                            >
-                                                {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
+                                                {m.type === 'video'
+                                                    ? <video src={m.url} className="h-full w-full object-cover" muted />
+                                                    : <img src={finalsRef.current.get(m.url)?.previewUrl || m.url} alt="" className="h-full w-full object-cover" />}
                                             </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            
-                             <div className="w-full md:w-[380px] lg:w-[420px] flex flex-col bg-card text-card-foreground shrink-0 border-t md:border-t-0 md:border-l border-border/50 select-none dark:bg-zinc-950 dark:text-white dark:border-white/10">
-                                 <div className="flex items-center justify-around p-3 border-b border-border/50 bg-muted/40 dark:bg-zinc-900/60 dark:border-white/10">
-                                     {[
-                                         { name: 'Text', icon: 'Aa', mode: 'text' },
-                                         { name: 'Filter', icon: <div className="w-4 h-4 rounded-full border-2 border-foreground/80 dark:border-white/80 flex items-center justify-center opacity-90"><div className="w-2 h-2 rounded-full border border-foreground/80 dark:border-white/80 translate-x-0.5" /></div>, mode: 'filter' },
-                                         { name: 'Edit', icon: <Sliders className="w-4 h-4 text-foreground/80 dark:text-white/80" />, mode: 'adjust' },
-                                         { name: 'Ratio', icon: <Crop className="w-4 h-4 text-foreground/80 dark:text-white/80" />, mode: 'crop' }
-                                     ].map(tool => (
-                                         <button
-                                             key={tool.name}
-                                             onClick={() => enterSubMenu(tool.mode as any)}
-                                             className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all ${
-                                                 editMode === tool.mode 
-                                                     ? 'bg-primary text-primary-foreground font-bold shadow-sm dark:bg-zinc-800 dark:text-white' 
-                                                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/70 dark:text-white/60 dark:hover:text-white dark:hover:bg-zinc-800/50'
-                                             }`}
-                                         >
-                                             <div className="w-8 h-8 flex items-center justify-center">
-                                                 {typeof tool.icon === 'string' ? (
-                                                     <span className="font-serif font-bold text-base">{tool.icon}</span>
-                                                 ) : tool.icon}
-                                             </div>
-                                             <span className="text-[10px] font-medium">{tool.name}</span>
-                                         </button>
-                                     ))}
-                                 </div>
-
-                                 <div className="p-4 flex-1 overflow-y-auto space-y-4">
-                                     <div className="flex items-center justify-between border-b border-border/50 dark:border-white/10 pb-2">
-                                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground dark:text-white/50">
-                                             {isFilterIntensityOpen ? `${selectedFilterName} Intensity` : activeAdjustmentTool ? activeAdjustmentTool : (editMode === 'filter' ? 'Filters' : editMode === 'adjust' ? 'Edit Adjustments' : editMode === 'crop' ? 'Crop & Ratio' : editMode === 'text' ? 'Text Overlays' : 'Photo Editor')}
-                                         </span>
-                                         {editMode !== 'main' && (
-                                             <div className="flex items-center gap-2">
-                                                 <button onClick={cancelSubMenu} className="text-xs font-semibold text-muted-foreground hover:text-foreground dark:text-white/60 dark:hover:text-white">
-                                                     Cancel
-                                                 </button>
-                                                 <button onClick={finishSubMenu} className="text-xs font-bold text-primary-foreground bg-primary hover:bg-primary/90 dark:bg-zinc-800 dark:text-white px-3 py-1 rounded-md">
-                                                     Done
-                                                 </button>
-                                             </div>
-                                         )}
-                                     </div>
-
-                                     {isFilterIntensityOpen ? (
-                                         <div className="space-y-4 text-center py-4">
-                                             <span className="text-sm font-semibold text-foreground dark:text-white/90">
-                                                 Intensity: {mediaFilterIntensity[mediaItems[activeIndex]?.url] ?? 50}%
-                                             </span>
-                                             <div className="px-4">
-                                                 <input 
-                                                     type="range"
-                                                     min="0"
-                                                     max="100"
-                                                     value={mediaFilterIntensity[mediaItems[activeIndex]?.url] ?? 50}
-                                                     onChange={(e) => {
-                                                         const val = parseInt(e.target.value);
-                                                         setMediaFilterIntensity(prev => ({
-                                                             ...prev,
-                                                             [mediaItems[activeIndex]?.url]: val
-                                                         }));
-                                                     }}
-                                                     className="w-full accent-primary dark:accent-white h-1.5 bg-muted dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-                                                 />
-                                             </div>
-                                         </div>
-                                     ) : activeAdjustmentTool ? (
-                                         <div className="space-y-4 text-center py-4">
-                                             {(() => {
-                                                 const config = TOOL_CONFIGS[activeAdjustmentTool] || { key: 'brightness', name: activeAdjustmentTool, min: 50, max: 150, defaultVal: 100 };
-                                                 const storedVal = mediaAdjustments[mediaItems[activeIndex]?.url]?.[config.key] ?? config.defaultVal;
-                                                 const displayVal = config.defaultVal === 100 ? storedVal - 100 : storedVal;
-                                                 const minVal = config.defaultVal === 100 ? config.min - 100 : config.min;
-                                                 const maxVal = config.defaultVal === 100 ? config.max - 100 : config.max;
-
-                                                 return (
-                                                     <>
-                                                         <span className="text-sm font-semibold text-foreground dark:text-white/90">
-                                                             {displayVal > 0 ? `+${displayVal}` : displayVal}
-                                                         </span>
-                                                         <div className="px-4">
-                                                             <input 
-                                                                 type="range"
-                                                                 min={minVal}
-                                                                 max={maxVal}
-                                                                 value={displayVal}
-                                                                 onChange={(e) => {
-                                                                     const rawVal = parseInt(e.target.value);
-                                                                     const newStoredVal = config.defaultVal === 100 ? rawVal + 100 : rawVal;
-                                                                     setMediaAdjustments(prev => {
-                                                                         const current = prev[mediaItems[activeIndex]?.url] || {};
-                                                                         return {
-                                                                             ...prev,
-                                                                             [mediaItems[activeIndex]?.url]: { ...current, [config.key]: newStoredVal }
-                                                                         };
-                                                                     });
-                                                                 }}
-                                                                 className="w-full accent-primary dark:accent-white h-1.5 bg-muted dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-                                                             />
-                                                         </div>
-                                                     </>
-                                                 );
-                                             })()}
-                                         </div>
-                                     ) : editMode === 'text' ? (
-                                         <div className="space-y-4 py-1">
-                                             <div className="flex gap-2">
-                                                 <input
-                                                     type="text"
-                                                     value={newOverlayText}
-                                                     onChange={(e) => setNewOverlayText(e.target.value)}
-                                                     placeholder="Type text on photo..."
-                                                     className="flex-1 bg-background dark:bg-zinc-900 border border-border dark:border-white/20 rounded-xl px-3 py-2 text-xs text-foreground dark:text-white placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-                                                 />
-                                                 <Button
-                                                     onClick={() => {
-                                                         if (!newOverlayText.trim()) return;
-                                                         const url = mediaItems[activeIndex]?.url;
-                                                         if (!url) return;
-                                                         if (editingTextId) {
-                                                             setMediaTextOverlays(prev => ({
-                                                                 ...prev,
-                                                                 [url]: (prev[url] || []).map(o => o.id === editingTextId ? {
-                                                                     ...o,
-                                                                     text: newOverlayText,
-                                                                     color: selectedTextColor,
-                                                                     bgColor: selectedTextBg,
-                                                                     fontSize: selectedFontSize
-                                                                 } : o)
-                                                             }));
-                                                             setEditingTextId(null);
-                                                         } else {
-                                                             const newItem: TextOverlayItem = {
-                                                                 id: Date.now().toString(),
-                                                                 text: newOverlayText,
-                                                                 color: selectedTextColor,
-                                                                 bgColor: selectedTextBg,
-                                                                 fontSize: selectedFontSize,
-                                                                 x: 50,
-                                                                 y: 50
-                                                             };
-                                                             setMediaTextOverlays(prev => ({
-                                                                 ...prev,
-                                                                 [url]: [...(prev[url] || []), newItem]
-                                                             }));
-                                                         }
-                                                         setNewOverlayText('');
-                                                     }}
-                                                     className="bg-primary text-primary-foreground font-semibold hover:bg-primary/90 text-xs px-4 rounded-xl shadow-sm"
-                                                 >
-                                                     {editingTextId ? 'Save' : 'Add'}
-                                                 </Button>
-                                             </div>
-
-                                             <div>
-                                                 <p className="text-[11px] font-bold text-muted-foreground dark:text-white/50 mb-2">Text Color & Fill</p>
-                                                 <div className="flex items-center justify-between gap-2">
-                                                     <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-                                                         {[
-                                                             { color: '#FFFFFF', name: 'White' },
-                                                             { color: '#000000', name: 'Black' },
-                                                             { color: '#FACC15', name: 'Yellow' },
-                                                             { color: '#EF4444', name: 'Red' },
-                                                             { color: '#22C55E', name: 'Green' },
-                                                             { color: '#06B6D4', name: 'Cyan' },
-                                                             { color: '#A855F7', name: 'Purple' },
-                                                             { color: '#F97316', name: 'Orange' },
-                                                         ].map(item => (
-                                                             <button
-                                                                 key={item.color}
-                                                                 onClick={() => setSelectedTextColor(item.color)}
-                                                                 className={`w-6 h-6 rounded-full shrink-0 border border-border dark:border-white/30 transition-transform ${selectedTextColor === item.color ? 'scale-125 ring-2 ring-primary dark:ring-white' : ''}`}
-                                                                 style={{ backgroundColor: item.color }}
-                                                             />
-                                                         ))}
-                                                     </div>
-                                                     <button
-                                                         onClick={() => setSelectedTextBg(prev => prev === 'transparent' ? 'rgba(0,0,0,0.65)' : prev === 'rgba(0,0,0,0.65)' ? '#FFFFFF' : 'transparent')}
-                                                         className="text-[10px] font-bold px-2.5 py-1.5 bg-muted dark:bg-zinc-900 text-foreground dark:text-white/90 border border-border dark:border-white/20 rounded-lg shrink-0 hover:bg-muted/80"
-                                                     >
-                                                         Bg: {selectedTextBg === 'transparent' ? 'None' : selectedTextBg === '#FFFFFF' ? 'White' : 'Dark'}
-                                                     </button>
-                                                 </div>
-                                             </div>
-
-                                             <div className="flex items-center justify-between text-[11px] text-muted-foreground dark:text-white/80 pt-2 border-t border-border/50 dark:border-white/10">
-                                                 <div className="flex items-center gap-2">
-                                                     <span>Font Size:</span>
-                                                     {[16, 22, 28, 34].map(sz => (
-                                                         <button
-                                                             key={sz}
-                                                             onClick={() => setSelectedFontSize(sz)}
-                                                             className={`px-2.5 py-1 rounded text-[10px] ${selectedFontSize === sz ? 'bg-primary text-primary-foreground font-bold shadow-sm' : 'bg-muted dark:bg-zinc-800 text-foreground dark:text-white/70'}`}
-                                                         >
-                                                             {sz === 16 ? 'S' : sz === 22 ? 'M' : sz === 28 ? 'L' : 'XL'}
-                                                         </button>
-                                                     ))}
-                                                 </div>
-
-                                                 {(mediaTextOverlays[mediaItems[activeIndex]?.url] || []).length > 0 && (
-                                                     <button
-                                                         onClick={() => {
-                                                             const url = mediaItems[activeIndex]?.url;
-                                                             if (url) setMediaTextOverlays(prev => ({ ...prev, [url]: [] }));
-                                                             setEditingTextId(null);
-                                                             setNewOverlayText('');
-                                                         }}
-                                                         className="text-destructive hover:text-destructive/80 font-semibold"
-                                                     >
-                                                         Clear All
-                                                     </button>
-                                                 )}
-                                             </div>
-                                         </div>
-                                     ) : editMode === 'filter' ? (
-                                         <div className="space-y-3">
-                                             <div className="grid grid-cols-3 gap-2 max-h-[360px] overflow-y-auto pr-1">
-                                                 {[
-                                                     { name: 'Normal', initial: 'N', filterVal: 'none' },
-                                                     { name: 'Paris', initial: 'P', filterVal: 'contrast(1.1) brightness(1.08) saturate(1.05)' },
-                                                     { name: 'Los Angeles', initial: 'L', filterVal: 'saturate(1.25) contrast(1.1) hue-rotate(5deg)' },
-                                                     { name: 'Simple Cool', initial: 'S', filterVal: 'sepia(0.1) contrast(0.95) saturate(1.1) hue-rotate(-15deg)' },
-                                                     { name: 'Boost', initial: 'B', filterVal: 'contrast(1.3) saturate(1.35) brightness(1.05)' },
-                                                     { name: 'Boost Warm', initial: 'B', filterVal: 'sepia(0.2) contrast(1.2) saturate(1.2) brightness(1.05)' },
-                                                     { name: 'Boost Cool', initial: 'B', filterVal: 'hue-rotate(-20deg) contrast(1.2) saturate(1.2)' },
-                                                     { name: 'Clarendon', initial: 'C', filterVal: 'contrast(1.2) saturate(1.3) brightness(1.05)' },
-                                                     { name: 'Gingham', initial: 'G', filterVal: 'sepia(0.15) contrast(0.9) saturate(0.9) brightness(0.95)' }
-                                                 ].map(item => {
-                                                     const isSelected = selectedFilterName === item.name;
-                                                     return (
-                                                         <button 
-                                                             key={item.name} 
-                                                             onClick={() => {
-                                                                 if (isSelected) {
-                                                                     setToolSnapshotValue(mediaFilterIntensity[mediaItems[activeIndex]?.url] ?? 100);
-                                                                     setIsFilterIntensityOpen(true);
-                                                                 } else {
-                                                                     setSelectedFilterName(item.name);
-                                                                     setMediaFilters(prev => ({
-                                                                         ...prev,
-                                                                         [mediaItems[activeIndex]?.url]: item.filterVal
-                                                                     }));
-                                                                 }
-                                                             }}
-                                                             className="flex flex-col items-center text-center transition-all group"
-                                                         >
-                                                             <div className={`w-full aspect-square rounded-xl bg-muted dark:bg-zinc-800 overflow-hidden relative border-2 transition-all flex items-center justify-center ${
-                                                                 isSelected ? 'border-primary dark:border-white shadow-md scale-102 ring-2 ring-primary/20 dark:ring-white/20' : 'border-transparent opacity-85 hover:opacity-100'
-                                                             }`}>
-                                                                 <img loading="lazy" decoding="async" src={mediaItems[activeIndex]?.url} className="w-full h-full object-cover" alt={item.name} style={{ filter: item.filterVal }} />
-                                                                 <span className="absolute text-white font-bold text-sm drop-shadow-md pointer-events-none">
-                                                                     {item.initial}
-                                                                 </span>
-                                                             </div>
-                                                             <span className="text-[10px] font-semibold text-foreground/80 dark:text-white/80 mt-1">{item.name}</span>
-                                                         </button>
-                                                     );
-                                                 })}
-                                             </div>
-                                             <p className="text-center text-[11px] text-muted-foreground dark:text-white/50 font-medium">
-                                                 Tap filter again to adjust intensity
-                                             </p>
-                                         </div>
-                                     ) : editMode === 'crop' ? (
-                                         <div className="space-y-6 py-2">
-                                             <div>
-                                                 <p className="text-[11px] font-bold text-muted-foreground dark:text-white/50 uppercase tracking-wider mb-3">Aspect Ratio</p>
-                                                 <div className="grid grid-cols-3 gap-2">
-                                                     {(['original', '1:1', '4:5', '16:9', 'free'] as const).map(ratio => (
-                                                         <Button 
-                                                             key={ratio} 
-                                                             variant={aspectRatio === ratio ? 'default' : 'outline'} 
-                                                             onClick={() => setAspectRatio(ratio)}
-                                                             className={`text-[11px] h-9 font-bold tracking-wide capitalize ${aspectRatio === ratio ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm' : 'bg-background text-foreground border-border hover:bg-muted dark:bg-transparent dark:text-white/80 dark:border-white/20'}`}
-                                                         >
-                                                             {ratio === 'original' ? 'Original' : ratio === 'free' ? 'Free Crop' : ratio}
-                                                         </Button>
-                                                     ))}
-                                                 </div>
-                                             </div>
-                                             
-                                             <div className="pt-2 border-t border-border/50 dark:border-white/10">
-                                                 <p className="text-[11px] font-bold text-muted-foreground dark:text-white/50 uppercase tracking-wider mb-3">Crop Zoom</p>
-                                                 <div className="flex items-center gap-3">
-                                                     <ZoomOut className="h-4 w-4 text-muted-foreground dark:text-white/50" />
-                                                     <input 
-                                                         type="range" 
-                                                         min="100" 
-                                                         max="200" 
-                                                         value={mediaZoom[mediaItems[activeIndex]?.url] || 100} 
-                                                         onChange={(e) => {
-                                                             const z = parseInt(e.target.value);
-                                                             setMediaZoom(prev => ({ ...prev, [mediaItems[activeIndex].url]: z }));
-                                                         }}
-                                                         className="flex-1 accent-primary dark:accent-white h-1.5 bg-muted dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer" 
-                                                     />
-                                                     <ZoomIn className="h-4 w-4 text-muted-foreground dark:text-white/50" />
-                                                 </div>
-                                             </div>
-                                         </div>
-                                     ) : (
-                                         <div className="space-y-3">
-                                             <div className="grid grid-cols-3 gap-3">
-                                                 {[
-                                                     { name: 'Sharpen', icon: Maximize },
-                                                     { name: 'Lux', icon: Sparkles },
-                                                     { name: 'Brightness', icon: Sun },
-                                                     { name: 'Contrast', icon: Sliders },
-                                                     { name: 'Structure', icon: Crop },
-                                                     { name: 'Warmth', icon: Thermometer },
-                                                     { name: 'Saturation', icon: Droplets },
-                                                     { name: 'Colour', icon: Palette },
-                                                     { name: 'Fade', icon: Cloud },
-                                                     { name: 'Vignette', icon: Circle }
-                                                 ].map(tool => (
-                                                     <button
-                                                         key={tool.name}
-                                                         onClick={() => {
-                                                             const config = TOOL_CONFIGS[tool.name];
-                                                             const key = config ? config.key : (tool.name.toLowerCase() as any);
-                                                             const def = config ? config.defaultVal : 0;
-                                                             const currentVal = mediaAdjustments[mediaItems[activeIndex]?.url]?.[key as keyof typeof mediaAdjustments[string]] ?? def;
-                                                             setToolSnapshotValue(currentVal);
-                                                             setActiveAdjustmentTool(tool.name);
-                                                         }}
-                                                         className="flex flex-col items-center p-3 rounded-xl bg-muted/40 border border-border/60 hover:border-primary hover:bg-muted/80 dark:bg-zinc-900 dark:border-white/10 dark:hover:border-white/40 dark:hover:bg-zinc-800 transition-all group"
-                                                     >
-                                                         <div className="w-10 h-10 rounded-full border border-border dark:border-white/30 flex items-center justify-center text-foreground dark:text-white mb-1.5 group-hover:border-primary dark:group-hover:border-white group-hover:text-primary">
-                                                             <tool.icon className="h-5 w-5 stroke-[1.5]" />
-                                                         </div>
-                                                         <span className="text-[11px] font-semibold text-foreground/80 dark:text-white/80 group-hover:text-foreground">{tool.name}</span>
-                                                     </button>
-                                                 ))}
-                                             </div>
-                                         </div>
-                                     )}
-                                 </div>
-
-                                 {/* Sidebar Bottom Action / Next */}
-                                 <div className="p-4 border-t border-border/50 bg-muted/30 dark:border-white/10 dark:bg-zinc-900/80 flex items-center justify-between mt-auto">
-                                     <Button 
-                                         variant="ghost" 
-                                         onClick={() => setStep('select')}
-                                         className="text-muted-foreground hover:text-foreground dark:text-white/60 dark:hover:text-white text-xs"
-                                     >
-                                         Back
-                                     </Button>
-                                     <Button 
-                                         onClick={() => {
-                                             setDetailsActiveIndex(activeIndex);
-                                             setStep('details');
-                                         }}
-                                         className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-2.5 px-7 rounded-full text-xs shadow-lg"
-                                     >
-                                         Next →
-                                     </Button>
-                                 </div>
-                             </div>
-                        </div>
-                        ) : (
-                            // MOBILE LAYOUT
-                            <div className="flex-1 flex flex-col bg-zinc-950 overflow-hidden animate-in slide-in-from-right-8 duration-300 relative select-none">
-                            
-                            {/* Custom Header for Main Edit Mode */}
-                            {editMode === 'main' && (
-                                <div className="absolute top-0 left-0 right-0 h-14 flex items-center px-4 z-20">
-                                    <button 
-                                        onClick={() => setStep('select')}
-                                        className="text-white p-2"
-                                    >
-                                        <ArrowLeft className="w-6 h-6" />
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Main Photo Preview Canvas */}
-                            <div className={`flex-1 flex items-center justify-center relative overflow-hidden ${editMode === 'main' ? '' : 'p-3'}`}>
-                                <div 
-                                    ref={containerRef}
-                                    className={`bg-black overflow-hidden relative flex items-center justify-center select-none ${editMode === 'main' ? 'w-full' : 'rounded-lg shadow-2xl border border-white/10 max-h-[52vh] md:max-h-[60vh] max-w-full'}`}
-                                    style={editMode === 'main' ? {
-                                        width: '100%',
-                                        aspectRatio: aspectRatio === '1:1' ? '1 / 1' : aspectRatio === '4:5' ? '4 / 5' : aspectRatio === '16:9' ? '16 / 9' : 'auto',
-                                        maxHeight: '70vh'
-                                    } : { 
-                                        height: isMobile ? '340px' : '480px',
-                                        width: aspectRatio === '1:1' 
-                                            ? (isMobile ? '340px' : '480px') 
-                                            : aspectRatio === '4:5' 
-                                                ? (isMobile ? '272px' : '384px') 
-                                                : aspectRatio === '16:9' 
-                                                    ? (isMobile ? '340px' : '640px') 
-                                                    : 'auto',
-                                        aspectRatio: aspectRatio === 'original' ? 'auto' : undefined,
-                                    }}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseMove={handleMouseMove}
-                                    onMouseUp={handleMouseUpOrLeave}
-                                    onMouseLeave={handleMouseUpOrLeave}
-                                    onTouchStart={handleTouchStart}
-                                    onTouchMove={handleTouchMove}
-                                    onTouchEnd={handleTouchEnd}
-                                >
-                                    {mediaItems[activeIndex]?.type === 'video' ? (
-                                        <video 
-                                            src={mediaItems[activeIndex].url} 
-                                            className={`w-full h-full ${aspectRatio !== 'original' && aspectRatio !== 'free' ? 'object-cover' : 'object-contain'}`} 
-                                            autoPlay loop muted 
-                                            style={{
-                                                transform: `translate(${mediaPan[mediaItems[activeIndex]?.url]?.x || 0}px, ${mediaPan[mediaItems[activeIndex]?.url]?.y || 0}px) scale(${(mediaZoom[mediaItems[activeIndex]?.url] || 100) / 100})`,
-                                                filter: getFilterString(mediaItems[activeIndex]?.url)
-                                            }}
-                                        />
-                                    ) : (
-                                        <img loading="lazy" decoding="async" 
-                                            src={mediaItems[activeIndex].url} 
-                                            className={`w-full h-full ${aspectRatio !== 'original' && aspectRatio !== 'free' ? 'object-cover' : 'object-contain'}`}
-                                            alt="Preview" 
-                                            style={{
-                                                transform: `translate(${mediaPan[mediaItems[activeIndex]?.url]?.x || 0}px, ${mediaPan[mediaItems[activeIndex]?.url]?.y || 0}px) scale(${(mediaZoom[mediaItems[activeIndex]?.url] || 100) / 100})`,
-                                                filter: getFilterString(mediaItems[activeIndex]?.url)
-                                            }}
-                                        />
-                                    )}
-                                    
-                                    {/* Free Crop overlay - Mobile */}
-                                    {editMode !== 'main' && aspectRatio === 'free' && (() => {
-                                        const crop = mediaCrop[mediaItems[activeIndex]?.url] || { top: 0, right: 0, bottom: 0, left: 0 };
-                                        return (
-                                            <div className="absolute inset-0 pointer-events-none z-20">
-                                                {/* 4 dark panels */}
-                                                <div className="absolute bg-black/55 pointer-events-none" style={{ top: 0, left: 0, right: 0, height: `${crop.top}%` }} />
-                                                <div className="absolute bg-black/55 pointer-events-none" style={{ bottom: 0, left: 0, right: 0, height: `${crop.bottom}%` }} />
-                                                <div className="absolute bg-black/55 pointer-events-none" style={{ top: `${crop.top}%`, bottom: `${crop.bottom}%`, left: 0, width: `${crop.left}%` }} />
-                                                <div className="absolute bg-black/55 pointer-events-none" style={{ top: `${crop.top}%`, bottom: `${crop.bottom}%`, right: 0, width: `${crop.right}%` }} />
-                                                {/* Crop box */}
-                                                <div
-                                                    className="absolute border-2 border-white cursor-move pointer-events-auto"
-                                                    style={{ top: `${crop.top}%`, right: `${crop.right}%`, bottom: `${crop.bottom}%`, left: `${crop.left}%` }}
-                                                    onMouseDown={(e) => handleCropDrag(e, 'center')}
-                                                    onTouchStart={(e) => { e.stopPropagation(); handleCropDrag(e, 'center'); }}
-                                                >
-                                                    {/* Rule of thirds grid */}
-                                                    <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'linear-gradient(to right, rgba(255,255,255,0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.25) 1px, transparent 1px)', backgroundSize: '33.33% 33.33%' }} />
-                                                    {/* Corner handles */}
-                                                    {(['tl','tr','bl','br'] as const).map(h => (
-                                                        <div
-                                                            key={h}
-                                                            className={`absolute w-8 h-8 z-30 pointer-events-auto flex items-${h.includes('t') ? 'start' : 'end'} justify-${h.includes('l') ? 'start' : 'end'} ${h.includes('t') ? '-top-1' : '-bottom-1'} ${h.includes('l') ? '-left-1' : '-right-1'}`}
-                                                            onMouseDown={(e) => { e.stopPropagation(); handleCropDrag(e, h); }}
-                                                            onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); handleCropDrag(e, h); }}
-                                                        >
-                                                            <div className={`w-5 h-5 border-white border-[3px] ${h.includes('t') ? 'border-b-0' : 'border-t-0'} ${h.includes('l') ? 'border-r-0' : 'border-l-0'}`} />
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-
-                                    {/* Grid Overlay for framing/adjusting (Screenshot 4 & 5) */}
-                                    {editMode !== 'main' && activeAdjustmentTool && (
-                                        <div className="absolute inset-0 pointer-events-none z-10 grid grid-cols-3 grid-rows-3">
-                                            <div className="border-b border-r border-white/30" />
-                                            <div className="border-b border-r border-white/30" />
-                                            <div className="border-b border-white/30" />
-                                            <div className="border-b border-r border-white/30" />
-                                            <div className="border-b border-r border-white/30" />
-                                            <div className="border-b border-white/30" />
-                                            <div className="border-r border-white/30" />
-                                            <div className="border-r border-white/30" />
-                                            <div />
-                                        </div>
-                                    )}
-
-                                    {/* Vignette Overlay on mobile canvas */}
-                                    {((mediaAdjustments[mediaItems[activeIndex]?.url]?.vignette) || 0) > 0 && (
-                                        <div 
-                                            className="absolute inset-0 pointer-events-none z-10" 
-                                            style={{
-                                                background: `radial-gradient(circle, transparent 30%, rgba(0,0,0,${(mediaAdjustments[mediaItems[activeIndex]?.url]?.vignette || 0) / 100}) 100%)`
-                                            }}
-                                        />
-                                    )}
-
-                                    {/* Text Overlays Layer */}
-                                    {(mediaTextOverlays[mediaItems[activeIndex]?.url] || []).map(overlay => (
-                                        <div
-                                            key={overlay.id}
-                                            onMouseDown={(e) => handleTextOverlayDrag(overlay.id, e)}
-                                            onTouchStart={(e) => handleTextOverlayDrag(overlay.id, e)}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setEditingTextId(overlay.id);
-                                                setNewOverlayText(overlay.text);
-                                                setSelectedTextColor(overlay.color);
-                                                setSelectedTextBg(overlay.bgColor);
-                                                setSelectedFontSize(overlay.fontSize);
-                                                if (editMode !== 'text') {
-                                                    enterSubMenu('text');
-                                                }
-                                            }}
-                                            className="absolute z-20 cursor-move select-none px-3 py-1.5 rounded-lg shadow-lg font-bold text-center transition-transform hover:scale-105 active:scale-95"
-                                            style={{
-                                                left: `${overlay.x}%`,
-                                                top: `${overlay.y}%`,
-                                                transform: 'translate(-50%, -50%)',
-                                                color: overlay.color,
-                                                backgroundColor: overlay.bgColor,
-                                                fontSize: `${overlay.fontSize}px`,
-                                                maxWidth: '85%',
-                                                wordBreak: 'break-word',
-                                                textShadow: overlay.bgColor === 'transparent' ? '0 2px 4px rgba(0,0,0,0.8)' : 'none'
-                                            }}
-                                        >
-                                            {overlay.text}
+                                            <button
+                                                type="button"
+                                                aria-label={`Remove item ${i + 1}`}
+                                                onClick={() => removeMedia(i)}
+                                                className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-background border border-border shadow grid place-items-center text-muted-foreground hover:text-foreground before:absolute before:-inset-2 before:content-['']"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
                                         </div>
                                     ))}
-
-                                    {/* Floating Aspect Ratio Switcher */}
-                                    {editMode !== 'main' && !activeAdjustmentTool && !isFilterIntensityOpen && (
-                                        <div className="absolute bottom-3 left-3 z-30 flex items-center gap-1 bg-black/80 backdrop-blur-md p-1 rounded-full border border-white/20 shadow-xl">
-                                            {(['original', '1:1', '4:5', '16:9'] as const).map(ratio => (
-                                                <button
-                                                    key={ratio}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setAspectRatio(ratio);
-                                                    }}
-                                                    className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition-all capitalize ${
-                                                        aspectRatio === ratio ? 'bg-white text-black shadow font-bold' : 'text-white/80 hover:text-white'
-                                                    }`}
-                                                >
-                                                    {ratio === 'original' ? 'Original' : ratio}
-                                                </button>
-                                            ))}
-                                        </div>
+                                    {mediaItems.length < POST_MEDIA_MAX && (
+                                        <button
+                                            type="button"
+                                            aria-label="Add more photos or videos"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={isUploading}
+                                            className="h-14 w-14 shrink-0 rounded-lg border border-dashed border-border grid place-items-center text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                                        >
+                                            {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
+                                        </button>
                                     )}
                                 </div>
-                            </div>
 
-                            {/* Editor Controls (Main Mode) */}
-                            {editMode === 'main' ? (
-                                <div className="bg-zinc-950 pb-4 pt-4 px-4 flex flex-col gap-6 z-10 border-t border-white/10">
-                                    <div className="flex items-center justify-center gap-6 px-2">
-                                        {[
-                                            { name: 'Text', icon: 'Aa', action: () => enterSubMenu('text') },
-                                            { name: 'Filter', icon: <div className="w-5 h-5 rounded-full border-2 border-white/80 flex items-center justify-center opacity-90"><div className="w-3 h-3 rounded-full border border-white/80 translate-x-1" /></div>, action: () => enterSubMenu('filter') },
-                                            { name: 'Edit', icon: <Sliders className="w-5 h-5 text-white/80" />, action: () => enterSubMenu('adjust') },
-                                            { name: 'Ratio', icon: <Crop className="w-5 h-5 text-white/80" />, action: () => enterSubMenu('crop') }
-                                        ].map(tool => (
-                                            <button 
-                                                key={tool.name}
-                                                onClick={tool.action}
-                                                className="flex flex-col items-center shrink-0"
-                                            >
-                                                <div className="w-14 h-14 bg-zinc-800/80 rounded-2xl flex items-center justify-center mb-1 hover:bg-zinc-700 transition-colors">
-                                                    {typeof tool.icon === 'string' ? (
-                                                        <span className="text-white font-serif font-bold text-lg">{tool.icon}</span>
-                                                    ) : tool.icon}
-                                                </div>
-                                                <span className="text-[11px] font-medium text-white/90">{tool.name}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="flex items-center justify-between mt-2">
-                                        <div className="flex gap-2 overflow-x-auto scrollbar-none items-center pr-4">
-                                            {mediaItems.map((item, idx) => (
-                                                <div 
-                                                    key={idx} 
-                                                    className={`w-12 h-16 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${idx === activeIndex ? 'border-white' : 'border-transparent opacity-60'}`}
-                                                    onClick={() => setActiveIndex(idx)}
-                                                >
-                                                    {item.type === 'video' ? (
-                                                        <video src={item.url} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <img loading="lazy" decoding="async" src={item.url} className="w-full h-full object-cover" alt="thumbnail" />
-                                                    )}
-                                                </div>
-                                            ))}
-                                            <button 
-                                                className="w-12 h-16 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0 ml-1"
-                                                onClick={() => fileInputRef.current?.click()}
-                                            >
-                                                <span className="text-white text-xl font-light">+</span>
-                                            </button>
-                                        </div>
-                                        <button 
-                                            onClick={() => {
-                                                setDetailsActiveIndex(activeIndex);
-                                                setStep('details');
-                                            }}
-                                            className="bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 px-8 rounded-full shrink-0 ml-4 shadow-lg text-sm"
-                                        >
-                                            Next
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="bg-zinc-900 rounded-t-3xl border-t border-white/10 shadow-2xl flex flex-col shrink-0 pb-2 z-10 relative mt-[-20px]">
-                                    
-                                    {/* Top Drag Handle Pill (Instagram APK) */}
-                                    <div className="w-10 h-1 rounded-full bg-white/40 mx-auto mt-3 mb-2" />
-
-                                {/* Sheet Content */}
-                                <div className="px-4 py-3 min-h-[165px] flex flex-col justify-center">
-                                    
-                                    {/* 1. FILTER INTENSITY SLIDER */}
-                                    {isFilterIntensityOpen ? (
-                                        <div className="space-y-4 text-center animate-in fade-in duration-200 py-2">
-                                            <span className="text-sm font-semibold text-white/90">
-                                                {mediaFilterIntensity[mediaItems[activeIndex]?.url] ?? 50}
-                                            </span>
-                                            <div className="px-6">
-                                                <input 
-                                                    type="range"
-                                                    min="0"
-                                                    max="100"
-                                                    value={mediaFilterIntensity[mediaItems[activeIndex]?.url] ?? 50}
-                                                    onChange={(e) => {
-                                                        const val = parseInt(e.target.value);
-                                                        setMediaFilterIntensity(prev => ({
-                                                            ...prev,
-                                                            [mediaItems[activeIndex]?.url]: val
-                                                        }));
-                                                    }}
-                                                    className="w-full accent-white h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-                                                />
-                                            </div>
-                                        </div>
-                                    ) : activeAdjustmentTool ? (
-                                        /* 2. SPECIFIC EDIT TOOL SLIDER */
-                                        <div className="space-y-4 text-center animate-in fade-in duration-200 py-2">
-                                            {(() => {
-                                                const config = TOOL_CONFIGS[activeAdjustmentTool] || { key: 'brightness', name: activeAdjustmentTool, min: 50, max: 150, defaultVal: 100 };
-                                                const storedVal = mediaAdjustments[mediaItems[activeIndex]?.url]?.[config.key] ?? config.defaultVal;
-                                                const displayVal = config.defaultVal === 100 ? storedVal - 100 : storedVal;
-                                                const minVal = config.defaultVal === 100 ? config.min - 100 : config.min;
-                                                const maxVal = config.defaultVal === 100 ? config.max - 100 : config.max;
-
-                                                return (
-                                                    <>
-                                                        <span className="text-sm font-semibold text-white/90">
-                                                            {displayVal > 0 ? `+${displayVal}` : displayVal}
-                                                        </span>
-                                                        <div className="px-6">
-                                                            <input 
-                                                                type="range"
-                                                                min={minVal}
-                                                                max={maxVal}
-                                                                value={displayVal}
-                                                                onChange={(e) => {
-                                                                    const rawVal = parseInt(e.target.value);
-                                                                    const newStoredVal = config.defaultVal === 100 ? rawVal + 100 : rawVal;
-                                                                    setMediaAdjustments(prev => {
-                                                                        const current = prev[mediaItems[activeIndex]?.url] || {};
-                                                                        return {
-                                                                            ...prev,
-                                                                            [mediaItems[activeIndex]?.url]: { ...current, [config.key]: newStoredVal }
-                                                                        };
-                                                                    });
-                                                                }}
-                                                                className="w-full accent-white h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer"
-                                                            />
-                                                        </div>
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                    ) : editMode === 'text' ? (
-                                        /* 3. TEXT OVERLAY EDITOR */
-                                        <div className="space-y-3 animate-in fade-in duration-200 py-1">
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    value={newOverlayText}
-                                                    onChange={(e) => setNewOverlayText(e.target.value)}
-                                                    placeholder="Type text on photo..."
-                                                    className="flex-1 bg-zinc-800 border border-white/20 rounded-xl px-3 py-2 text-xs text-white placeholder-white/40 focus:outline-none focus:border-white"
-                                                />
-                                                <Button
-                                                    onClick={() => {
-                                                        if (!newOverlayText.trim()) return;
-                                                        const url = mediaItems[activeIndex]?.url;
-                                                        if (!url) return;
-                                                        if (editingTextId) {
-                                                            setMediaTextOverlays(prev => ({
-                                                                ...prev,
-                                                                [url]: (prev[url] || []).map(o => o.id === editingTextId ? {
-                                                                    ...o,
-                                                                    text: newOverlayText,
-                                                                    color: selectedTextColor,
-                                                                    bgColor: selectedTextBg,
-                                                                    fontSize: selectedFontSize
-                                                                } : o)
-                                                            }));
-                                                            setEditingTextId(null);
-                                                        } else {
-                                                            const newItem: TextOverlayItem = {
-                                                                id: Date.now().toString(),
-                                                                text: newOverlayText,
-                                                                color: selectedTextColor,
-                                                                bgColor: selectedTextBg,
-                                                                fontSize: selectedFontSize,
-                                                                x: 50,
-                                                                y: 50
-                                                            };
-                                                            setMediaTextOverlays(prev => ({
-                                                                ...prev,
-                                                                [url]: [...(prev[url] || []), newItem]
-                                                            }));
-                                                        }
-                                                        setNewOverlayText('');
-                                                    }}
-                                                    className="bg-white text-black font-semibold hover:bg-white/90 text-xs px-4 rounded-xl"
-                                                >
-                                                    {editingTextId ? 'Save' : 'Add'}
-                                                </Button>
-                                            </div>
-
-                                            {/* Color Palette & Background Toggle */}
-                                            <div className="flex items-center justify-between gap-2">
-                                                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-                                                    {[
-                                                        { color: '#FFFFFF', name: 'White' },
-                                                        { color: '#000000', name: 'Black' },
-                                                        { color: '#FACC15', name: 'Yellow' },
-                                                        { color: '#EF4444', name: 'Red' },
-                                                        { color: '#22C55E', name: 'Green' },
-                                                        { color: '#06B6D4', name: 'Cyan' },
-                                                        { color: '#A855F7', name: 'Purple' },
-                                                        { color: '#F97316', name: 'Orange' },
-                                                    ].map(item => (
-                                                        <button
-                                                            key={item.color}
-                                                            onClick={() => setSelectedTextColor(item.color)}
-                                                            className={`w-6 h-6 rounded-full shrink-0 border border-white/30 transition-transform ${selectedTextColor === item.color ? 'scale-125 ring-2 ring-white' : ''}`}
-                                                            style={{ backgroundColor: item.color }}
-                                                        />
-                                                    ))}
-                                                </div>
-
-                                                <button
-                                                    onClick={() => setSelectedTextBg(prev => prev === 'transparent' ? 'rgba(0,0,0,0.65)' : prev === 'rgba(0,0,0,0.65)' ? '#FFFFFF' : 'transparent')}
-                                                    className="text-[10px] font-bold px-2 py-1 bg-zinc-800 rounded-lg text-white/90 border border-white/20 shrink-0"
-                                                >
-                                                    Bg: {selectedTextBg === 'transparent' ? 'None' : selectedTextBg === '#FFFFFF' ? 'White' : 'Dark'}
-                                                </button>
-                                            </div>
-
-                                            {/* Font Size & Clear */}
-                                            <div className="flex items-center justify-between text-[11px] text-white/80">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-[10px]">Size:</span>
-                                                    {[16, 22, 28, 34].map(sz => (
-                                                        <button
-                                                            key={sz}
-                                                            onClick={() => setSelectedFontSize(sz)}
-                                                            className={`px-2 py-0.5 rounded text-[10px] ${selectedFontSize === sz ? 'bg-white text-black font-bold' : 'bg-zinc-800 text-white/70'}`}
-                                                        >
-                                                            {sz === 16 ? 'S' : sz === 22 ? 'M' : sz === 28 ? 'L' : 'XL'}
-                                                        </button>
-                                                    ))}
-                                                </div>
-
-                                                {(mediaTextOverlays[mediaItems[activeIndex]?.url] || []).length > 0 && (
-                                                    <button
-                                                        onClick={() => {
-                                                            const url = mediaItems[activeIndex]?.url;
-                                                            if (url) setMediaTextOverlays(prev => ({ ...prev, [url]: [] }));
-                                                            setEditingTextId(null);
-                                                            setNewOverlayText('');
-                                                        }}
-                                                        className="text-red-400 hover:text-red-300 font-medium text-[11px]"
-                                                    >
-                                                        Clear Text
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : editMode === 'filter' ? (
-                                        /* 4. FILTER CAROUSEL */
-                                        <div className="space-y-2 animate-in fade-in duration-200">
-                                            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none px-2 items-center">
-                                                {[
-                                                    { name: 'Normal', initial: 'N', filterVal: 'none' },
-                                                    { name: 'Paris', initial: 'P', filterVal: 'contrast(1.1) brightness(1.08) saturate(1.05)' },
-                                                    { name: 'Los Angeles', initial: 'L', filterVal: 'saturate(1.25) contrast(1.1) hue-rotate(5deg)' },
-                                                    { name: 'Simple Cool', initial: 'S', filterVal: 'sepia(0.1) contrast(0.95) saturate(1.1) hue-rotate(-15deg)' },
-                                                    { name: 'Boost', initial: 'B', filterVal: 'contrast(1.3) saturate(1.35) brightness(1.05)' },
-                                                    { name: 'Boost Warm', initial: 'B', filterVal: 'sepia(0.2) contrast(1.2) saturate(1.2) brightness(1.05)' },
-                                                    { name: 'Boost Cool', initial: 'B', filterVal: 'hue-rotate(-20deg) contrast(1.2) saturate(1.2)' },
-                                                    { name: 'Clarendon', initial: 'C', filterVal: 'contrast(1.2) saturate(1.3) brightness(1.05)' },
-                                                    { name: 'Gingham', initial: 'G', filterVal: 'sepia(0.15) contrast(0.9) saturate(0.9) brightness(0.95)' }
-                                                ].map(item => {
-                                                    const isSelected = selectedFilterName === item.name;
-                                                    return (
-                                                        <button 
-                                                            key={item.name} 
-                                                            onClick={() => {
-                                                                if (isSelected) {
-                                                                    setToolSnapshotValue(mediaFilterIntensity[mediaItems[activeIndex]?.url] ?? 100);
-                                                                    setIsFilterIntensityOpen(true);
-                                                                } else {
-                                                                    setSelectedFilterName(item.name);
-                                                                    setMediaFilters(prev => ({
-                                                                        ...prev,
-                                                                        [mediaItems[activeIndex]?.url]: item.filterVal
-                                                                    }));
-                                                                }
-                                                            }}
-                                                            className="flex flex-col items-center shrink-0 text-center transition-all group"
-                                                        >
-                                                            <span className="text-[11px] font-semibold text-white/80 mb-1.5">{item.name}</span>
-                                                            <div className={`w-20 h-20 rounded-2xl bg-zinc-800 overflow-hidden relative border-2 transition-all flex items-center justify-center ${
-                                                                isSelected ? 'border-white shadow-xl scale-102 ring-2 ring-white/20' : 'border-transparent opacity-85 hover:opacity-100'
-                                                            }`}>
-                                                                <img loading="lazy" decoding="async" src={mediaItems[activeIndex]?.url} className="w-full h-full object-cover" alt={item.name} style={{ filter: item.filterVal }} />
-                                                                <span className="absolute text-white font-bold text-lg drop-shadow-md pointer-events-none">
-                                                                    {item.initial}
-                                                                </span>
-                                                            </div>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                            <p className="text-center text-[11px] text-white/50 font-medium pt-1">
-                                                Tap again to adjust
+                                {!active ? null : active.type === 'video' && active.local ? (
+                                    <VideoTrimmer
+                                        key={active.url}
+                                        src={active.url}
+                                        edit={videoEdits[active.url]}
+                                        duration={active.duration || 0}
+                                        onChange={(e) => setVideoEdits((prev) => ({ ...prev, [active.url]: e }))}
+                                    />
+                                ) : canEdit ? (
+                                    <PhotoEditor
+                                        key={active.url}
+                                        source={sourcesRef.current.get(active.url)!}
+                                        recipe={recipes[active.url] || defaultRecipe()}
+                                        onChange={(r) => setRecipes((prev) => ({ ...prev, [active.url]: r }))}
+                                        onUnreadable={() => setUnreadable((prev) => new Set(prev).add(active.url))}
+                                    />
+                                ) : (
+                                    <div className="flex-1 min-h-0 grid place-items-center p-6 bg-black/40">
+                                        <div className="max-w-md w-full flex flex-col items-center gap-3 text-center">
+                                            {active.type === 'video'
+                                                ? <video src={active.url} className="w-full max-h-[60vh] rounded-lg bg-black" controls muted />
+                                                : <img src={active.url} alt="Preview" className="w-full max-h-[60vh] rounded-lg object-contain bg-black" />}
+                                            <p className="text-xs text-muted-foreground">
+                                                {active.type === 'video' ? 'Videos are posted as they are.' : active.passthrough ? 'GIFs are posted as they are, so they keep moving.' : 'This picture is posted as it is.'}
                                             </p>
                                         </div>
-                                    ) : editMode === 'crop' ? (
-                                        /* 5. CROP & RATIO */
-                                        <div className="space-y-6 animate-in fade-in duration-200 py-2">
-                                            <div>
-                                                <p className="text-[11px] font-bold text-white/50 uppercase tracking-wider mb-3 text-center">Aspect Ratio</p>
-                                                <div className="grid grid-cols-5 gap-2 px-2">
-                                                    {(['original', '1:1', '4:5', '16:9', 'free'] as const).map(ratio => (
-                                                        <Button 
-                                                            key={ratio} 
-                                                            variant={aspectRatio === ratio ? 'default' : 'outline'} 
-                                                            onClick={() => setAspectRatio(ratio)}
-                                                            className={`text-[10px] h-9 font-bold tracking-wide capitalize px-0 ${aspectRatio === ratio ? 'bg-white text-black hover:bg-white/90' : 'bg-transparent text-white/80 border-white/20 hover:border-white/50'}`}
-                                                        >
-                                                            {ratio === 'original' ? 'Orig' : ratio === 'free' ? 'Free' : ratio}
-                                                        </Button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="pt-2">
-                                                <p className="text-[11px] font-bold text-white/50 uppercase tracking-wider mb-3 text-center">Crop Zoom</p>
-                                                <div className="flex items-center gap-3 px-4">
-                                                    <ZoomOut className="h-4 w-4 text-white/50" />
-                                                    <input 
-                                                        type="range" 
-                                                        min="100" 
-                                                        max="200" 
-                                                        value={mediaZoom[mediaItems[activeIndex]?.url] || 100} 
-                                                        onChange={(e) => {
-                                                            const z = parseInt(e.target.value);
-                                                            setMediaZoom(prev => ({ ...prev, [mediaItems[activeIndex].url]: z }));
-                                                        }}
-                                                        className="flex-1 accent-white h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer" 
-                                                    />
-                                                    <ZoomIn className="h-4 w-4 text-white/50" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        /* 6. EDIT TOOLS CIRCLE CAROUSEL */
-                                        <div className="space-y-3 animate-in fade-in duration-200">
-                                            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none px-2 items-center">
-                                                {[
-                                                    { name: 'Sharpen', icon: Maximize },
-                                                    { name: 'Lux', icon: Sparkles },
-                                                    { name: 'Brightness', icon: Sun },
-                                                    { name: 'Contrast', icon: Sliders },
-                                                    { name: 'Structure', icon: Crop },
-                                                    { name: 'Warmth', icon: Thermometer },
-                                                    { name: 'Saturation', icon: Droplets },
-                                                    { name: 'Colour', icon: Palette },
-                                                    { name: 'Fade', icon: Cloud },
-                                                    { name: 'Vignette', icon: Circle }
-                                                ].map(tool => (
-                                                    <button
-                                                        key={tool.name}
-                                                        onClick={() => {
-                                                            const config = TOOL_CONFIGS[tool.name];
-                                                            const key = config ? config.key : (tool.name.toLowerCase() as any);
-                                                            const def = config ? config.defaultVal : 0;
-                                                            const currentVal = mediaAdjustments[mediaItems[activeIndex]?.url]?.[key as keyof typeof mediaAdjustments[string]] ?? def;
-                                                            setToolSnapshotValue(currentVal);
-                                                            setActiveAdjustmentTool(tool.name);
-                                                        }}
-                                                        className="flex flex-col items-center shrink-0 transition-all group"
-                                                    >
-                                                        <span className="text-[11px] font-semibold text-white/80 mb-2">{tool.name}</span>
-                                                        <div className="w-16 h-16 rounded-full border border-white/40 flex items-center justify-center text-white bg-transparent hover:border-white hover:bg-white/10 transition-all">
-                                                            <tool.icon className="h-6 w-6 stroke-[1.5]" />
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* FIXED BOTTOM ACTION BAR */}
-                                <div className="border-t border-white/10 flex items-center justify-between px-6 py-3 bg-zinc-900 shrink-0">
-                                    <button 
-                                        onClick={cancelSubMenu}
-                                        className="text-sm font-semibold text-white/80 hover:text-white"
-                                    >
-                                        Cancel
-                                    </button>
-
-                                    <span className="text-sm font-bold text-white tracking-wide">
-                                        {isFilterIntensityOpen ? selectedFilterName : activeAdjustmentTool ? activeAdjustmentTool : (editMode === 'filter' ? 'Filter' : editMode === 'adjust' ? 'Edit' : editMode === 'crop' ? 'Ratio' : editMode === 'text' ? 'Text' : '')}
-                                    </span>
-
-                                    <button 
-                                        onClick={finishSubMenu}
-                                        className="text-sm font-semibold text-white hover:text-white/80"
-                                    >
-                                        {(isFilterIntensityOpen || activeAdjustmentTool) ? 'Done' : 'Finished'}
-                                    </button>
-                                </div>
+                                    </div>
+                                )}
                             </div>
-                            )}
-                        </div>
-                        )
-                    )}
+                        );
+                    })()}
 
                     {/* Step 3: Details */}
                     {step === 'details' && (
-                        <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden animate-in slide-in-from-right-8 duration-300">
-                             {/* Left: Preview carousel that allows viewing all items */}
-                             <div className="w-full md:w-[50%] lg:w-[60%] flex items-center justify-center bg-black/40 border-b md:border-b-0 md:border-r border-border/50 p-6 relative select-none shrink-0">
-                                  <div 
-                                      className="w-full max-w-md bg-black rounded-xl overflow-hidden shadow-2xl relative border border-white/10 flex items-center justify-center"
-                                      style={(() => {
-                                          if (aspectRatio === 'free') {
-                                              const crop = mediaCrop[mediaItems[detailsActiveIndex]?.url];
-                                              if (crop) {
-                                                  const boxWidth = 100 - crop.left - crop.right;
-                                                  const boxHeight = 100 - crop.top - crop.bottom;
-                                                  return { aspectRatio: `${boxWidth}/${boxHeight}` };
-                                              }
-                                          }
-                                          return {
-                                              aspectRatio: aspectRatio === '1:1' ? '1/1' : aspectRatio === '4:5' ? '4/5' : aspectRatio === '16:9' ? '16:9' : 'auto',
-                                          };
-                                      })()}
-                                  >
+                        <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden animate-in fade-in duration-200">
+                             {/* Left: the pictures as they will be posted */}
+                             <div className={`w-full md:w-[50%] lg:w-[60%] flex items-center justify-center ${mediaItems.length === 0 ? 'bg-muted/40' : 'bg-black/40'} border-b md:border-b-0 md:border-r border-border/50 p-6 relative select-none shrink-0 overflow-y-auto`}>
+                                  {mediaItems.length === 0 ? (
+                                      <PostLivePreview
+                                          authorName={selectedPageId === 'user' ? (user?.user_metadata?.full_name || user?.user_metadata?.username || 'You') : ((myPages || []).find((pg: any) => pg.id === selectedPageId)?.name || 'Your page')}
+                                          authorAvatar={selectedPageId === 'user' ? user?.user_metadata?.avatar_url : (myPages || []).find((pg: any) => pg.id === selectedPageId)?.logo_url}
+                                          caption={caption}
+                                          poll={poll}
+                                          category={category}
+                                          audienceLabel={POST_AUDIENCES.find((a) => a.id === audience)?.label || 'Everyone'}
+                                          scheduleLabel={scheduleOn && scheduleAt ? `Goes live ${formatSchedule(scheduleAt)}` : null}
+                                          attachment={jobSharePart ? <JobShareCard {...(() => { try { return JSON.parse(jobSharePart); } catch { return {}; } })()} /> : null}
+                                      />
+                                  ) : (
+                                  <div className="w-full max-w-md bg-black rounded-xl overflow-hidden shadow-2xl relative border border-white/10 flex items-center justify-center">
                                       {(() => {
-                                          const activeUrl = mediaItems[detailsActiveIndex]?.url;
-                                          const isVideo = mediaItems[detailsActiveIndex]?.type === 'video';
-                                          const filter = getFilterString(activeUrl);
-                                          
-                                          let mediaStyle: any = { filter };
-                                          let mediaClassName = "w-full h-full object-cover";
-
-                                          if (aspectRatio === 'free') {
-                                              const crop = mediaCrop[activeUrl];
-                                              if (crop) {
-                                                  const boxWidth = 100 - crop.left - crop.right;
-                                                  const boxHeight = 100 - crop.top - crop.bottom;
-                                                  const scale = 100 / Math.max(1, boxWidth);
-                                                  mediaStyle = {
-                                                      ...mediaStyle,
-                                                      width: '100%',
-                                                      height: '100%',
-                                                      objectFit: 'cover',
-                                                      transformOrigin: 'top left',
-                                                      transform: `scale(${scale}) translate(${-crop.left}%, ${-crop.top}%)`
-                                                  };
-                                                  mediaClassName = "w-full h-full object-cover block";
-                                              }
-                                          } else {
-                                              mediaStyle.transform = `translate(${mediaPan[activeUrl]?.x || 0}px, ${mediaPan[activeUrl]?.y || 0}px) scale(${(mediaZoom[activeUrl] || 100) / 100})`;
-                                              mediaClassName = `w-full h-full ${aspectRatio !== 'original' ? 'object-cover' : 'object-contain'}`;
-                                          }
-
-                                          return isVideo ? (
-                                              <video 
-                                                  src={activeUrl} 
-                                                  className={mediaClassName}
-                                                  autoPlay loop muted 
-                                                  style={mediaStyle}
-                                              />
+                                          const it = mediaItems[detailsActiveIndex];
+                                          if (!it) return null;
+                                          const src = finalsRef.current.get(it.url)?.previewUrl || it.url;
+                                          return it.type === 'video' ? (
+                                              <video src={src} className="w-full max-h-[70vh] object-contain" autoPlay loop muted playsInline />
                                           ) : (
-                                              <img loading="lazy" decoding="async" 
-                                                  src={activeUrl} 
-                                                  className={mediaClassName}
-                                                  alt="Preview" 
-                                                  style={mediaStyle}
-                                              />
+                                              <img decoding="async" src={src} alt="Preview" className="w-full max-h-[70vh] object-contain" />
                                           );
                                       })()}
-                                     
-                                     {/* Left/Right Carousel Controls */}
-                                     {mediaItems.length > 1 && (
-                                         <>
-                                             <button 
-                                                 onClick={() => setDetailsActiveIndex(prev => (prev > 0 ? prev - 1 : mediaItems.length - 1))}
-                                                 className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white font-bold text-lg border border-white/10 shadow-lg transition-all"
-                                             >
-                                                 ‹
-                                             </button>
-                                             <button 
-                                                 onClick={() => setDetailsActiveIndex(prev => (prev < mediaItems.length - 1 ? prev + 1 : 0))}
-                                                 className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white font-bold text-lg border border-white/10 shadow-lg transition-all"
-                                             >
-                                                 ›
-                                             </button>
-                                             <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-white z-10 pointer-events-none">
-                                                 {detailsActiveIndex + 1} / {mediaItems.length}
-                                             </div>
-                                         </>
-                                     )}
 
-                                     {/* Vignette Overlay in step 3 */}
-                                     {((mediaAdjustments[mediaItems[detailsActiveIndex]?.url]?.vignette) || 0) > 0 && (
-                                         <div 
-                                             className="absolute inset-0 pointer-events-none z-10" 
-                                             style={{
-                                                 background: `radial-gradient(circle, transparent 30%, rgba(0,0,0,${(mediaAdjustments[mediaItems[detailsActiveIndex]?.url]?.vignette || 0) / 100}) 100%)`
-                                             }}
-                                         />
-                                     )}
-
-                                     {/* Text Overlays Layer in step 3 */}
-                                     {(mediaTextOverlays[mediaItems[detailsActiveIndex]?.url] || []).map(overlay => (
-                                         <div
-                                             key={overlay.id}
-                                             className="absolute z-20 select-none px-3 py-1.5 rounded-lg shadow-lg font-bold text-center pointer-events-none"
-                                             style={{
-                                                 left: `${overlay.x}%`,
-                                                 top: `${overlay.y}%`,
-                                                 transform: 'translate(-50%, -50%)',
-                                                 color: overlay.color,
-                                                 backgroundColor: overlay.bgColor,
-                                                 fontSize: `${overlay.fontSize}px`,
-                                                 maxWidth: '85%',
-                                                 wordBreak: 'break-word',
-                                                 textShadow: overlay.bgColor === 'transparent' ? '0 2px 4px rgba(0,0,0,0.8)' : 'none'
-                                             }}
-                                         >
-                                             {overlay.text}
-                                         </div>
-                                     ))}
-                                 </div>
+                                      {mediaItems.length > 1 && (
+                                          <>
+                                              <button
+                                                  aria-label="Previous"
+                                                  onClick={() => setDetailsActiveIndex(prev => (prev > 0 ? prev - 1 : mediaItems.length - 1))}
+                                                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 active:scale-95 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white font-bold text-lg border border-white/10 shadow-lg transition"
+                                              >
+                                                  ‹
+                                              </button>
+                                              <button
+                                                  aria-label="Next"
+                                                  onClick={() => setDetailsActiveIndex(prev => (prev < mediaItems.length - 1 ? prev + 1 : 0))}
+                                                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 active:scale-95 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white font-bold text-lg border border-white/10 shadow-lg transition"
+                                              >
+                                                  ›
+                                              </button>
+                                              <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur px-3 py-1 rounded-full text-xs font-bold text-white z-10 pointer-events-none">
+                                                  {detailsActiveIndex + 1} / {mediaItems.length}
+                                              </div>
+                                          </>
+                                      )}
+                                  </div>
+                                  )}
                              </div>
-                            
+
                             {/* Right: Input forms */}
                             <div className="flex-1 flex flex-col bg-card overflow-y-auto">
                                 <div className="p-4 flex items-center gap-3 border-b border-border/30">
@@ -2244,34 +1138,239 @@ export default function CreatePost() {
                                     </Select>
                                 </div>
                                 <div className="p-4 border-b border-border/30 flex gap-4 items-start relative group/caption">
-                                    <div className="flex-1">
+                                    <div className="flex-1 rounded-2xl border border-border/60 bg-background/60 px-4 py-3 transition-colors focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20">
                                         <MentionTextarea
+                                            ref={captionRef}
                                             value={caption}
                                             onChange={(e) => setCaption(e.target.value)}
-                                            placeholder="Write a caption..."
+                                            placeholder={mediaItems.length === 0 ? "What do you want to share?" : "Write a caption..."}
+                                            maxLength={POST_CAPTION_MAX}
+                                            aria-label="Caption"
                                             className="min-h-[120px] resize-none border-none focus-visible:ring-0 bg-transparent text-base p-0 w-full"
                                         />
                                         <div className="flex items-center justify-between mt-2 text-muted-foreground">
                                             <Popover open={showEmojiPicker} onOpenChange={setShowEmojiPicker} modal={false}>
                                                 <PopoverTrigger asChild>
-                                                    <button className="hover:text-foreground transition-colors p-1" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                                                    <button aria-label="Emoji" className="hover:text-foreground transition-colors p-3 -m-2" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                                                         <Smile className="h-5 w-5" />
                                                     </button>
                                                 </PopoverTrigger>
                                                 <PopoverContent className="p-0 border-none shadow-2xl bg-transparent z-[9999]" align="start" side="bottom" sideOffset={8}>
                                                     <EmojiPicker
-                                                        theme={Theme.DARK}
+                                                        theme={Theme.AUTO}
                                                         emojiStyle={EmojiStyle.APPLE}
-                                                        onEmojiClick={(emojiData) => setCaption(prev => prev + emojiData.emoji)}
+                                                        onEmojiClick={(emojiData) => {
+                                                            const el = captionRef.current;
+                                                            const emoji = emojiData.emoji;
+                                                            if (!el) { setCaption(prev => (prev + emoji).slice(0, POST_CAPTION_MAX)); return; }
+                                                            // insert where the cursor is, not at the end
+                                                            const start = el.selectionStart ?? caption.length;
+                                                            const end = el.selectionEnd ?? start;
+                                                            const next = (caption.slice(0, start) + emoji + caption.slice(end)).slice(0, POST_CAPTION_MAX);
+                                                            setCaption(next);
+                                                            requestAnimationFrame(() => {
+                                                                const pos = Math.min(start + emoji.length, next.length);
+                                                                el.focus();
+                                                                el.setSelectionRange(pos, pos);
+                                                            });
+                                                        }}
                                                         width={300}
                                                         height={350}
                                                     />
                                                 </PopoverContent>
                                             </Popover>
-                                            <span className="text-xs font-medium">{caption.length} / 2200</span>
+                                            <button type="button" onClick={() => setGifOpen(true)} disabled={isUploading || mediaItems.length >= POST_MEDIA_MAX} className="text-xs font-bold border border-current rounded px-1.5 py-0.5 hover:text-foreground disabled:opacity-40 min-h-[44px] min-w-[44px] -my-2" aria-label="Add a GIF">GIF</button>
+                                            <span className={`text-xs font-medium ${caption.length >= POST_CAPTION_MAX ? 'text-destructive' : caption.length > POST_CAPTION_MAX * 0.9 ? 'text-amber-600' : ''}`} aria-live={caption.length > POST_CAPTION_MAX * 0.9 ? 'polite' : 'off'}>{caption.length} / {POST_CAPTION_MAX}</span>
                                         </div>
                                     </div>
                                 </div>
+
+                                {linkPreview && (
+                                    <div className="px-4 border-b border-border/30 relative">
+                                        <LinkPreviewCard preview={linkPreview} />
+                                        <button type="button" aria-label="Remove link preview" onClick={() => { setDismissedLink(linkPreview.url); setLinkPreview(null); }} className="absolute right-6 top-5 h-8 w-8 rounded-full bg-background/90 border flex items-center justify-center shadow-sm">
+                                            <X className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Add to your post */}
+                                {!editPostId && (
+                                    <div className="px-4 py-3 border-b border-border/30">
+                                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Add to your post</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                aria-pressed={!!poll}
+                                                onClick={() => setPoll(poll ? null : emptyPollDraft())}
+                                                className={`inline-flex items-center gap-2 min-h-[44px] rounded-full border px-4 text-sm font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.97] ${poll ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-foreground border-border/70 hover:bg-muted'}`}
+                                            >
+                                                <BarChart3 className="h-4 w-4" /> Poll
+                                            </button>
+                                            <button
+                                                type="button"
+                                                aria-pressed={scheduleOn}
+                                                onClick={() => { setScheduleOn(!scheduleOn); if (!scheduleOn && !scheduleAt) setScheduleAt(schedulePresets()[0].at); }}
+                                                className={`inline-flex items-center gap-2 min-h-[44px] rounded-full border px-4 text-sm font-semibold transition-[background-color,color,transform] duration-150 active:scale-[0.97] ${scheduleOn ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-foreground border-border/70 hover:bg-muted'}`}
+                                            >
+                                                <CalendarClock className="h-4 w-4" /> Schedule
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Poll builder */}
+                                {!editPostId && poll && (
+                                    <div className="mx-4 my-4 space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-semibold text-foreground">Poll</p>
+                                                <p className="text-xs text-muted-foreground">Ask your connections to vote: 2 to {POLL_MAX_OPTIONS} options.</p>
+                                            </div>
+                                            <button type="button" aria-label="Remove poll" onClick={() => setPoll(null)} className="flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10">
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                        <Input
+                                            value={poll.question}
+                                            onChange={(e) => setPoll({ ...poll, question: e.target.value })}
+                                            maxLength={POLL_QUESTION_MAX}
+                                            placeholder="Ask a question (optional)"
+                                            aria-label="Poll question"
+                                            className="text-base"
+                                        />
+                                        <div className="space-y-2">
+                                            {poll.options.map((opt, i) => (
+                                                <div key={i} className="flex items-center gap-2">
+                                                    <span className="h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/40" aria-hidden />
+                                                    <Input
+                                                        value={opt}
+                                                        onChange={(e) => setPoll({ ...poll, options: poll.options.map((o, j) => (j === i ? e.target.value : o)) })}
+                                                        maxLength={POLL_OPTION_MAX}
+                                                        placeholder={`Option ${i + 1}`}
+                                                        aria-label={`Poll option ${i + 1}`}
+                                                        className="text-base"
+                                                    />
+                                                    {poll.options.length > 2 && (
+                                                        <button type="button" aria-label={`Remove option ${i + 1}`} onClick={() => setPoll({ ...poll, options: poll.options.filter((_, j) => j !== i) })} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/10">
+                                                            <X className="h-4 w-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {poll.options.length < POLL_MAX_OPTIONS && (
+                                            <button type="button" onClick={() => setPoll({ ...poll, options: [...poll.options, ''] })} className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm font-semibold text-primary transition-colors hover:bg-primary/5">
+                                                <Plus className="h-4 w-4" /> Add option <span className="font-normal text-muted-foreground">({poll.options.length}/{POLL_MAX_OPTIONS})</span>
+                                            </button>
+                                        )}
+                                        <div>
+                                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Poll length</p>
+                                            <div className="flex flex-wrap gap-2" role="group" aria-label="How long the poll stays open">
+                                                {POLL_DURATIONS.map((d) => (
+                                                    <button key={d.id} type="button" aria-pressed={poll.durationId === d.id} onClick={() => setPoll({ ...poll, durationId: d.id })} className={`min-h-[44px] rounded-full border px-4 text-sm font-semibold transition-colors ${poll.durationId === d.id ? 'bg-foreground text-background border-foreground' : 'bg-card text-muted-foreground border-border/60 hover:bg-muted'}`}>{d.label}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Schedule panel */}
+                                {!editPostId && scheduleOn && (
+                                    <div className="mx-4 my-4 space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                                        <div>
+                                            <p className="text-sm font-semibold text-foreground">Publish later</p>
+                                            <p className="text-xs text-muted-foreground">{scheduleAt ? `Goes live ${formatSchedule(scheduleAt)}. Only you see it until then.` : 'Choose a time up to 90 days ahead.'}</p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {schedulePresets().map((pr) => (
+                                                <button key={pr.id} type="button" onClick={() => setScheduleAt(pr.at)} aria-pressed={scheduleAt?.getTime() === pr.at.getTime()} className={`px-4 min-h-[44px] rounded-full text-sm font-semibold border transition-colors ${scheduleAt?.getTime() === pr.at.getTime() ? 'bg-foreground text-background border-foreground' : 'bg-card text-muted-foreground border-border/60 hover:bg-muted'}`}>{pr.label}</button>
+                                            ))}
+                                        </div>
+                                        <Input type="datetime-local" aria-label="Publish time" value={scheduleAt ? toLocalInputValue(scheduleAt) : ''} onChange={(e) => setScheduleAt(e.target.value ? new Date(e.target.value) : null)} className="w-auto text-base" />
+                                    </div>
+                                )}
+
+                                {/* Post settings */}
+                                <div className="grid gap-4 border-b border-border/30 p-4 sm:grid-cols-2">
+                                    <div className="space-y-1.5">
+                                        <p className="text-sm font-semibold text-foreground">Category</p>
+                                        <Select value={category} onValueChange={setCategory}>
+                                            <SelectTrigger className="w-full" aria-label="Post category"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {POST_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">Helps people find your post. Hashtags in the caption become tags.</p>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <p className="text-sm font-semibold text-foreground">Audience</p>
+                                        <Select value={audience} onValueChange={setAudience}>
+                                            <SelectTrigger className="w-full" aria-label="Who can see this post"><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                {POST_AUDIENCES.map((a) => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">{POST_AUDIENCES.find((a) => a.id === audience)?.description}</p>
+                                    </div>
+                                </div>
+
+                                {/* Collaborators (new posts only) */}
+                                {!editPostId && (
+                                    <div className="p-4 border-b border-border/30">
+                                        <p className="font-medium text-base text-foreground">Collaborators</p>
+                                        <p className="text-xs text-muted-foreground mb-3">Credit up to {COLLAB_MAX} people. They are shown on the post only after they accept.</p>
+                                        {collabs.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mb-3">
+                                                {collabs.map((c) => (
+                                                    <span key={c.id} className="inline-flex items-center gap-1.5 rounded-full bg-accent/60 border border-border/50 pl-2 pr-1 py-1 text-xs font-semibold">
+                                                        @{c.username || c.full_name}
+                                                        <button type="button" aria-label={`Remove ${c.username || c.full_name}`} onClick={() => setCollabs((prev) => prev.filter((x) => x.id !== c.id))} className="h-6 w-6 flex items-center justify-center rounded-full hover:bg-foreground/10"><X className="h-3.5 w-3.5" /></button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {collabs.length < COLLAB_MAX && (
+                                            <>
+                                                <Input value={collabQuery} onChange={(e) => setCollabQuery(e.target.value)} placeholder="Search people to credit" aria-label="Search people to credit" />
+                                                {collabResults.length > 0 && (
+                                                    <div className="mt-2 rounded-xl border divide-y overflow-hidden">
+                                                        {collabResults.map((u) => (
+                                                            <button key={u.id} type="button" onClick={() => { setCollabs((prev) => [...prev, u]); setCollabQuery(''); setCollabResults([]); }} className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-muted min-h-[44px]">
+                                                                <Avatar className="h-8 w-8"><AvatarImage src={u.avatar_url} /><AvatarFallback><User className="h-4 w-4" /></AvatarFallback></Avatar>
+                                                                <span className="min-w-0"><span className="block text-sm font-medium truncate">{u.full_name || u.username}</span><span className="block text-xs text-muted-foreground">@{u.username}</span></span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Alt text */}
+                                {mediaItems.length > 0 && (
+                                    <div className="p-4 border-b border-border/30">
+                                        <p className="font-medium text-base text-foreground">Alt text</p>
+                                        <p className="text-xs text-muted-foreground mb-3">Describe each photo or video for people who cannot see it. Screen readers read this aloud.</p>
+                                        <div className="space-y-3">
+                                            {mediaItems.map((m, idx) => (
+                                                <div key={m.url} className="flex items-center gap-3">
+                                                    <div className="h-12 w-12 shrink-0 rounded-lg overflow-hidden bg-muted">
+                                                        {m.type === 'image' ? <img src={m.url} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full flex items-center justify-center"><Video className="h-5 w-5 text-muted-foreground" /></div>}
+                                                    </div>
+                                                    <Input
+                                                        value={altTexts[m.url] || ''}
+                                                        onChange={(e) => setAltTexts((prev) => ({ ...prev, [m.url]: e.target.value }))}
+                                                        maxLength={POST_ALT_TEXT_MAX}
+                                                        placeholder={`Describe item ${idx + 1}`}
+                                                        aria-label={`Alt text for item ${idx + 1}`}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Tag People Section (Instagram Style) */}
                                 <div className="p-4 border-b border-border/30">
@@ -2284,7 +1383,7 @@ export default function CreatePost() {
                                             variant="ghost" 
                                             size="sm" 
                                             onClick={() => setShowTagDialog(true)}
-                                            className="text-xs font-bold text-primary hover:text-primary/80 hover:bg-primary/10 h-8 rounded-full px-3"
+                                            className="text-xs font-bold text-primary hover:text-primary/80 hover:bg-primary/10 h-10 md:h-8 rounded-full px-3"
                                         >
                                             {taggedUsers.length > 0 ? `Tagged (${taggedUsers.length})` : 'Add tag'}
                                         </Button>
@@ -2296,12 +1395,12 @@ export default function CreatePost() {
                                                 <div key={u.id} className="flex items-center gap-1.5 bg-accent/60 border border-border/50 rounded-full pl-1.5 pr-2 py-1 text-xs font-medium animate-in fade-in zoom-in-95">
                                                     <Avatar className="h-5 w-5">
                                                         <AvatarImage src={u.avatar_url} />
-                                                        <AvatarFallback className="text-[10px]"><User className="h-3 w-3" /></AvatarFallback>
+                                                        <AvatarFallback className="text-xs"><User className="h-3 w-3" /></AvatarFallback>
                                                     </Avatar>
                                                     <span className="font-semibold text-foreground">@{u.username || u.full_name}</span>
-                                                    <button 
+                                                    <button aria-label="Close" 
                                                         onClick={() => setTaggedUsers(prev => prev.filter(item => item.id !== u.id))}
-                                                        className="ml-1 text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-white/10"
+                                                        className="ml-1 text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-foreground/10"
                                                     >
                                                         <X className="h-3.5 w-3.5" />
                                                     </button>
@@ -2327,9 +1426,9 @@ export default function CreatePost() {
                                                 className="border-none bg-transparent focus-visible:ring-0 px-0 shadow-none text-base h-auto placeholder:text-muted-foreground"
                                             />
                                             {location ? (
-                                                <button 
+                                                <button aria-label="Close" 
                                                     onClick={() => setLocation('')}
-                                                    className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-white/10"
+                                                    className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-foreground/10"
                                                 >
                                                     <X className="h-4 w-4" />
                                                 </button>
@@ -2337,9 +1436,9 @@ export default function CreatePost() {
                                                 <button
                                                     onClick={handleGetCurrentLocation}
                                                     disabled={isFetchingLocation}
-                                                    className="text-xs font-bold text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-3 py-1 rounded-full flex items-center gap-1 transition-all shrink-0"
+                                                    className="text-xs font-bold text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/20 px-3 py-1 rounded-full flex items-center gap-1 transition shrink-0"
                                                 >
-                                                    {isFetchingLocation ? <Loader2 className="h-3 w-3 animate-spin" /> : '📍 Use Current Location'}
+                                                    {isFetchingLocation ? <Loader2 className="h-3 w-3 animate-spin" /> : <><MapPin className="h-3 w-3 mr-1 inline" />Use Current Location</>}
                                                 </button>
                                             )}
                                         </div>
@@ -2349,12 +1448,12 @@ export default function CreatePost() {
                                     {showLocationSuggestions && (
                                         <div className="mt-3 animate-in fade-in duration-200">
                                             <div className="flex items-center justify-between mb-2">
-                                                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                                                <p className="text-[12px] font-bold text-muted-foreground uppercase tracking-wider">
                                                     {isSearchingLocation ? 'Searching Realtime Locations...' : 'Realtime Locations'}
                                                 </p>
                                                 <button 
                                                     onClick={() => setShowLocationSuggestions(false)}
-                                                    className="text-[10px] text-muted-foreground hover:text-foreground font-semibold"
+                                                    className="text-[12px] text-muted-foreground hover:text-foreground font-semibold"
                                                 >
                                                     Hide
                                                 </button>
@@ -2368,7 +1467,7 @@ export default function CreatePost() {
                                                                 setLocation(loc);
                                                                 setShowLocationSuggestions(false);
                                                             }}
-                                                            className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                                                            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                                                                 location === loc 
                                                                     ? 'bg-primary border-primary text-primary-foreground font-bold shadow-md' 
                                                                     : 'bg-secondary/70 border-border text-foreground hover:text-primary hover:border-primary/50 hover:bg-primary/10 font-medium'
@@ -2385,7 +1484,7 @@ export default function CreatePost() {
                                                                 setLocation(loc);
                                                                 setShowLocationSuggestions(false);
                                                             }}
-                                                            className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                                                            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                                                                 location === loc 
                                                                     ? 'bg-primary border-primary text-primary-foreground font-bold shadow-md' 
                                                                     : 'bg-secondary/70 border-border text-foreground hover:text-primary hover:border-primary/50 hover:bg-primary/10 font-medium'
@@ -2423,11 +1522,15 @@ export default function CreatePost() {
                                                     <p className="text-xs text-muted-foreground mt-0.5">You can change this later by going to the ••• menu at the top of your post.</p>
                                                 </div>
                                                 <button 
-                                                    className={`w-10 h-6 rounded-full shrink-0 border border-border transition-all duration-300 p-0.5 ${
-                                                        commentingOff ? 'bg-primary border-primary flex justify-end' : 'bg-muted-foreground/30 flex justify-start'
+                                                    type="button"
+                                                    role="switch"
+                                                    aria-checked={commentingOff}
+                                                    aria-label="Turn off commenting"
+                                                    className={`w-10 h-6 rounded-full shrink-0 border border-border transition-colors duration-200 p-0.5 ${
+                                                        commentingOff ? 'bg-primary border-primary' : 'bg-muted-foreground/30'
                                                     }`}
                                                 >
-                                                    <span className="w-4 h-4 rounded-full bg-white shadow-md block" />
+                                                    <span className={`w-4 h-4 rounded-full bg-white shadow-md block transition-transform duration-200 ${commentingOff ? 'translate-x-4' : 'translate-x-0'}`} />
                                                 </button>
                                             </div>
                                             <div 
@@ -2439,11 +1542,15 @@ export default function CreatePost() {
                                                     <p className="text-xs text-muted-foreground mt-0.5">Only you will see the total number of likes and views on this post.</p>
                                                 </div>
                                                 <button 
-                                                    className={`w-10 h-6 rounded-full shrink-0 border border-border transition-all duration-300 p-0.5 ${
-                                                        hideLikes ? 'bg-primary border-primary flex justify-end' : 'bg-muted-foreground/30 flex justify-start'
+                                                    type="button"
+                                                    role="switch"
+                                                    aria-checked={hideLikes}
+                                                    aria-label="Hide like and view counts"
+                                                    className={`w-10 h-6 rounded-full shrink-0 border border-border transition-colors duration-200 p-0.5 ${
+                                                        hideLikes ? 'bg-primary border-primary' : 'bg-muted-foreground/30'
                                                     }`}
                                                 >
-                                                    <span className="w-4 h-4 rounded-full bg-white shadow-md block" />
+                                                    <span className={`w-4 h-4 rounded-full bg-white shadow-md block transition-transform duration-200 ${hideLikes ? 'translate-x-4' : 'translate-x-0'}`} />
                                                 </button>
                                             </div>
                                         </div>
@@ -2464,10 +1571,64 @@ export default function CreatePost() {
                     if (e.target.files?.length) uploadFiles(e.target.files);
                 }}
             />
+            <input
+                ref={photoCaptureRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                aria-hidden="true"
+                tabIndex={-1}
+                onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
+            />
+            <input
+                ref={videoCaptureRef}
+                type="file"
+                accept="video/*"
+                capture="environment"
+                className="hidden"
+                aria-hidden="true"
+                tabIndex={-1}
+                onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
+            />
+            <CameraCaptureDialog
+                open={cameraMode !== null}
+                initialMode={cameraMode || 'photo'}
+                maxSeconds={POST_VIDEO_MAX_SECONDS}
+                onClose={() => setCameraMode(null)}
+                onCapture={(file) => { setCameraMode(null); uploadFiles([file]); }}
+            />
+
+            {/* GIF picker */}
+            <Dialog open={gifOpen} onOpenChange={setGifOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Add a GIF</DialogTitle>
+                        <DialogDescription>Search, or pick one of the trending GIFs.</DialogDescription>
+                    </DialogHeader>
+                    <Input value={gifQuery} onChange={(e) => setGifQuery(e.target.value)} placeholder="Search GIFs" aria-label="Search GIFs" autoFocus />
+                    <div className="max-h-[50vh] overflow-y-auto">
+                        {gifState === 'loading' && <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>}
+                        {gifState === 'off' && <p className="py-8 text-center text-sm text-muted-foreground">GIFs are not set up yet.</p>}
+                        {gifState === 'error' && <p className="py-8 text-center text-sm text-muted-foreground">Could not load GIFs. Try again in a moment.</p>}
+                        {gifState === 'idle' && gifs.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No GIFs found.</p>}
+                        {gifState === 'idle' && gifs.length > 0 && (
+                            <div className="columns-2 sm:columns-3 gap-2 [&>button]:mb-2">
+                                {gifs.map((g) => (
+                                    <button key={g.id} type="button" onClick={() => addGif(g)} className="block w-full overflow-hidden rounded-lg hover:ring-2 hover:ring-primary" aria-label={g.title}>
+                                        <img src={g.preview} alt={g.title} loading="lazy" referrerPolicy="no-referrer" className="w-full h-auto" />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <p className="text-[12px] text-muted-foreground text-right">{GIF_CREDIT}</p>
+                </DialogContent>
+            </Dialog>
 
             {/* Tag People Search Dialog */}
             <Dialog open={showTagDialog} onOpenChange={setShowTagDialog}>
-                <DialogContent className="sm:max-w-md bg-card/95 backdrop-blur-2xl border-white/10 rounded-2xl p-6 shadow-2xl">
+                <DialogContent className="sm:max-w-md bg-card/95 border-white/10 rounded-2xl p-6 shadow-2xl">
                     <DialogHeader>
                         <DialogTitle className="text-lg font-bold flex items-center gap-2">
                             <Tag className="h-5 w-5 text-primary" />
@@ -2493,11 +1654,9 @@ export default function CreatePost() {
                         {/* Search Results / Empty State */}
                         <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
                             {isSearchingUsers ? (
-                                <div className="flex items-center justify-center py-8">
-                                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                </div>
-                            ) : userSearchResults.length > 0 ? (
-                                userSearchResults.map(profile => {
+                                <div className="space-y-2 p-2">{[0, 1, 2].map(i => <EnhancedSkeleton key={i} className="h-10 w-full rounded-xl" />)}</div>
+                            ) : userSearchResults.filter(p => p.id !== user?.id && !isBlocked(p.id)).length > 0 ? (
+                                userSearchResults.filter(p => p.id !== user?.id && !isBlocked(p.id)).map(profile => {
                                     const isTagged = taggedUsers.some(u => u.id === profile.id);
                                     return (
                                         <div 
@@ -2520,13 +1679,13 @@ export default function CreatePost() {
                                                 </Avatar>
                                                 <div>
                                                     <p className="text-xs font-bold text-foreground">{profile.full_name || profile.username}</p>
-                                                    <p className="text-[11px] text-muted-foreground">@{profile.username || 'user'}</p>
+                                                    <p className="text-[12px] text-muted-foreground">@{profile.username || 'user'}</p>
                                                 </div>
                                             </div>
                                             <Button 
                                                 size="sm" 
                                                 variant={isTagged ? "default" : "outline"} 
-                                                className="h-8 rounded-full px-3 text-xs font-bold"
+                                                className="h-10 md:h-8 rounded-full px-3 text-xs font-bold"
                                             >
                                                 {isTagged ? <Check className="h-4 w-4 mr-1" /> : <UserPlus className="h-4 w-4 mr-1" />}
                                                 {isTagged ? 'Tagged' : 'Tag'}

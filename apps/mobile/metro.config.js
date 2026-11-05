@@ -8,6 +8,12 @@ const config = {
   maxWorkers: 2,
   watchFolders: [monorepoRoot],
   resolver: {
+    blockList: [
+      /.*\/android\/build\/.*/,
+      /.*\\android\\build\\.*/,
+      /.*\/build\/intermediates\/.*/,
+      /.*\\build\\intermediates\\.*/,
+    ],
     nodeModulesPaths: [
       path.resolve(projectRoot, 'node_modules'),
       path.resolve(monorepoRoot, 'node_modules'),
@@ -15,6 +21,14 @@ const config = {
     disableHierarchicalLookup: true,
     resolveRequest: (context, moduleName, platform) => {
       if (moduleName === 'event-target-shim/index' || moduleName === 'event-target-shim') {
+        // WebRTC extends `Event` from event-target-shim, which only v6 exports (v5 has no `Event`, so calls crashed with
+        // "Super expression must either be null or a function"). It ships its own v6 copy; everything else stays on v5.
+        if (context.originModulePath && context.originModulePath.replace(/\\/g, '/').includes('/@livekit/react-native-webrtc/')) {
+          return {
+            filePath: path.resolve(path.dirname(require.resolve('@livekit/react-native-webrtc/package.json')), 'node_modules/event-target-shim/index.js'),
+            type: 'sourceFile',
+          };
+        }
         return {
           filePath: path.resolve(monorepoRoot, 'node_modules/event-target-shim/dist/event-target-shim.js'),
           type: 'sourceFile',

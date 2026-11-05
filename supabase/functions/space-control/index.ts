@@ -151,7 +151,11 @@ serve(async (req) => {
         const tr = await targetRole();
         if (tr === "host" || (tr === "cohost" && !isHost)) return json({ error: "FORBIDDEN" }, 403);
         await svc.removeParticipant(room, targetUserId);
-        await admin.from("call_participants").update({ status: "left", left_at: new Date().toISOString() }).eq("call_id", callId).eq("user_id", targetUserId);
+        // "removed" (not "left") so the person cannot get a new token or rejoin while the space is live.
+        await admin.from("call_participants").upsert(
+          { call_id: callId, user_id: targetUserId, status: "removed", left_at: new Date().toISOString() },
+          { onConflict: "call_id,user_id" },
+        );
         break;
       }
       case "set_mode": {

@@ -9,6 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from '@/lib/utils';
 import { generateDirectRoomId } from '@/lib/chat-utils';
 import { encryptDirectMessage, importPublicKey } from '@/lib/e2ee';
+import { decideDmEncryption } from '@cinecraft/core';
+import { fetchE2EEProfileInfo } from '@/lib/e2eeProfiles';
 import { getLocalPrivateKey } from '@/lib/e2ee-storage';
 import { importPrivateKey } from '@/lib/e2ee';
 
@@ -135,16 +137,25 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
           try {
             const { data: { user: authUser } } = await supabase.auth.getUser();
             const senderPrivKeyStr = await getLocalPrivateKey(senderId);
-            const [senderProfile, recipientProfile] = await Promise.all([
-              supabase.from('profiles').select('public_key').eq('id', senderId).maybeSingle(),
-              supabase.from('profiles').select('public_key').eq('id', targetId).maybeSingle(),
-            ]);
-            if (senderPrivKeyStr && senderProfile.data?.public_key && recipientProfile.data?.public_key) {
-              const senderPubKey = await importPublicKey(senderProfile.data.public_key);
-              const recipientPubKey = await importPublicKey(recipientProfile.data.public_key);
+            const infos = await fetchE2EEProfileInfo([senderId, targetId]);
+            const me = infos.get(senderId);
+            const them = infos.get(targetId);
+            // same rules as the chat itself (docs/E2EE_OPT_IN_DESIGN.md)
+            const policy = decideDmEncryption({
+              selfEnabled: !!me?.e2ee_enabled,
+              selfHasKeys: !!senderPrivKeyStr && !!me?.public_key,
+              partnerEnabled: !!them?.e2ee_enabled,
+              partnerHasPublicKey: !!them?.public_key,
+            });
+            if (policy.mode === 'encrypt') {
+              const senderPubKey = await importPublicKey(me.public_key);
+              const recipientPubKey = await importPublicKey(them.public_key);
               encryptedContent = `FORWARDED::${await encryptDirectMessage(rawContent, senderPubKey, recipientPubKey)}`;
+            } else if (policy.mode === 'plaintext') {
+              // encryption is off for one of you: this chat is a normal (not encrypted) chat
+              encryptedContent = `FORWARDED::${rawContent}`;
             } else {
-              // Never forward in plaintext: skip recipients/senders without keys.
+              // encrypted messages are on but this device is locked: do not send anything
               skippedCount++;
               continue;
             }
@@ -262,7 +273,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                     toggleSelectRecipient(profile.id);
                   }}
                   className={cn(
-                    "flex items-center justify-between py-1.5 px-3 rounded-lg cursor-pointer transition-all border select-none",
+                    "flex items-center justify-between py-1.5 px-3 rounded-lg cursor-pointer transition border select-none",
                     isSelected 
                       ? "bg-primary/20 border-primary/60 text-white font-semibold shadow-sm" 
                       : "bg-slate-800/60 border-slate-700/60 hover:bg-slate-700/70 text-slate-200"
@@ -271,18 +282,18 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <Avatar className="h-7 w-7 shrink-0 border border-slate-600">
                       <AvatarImage src={profile.avatar_url} />
-                      <AvatarFallback className="text-[10px] font-bold bg-slate-700 text-slate-200">
+                      <AvatarFallback className="text-[12px] font-bold bg-slate-700 text-slate-200">
                         {profile.full_name?.charAt(0) || 'U'}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold truncate leading-tight text-white">{profile.full_name}</p>
-                      {profile.role && <p className="text-[9px] text-slate-300 capitalize leading-tight mt-0.5">{profile.role}</p>}
+                      {profile.role && <p className="text-[12px] text-slate-300 capitalize leading-tight mt-0.5">{profile.role}</p>}
                     </div>
                   </div>
 
                   <div className={cn(
-                    "w-4 h-4 rounded-full flex items-center justify-center border transition-all shrink-0 ml-2",
+                    "w-4 h-4 rounded-full flex items-center justify-center border transition shrink-0 ml-2",
                     isSelected ? "bg-primary border-primary text-white font-bold" : "border-slate-500 bg-slate-800"
                   )}>
                     {isSelected && <Check className="h-2.5 w-2.5 stroke-[3]" />}
@@ -303,7 +314,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
               e.stopPropagation();
               onOpenChange(false);
             }}
-            className="text-xs h-8 rounded-xl bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"
+            className="text-xs h-10 md:h-8 rounded-xl bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700"
             disabled={forwarding}
           >
             Cancel
@@ -316,7 +327,7 @@ export const ForwardMessageDialog: React.FC<ForwardMessageDialogProps> = ({
               handleForward();
             }}
             disabled={selectedRecipientIds.length === 0 || forwarding}
-            className="text-xs h-8 rounded-xl gap-1.5 px-4 font-extrabold shadow-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40"
+            className="text-xs h-10 md:h-8 rounded-xl gap-1.5 px-4 font-extrabold shadow-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40"
           >
             {forwarding ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

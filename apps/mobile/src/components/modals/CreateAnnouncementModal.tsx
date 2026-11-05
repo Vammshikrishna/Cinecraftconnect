@@ -13,10 +13,14 @@ import {
   Switch,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
+import { MentionInput } from '../common/MentionInput';
+import { insertMentions, stillMentioned, type MentionUser } from '../../utils/mentions';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { pickAndUploadImage } from '../../services/imageUploadService';
 import { ANNOUNCEMENT_CATEGORIES } from '../announcements/AnnouncementParts';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 
@@ -38,8 +42,10 @@ export const CreateAnnouncementModal: React.FC<CreateAnnouncementModalProps> = (
   defaultPageId = null,
 }) => {
   const { themeColors } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [pickedMentions, setPickedMentions] = useState<Record<string, MentionUser>>({});
   const [selectedPageId, setSelectedPageId] = useState<string>('personal');
   const [myPages, setMyPages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -175,16 +181,21 @@ export const CreateAnnouncementModal: React.FC<CreateAnnouncementModalProps> = (
         is_pinned: pinned,
       };
 
-      const { error } = await (supabase.from('announcements') as any).insert(newAnnouncement);
+      const { data: createdAnn, error } = await (supabase.from('announcements') as any).insert(newAnnouncement).select('id').single();
 
       if (error) throw error;
+
+      if (createdAnn?.id) {
+        const mentionIds = stillMentioned(content, pickedMentions, user.id);
+        if (mentionIds.length > 0) await insertMentions({ mentionerId: user.id, mentionedIds: mentionIds, relatedId: createdAnn.id, relatedType: 'announcement' });
+      }
 
       if (onSuccess) onSuccess();
       resetForm();
       onClose();
       Alert.alert('Announcement Broadcasted! 📢', 'Your announcement is live.');
     } catch (e: any) {
-      Alert.alert('Failed to Post Announcement', e.message || 'Could not post announcement.');
+      Alert.alert('Failed to Post Announcement', friendlyError(e, 'Could not post announcement.'));
     } finally {
       setLoading(false);
     }
@@ -195,7 +206,7 @@ export const CreateAnnouncementModal: React.FC<CreateAnnouncementModalProps> = (
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}>
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
 
               <View style={styles.headerRow}>
@@ -203,12 +214,12 @@ export const CreateAnnouncementModal: React.FC<CreateAnnouncementModalProps> = (
                   <Text style={[styles.title, { color: themeColors.textPrimary }]}>{editing ? 'Edit Announcement' : 'Broadcast Announcement'}</Text>
                   <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>Publish platform updates & studio news</Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad + 8 }}>
                 {!editing && myPages.length > 0 && (
                   <>
                     <Text style={[styles.label, { color: themeColors.textSecondary }]}>POST ANNOUNCEMENT AS...</Text>
@@ -262,7 +273,8 @@ export const CreateAnnouncementModal: React.FC<CreateAnnouncementModalProps> = (
                 />
 
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>ANNOUNCEMENT DETAILS & LINKS *</Text>
-                <TextInput
+                <MentionInput
+                  onMentionSelected={(u) => setPickedMentions((p) => ({ ...p, [u.id]: u }))}
                   style={[
                     styles.input,
                     styles.textArea,
@@ -310,8 +322,8 @@ export const CreateAnnouncementModal: React.FC<CreateAnnouncementModalProps> = (
                   {uploading ? <ActivityIndicator size="small" color={ORANGE} /> : <Icon name="image-plus" size={16} color={ORANGE} />}
                   <Text style={{ color: imageUrl ? themeColors.textPrimary : themeColors.textSecondary, fontSize: 13, flex: 1 }}>{imageUrl ? 'Image added — tap to change' : 'Add a cover image'}</Text>
                   {imageUrl ? (
-                    <TouchableOpacity onPress={() => setImageUrl(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Icon name="x" size={14} color={themeColors.textMuted} />
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={() => setImageUrl(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Icon name="x" size={14} color={themeColors.iconMuted} />
                     </TouchableOpacity>
                   ) : null}
                 </TouchableOpacity>
@@ -330,8 +342,8 @@ export const CreateAnnouncementModal: React.FC<CreateAnnouncementModalProps> = (
                 <TextInput style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]} placeholder="YYYY-MM-DD" placeholderTextColor={themeColors.textMuted} autoCapitalize="none" keyboardType="numbers-and-punctuation" value={endsOn} onChangeText={setEndsOn} />
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <Text style={{ color: themeColors.textPrimary, fontSize: 13.5, fontWeight: '700' }}>Pin to top</Text>
-                  <Switch value={pinned} onValueChange={setPinned} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
+                  <Text style={{ color: themeColors.textPrimary, fontSize: 14, fontWeight: '700' }}>Pin to top</Text>
+                  <Switch accessibilityLabel="Pin to top" value={pinned} onValueChange={setPinned} trackColor={{ false: '#767577', true: ORANGE }} thumbColor="#FFFFFF" />
                 </View>
 
                 <TouchableOpacity
@@ -366,6 +378,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     maxHeight: '90%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -381,16 +396,16 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 6,
@@ -433,8 +448,8 @@ const styles = StyleSheet.create({
   },
   submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

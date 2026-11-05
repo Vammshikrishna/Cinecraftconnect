@@ -18,9 +18,6 @@ import {
   Video,
   ShieldBan,
   Mic,
-  BookOpen,
-  Lock,
-  Bookmark,
 } from 'lucide-react';
 
 import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
@@ -28,7 +25,6 @@ import Tasks from '@/components/projects/Tasks';
 import Files from '@/components/projects/Files';
 import CallSheet from '@/components/projects/CallSheet';
 import ShotList from '@/components/projects/ShotList';
-import ScreenplayReader from '@/components/projects/ScreenplayReader';
 import LegalDocs from '@/components/projects/LegalDocs';
 import BudgetSched from '@/components/projects/BudgetSched';
 import Team from '@/components/projects/Team';
@@ -39,39 +35,58 @@ import { supabase } from '@/integrations/supabase/client';
 import { SpaceEscalationPanel } from '@/components/governance/SpaceEscalationPanel';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { isSpaceCreator } from '@/lib/spaceRoles';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useToast } from '@/hooks/use-toast';
 import { useAppRole } from '@/hooks/useAppRole';
 import { useGlobalCall } from '@/contexts/CallContext';
-import { clearGroupKeyCache } from '@/hooks/useGroupKey';
-import { StartAudioSpaceButton } from '@/components/calls/StartAudioSpaceButton';
+import { StaffObserverBanner } from '@/components/governance/StaffObserverBanner';
+import { ProjectCallControls } from '@/components/projects/ProjectCallControls';
 import { useActiveRoomCall } from '@/hooks/useActiveRoomCall';
+import { friendlyError } from '@cinecraft/core';
 
 interface ProjectSpaceProps {
   projectId: string;
   projectTitle: string;
   projectDescription: string;
+  projectImageUrl?: string;
   projectCreatorId?: string;
   initialSpaceId?: string | null;
 }
 
-const SECTIONS = ['chat', 'tasks', 'files', 'team', 'call-sheet', 'shot-list', 'script-reader', 'legal-docs', 'budget-sched', 'applicants', 'settings', 'call'] as const;
+const SECTIONS = ['chat', 'tasks', 'files', 'team', 'call-sheet', 'shot-list', 'legal-docs', 'budget-sched', 'applicants', 'settings', 'call'] as const;
 type ActiveSection = typeof SECTIONS[number];
+
+/** Round project picture, like a chat avatar; falls back to the first letter of the title. */
+const ProjectAvatar = ({ url, title, className }: { url?: string; title: string; className?: string }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className={cn('shrink-0 rounded-full overflow-hidden bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-white font-bold border border-border/40', className)}>
+      {url && !failed ? (
+        <img src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" onError={() => setFailed(true)} />
+      ) : (
+        <span className="uppercase">{(title || '?').trim().charAt(0)}</span>
+      )}
+    </div>
+  );
+};
 
 export const ProjectSpace = ({
   projectId,
   projectTitle,
   projectDescription,
+  projectImageUrl,
   projectCreatorId,
   initialSpaceId,
 }: ProjectSpaceProps) => {
-  const { push } = useAppNavigation();
+  const { push, goBack } = useAppNavigation();
   const { user } = useAuth();
   const { isInternal, loading: roleLoading } = useAppRole();
   const { toast } = useToast();
   const [userRole, setUserRole] = useState<'creator' | 'admin' | 'member' | 'guest'>('guest');
+  const [spaceCreatorId, setSpaceCreatorId] = useState<string | null>(null);
   const [resolvedSpaceId, setResolvedSpaceId] = useState<string | null>(initialSpaceId || null);
   const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'rejected' | 'approved'>('none');
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -311,6 +326,18 @@ export const ProjectSpace = ({
     }
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
+  // Management powers belong to the space creator / project creator only (same rule as cj_can_manage_space).
+  useEffect(() => {
+    if (!resolvedSpaceId) return;
+    let active = true;
+    (async () => {
+      const { data } = await (supabase as any).from('project_spaces').select('creator_id').eq('id', resolvedSpaceId).maybeSingle();
+      if (active) setSpaceCreatorId(data?.creator_id ?? null);
+    })();
+    return () => { active = false; };
+  }, [resolvedSpaceId]);
+  const canManage = isSpaceCreator(user?.id, { creator_id: spaceCreatorId }, { creator_id: projectCreatorId });
+
   // Instant creator detection — runs synchronously on every render cycle where user becomes available
   // This is the FAST PATH: if we know the creator, skip ALL async checks and loading screens
   useEffect(() => {
@@ -399,7 +426,9 @@ export const ProjectSpace = ({
 
         if (requestRes.data) {
           const status = (requestRes.data as any).status;
-          if (status === 'pending' || status === 'rejected' || status === 'approved') {
+          // An "approved" request without a membership row is stale (the person was removed afterwards), so it
+          // must not show "approved, refresh the page": they have to ask to join again.
+          if (status === 'pending' || status === 'rejected') {
             setRequestStatus(status);
           }
         }
@@ -462,37 +491,11 @@ export const ProjectSpace = ({
     }
   };
 
-  const handleLockSpace = async () => {
-    if (!user || !resolvedSpaceId) return;
-    try {
-      const { data, error } = await (supabase as any)
-        .from('space_access_grants')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('target_type', 'project_space')
-        .eq('target_id', resolvedSpaceId)
-        .select();
-
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error("No active grant found in database to revoke. Access may have already expired.");
-      }
-
-      clearGroupKeyCache('project_space', resolvedSpaceId); // Evict cached E2EE key immediately
-      setHasGrantedAccess(false);
-      setUserRole('guest'); // Force the Intercept screen guard to trigger immediately on re-entry
-      push('/projects', { noScroll: true });
-      toast({
-        title: "Space Locked",
-        description: "Your temporary escalated access has been revoked.",
-      });
-    } catch (err: any) {
-      toast({
-        title: "Error revoking access",
-        description: err.message,
-        variant: "destructive"
-      });
-    }
+  // the visit ran out or was ended from the banner
+  const handleObserverEnded = () => {
+    setHasGrantedAccess(false);
+    setUserRole('guest');
+    push('/projects', { noScroll: true });
   };
 
   // Starting a call ends any call already running in this space, so join it when one (or an audio space) is live.
@@ -531,7 +534,6 @@ export const ProjectSpace = ({
   const productionOfficeNavItems = [
     { id: 'call-sheet' as ActiveSection, label: 'Call Sheet', icon: ClipboardList },
     { id: 'shot-list' as ActiveSection, label: 'Shot List', icon: Camera },
-    { id: 'script-reader' as ActiveSection, label: 'Script Reader', icon: BookOpen },
     { id: 'legal-docs' as ActiveSection, label: 'Legal Docs', icon: Briefcase },
     { id: 'budget-sched' as ActiveSection, label: 'Budget/Sched', icon: DollarSign },
   ];
@@ -540,7 +542,8 @@ export const ProjectSpace = ({
     { id: 'team' as ActiveSection, label: 'Team', icon: Users },
   ];
 
-  if (userRole === 'creator' || userRole === 'admin' || isInternal) {
+  // Only the creator manages; staff observers get the tabs read-only. Admins and members do not see them.
+  if (canManage || isInternal) {
     teamNavItems.push({ id: 'applicants' as ActiveSection, label: 'Applicants', icon: UserPlus });
     teamNavItems.push({ id: 'settings' as ActiveSection, label: 'Settings', icon: Settings });
   }
@@ -584,7 +587,7 @@ export const ProjectSpace = ({
           </div>
 
           {requestStatus === 'none' && (
-            <Button onClick={handleJoinRequest} size="lg" className="animate-pulse">
+            <Button onClick={handleJoinRequest} size="lg">
               Request to Join Project
             </Button>
           )}
@@ -623,18 +626,16 @@ export const ProjectSpace = ({
               return <CallSheet project_id={resolvedSpaceId} />;
             case 'shot-list':
               return <ShotList project_id={resolvedSpaceId} />;
-            case 'script-reader':
-              return <ScreenplayReader project_id={resolvedSpaceId} />;
             case 'legal-docs':
               return <LegalDocs project_id={resolvedSpaceId} />;
             case 'budget-sched':
               return <BudgetSched project_id={resolvedSpaceId} />;
             case 'team':
-              return <Team project_id={resolvedSpaceId} real_project_id={projectId} />;
+              return <Team project_id={resolvedSpaceId} real_project_id={projectId} canManage={canManage} />;
             case 'applicants':
-              return <ProjectApplicants projectId={projectId} />;
+              return <ProjectApplicants projectId={projectId} canManage={canManage} />;
             case 'settings':
-              return <ProjectSettings projectId={projectId} />;
+              return <ProjectSettings projectId={projectId} canManage={canManage} />;
             default:
               return null;
           }
@@ -647,7 +648,7 @@ export const ProjectSpace = ({
   // Creators bypass this entirely because their role is set synchronously.
   if (userRole === 'guest' && (checkingAccess || roleLoading)) {
     return (
-      <div className="h-screen w-screen bg-background flex items-center justify-center">
+      <div className="h-dvh w-screen bg-background flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -659,7 +660,7 @@ export const ProjectSpace = ({
     // and Lock Space will fail to find the row when it tries to delete by real UUID.
     if (!resolvedSpaceId) {
       return (
-        <div className="h-screen w-screen bg-background flex items-center justify-center">
+        <div className="h-dvh w-screen bg-background flex items-center justify-center">
           <LoadingSpinner size="lg" />
         </div>
       );
@@ -667,19 +668,17 @@ export const ProjectSpace = ({
     return (
       <div className="flex-1 flex flex-col h-full bg-background overflow-hidden relative">
         {/* Top bar with back navigation */}
-        <div className="px-6 py-4 border-b border-border/40 bg-card/40 backdrop-blur-md flex items-center gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex items-center gap-3 shrink-0">
           <Button
             variant="ghost"
-            onClick={() => push('/projects', { noScroll: true })}
-            className="text-muted-foreground hover:text-foreground flex items-center gap-2 hover:bg-white/5 rounded-xl px-4"
+            onClick={() => goBack('/projects')}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-2 hover:bg-foreground/5 rounded-xl px-4"
           >
             <ArrowLeft className="h-4 w-4" />
-            <span className="font-bold text-xs uppercase tracking-wider">Back to Projects</span>
+            <span className="text-sm font-medium">Back to projects</span>
           </Button>
           <div className="h-4 w-[1px] bg-border/40" />
-          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            Project Space Governance Intercept
-          </span>
+          <span className="text-sm text-muted-foreground">Staff access</span>
         </div>
 
         {/* Escalation Interface */}
@@ -700,7 +699,7 @@ export const ProjectSpace = ({
 
   if (userRole === 'guest' && !isInternal) {
     return (
-      <div className="h-screen w-screen bg-background flex flex-col p-4">
+      <div className="h-dvh w-screen bg-background flex flex-col p-4">
         {/* Guest View Dialog */}
         <Dialog open={true} onOpenChange={(open) => { if (!open) push('/projects', { noScroll: true }); }}>
           <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
@@ -728,7 +727,7 @@ export const ProjectSpace = ({
                     placeholder="Briefly explain why you're requesting to join..."
                     value={requestNote}
                     onChange={(e) => setRequestNote(e.target.value)}
-                    className="w-full min-h-[100px] bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
+                    className="w-full min-h-[100px] bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition resize-none"
                   />
                 </div>
               )}
@@ -753,7 +752,7 @@ export const ProjectSpace = ({
               )}
             </div>
             <div className="flex flex-row justify-end space-x-2 w-full">
-              <Button variant="outline" onClick={() => push('/projects', { noScroll: true })} className="flex-1">
+              <Button variant="outline" onClick={() => goBack('/projects')} className="flex-1">
                 Cancel
               </Button>
               {requestStatus === 'none' ? (
@@ -780,85 +779,68 @@ export const ProjectSpace = ({
     );
   }
 
+  const renderNavGroup = (title: string, items: { id: ActiveSection; label: string; icon: any }[]) => (
+    <div>
+      <h3 className="text-xs font-semibold text-muted-foreground mb-1.5 px-3">{title}</h3>
+      <div className="space-y-0.5">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeSection === item.id;
+          const isCallItem = item.id === 'call';
+          return (
+            <button
+              key={item.id}
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
+              onClick={() => handleSelectSection(item.id)}
+              className={cn(
+                'w-full flex items-center gap-3 h-10 px-3 rounded-lg text-sm transition-colors',
+                isCallItem
+                  ? isActive ? 'bg-red-500/15 text-red-600 font-semibold' : 'bg-red-500/10 text-red-600 hover:bg-red-500/15 font-medium'
+                  : isActive ? 'bg-primary/10 text-primary font-semibold' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              <Icon className="h-[18px] w-[18px] shrink-0" />
+              <span className="flex-1 text-left truncate">{item.label}</span>
+              {isCallItem && <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">Live</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="flex flex-col flex-1 w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-border lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] relative">
+    <div className="flex flex-col flex-1 w-full bg-background text-foreground lg:border lg:border-border lg:rounded-2xl overflow-hidden lg:shadow-sm relative">
       {/* Invisible anchor for Call UI logic to recognize this space */}
       <div id="active-project-anchor" data-project-id={projectId} data-space-id={resolvedSpaceId} className="hidden" />
 
       {/* Mobile Header & Navigation */}
       <div className="lg:hidden flex flex-col bg-background z-[60] shrink-0 sticky top-0 border-b border-border/40 pb-1">
         <div className="flex items-center px-4 py-3 gap-2">
-          <Button
+          <Button aria-label="Back"
             variant="ghost"
             size="icon"
-            onClick={() => push('/projects', { noScroll: true })}
-            className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0"
+            onClick={() => goBack('/projects')}
+            className="h-10 w-10 rounded-full hover:bg-foreground/10 shrink-0"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
+          <ProjectAvatar url={projectImageUrl} title={projectTitle} className="h-10 w-10" />
           <div className="flex flex-col min-w-0 flex-1 py-0.5">
             <h2 className="text-lg font-bold truncate leading-tight">{projectTitle}</h2>
           </div>
           <div className="flex items-center gap-1.5">
-            {isInternal && hasGrantedAccess && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLockSpace}
-                className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-9 shrink-0 mr-1 px-3"
-              >
-                <Lock className="h-4 w-4" />
-                <span className="hidden sm:inline">Lock Space</span>
-              </Button>
-            )}
-            {isInCall ? (
-              <button
-                onClick={() => handleSelectSection('call')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/20 border border-primary/30 rounded-full hover:bg-primary/30 transition-all shrink-0"
-              >
-                <Video className="h-4.5 w-4.5 text-green-500" />
-                <span className="text-xs font-bold text-green-500 uppercase tracking-wider">Live</span>
-              </button>
-            ) : !isInternal ? (
-              activeRoomCall ? (
-                <button
-                  onClick={handleStartCall}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/15 border border-green-500/30 rounded-full hover:bg-green-500/25 transition-all shrink-0"
-                  title={activeRoomCall.mode === 'audio_space' ? 'Join the live audio space' : 'Join the live call'}
-                >
-                  {activeRoomCall.mode === 'audio_space' ? <Mic className="h-4 w-4 text-green-500" /> : <Video className="h-4 w-4 text-green-500" />}
-                  <span className="text-xs font-bold text-green-500 uppercase tracking-wider">
-                    {activeRoomCall.mode === 'audio_space' ? 'Join space' : 'Join call'}
-                  </span>
-                </button>
-              ) : (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleStartCall}
-                    className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0"
-                    title="Start Call"
-                  >
-                    <Video className="h-5 w-5" />
-                  </Button>
-                  <StartAudioSpaceButton onStart={handleStartAudioSpace} className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0" />
-                </>
-              )
-            ) : (
-              <div title="Staff Observation Mode">
-                <ShieldBan className="h-5 w-5 text-muted-foreground/30" />
-              </div>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleToggleBookmark}
-              className={cn("h-10 w-10 rounded-full hover:bg-white/10 shrink-0", isBookmarked && "text-primary")}
-              title={isBookmarked ? "Remove Bookmark" : "Bookmark Space"}
-            >
-              <Bookmark className={cn("h-5 w-5", isBookmarked && "fill-current")} />
-            </Button>
+            <ProjectCallControls
+              layout="header"
+              isInCall={isInCall}
+              isInternal={isInternal}
+              active={activeRoomCall}
+              onReturn={() => handleSelectSection('call')}
+              onJoin={handleStartCall}
+              onStartVideo={handleStartCall}
+              onStartAudio={handleStartAudioSpace}
+            />
           </div>
         </div>
 
@@ -877,9 +859,9 @@ export const ProjectSpace = ({
                   key={item.id}
                   onClick={() => handleSelectSection(item.id)}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-300 border shrink-0 min-h-[38px]",
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors duration-200 border shrink-0 min-h-[44px]",
                     isActive
-                      ? "bg-primary text-primary-foreground border-primary shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] scale-105"
+                      ? "bg-primary text-primary-foreground border-primary "
                       : "bg-secondary/40 border-border/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                   )}
                 >
@@ -896,192 +878,45 @@ export const ProjectSpace = ({
         </div>
       </div>
 
+        <div className="hidden lg:flex shrink-0 items-center gap-3 px-4 h-14 border-b border-border bg-card relative z-10">
+          <Button aria-label="Back to projects"
+            variant="ghost"
+            size="icon"
+            onClick={() => goBack('/projects')}
+            className="h-9 w-9 rounded-full shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <ProjectAvatar url={projectImageUrl} title={projectTitle} className="h-8 w-8 text-sm" />
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <h2 className="text-base font-semibold text-foreground truncate">{projectTitle}</h2>
+            <p className="text-xs text-muted-foreground -mt-0.5">Project space</p>
+          </div>
+
+          <div className="flex items-center gap-2 ml-auto shrink-0">
+            <ProjectCallControls
+              layout="header"
+              isInCall={isInCall}
+              isInternal={isInternal}
+              active={activeRoomCall}
+              onReturn={() => handleSelectSection('call')}
+              onJoin={handleStartCall}
+              onStartVideo={handleStartCall}
+              onStartAudio={handleStartAudioSpace}
+            />
+          </div>
+        </div>
+
       <div className="flex flex-1 overflow-hidden relative">
         {/* Desktop Sidebar */}
         <div
-          className="hidden lg:flex flex-col border-r border-border bg-card/95 backdrop-blur-xl relative z-0 h-full"
+          className="hidden lg:flex flex-col border-r border-border bg-card relative z-0 h-full"
           style={{ width: sidebarWidth }}
         >
-          <div className="p-4 border-b border-border bg-gradient-to-b from-muted/5 to-transparent flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => push('/projects', { noScroll: true })}
-              className="h-8 w-8 rounded-full hover:bg-white/10 shrink-0 text-muted-foreground hover:text-primary transition-colors"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div className="overflow-hidden">
-              <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-400 truncate">
-                {projectTitle}
-              </h2>
-              <p className="text-xs text-muted-foreground truncate">
-                {projectDescription}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-1 ml-auto shrink-0">
-              {isInternal && hasGrantedAccess && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLockSpace}
-                  className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-8 shrink-0 mr-1"
-                >
-                  <Lock className="h-3.5 w-3.5" />
-                  <span>Lock Space</span>
-                </Button>
-              )}
-
-              {isInCall ? (
-                <button
-                  onClick={() => handleSelectSection('call')}
-                  className="flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full hover:bg-primary/20 transition-all"
-                >
-                  <Video className="h-3.5 w-3.5 text-green-500" />
-                  <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Live</span>
-                </button>
-              ) : !isInternal ? (
-                activeRoomCall ? (
-                  <button
-                    onClick={handleStartCall}
-                    className="flex items-center gap-1 px-2.5 py-1 bg-green-500/15 border border-green-500/30 rounded-full hover:bg-green-500/25 transition-all"
-                    title={activeRoomCall.mode === 'audio_space' ? 'Join the live audio space' : 'Join the live call'}
-                  >
-                    {activeRoomCall.mode === 'audio_space' ? <Mic className="h-3.5 w-3.5 text-green-500" /> : <Video className="h-3.5 w-3.5 text-green-500" />}
-                    <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Join</span>
-                  </button>
-                ) : (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleStartCall}
-                      className="h-8 w-8 rounded-full hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
-                      title="Start Call"
-                    >
-                      <Video className="h-4 w-4" />
-                    </Button>
-                    <StartAudioSpaceButton onStart={handleStartAudioSpace} />
-                  </>
-                )
-              ) : (
-                <div className="bg-muted/30 p-1.5 rounded-full border border-border/50" title="Staff Observation Mode">
-                  <ShieldBan className="h-3.5 w-3.5 text-muted-foreground/40" />
-                </div>
-              )}
-
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleToggleBookmark}
-                className={cn(
-                  "h-8 w-8 rounded-full hover:bg-primary/10 transition-all",
-                  isBookmarked ? "text-primary" : "text-muted-foreground hover:text-primary"
-                )}
-                title={isBookmarked ? "Remove Bookmark" : "Bookmark Space"}
-              >
-                <Bookmark className={cn("h-4 w-4", isBookmarked && "fill-current")} />
-              </Button>
-            </div>
-          </div>
-
-          <nav className="flex-1 p-4 space-y-8 overflow-y-auto custom-scrollbar">
-            <div>
-              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
-                Collaboration
-              </h3>
-              <div className="space-y-1">
-                {displayCollaborationNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeSection === item.id;
-                  const isCallItem = item.id === 'call';
-                  return (
-                    <Button
-                      key={item.id}
-                      variant="ghost"
-                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isCallItem
-                          ? isActive
-                            ? 'bg-red-500/20 text-red-500 border-l-2 border-red-500 font-bold'
-                            : 'bg-red-500/10 text-red-500 hover:bg-red-500/20 font-semibold'
-                          : isActive
-                            ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
-                            : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
-                        }`}
-                      onClick={() => handleSelectSection(item.id)}
-                    >
-                      <Icon className={`h-5 w-5 transition-colors ${isCallItem
-                          ? 'text-red-500'
-                          : isActive
-                            ? 'text-primary'
-                            : 'text-muted-foreground group-hover:text-foreground'
-                        }`} />
-                      <span>{item.label}</span>
-                      {isCallItem && (
-                        <span className="ml-auto text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                          Live
-                        </span>
-                      )}
-                      {!isCallItem && isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
-                Production Office
-              </h3>
-              <div className="space-y-1">
-                {productionOfficeNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeSection === item.id;
-                  return (
-                    <Button
-                      key={item.id}
-                      variant="ghost"
-                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isActive
-                        ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
-                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
-                        }`}
-                      onClick={() => handleSelectSection(item.id)}
-                    >
-                      <Icon className={`h-5 w-5 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
-                      <span>{item.label}</span>
-                      {isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
-                Team
-              </h3>
-              <div className="space-y-1">
-                {teamNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeSection === item.id;
-                  return (
-                    <Button
-                      key={item.id}
-                      variant="ghost"
-                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isActive
-                        ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
-                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
-                        }`}
-                      onClick={() => handleSelectSection(item.id)}
-                    >
-                      <Icon className={`h-5 w-5 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
-                      <span>{item.label}</span>
-                      {isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
+          <nav className="flex-1 p-3 space-y-6 overflow-y-auto custom-scrollbar" aria-label="Project space sections">
+            {renderNavGroup('Collaboration', displayCollaborationNavItems)}
+            {renderNavGroup('Production office', productionOfficeNavItems)}
+            {renderNavGroup('Team', teamNavItems)}
           </nav>
         </div>
 
@@ -1090,8 +925,24 @@ export const ProjectSpace = ({
           onMouseDown={handleMouseDown}
         />
 
-        <main className="flex-1 flex flex-col overflow-hidden bg-background/50 relative w-full">
-          <div className="absolute inset-0 bg-[radial-gradient(#ffffff15_1px,transparent_1px)] [background-size:16px_16px] opacity-30 pointer-events-none" />
+        <main className="flex-1 flex flex-col overflow-hidden bg-muted/30 relative w-full">
+          {isInternal && hasGrantedAccess && resolvedSpaceId && (
+            <StaffObserverBanner targetType="project_space" targetId={resolvedSpaceId} onEnded={handleObserverEnded} />
+          )}
+          {activeRoomCall && !isInCall && activeSection !== 'call' && (
+            <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 bg-emerald-500/10 border-b border-emerald-500/20" role="status">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              </span>
+              <p className="flex-1 min-w-0 text-sm font-medium text-foreground truncate">
+                {activeRoomCall.mode === 'audio_space' ? 'An audio room is live' : 'A video call is live'} in this project
+              </p>
+              <Button size="sm" onClick={handleStartCall} className="h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4">
+                Join
+              </Button>
+            </div>
+          )}
           {renderContent()}
         </main>
       </div>

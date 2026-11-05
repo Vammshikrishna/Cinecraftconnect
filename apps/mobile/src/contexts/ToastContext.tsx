@@ -9,11 +9,14 @@ import {
   Vibration,
   Modal,
   TouchableWithoutFeedback,
-  Dimensions,
+  useWindowDimensions,
   Platform,
   Alert as RNAlert,
+  AccessibilityInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useUserSettings } from '../hooks/useUserSettings';
+import { SPRING } from '../utils/motion';
 import Svg, { Path, Circle, Polyline, Line, Polygon } from 'react-native-svg';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -100,6 +103,14 @@ export const useToast = () => {
   return { ...context, Toast };
 };
 
+const autoDuration = (o: ToastOptions): number => {
+  const length = (o.title?.length || 0) + (o.message?.length || 0);
+  let ms = Math.min(9000, Math.max(3200, 2600 + length * 40));
+  if (o.type === 'error') ms = Math.max(ms, 5000);
+  if (o.action) ms = Math.max(ms, 7000);
+  return ms;
+};
+
 // ── Smart Type Inferrer for Alert.alert monkey patch ──────────────────────────
 const inferToastType = (title?: string, message?: string): ToastType => {
   const combined = `${title || ''} ${message || ''}`.toLowerCase();
@@ -116,6 +127,11 @@ const inferToastType = (title?: string, message?: string): ToastType => {
     combined.includes('missing') ||
     combined.includes('required')
   ) {
+    return 'error';
+  }
+
+  // "Not saved", "could not copy", "unable to…": the good word is in a bad sentence
+  if (/\b(not|n't|never|unable|no longer|didn't|couldn't|can't|won't)\b/.test(combined)) {
     return 'error';
   }
 
@@ -178,7 +194,8 @@ export const installAlertInterceptor = () => {
         title,
         message,
         type,
-        duration: 3200,
+        // errors take the longer automatic duration (at least 5 s, more for long messages) so they are not cut short
+        duration: type === 'error' ? undefined : 3200,
       });
       return;
     }
@@ -261,13 +278,23 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [currentToast, setCurrentToast] = useState<ToastOptions | null>(null);
   const [currentAlert, setCurrentAlert] = useState<AlertOptions | null>(null);
   const insets = useSafeAreaInsets();
+  // the dialog and toasts follow the app theme (they used to be fixed dark)
+  const { themeColors } = useUserSettings();
 
   const translateY = useRef(new Animated.Value(50)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // one toast shows at a time; the next ones wait their turn (at most three) instead of replacing it
+  const activeRef = useRef(false);
+  const queueRef = useRef<ToastOptions[]>([]);
+  const showNowRef = useRef<(o: ToastOptions) => void>(() => {});
+  // the toast on screen, readable from timers and the swipe handler without going stale
+  const currentToastRef = useRef<ToastOptions | null>(null);
+  const dismissRef = useRef<(run?: unknown) => void>(() => {});
+  const { width: windowWidth } = useWindowDimensions();
 
-  const dismissToast = useCallback(() => {
+  const dismissToast = useCallback((runCallback: unknown = true) => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
@@ -275,7 +302,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     Animated.parallel([
       Animated.timing(translateY, {
-        toValue: 35,
+        toValue: 50,
         duration: 180,
         useNativeDriver: true,
       }),
@@ -290,12 +317,19 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         useNativeDriver: true,
       }),
     ]).start(() => {
-      if (currentToast?.onDismiss) {
-        currentToast.onDismiss();
+      // read the toast from the ref: this callback is captured by timers and the swipe handler, so state would be stale
+      const shown = currentToastRef.current;
+      currentToastRef.current = null;
+      if (runCallback !== false && shown?.onDismiss) {
+        shown.onDismiss();
       }
+      activeRef.current = false;
       setCurrentToast(null);
+      const next = queueRef.current.shift();
+      if (next) showNowRef.current(next);
     });
-  }, [translateY, opacity, scale, currentToast]);
+  }, [translateY, opacity, scale]);
+  dismissRef.current = dismissToast;
 
   const displayToast = useCallback(
     (options: ToastOptions | string, message?: string, type: ToastType = 'info') => {
@@ -315,32 +349,64 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         };
       }
 
+      if (activeRef.current) {
+        const sameAs = (o: ToastOptions | null) => !!o && o.title === opts.title && o.message === opts.message && o.type === opts.type;
+        const hasCallback = Boolean(opts.onDismiss || opts.action);
+        // the same message again (a double tap) is not shown twice
+        if (!hasCallback && (sameAs(currentToastRef.current) || queueRef.current.some(sameAs))) return;
+        const rank = (t?: ToastType) => (t === 'error' ? 3 : t === 'warning' ? 2 : 1);
+        const cur = currentToastRef.current;
+        // an error does not wait behind a status message: it takes the place of one that carries no callback
+        if (cur && !cur.onDismiss && !cur.action && rank(opts.type) > rank(cur.type)) {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          showNowRef.current(opts);
+          return;
+        }
+        // otherwise wait for the one on screen (never more than three waiting; errors go first)
+        if (queueRef.current.length >= 3) queueRef.current.shift();
+        if (opts.type === 'error') queueRef.current.unshift(opts);
+        else queueRef.current.push(opts);
+        return;
+      }
+      showNowRef.current(opts);
+    },
+    []
+  );
+
+  const showNow = useCallback(
+    (opts: ToastOptions) => {
+      activeRef.current = true;
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
 
-      // Micro haptic vibration
-      if (opts.haptic !== false) {
+      // a small buzz only when something went wrong
+      if (opts.haptic === true || (opts.haptic !== false && (opts.type === 'error' || opts.type === 'warning'))) {
         try {
           Vibration.vibrate(20);
         } catch {}
       }
 
+      // read out for people using a screen reader
+      AccessibilityInfo.announceForAccessibility(`${opts.title || ''}. ${opts.message || ''}`.trim());
+
+      currentToastRef.current = opts;
       setCurrentToast(opts);
 
       // Reset animation values for bottom slide-up
+      translateY.stopAnimation();
       translateY.setValue(50);
       opacity.setValue(0);
       scale.setValue(0.92);
 
-      const duration = opts.duration || 3200;
+      const duration = opts.duration || autoDuration(opts);
 
       // Enter animation: Spring slide-up from bottom
       Animated.parallel([
+        // a status message settles in place: no overshoot
         Animated.spring(translateY, {
           toValue: 0,
-          friction: 8,
-          tension: 75,
+          ...SPRING.settle,
           useNativeDriver: true,
         }),
         Animated.timing(opacity, {
@@ -350,25 +416,28 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }),
         Animated.spring(scale, {
           toValue: 1,
-          friction: 8,
-          tension: 80,
+          ...SPRING.settle,
           useNativeDriver: true,
         }),
       ]).start();
 
       // Auto dismiss timer
       timerRef.current = setTimeout(() => {
-        dismissToast();
+        dismissRef.current();
       }, duration);
     },
-    [translateY, opacity, scale, dismissToast]
+    [translateY, opacity, scale]
   );
+  showNowRef.current = showNow;
 
   const displayAlert = useCallback(
     (title: string, message?: string, buttons?: AlertButton[], options?: { cancelable?: boolean }) => {
-      try {
-        Vibration.vibrate(30);
-      } catch {}
+      // buzz only when the choice is destructive
+      if ((buttons || []).some((b) => b.style === 'destructive')) {
+        try {
+          Vibration.vibrate(30);
+        } catch {}
+      }
       setCurrentAlert({
         title,
         message,
@@ -406,11 +475,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
       onPanResponderRelease: (_, gestureState) => {
         if (gestureState.dy > 15 || gestureState.vy > 0.4) {
-          dismissToast();
+          dismissRef.current();
         } else {
           Animated.spring(translateY, {
             toValue: 0,
-            friction: 8,
+            ...SPRING.settle,
             useNativeDriver: true,
           }).start();
         }
@@ -477,11 +546,15 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 style={[
                   styles.toastPill,
                   {
+                    maxWidth: Math.min(windowWidth - 40, 360),
+                    backgroundColor: themeColors.bgCard,
                     borderColor: `${accentColor}40`,
                   },
                 ]}
                 activeOpacity={0.85}
-                onPress={dismissToast}
+                onPress={() => dismissToast()}
+                accessibilityRole="alert"
+                accessibilityLabel={`${currentToast?.title || ''}. ${currentToast?.message || ''}`.trim()}
               >
                 {/* Left compact icon */}
                 <View style={styles.iconContainer}>
@@ -491,12 +564,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 {/* Content Text */}
                 <View style={styles.contentContainer}>
                   {hasTitle && (
-                    <Text style={styles.titleText} numberOfLines={2}>
+                    <Text style={[styles.titleText, { color: themeColors.textPrimary }]} numberOfLines={2}>
                       {currentToast?.title}
                     </Text>
                   )}
                   {hasMessage && (
-                    <Text style={styles.messageText} numberOfLines={2}>
+                    <Text style={[styles.messageText, { color: themeColors.textSecondary }]} numberOfLines={4}>
                       {currentToast?.message}
                     </Text>
                   )}
@@ -508,9 +581,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     style={[styles.pillActionBtn, { backgroundColor: `${accentColor}20`, borderColor: `${accentColor}45` }]}
                     onPress={() => {
                       currentToast?.action?.onPress();
-                      dismissToast();
+                      dismissToast(false);
                     }}
                     activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Text style={[styles.pillActionText, { color: accentColor }]}>
                       {currentToast?.action?.label}
@@ -537,7 +611,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           <TouchableWithoutFeedback onPress={() => (currentAlert.cancelable ? dismissAlert() : null)}>
             <View style={styles.modalBackdrop}>
               <TouchableWithoutFeedback>
-                <View style={styles.alertCard}>
+                <View style={[styles.alertCard, { width: Math.min(windowWidth - 48, 380), backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                   {/* Glowing header badge */}
                   <View style={styles.alertIconBadge}>
                     <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#FF4B33" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
@@ -547,15 +621,22 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
                   {/* Title & Message */}
                   {Boolean(currentAlert.title) && (
-                    <Text style={styles.alertTitle}>{currentAlert.title}</Text>
+                    <Text style={[styles.alertTitle, { color: themeColors.textPrimary }]}>{currentAlert.title}</Text>
                   )}
                   {Boolean(currentAlert.message) && (
-                    <Text style={styles.alertMessage}>{currentAlert.message}</Text>
+                    <Text style={[styles.alertMessage, { color: themeColors.textSecondary }]}>{currentAlert.message}</Text>
                   )}
 
                   {/* Buttons */}
-                  <View style={styles.alertButtonContainer}>
+                  {/* three or more buttons, or long labels, go one under the other so no label is squeezed into several lines */}
+                  <View
+                    style={[
+                      styles.alertButtonContainer,
+                      ((currentAlert.buttons?.length ?? 0) > 2 || (currentAlert.buttons ?? []).some((b) => (b.text || '').length > 14)) && { flexDirection: 'column' },
+                    ]}
+                  >
                     {currentAlert.buttons?.map((btn, index) => {
+                      const stackButtons = (currentAlert.buttons?.length ?? 0) > 2 || (currentAlert.buttons ?? []).some((b) => (b.text || '').length > 14);
                       const isDestructive = btn.style === 'destructive';
                       const isCancel = btn.style === 'cancel';
                       const isPrimary = !isDestructive && !isCancel;
@@ -565,9 +646,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                           key={index}
                           style={[
                             styles.dialogBtn,
+                            stackButtons && { flex: 0, width: '100%' },
                             isPrimary && styles.dialogBtnPrimary,
                             isDestructive && styles.dialogBtnDestructive,
-                            isCancel && styles.dialogBtnCancel,
+                            isCancel && [styles.dialogBtnCancel, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }],
                           ]}
                           activeOpacity={0.75}
                           onPress={() => {
@@ -580,7 +662,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                               styles.dialogBtnText,
                               isPrimary && styles.dialogBtnTextPrimary,
                               isDestructive && styles.dialogBtnTextDestructive,
-                              isCancel && styles.dialogBtnTextCancel,
+                              isCancel && [styles.dialogBtnTextCancel, { color: themeColors.textPrimary }],
                             ]}
                           >
                             {btn.text || 'OK'}
@@ -599,7 +681,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   );
 };
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SCREEN_WIDTH = 360; // fallback only: the live width is applied inline from useWindowDimensions
 
 const styles = StyleSheet.create({
   modalToastContainer: {
@@ -661,7 +743,7 @@ const styles = StyleSheet.create({
   },
   messageText: {
     color: '#9CA3AF',
-    fontSize: 11.5,
+    fontSize: 12,
     fontFamily: 'Lora-Regular',
     lineHeight: 15,
     marginTop: 1,
@@ -674,7 +756,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   pillActionText: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: 0.3,
@@ -683,7 +765,7 @@ const styles = StyleSheet.create({
   // ── Custom CineCraft Confirmation Modal Styles ──
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -722,7 +804,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   alertMessage: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontFamily: 'Lora-Regular',
     color: '#9CA3AF',
     textAlign: 'center',
@@ -755,7 +837,7 @@ const styles = StyleSheet.create({
     borderColor: '#383842',
   },
   dialogBtnText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },

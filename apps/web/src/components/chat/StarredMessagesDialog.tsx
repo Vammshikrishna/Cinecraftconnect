@@ -94,10 +94,10 @@ export const StarredMessagesDialog: React.FC<StarredMessagesDialogProps> = ({
                     }}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                      <span className="text-[12px] font-bold text-primary uppercase tracking-wider">
                         {msg.sender_profile?.full_name || 'Message'}
                       </span>
-                      <span className="text-[9px] text-zinc-400 font-mono">
+                      <span className="text-[12px] text-zinc-400">
                         {displayDate}
                       </span>
                     </div>

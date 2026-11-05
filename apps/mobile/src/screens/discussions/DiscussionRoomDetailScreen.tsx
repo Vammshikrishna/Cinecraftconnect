@@ -1,3 +1,4 @@
+import { CallDetailsModal } from '../../components/calls/CallDetailsModal';
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
@@ -23,13 +24,13 @@ import {
   AppState,
   Linking,
 } from 'react-native';
-import { PanGestureHandler, State as GestureState } from 'react-native-gesture-handler';
 import { pickAttachments } from '../../services/attachmentPicker';
 import DocumentPicker from 'react-native-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { Icon } from '../../components/common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
+import { loadRoomPrefs, saveRoomPrefs } from '../../services/roomPrefs';
 import { ENV } from '../../config/env';
 import { getCache, saveCache, getCacheSync, getCurrentUserIdSync, resolveCurrentUserId } from '../../services/offlineCache';
 import { ChatMessagesSkeleton } from '../../components/common/Skeleton';
@@ -38,20 +39,36 @@ import { MediaCollageGrid } from '../../components/chat/MediaCollageGrid';
 import { getReplyThumbnail, getReplySnippet } from '../../components/chat/chatUtils';
 import { FlashList } from '@shopify/flash-list';
 import { useGroupEncryption } from '../../hooks/useGroupEncryption';
-import { ShareCard, ShareCardData } from '../../components/chat/ShareCard';
+import { ShareCard, ShareCardData, normalizeShareCardData } from '../../components/chat/ShareCard';
 import { RoomSettingsModal } from '../../components/chat/RoomSettingsModal';
 import { useGlobalCall } from '../../contexts/CallContext';
 import { InlineCallPanel } from '../../components/calls/InlineCallPanel';
 import { beginCallSession, askHowToStart } from '../../services/callSession';
 import { findActiveCall } from '../../services/liveCall';
+import { LinkifiedText } from '../../components/chat/LinkifiedText';
+import { fanCallErrorMessage, FAN_CALL_TOOLTIP } from '../../utils/fanCallRule';
+import { useAccountType } from '../../hooks/useAccountType';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { StaffAccessGuard, useStaffObserver } from '../../components/governance/StaffAccessGuard';
 import { setActiveChatContext, clearActiveChatContext } from '../../services/activeScreenTracker';
 import { handleSmartBack } from '../../services/navigationUtils';
 import { uploadMediaPipeline } from '../../services/mediaPipeline';
+import { requestE2EEPrompt } from '../../services/e2eeState';
+import { E2EEBanner } from '../../components/security/E2EEBanner';
+import { friendlyError } from '@cinecraft/core';
+import { isTabletDevice } from '../../utils/pageType';
+import { Toast } from '../../contexts/ToastContext';
+import { PrivateRoomAccessPanel } from '../../components/discussions/PrivateRoomAccess';
+import { canEditMessage, checkEditedText, editMinutesLeft } from '../../utils/roomMessageEdit';
 
 const ORANGE = '#FF5733';
 const INK = '#0D0D0D';
-const SCREEN_WIDTH = Dimensions.get('window').width;
+// On a tablet a chat bubble is capped so lines stay readable; on a phone it keeps its share of the screen.
+const BUBBLE_CAP_PX: number | null = (() => {
+  const w = Dimensions.get('screen'); // the device, not the window (an iPad window can be resized)
+  return Math.min(w.width, w.height) >= 600 ? 620 : null;
+})();
+
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
 
 const EMOJI_CATEGORIES = [
@@ -155,15 +172,12 @@ const URL_PATTERN = /https?:\/\/[^\s]+|www\.[^\s]+/i;
 const containsURL = (text: string): boolean => URL_PATTERN.test(text);
 
 // Profanity filter
-const PROFANITY_LIST: string[] = [];
-const applyProfanityFilter = (text: string): string => {
-  let filtered = text;
-  PROFANITY_LIST.forEach(word => {
-    const re = new RegExp(word, 'gi');
-    filtered = filtered.replace(re, '***');
-  });
-  return filtered;
-};
+// Whole words only (with common endings), same list as the web room chat.
+const PROFANITY_LIST: string[] = [
+  'fuck', 'fucker', 'motherfucker', 'shit', 'bullshit', 'bitch', 'bastard', 'asshole', 'cunt', 'slut', 'whore', 'dickhead', 'prick', 'wanker', 'bollocks',
+];
+const PROFANITY_RE = new RegExp('\\b(' + PROFANITY_LIST.join('|') + ')(s|es|ed|ing|in|y)?\\b', 'gi');
+const applyProfanityFilter = (text: string): string => text.replace(PROFANITY_RE, (m) => '*'.repeat(Math.max(3, m.length)));
 
 const shareDataCache = new Map<string, { type: ShareCardData['type']; data: any } | null>();
 const parseShareData = (content: string): { type: ShareCardData['type']; data: any } | null => {
@@ -182,7 +196,7 @@ const parseShareData = (content: string): { type: ShareCardData['type']; data: a
     { prefix: 'COMPANY_SHARE::', type: 'company' },
     { prefix: 'DISCUSSION_SHARE::', type: 'room' },
     { prefix: 'ROOM_SHARE::', type: 'room' },
-    { prefix: 'CONTENT_SHARE::', type: 'post' },
+    { prefix: 'CONTENT_SHARE::', type: 'content' },
   ];
 
   for (const { prefix, type } of prefixes) {
@@ -190,7 +204,10 @@ const parseShareData = (content: string): { type: ShareCardData['type']; data: a
       try {
         const jsonStr = content.substring(prefix.length);
         const parsed = JSON.parse(jsonStr);
-        const res = { type, data: { ...parsed, type } };
+        let shareData: any = type === 'content' ? { ...parsed } : { ...parsed, type };
+        if (type === 'content' && shareData.type !== 'movie' && shareData.type !== 'tv') shareData.type = 'content';
+        try { shareData = normalizeShareCardData(shareData); } catch { /* keep the raw data */ }
+        const res = { type, data: shareData };
         shareDataCache.set(content, res);
         return res;
       } catch {
@@ -406,6 +423,8 @@ interface DiscussionMessageRowProps {
   onToggleReaction?: (msgId: string, emoji: string) => void;
   /** Join the room's call (opens the Call tab inside the room). */
   onJoinCall?: () => void;
+  /** Tapping a call event opens its details (who started it, who joined), like the web. */
+  onCallDetails?: (message: any) => void;
 }
 
 const areDiscussionMessageRowPropsEqual = (
@@ -511,7 +530,7 @@ const renderReplyQuoteBlock = (
       <View style={{ flex: 1, marginRight: repThumb ? 8 : 0 }}>
         <Text
           style={{
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: '700',
             color: isOwn ? '#FFFFFF' : ORANGE,
             marginBottom: 2,
@@ -522,7 +541,7 @@ const renderReplyQuoteBlock = (
         </Text>
         <Text
           style={{
-            fontSize: 11.5,
+            fontSize: 12,
             color: isOwn ? 'rgba(255, 255, 255, 0.9)' : themeColors.textSecondary,
           }}
           numberOfLines={2}
@@ -578,6 +597,7 @@ const DiscussionMessageRow = React.memo<DiscussionMessageRowProps>(({
   onSwipeReply,
   onToggleReaction,
   onJoinCall,
+  onCallDetails,
 }) => {
   const isCallEvent =
     item.attachment_type === 'call_event' ||
@@ -605,9 +625,9 @@ const DiscussionMessageRow = React.memo<DiscussionMessageRowProps>(({
         <View style={styles.webCallEventRow}>
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => {
-              onJoinCall?.();
-            }}
+            onPress={() => onCallDetails?.(item)}
+            accessibilityRole="button"
+            accessibilityLabel="Call details"
             style={[
               styles.webCallEventPill,
               { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
@@ -622,25 +642,7 @@ const DiscussionMessageRow = React.memo<DiscussionMessageRowProps>(({
               <Icon name="phone" size={13} color={isVideoStarted ? '#10B981' : '#EF4444'} />
             </View>
             <Text style={[styles.webCallEventText, { color: themeColors.textPrimary }]}>{cleanContent}</Text>
-            <View
-              style={[
-                styles.webCallActionBadge,
-                isVideoStarted
-                  ? styles.webCallJoinBadge
-                  : [styles.webCallBackBadge, { backgroundColor: themeColors.chipBg }],
-              ]}
-            >
-              <Text
-                style={[
-                  styles.webCallActionText,
-                  isVideoStarted
-                    ? styles.webCallJoinText
-                    : [styles.webCallBackText, { color: themeColors.textSecondary }],
-                ]}
-              >
-                {isVideoStarted ? 'Join' : 'Call'}
-              </Text>
-            </View>
+            <Text style={[styles.webCallEventTime, { color: themeColors.textMuted }]}>{item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -796,7 +798,7 @@ const DiscussionMessageRow = React.memo<DiscussionMessageRowProps>(({
                                   : [styles.msgBodyOther, { color: themeColors.textPrimary }],
                               ]}
                             >
-                              {decryptFallback(item.content)}
+                              <LinkifiedText text={decryptFallback(item.content)} />
                             </Text>
                           </View>
                         )}
@@ -833,7 +835,7 @@ const DiscussionMessageRow = React.memo<DiscussionMessageRowProps>(({
                               : [styles.msgBodyOther, { color: themeColors.textPrimary }],
                           ]}
                         >
-                          {decryptFallback(item.content)}
+                          <LinkifiedText text={decryptFallback(item.content)} />
                         </Text>
                         <View style={styles.inlineTimeWrap}>
                           <Text
@@ -935,20 +937,24 @@ const DiscussionMessageRow = React.memo<DiscussionMessageRowProps>(({
   );
 }, areDiscussionMessageRowPropsEqual);
 
-export const DiscussionRoomDetailScreen = ({
+const DiscussionRoomDetailScreenInner = ({
   route,
   navigation,
 }: {
   route: any;
   navigation: any;
 }) => {
+  // a staff member visiting through audited access: read only, no receipts, no calls
+  const isObserver = useStaffObserver();
+  const { isFan: isFanAccount } = useAccountType();
   const rawRoomId = route.params?.roomId || route.params?.room_id || route.params?.relatedId || route.params?.id;
   const { roomTitle, roomDescription, roomType } = route.params || {};
   const roomId = rawRoomId;
   const [currentRoomType, setCurrentRoomType] = useState<string>(roomType || 'public');
   const isPrivateRoom = currentRoomType === 'private';
   const { themeColors, isDark, triggerHaptic, settings } = useUserSettings();
-  const { encryptGroupMessage, decryptGroupMessage, isReady: isE2EEReady } = useGroupEncryption('room', isPrivateRoom ? roomId : null);
+  const { encryptGroupMessage, decryptGroupMessage, isReady: isE2EEReady } = useGroupEncryption('room', isPrivateRoom ? roomId : null, isPrivateRoom);
+  useEffect(() => { if (isPrivateRoom) requestE2EEPrompt(); }, [isPrivateRoom]);
 
   // Global Call State for seamless Call/Chat switching
   const { callState, startCall, minimizeCall, maximizeCall } = useGlobalCall();
@@ -956,6 +962,7 @@ export const DiscussionRoomDetailScreen = ({
   // Which tab is showing while a call is running in this room: the live call or the chat. The call keeps running
   // (audio/video never stops) whichever tab is selected.
   const [roomTab, setRoomTab] = useState<'call' | 'chat'>('call');
+  const [selectedCallMessage, setSelectedCallMessage] = useState<any>(null);
   const showInlineCall = isInCall && roomTab === 'call';
 
   // When a call starts in this room, land on the Call tab; when it ends, go back to the chat.
@@ -968,17 +975,28 @@ export const DiscussionRoomDetailScreen = ({
   // Leaving the room screen while the call is running: show the floating bubble; coming back: restore it inline.
   useFocusEffect(
     useCallback(() => {
+      const cameBackFromCallScreen = expandingToCallRef.current;
+      expandingToCallRef.current = false;
       if (isInCallRef.current) {
         // Coming back from the full-screen call via its "Chat" button: the user wants the chat, not the call tab.
-        if (callMinimizedRef.current) setRoomTab('chat');
+        // (but coming from the call bubble / the phone's PiP window, the user wants the call tab)
+        if (!openCallTabRef.current && (callMinimizedRef.current || cameBackFromCallScreen)) setRoomTab('chat');
         maximizeCall();
       }
       return () => {
-        if (isInCallRef.current) minimizeCall();
+        if (isInCallRef.current && !expandingToCallRef.current) minimizeCall();
       };
     }, [maximizeCall, minimizeCall])
   );
 
+  // true while we hand the running call to the full-screen call screen (it must not be minimised into the bubble)
+  const expandingToCallRef = useRef(false);
+  // the call bubble / the phone's PiP window asks for this room's call tab
+  const openCallTabRef = useRef<any>(route.params?.openCallTab);
+  openCallTabRef.current = route.params?.openCallTab;
+  useEffect(() => {
+    if (route.params?.openCallTab) setRoomTab('call');
+  }, [route.params?.openCallTab]);
   const isInCallRef = useRef(isInCall);
   isInCallRef.current = isInCall;
   const callMinimizedRef = useRef(callState.isMinimized);
@@ -987,6 +1005,7 @@ export const DiscussionRoomDetailScreen = ({
   /** Starts (or joins) this room's call without leaving the room: the call opens in the Call tab next to the chat. */
   const startInlineCall = useCallback(
     async (isVideo: boolean, prefer?: 'call' | 'space') => {
+      if (isObserver) return;
       if (!roomId) {
         Alert.alert('Not Ready', 'Room not loaded yet. Please try again.');
         return;
@@ -999,6 +1018,15 @@ export const DiscussionRoomDetailScreen = ({
       if (callState.isActive) {
         Alert.alert('Already in a call', 'Leave your current call before starting another one.');
         return;
+      }
+      // Fans can join what is running but not start a call or an audio space.
+      if (isFanAccount) {
+        let live = null;
+        try { live = await findActiveCall(roomId); } catch { }
+        if (!live) {
+          Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+          return;
+        }
       }
       // Nothing is running yet: ask whether to start a call or an audio space (or just join what is running).
       const choice = await askHowToStart('discussion', roomId, prefer);
@@ -1023,10 +1051,10 @@ export const DiscussionRoomDetailScreen = ({
           videoOffOnJoin: !!settings.call_video_off_on_join,
         });
       } catch (e: any) {
-        Alert.alert('Call could not start', e?.message || 'Please try again.');
+        Alert.alert('Call could not start', fanCallErrorMessage(e) || friendlyError(e, 'Please try again.'));
       }
     },
-    [roomId, roomTitle, callState.isActive, startCall, maximizeCall, settings.call_mute_mic_on_join, settings.call_video_off_on_join]
+    [roomId, roomTitle, callState.isActive, isFanAccount, startCall, maximizeCall, settings.call_mute_mic_on_join, settings.call_video_off_on_join]
   );
 
   // Message rows are memoised and ignore callback identity, so hand them a stable function that always calls the
@@ -1047,10 +1075,17 @@ export const DiscussionRoomDetailScreen = ({
       if (!cancelled) setActiveRoomCall(r);
     };
     check();
-    const timer = setInterval(check, 6000);
+    // every 20 seconds, and not while the app is in the background; check again when it comes back
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') check();
+    }, 20000);
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') check();
+    });
     return () => {
       cancelled = true;
       clearInterval(timer);
+      sub.remove();
     };
   }, [roomId, callState.isActive]);
 
@@ -1077,6 +1112,8 @@ export const DiscussionRoomDetailScreen = ({
   const isFetchingRef = useRef<boolean>(false);
   const lastFetchTimeRef = useRef<number>(0);
   const [replyTo, setReplyTo] = useState<any | null>(null);
+  const [editingMsg, setEditingMsg] = useState<any | null>(null);
+  const [accessGate, setAccessGate] = useState<{ title?: string; description?: string | null } | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => initialUserId || null);
   const [currentUserProfile, setCurrentUserProfile] = useState<any | null>(() => initialProfile || null);
   const [memberCount, setMemberCount] = useState(0);
@@ -1321,7 +1358,7 @@ export const DiscussionRoomDetailScreen = ({
       setSelectedMsgIds(new Set());
       Alert.alert('Forwarded! 🚀', `Message(s) forwarded to ${targetRoom.title}.`);
     } catch (err: any) {
-      Alert.alert('Forward Failed', err.message || 'Could not forward message.');
+      Alert.alert('Forward Failed', friendlyError(err, 'Could not forward message.'));
     } finally {
       setForwarding(false);
     }
@@ -1367,26 +1404,17 @@ export const DiscussionRoomDetailScreen = ({
     } catch { }
   };
 
-  // Load Room Mute State
+  // Load Room Mute State (server copy merged with the local cache, newest wins)
   const loadRoomMuteState = useCallback(async () => {
     if (!roomId) return;
     try {
-      const uId = currentUserIdRef.current || currentUserId || 'anonymous';
-      const raw = await AsyncStorage.getItem(`@room_notif_${roomId}_${uId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setIsRoomMuted(Boolean(parsed.muteRoom));
-      } else {
-        const fallback = await AsyncStorage.getItem(`@room_notif_${roomId}`);
-        if (fallback) {
-          const parsed = JSON.parse(fallback);
-          setIsRoomMuted(Boolean(parsed.muteRoom));
-        }
-      }
+      const uId = currentUserIdRef.current || currentUserId || null;
+      const prefs = await loadRoomPrefs(roomId, uId);
+      setIsRoomMuted(Boolean(prefs.muteRoom));
     } catch (err) {
       console.warn('[DiscussionRoom] Error loading mute state:', err);
     }
-  }, [roomId]);
+  }, [roomId, currentUserId]);
 
   useEffect(() => {
     loadRoomMuteState();
@@ -1398,23 +1426,14 @@ export const DiscussionRoomDetailScreen = ({
     setIsRoomMuted(newMuted);
     triggerHaptic();
     try {
-      const uId = currentUserId || 'anonymous';
-      let currentPrefs: any = {};
-      try {
-        const raw = await AsyncStorage.getItem(`@room_notif_${roomId}_${uId}`);
-        if (raw) currentPrefs = JSON.parse(raw);
-      } catch { }
-      const payload = JSON.stringify({
-        ...currentPrefs,
-        muteRoom: newMuted,
-      });
-      await AsyncStorage.setItem(`@room_notif_${roomId}_${uId}`, payload);
-      await AsyncStorage.setItem(`@room_notif_${roomId}`, payload);
+      const uId = currentUserId || null;
+      const current = await loadRoomPrefs(roomId, uId);
+      await saveRoomPrefs(roomId, uId, { ...current, muteRoom: newMuted });
       Alert.alert(
         newMuted ? 'Room Muted' : 'Room Unmuted',
         newMuted
-          ? 'Push notifications for this discussion room have been silenced.'
-          : 'You will now receive push notifications from this room.'
+          ? 'Notifications from this discussion room are silenced on all your devices.'
+          : 'You will receive notifications from this room again on all your devices.'
       );
     } catch (err) {
       console.warn('[DiscussionRoom] Error saving mute state:', err);
@@ -1447,6 +1466,47 @@ export const DiscussionRoomDetailScreen = ({
 
   const flatRef = useRef<FlashList<any>>(null);
   const shouldScrollToEndRef = useRef<boolean>(true);
+  // keeps your place when older messages are added above (see onContentSizeChange)
+  const prependAnchorRef = useRef<{ h: number; off: number } | null>(null);
+  const prependTimerRef = useRef<any>(null);
+  const lastContentHeightRef = useRef(0);
+  const lastScrollOffsetRef = useRef(0);
+  const holdPlaceForOlder = () => {
+    prependAnchorRef.current = { h: lastContentHeightRef.current, off: lastScrollOffsetRef.current };
+    shouldScrollToEndRef.current = false;
+    if (prependTimerRef.current) clearTimeout(prependTimerRef.current);
+    prependTimerRef.current = setTimeout(() => { prependAnchorRef.current = null; }, 2500);
+  };
+  const keepPlaceAfterPrepend = (h: number, scrollTo: (offset: number) => void) => {
+    lastContentHeightRef.current = h;
+    const a = prependAnchorRef.current;
+    if (a && h > a.h) scrollTo(a.off + (h - a.h));
+  };
+
+  // WhatsApp-style open: the list stays hidden until it is placed at the bottom (or at the first new message)
+  const [chatVisible, setChatVisible] = useState(false);
+  const chatPositionedRef = useRef(false);
+  const chatShowTimerRef = useRef<any>(null);
+  const chatShowMaxTimerRef = useRef<any>(null);
+  const userScrolledChatRef = useRef(false);
+  const openLastReadAtRef = useRef<number | null | undefined>(undefined); // when this person last read the room, captured before it is marked read
+  const openLastReadPromiseRef = useRef<Promise<void> | null>(null);
+  const [openLastReadReady, setOpenLastReadReady] = useState(false);
+  const [unreadAnchorId, setUnreadAnchorId] = useState<string | null>(null);
+  const [unreadCountAtOpen, setUnreadCountAtOpen] = useState(0);
+  const unreadAnchorComputedRef = useRef(false);
+  const focusedOnceRef = useRef(false);
+  const unreadAnchorIdRef = useRef<string | null>(null);
+  unreadAnchorIdRef.current = unreadAnchorId;
+  const revealChat = () => {
+    // one last jump to the bottom: the last items are only measured after the first scrollToEnd
+    if (!chatPositionedRef.current && !userScrolledChatRef.current && !unreadAnchorIdRef.current) {
+      try { flatRef.current?.scrollToEnd({ animated: false }); } catch { }
+    }
+    chatPositionedRef.current = true;
+    setChatVisible(true);
+  };
+
 
   // Fast O(1) message lookup map for reply references
   const messageMap = useMemo(() => {
@@ -1461,7 +1521,14 @@ export const DiscussionRoomDetailScreen = ({
 
   // Auto-scroll to bottom only when a genuinely new message arrives
   const prevMsgCountRef = useRef(messages.length);
+  // Set while older history is being prepended so the list is not thrown to the bottom by the new rows.
+  const prependingOlderRef = useRef(false);
   useEffect(() => {
+    if (prependingOlderRef.current) {
+      prependingOlderRef.current = false;
+      prevMsgCountRef.current = messages.length;
+      return;
+    }
     if (messages.length > prevMsgCountRef.current && messages.length > 0) {
       const timer = setTimeout(() => {
         flatRef.current?.scrollToEnd({ animated: true });
@@ -1607,11 +1674,30 @@ export const DiscussionRoomDetailScreen = ({
 
   const markAsRead = useCallback(
     async (explicitUid?: string) => {
-      if (!roomId) return;
+      if (!roomId || isObserver) return; // an observer is never shown as having read the room
       const uid = explicitUid || currentUserIdRef.current || currentUserId || getCurrentUserIdSync();
       if (!uid) return;
       try {
         const supabase = getSupabaseClient();
+        // Capture when this person last read the room BEFORE the first mark-read of this open (one small select)
+        if (!openLastReadPromiseRef.current) {
+          openLastReadPromiseRef.current = (async () => {
+            try {
+              const { data: mine } = await supabase
+                .from('room_message_read_status' as any)
+                .select('last_read_at')
+                .eq('room_id', roomId)
+                .eq('user_id', uid)
+                .maybeSingle();
+              const lr = (mine as any)?.last_read_at;
+              openLastReadAtRef.current = lr ? new Date(lr).getTime() : null;
+            } catch {
+              openLastReadAtRef.current = null;
+            }
+            setOpenLastReadReady(true);
+          })();
+        }
+        await openLastReadPromiseRef.current;
         const nowIso = new Date().toISOString();
 
         // Optimistically update local readStatuses
@@ -1727,6 +1813,7 @@ export const DiscussionRoomDetailScreen = ({
           })
         );
         const withReactions = await attachReactions(decrypted);
+        prependingOlderRef.current = true;
         setMessages((prev) => [...withReactions, ...prev]);
       } else {
         setHasMoreOlder(false);
@@ -1760,6 +1847,13 @@ export const DiscussionRoomDetailScreen = ({
   useFocusEffect(
     useCallback(() => {
       if (!roomId) return;
+      // revisiting the screen (e.g. back from a call): forget the "new messages" line
+      if (focusedOnceRef.current) {
+        unreadAnchorComputedRef.current = true;
+        setUnreadAnchorId(null);
+        setUnreadCountAtOpen(0);
+      }
+      focusedOnceRef.current = true;
       // Start the message fetch right away: it is network-bound, so waiting for the open animation to finish
       // (runAfterInteractions) and for getSession() only delayed the first messages.
       fetchMessages(true);
@@ -2037,6 +2131,16 @@ export const DiscussionRoomDetailScreen = ({
             .maybeSingle();
 
           memberRow = existingRow;
+
+          const isCreatorEarly = roomData?.creator_id === userId || roomData?.created_by === userId;
+          if (!memberRow && roomData?.room_type === 'private' && !isCreatorEarly && !isObserver) {
+            // A private room needs the admin's approval: show the request-to-join panel instead of joining.
+            if (!isCancelled) {
+              setAccessGate({ title: roomData?.title, description: roomData?.description });
+              setLoading(false);
+            }
+            return;
+          }
 
           if (!memberRow) {
             const { error: joinErr } = await supabase
@@ -2623,7 +2727,55 @@ export const DiscussionRoomDetailScreen = ({
     }
   };
 
+  const handleSaveEdit = async () => {
+    const target = editingMsg;
+    if (!target || !roomId || sending) return;
+    if (!canEditMessage(target, currentUserId)) {
+      Alert.alert('Cannot edit', 'This message can no longer be edited (edits are allowed for 15 minutes).');
+      setEditingMsg(null);
+      setInputText('');
+      return;
+    }
+    const check = checkEditedText(target.content || '', inputText);
+    if (!check.ok) {
+      if (check.reason === 'unchanged') { setEditingMsg(null); setInputText(''); return; }
+      Alert.alert('Edit message', check.message);
+      return;
+    }
+    if (!canShareLinks && containsURL(check.text)) {
+      Alert.alert('Links Blocked', 'Sharing links is not allowed in this room.');
+      return;
+    }
+    let text = check.text;
+    if (roomSettings?.profanityFilter && text) text = applyProfanityFilter(text);
+    setSending(true);
+    try {
+      let stored = text;
+      if (isPrivateRoom) {
+        try { stored = await encryptGroupMessage(text); } catch (err) { console.warn('E2EE encryption failed:', err); }
+      }
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from('room_messages' as any).update({ content: stored }).eq('id', target.id).eq('user_id', currentUserId as string);
+      if (error) {
+        Alert.alert('Could not edit', /15|window|edit/i.test(error.message || '') ? 'The 15 minute edit window has passed.' : 'Something went wrong. Please try again.');
+        return;
+      }
+      const editedAt = new Date().toISOString();
+      setMessages((prev) => {
+        const next = prev.map((m: any) => (m.id === target.id ? { ...m, content: text, rawContent: stored, edited_at: editedAt } : m));
+        saveCache(`room_messages_${roomId}`, next).catch(() => { });
+        return next;
+      });
+      setEditingMsg(null);
+      setInputText('');
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleSend = async () => {
+    if (editingMsg) { handleSaveEdit(); return; }
+    if (isObserver) return;
     if ((!inputText.trim() && attachedFiles.length === 0) || !roomId) return;
     shouldScrollToEndRef.current = true;
 
@@ -2884,7 +3036,7 @@ export const DiscussionRoomDetailScreen = ({
             await supabase.from('room_messages' as any).delete().eq('id', msgId);
             setMessages((prev) => prev.filter((m) => m.id !== msgId));
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Delete failed.');
+            Alert.alert('Error', friendlyError(e, 'Delete failed.'));
           }
         },
       },
@@ -2957,6 +3109,50 @@ export const DiscussionRoomDetailScreen = ({
   // Keep messagesRef in sync so renderMessage reads fresh data without depending on messages
   messagesRef.current = messages;
 
+  // find the first message from other people newer than the last-read time (once per open)
+  useEffect(() => {
+    if (!openLastReadReady || unreadAnchorComputedRef.current || messages.length === 0) return;
+    const myUid = currentUserIdRef.current || currentUserId;
+    if (!myUid) return;
+    unreadAnchorComputedRef.current = true;
+    const lastRead = openLastReadAtRef.current;
+    if (lastRead == null) return; // never opened before: open at the bottom
+    const isMine = (m: any) => m?.user_id === myUid;
+    const idx = messages.findIndex((m: any) => !isMine(m) && new Date(m.created_at).getTime() > lastRead);
+    if (idx >= 0) {
+      setUnreadAnchorId(String(messages[idx].id));
+      setUnreadCountAtOpen(messages.slice(idx).filter((m: any) => !isMine(m)).length);
+    }
+  }, [messages, openLastReadReady, currentUserId]);
+
+  // safety net: if the list never reports a size change, show it anyway so the chat can never stay hidden
+  useEffect(() => {
+    if (loading || chatVisible || messages.length === 0) return;
+    const safety = setTimeout(revealChat, 1500);
+    return () => clearTimeout(safety);
+  }, [loading, chatVisible, messages.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // last-read is known: let the list be revealed shortly after (the anchor is set by then)
+  useEffect(() => {
+    if (!openLastReadReady || loading || chatVisible || messages.length === 0) return;
+    const t = setTimeout(revealChat, 250);
+    return () => clearTimeout(t);
+  }, [openLastReadReady, loading, chatVisible, messages.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // an anchor found once the list exists: go to it, unless the person has started scrolling
+  useEffect(() => {
+    if (!unreadAnchorId || userScrolledChatRef.current) return;
+    const idx = messagesRef.current.findIndex((m: any) => String(m.id) === unreadAnchorId);
+    if (idx < 0) return;
+    shouldScrollToEndRef.current = false;
+    try { flatRef.current?.scrollToIndex({ index: idx, viewPosition: 0.15, animated: false }); } catch { }
+  }, [unreadAnchorId]);
+
+  useEffect(() => () => {
+    if (chatShowTimerRef.current) clearTimeout(chatShowTimerRef.current);
+    if (chatShowMaxTimerRef.current) clearTimeout(chatShowMaxTimerRef.current);
+  }, []);
+
   const keyExtractor = useCallback((item: any, index: number) => item?.id || index.toString(), []);
 
   const renderMessage = useCallback(
@@ -2979,17 +3175,27 @@ export const DiscussionRoomDetailScreen = ({
         nextMsg.user_id === item.user_id &&
         formatDateLabel(nextMsg?.created_at) === currentDateLabel;
 
-      const timeStr = item.created_at
+      const timeStr = (item.created_at
         ? new Date(item.created_at).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
         })
-        : '';
+        : '') + (item.edited_at ? ' (edited)' : '');
 
       const isStarred = starredMsgIds.has(item.id);
       const seenStatusLabel = getSeenStatusLabel(item, isOwn);
 
       return (
+        <>
+        {!!unreadAnchorId && String(item.id) === unreadAnchorId && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10 }} accessibilityRole="text">
+            <View style={{ flex: 1, height: 1, backgroundColor: ORANGE, opacity: 0.4 }} />
+            <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>
+              {unreadCountAtOpen === 1 ? '1 new message' : `${unreadCountAtOpen} new messages`}
+            </Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: ORANGE, opacity: 0.4 }} />
+          </View>
+        )}
         <DiscussionMessageRow
           key={item.id}
           item={item}
@@ -3023,10 +3229,14 @@ export const DiscussionRoomDetailScreen = ({
           onSwipeReply={handleSwipeReply}
           onToggleReaction={handleToggleReaction}
           onJoinCall={joinCallStable}
+          onCallDetails={setSelectedCallMessage}
         />
+        </>
       );
     },
     [
+      unreadAnchorId,
+      unreadCountAtOpen,
       joinCallStable,
       currentUserId,
       starredMsgIds,
@@ -3051,9 +3261,23 @@ export const DiscussionRoomDetailScreen = ({
       selectedMsgIds,
       messageSeenUsersMap,
       readStatuses,
+      unreadAnchorId,
+      unreadCountAtOpen,
     }),
-    [selectedMsgIds, messageSeenUsersMap, readStatuses]
+    [selectedMsgIds, messageSeenUsersMap, readStatuses, unreadAnchorId, unreadCountAtOpen]
   );
+
+  if (accessGate && roomId) {
+    return (
+      <PrivateRoomAccessPanel
+        roomId={roomId}
+        roomTitle={accessGate.title || roomTitle}
+        roomDescription={accessGate.description ?? roomDescription}
+        userId={currentUserId}
+        onBack={() => navigation.goBack()}
+      />
+    );
+  }
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
@@ -3061,7 +3285,7 @@ export const DiscussionRoomDetailScreen = ({
       {selectedMsgIds.size > 0 ? (
         <View style={[styles.selectionHeader, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
           <View style={styles.selectionHeaderLeft}>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
               style={styles.selectionCloseBtn}
               onPress={() => setSelectedMsgIds(new Set())}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -3074,7 +3298,7 @@ export const DiscussionRoomDetailScreen = ({
           <View style={styles.selectionHeaderActions}>
             {/* Reply - Only when 1 message is selected */}
             {selectedMsgIds.size === 1 && (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reply"
                 style={styles.selectionActionBtn}
                 onPress={() => {
                   triggerHaptic?.(25);
@@ -3090,9 +3314,31 @@ export const DiscussionRoomDetailScreen = ({
               </TouchableOpacity>
             )}
 
+            {/* Edit - own plain text message inside the 15 minute window */}
+            {selectedMsgIds.size === 1 && (() => {
+              const m = messages.find((x) => selectedMsgIds.has(x.id));
+              if (!m || !canEditMessage(m, currentUserId)) return null;
+              return (
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit message"
+                  style={styles.selectionActionBtn}
+                  onPress={() => {
+                    triggerHaptic?.(25);
+                    setReplyTo(null);
+                    setEditingMsg(m);
+                    setInputText(m.content || '');
+                    setSelectedMsgIds(new Set());
+                    setTimeout(() => inputRef.current?.focus(), 80);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                >
+                  <Icon name="edit-2" size={19} color={themeColors.textPrimary} strokeWidth={2} />
+                </TouchableOpacity>
+              );
+            })()}
+
             {/* Info - Only when 1 message is selected */}
             {selectedMsgIds.size === 1 && (
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="More information"
                 style={styles.selectionActionBtn}
                 onPress={() => {
                   triggerHaptic?.(25);
@@ -3110,7 +3356,7 @@ export const DiscussionRoomDetailScreen = ({
             )}
 
             {/* Star / Unstar all selected messages */}
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Star or unstar selected messages"
               style={styles.selectionActionBtn}
               onPress={() => {
                 triggerHaptic?.(25);
@@ -3119,10 +3365,10 @@ export const DiscussionRoomDetailScreen = ({
                 const next = new Set(starredMsgIds);
                 if (allStarred) {
                   selectedArray.forEach((id) => next.delete(id));
-                  Alert.alert('Unstarred', `Unstarred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}.`);
+                  Toast.success(`Unstarred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}`, undefined, { action: { label: 'Undo', onPress: () => saveStarredMessages(new Set(starredMsgIds)) } });
                 } else {
                   selectedArray.forEach((id) => next.add(id));
-                  Alert.alert('Starred', `Starred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}.`);
+                  Toast.success(`Starred ${selectedArray.length} message${selectedArray.length > 1 ? 's' : ''}`, undefined, { action: { label: 'Undo', onPress: () => saveStarredMessages(new Set(starredMsgIds)) } });
                 }
                 saveStarredMessages(next);
                 setSelectedMsgIds(new Set());
@@ -3137,7 +3383,7 @@ export const DiscussionRoomDetailScreen = ({
             </TouchableOpacity>
 
             {/* Copy all selected messages */}
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Copy"
               style={styles.selectionActionBtn}
               onPress={() => {
                 triggerHaptic?.(25);
@@ -3163,7 +3409,7 @@ export const DiscussionRoomDetailScreen = ({
             </TouchableOpacity>
 
             {/* Forward all selected messages */}
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Forward selected messages"
               style={styles.selectionActionBtn}
               onPress={async () => {
                 triggerHaptic?.(25);
@@ -3193,7 +3439,7 @@ export const DiscussionRoomDetailScreen = ({
               const msg = messages.find((m) => m.id === id);
               return msg && (msg.user_id === currentUserId || isAdmin);
             }) && (
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete"
                   style={styles.selectionActionBtn}
                   onPress={() => {
                     triggerHaptic?.(25);
@@ -3221,7 +3467,7 @@ export const DiscussionRoomDetailScreen = ({
                               });
                               setSelectedMsgIds(new Set());
                             } catch (e: any) {
-                              Alert.alert('Error', e.message || 'Delete failed.');
+                              Alert.alert('Error', friendlyError(e, 'Delete failed.'));
                             }
                           },
                         },
@@ -3238,7 +3484,7 @@ export const DiscussionRoomDetailScreen = ({
       ) : (
         /* Normal Header matching Web screenshot */
         <View style={[styles.webHeader, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back"
             style={styles.backBtn}
             onPress={() => handleSmartBack(navigation, 'Discussions')}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -3262,9 +3508,23 @@ export const DiscussionRoomDetailScreen = ({
 
           {/* Video call: a small round icon button (green when a call/space is already live here) */}
           <TouchableOpacity
-            style={[styles.headerIconBtn, (isInCall || activeRoomCall) && styles.headerIconBtnLive]}
+            accessibilityRole="button"
+            accessibilityLabel={isInCall || activeRoomCall ? 'Open the live call in this room' : 'Start a video call in this room'}
+            style={[styles.headerIconBtn, (isInCall || activeRoomCall) && styles.headerIconBtnLive, isFanAccount && !isInCall && !activeRoomCall && { opacity: 0.4 }]}
             onPress={() => {
-              void startInlineCall(callState.isVideo || true, 'call');
+              if (isInCall || activeRoomCall) {
+                void startInlineCall(callState.isVideo || true, 'call');
+                return;
+              }
+              if (isFanAccount) {
+                Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+                return;
+              }
+              // Starting a call rings the whole room: confirm first.
+              Alert.alert('Start a video call?', 'Everyone in this room will be notified.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Start call', onPress: () => { void startInlineCall(callState.isVideo || true, 'call'); } },
+              ]);
             }}
             hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
           >
@@ -3277,19 +3537,23 @@ export const DiscussionRoomDetailScreen = ({
 
           {/* Audio space (listeners + speakers): only offered when nothing is running yet */}
           {!isInCall && !activeRoomCall && (
-            <TouchableOpacity
-              style={styles.headerIconBtn}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Start an audio space in this room"
+              style={[styles.headerIconBtn, isFanAccount && { opacity: 0.4 }]}
               onPress={() => {
+                if (isFanAccount) {
+                  Alert.alert('Calls unavailable', FAN_CALL_TOOLTIP);
+                  return;
+                }
                 void startInlineCall(false, 'space');
               }}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
-              <Icon name="mic" size={18} color={themeColors.textSecondary} />
+              <Icon name="mic" size={18} color={themeColors.iconSecondary} />
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.webSettingsBtn} onPress={() => setShowRoomSettings(true)}>
-            <Icon name="settings" size={18} color={themeColors.textSecondary} />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Settings" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.webSettingsBtn} onPress={() => setShowRoomSettings(true)}>
+            <Icon name="settings" size={18} color={themeColors.iconSecondary} />
           </TouchableOpacity>
         </View>
       )}
@@ -3326,6 +3590,7 @@ export const DiscussionRoomDetailScreen = ({
           roomId={roomId}
           roomName={currentRoomTitle || roomTitle}
           onExpand={() => {
+            expandingToCallRef.current = true;
             maximizeCall();
             navigation.navigate('Call', {
               roomId,
@@ -3337,6 +3602,8 @@ export const DiscussionRoomDetailScreen = ({
         />
       )}
 
+      {isPrivateRoom && <E2EEBanner group="room" />}
+
       {/* High-Performance FlashList Message Stream */}
       <View style={showInlineCall ? { height: 0, overflow: 'hidden' } : { flex: 1 }}>
       {loading ? (
@@ -3344,6 +3611,8 @@ export const DiscussionRoomDetailScreen = ({
           <ChatMessagesSkeleton showAvatars={true} showAuthorNames={true} />
         </ScrollView>
       ) : (
+        // hidden until the list has been placed, so the person never sees it scroll down from the top
+        <View style={{ flex: 1, opacity: chatVisible || messages.length === 0 ? 1 : 0 }}>
         <FlashList
           ref={flatRef}
           data={messages}
@@ -3353,12 +3622,42 @@ export const DiscussionRoomDetailScreen = ({
           estimatedItemSize={78}
           contentContainerStyle={styles.messagesList}
           keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={64}
+          onScroll={(e: any) => { lastScrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
           onScrollBeginDrag={() => {
             shouldScrollToEndRef.current = false;
+            userScrolledChatRef.current = true;
             if (showComposerEmojiPicker) setShowComposerEmojiPicker(false);
           }}
-          onContentSizeChange={() => {
-            if (shouldScrollToEndRef.current && messages && messages.length > 0) {
+          onContentSizeChange={(_w: number, h: number) => {
+            keepPlaceAfterPrepend(h, (offset) => { try { flatRef.current?.scrollToOffset({ offset, animated: false }); } catch { } });
+            if (!chatPositionedRef.current && !prependAnchorRef.current && messages && messages.length > 0) {
+              // first layout after opening: go to the first new message (or the bottom) before anything is shown
+              const aId = unreadAnchorIdRef.current;
+              const anchorIdx = aId ? messages.findIndex((m: any) => String(m.id) === aId) : -1;
+              try {
+                if (anchorIdx >= 0 && !userScrolledChatRef.current) {
+                  shouldScrollToEndRef.current = false;
+                  try {
+                    flatRef.current?.scrollToIndex({ index: anchorIdx, viewPosition: 0.15, animated: false });
+                  } catch {
+                    // fallback: estimated offset, then retry once the rows are measured
+                    try { flatRef.current?.scrollToOffset({ offset: 78 * anchorIdx, animated: false }); } catch { }
+                    setTimeout(() => { try { flatRef.current?.scrollToIndex({ index: anchorIdx, viewPosition: 0.15, animated: false }); } catch { } }, 120);
+                  }
+                } else if (shouldScrollToEndRef.current) {
+                  flatRef.current?.scrollToEnd({ animated: false });
+                }
+              } catch { }
+              // only reveal once last-read is known (the safety timer covers a failure)
+              if (openLastReadAtRef.current !== undefined) {
+                if (chatShowTimerRef.current) clearTimeout(chatShowTimerRef.current);
+                chatShowTimerRef.current = setTimeout(revealChat, 200);
+                if (!chatShowMaxTimerRef.current) chatShowMaxTimerRef.current = setTimeout(revealChat, 900);
+              }
+              return;
+            }
+            if (!prependAnchorRef.current && shouldScrollToEndRef.current && messages && messages.length > 0) {
               try {
                 flatRef.current?.scrollToEnd({ animated: false });
               } catch { }
@@ -3368,7 +3667,7 @@ export const DiscussionRoomDetailScreen = ({
             hasMoreOlder ? (
               <TouchableOpacity
                 style={[styles.loadOlderBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
-                onPress={fetchOlderMessages}
+                onPress={() => { holdPlaceForOlder(); fetchOlderMessages(); }}
                 disabled={loadingOlder}
                 activeOpacity={0.7}
               >
@@ -3376,7 +3675,7 @@ export const DiscussionRoomDetailScreen = ({
                   <ActivityIndicator size="small" color={ORANGE} />
                 ) : (
                   <>
-                    <Icon name="chevron-up" size={14} color={themeColors.textSecondary} />
+                    <Icon name="chevron-up" size={14} color={themeColors.iconSecondary} />
                     <Text style={[styles.loadOlderText, { color: themeColors.textSecondary }]}>Load earlier messages</Text>
                   </>
                 )}
@@ -3385,12 +3684,13 @@ export const DiscussionRoomDetailScreen = ({
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Icon name="message-square" size={40} color={themeColors.textMuted} />
+              <Icon name="message-square" size={40} color={themeColors.iconMuted} />
               <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Messages Yet</Text>
               <Text style={[styles.emptySubtitle, { color: themeColors.textSecondary }]}>Be the first to start the conversation.</Text>
             </View>
           }
         />
+        </View>
       )}
 
       </View>
@@ -3418,6 +3718,18 @@ export const DiscussionRoomDetailScreen = ({
         </View>
       ) : null}
 
+      {editingMsg && (
+        <View style={[styles.replyBanner, { backgroundColor: themeColors.chipBg, borderTopColor: themeColors.border }]}>
+          <Icon name="edit-2" size={14} color={ORANGE} />
+          <Text style={[styles.replyBannerText, { color: themeColors.textSecondary, flex: 1 }]} numberOfLines={1}>
+            Editing message · {editMinutesLeft(editingMsg.created_at)} min left
+          </Text>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cancel editing" onPress={() => { setEditingMsg(null); setInputText(''); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Icon name="x" size={14} color={themeColors.iconMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Reply Context Banner */}
       {replyTo && (() => {
         const repThumb = getReplyThumbnail(replyTo);
@@ -3431,7 +3743,7 @@ export const DiscussionRoomDetailScreen = ({
             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.replyBannerText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                  Replying to <Text style={{ fontWeight: '800', color: themeColors.textPrimary }}>{repAuthor}</Text>:{' '}
+                  Replying to <Text style={{ fontWeight: '700', color: themeColors.textPrimary }}>{repAuthor}</Text>:{' '}
                   {snippet}
                 </Text>
               </View>
@@ -3448,8 +3760,8 @@ export const DiscussionRoomDetailScreen = ({
                 />
               ) : null}
             </View>
-            <TouchableOpacity onPress={() => setReplyTo(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Icon name="x" size={14} color={themeColors.textMuted} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={() => setReplyTo(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="x" size={14} color={themeColors.iconMuted} />
             </TouchableOpacity>
           </View>
         );
@@ -3483,11 +3795,11 @@ export const DiscussionRoomDetailScreen = ({
               ) : (
                 <Icon name="paperclip" size={14} color={ORANGE} />
               )}
-              <Text style={{ fontSize: 11, fontWeight: '600', color: themeColors.textPrimary, maxWidth: 110 }} numberOfLines={1}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: themeColors.textPrimary, maxWidth: 110 }} numberOfLines={1}>
                 {file.name}
               </Text>
-              <TouchableOpacity onPress={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}>
-                <Icon name="x" size={14} color={themeColors.textMuted} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}>
+                <Icon name="x" size={14} color={themeColors.iconMuted} />
               </TouchableOpacity>
             </View>
           ))}
@@ -3495,9 +3807,13 @@ export const DiscussionRoomDetailScreen = ({
       )}
 
       {/* Web Parity Input Toolbar at Bottom */}
-      {!canSendMessages ? (
+      {isObserver ? (
+        <View style={{ paddingHorizontal: 16, paddingVertical: 16, alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: themeColors.border, backgroundColor: themeColors.bgCard }}>
+          <Text style={{ color: themeColors.textSecondary, fontSize: 13, textAlign: 'center' }}>You are visiting this space as staff with audited access, so you can read but not post.</Text>
+        </View>
+      ) : !canSendMessages ? (
         <View style={[styles.adminOnlyBanner, { backgroundColor: themeColors.chipBg, borderTopColor: themeColors.border }]}>
-          <Icon name="lock" size={14} color={themeColors.textSecondary} />
+          <Icon name="lock" size={14} color={themeColors.iconSecondary} />
           <Text style={[styles.adminOnlyText, { color: themeColors.textSecondary }]}>
             Only admins can send messages in this room
           </Text>
@@ -3505,12 +3821,12 @@ export const DiscussionRoomDetailScreen = ({
       ) : (
         <View style={[styles.webInputToolbar, { backgroundColor: themeColors.bgCard, borderTopColor: themeColors.border }]}>
           {canShareMedia ? (
-            <TouchableOpacity style={styles.webIconBtn} onPress={handlePickDocument}>
-              <Icon name="paperclip" size={20} color={themeColors.textSecondary} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach file" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.webIconBtn} onPress={handlePickDocument}>
+              <Icon name="paperclip" size={20} color={themeColors.iconSecondary} />
             </TouchableOpacity>
           ) : null}
 
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={[
               styles.webIconBtn,
               showComposerEmojiPicker && {
@@ -3551,6 +3867,8 @@ export const DiscussionRoomDetailScreen = ({
           />
 
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
             style={[
               styles.webSendCircle,
               ((!inputText.trim() && attachedFiles.length === 0) || sending || slowModeCooldown > 0) && styles.webSendCircleDisabled
@@ -3561,7 +3879,7 @@ export const DiscussionRoomDetailScreen = ({
             {sending ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : slowModeCooldown > 0 ? (
-              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>{slowModeCooldown}s</Text>
+              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>{slowModeCooldown}s</Text>
             ) : (
               <Icon name="send" size={16} color="#FFFFFF" />
             )}
@@ -3611,7 +3929,7 @@ export const DiscussionRoomDetailScreen = ({
               </ScrollView>
 
               {/* Quick Backspace button on tab header */}
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Backspace" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 style={[styles.googleEmojiBackspaceBtn, { backgroundColor: isDark ? '#3F3F46' : '#E2E8F0' }]}
                 onPress={() => {
                   triggerHaptic?.(15);
@@ -3701,8 +4019,8 @@ export const DiscussionRoomDetailScreen = ({
                   <Text style={[styles.forwardTitle, { color: themeColors.textPrimary }]}>
                     Forward {selectedMsgIds.size} Message{selectedMsgIds.size > 1 ? 's' : ''} to...
                   </Text>
-                  <TouchableOpacity onPress={() => setForwardModalVisible(false)}>
-                    <Icon name="x" size={20} color={themeColors.textSecondary} />
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setForwardModalVisible(false)}>
+                    <Icon name="x" size={20} color={themeColors.iconSecondary} />
                   </TouchableOpacity>
                 </View>
 
@@ -3727,12 +4045,12 @@ export const DiscussionRoomDetailScreen = ({
                             {room.room_type || 'public'} stage
                           </Text>
                         </View>
-                        <Icon name="arrow-right" size={16} color={themeColors.textMuted} />
+                        <Icon name="arrow-right" size={16} color={themeColors.iconMuted} />
                       </TouchableOpacity>
                     ))
                   ) : (
                     <View style={styles.forwardEmpty}>
-                      <Icon name="message-square" size={32} color={themeColors.textMuted} />
+                      <Icon name="message-square" size={32} color={themeColors.iconMuted} />
                       <Text style={[styles.forwardEmptyText, { color: themeColors.textSecondary }]}>
                         No other discussion rooms found
                       </Text>
@@ -3761,10 +4079,10 @@ export const DiscussionRoomDetailScreen = ({
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' }}>
           {/* Header Bar */}
           <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 10 : 0, zIndex: 10 }}>
-            <TouchableOpacity onPress={() => setLightboxState((prev) => ({ ...prev, visible: false }))} style={{ padding: 8 }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setLightboxState((prev) => ({ ...prev, visible: false }))} style={{ padding: 8 }}>
               <Icon name="x" size={24} color="#FFFFFF" />
             </TouchableOpacity>
-            <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700' }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
               {lightboxState.images.length > 0 ? `${lightboxState.currentIndex + 1} of ${lightboxState.images.length}` : ''}
             </Text>
             <View style={{ width: 40 }} />
@@ -3777,15 +4095,15 @@ export const DiscussionRoomDetailScreen = ({
             pagingEnabled
             showsHorizontalScrollIndicator={false}
             initialScrollIndex={lightboxState.currentIndex >= 0 && lightboxState.currentIndex < lightboxState.images.length ? lightboxState.currentIndex : 0}
-            getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+            getItemLayout={(_, index) => ({ length: Dimensions.get('window').width, offset: Dimensions.get('window').width * index, index })}
             onMomentumScrollEnd={(e) => {
-              const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+              const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
               setLightboxState((prev) => ({ ...prev, currentIndex: idx }));
             }}
             keyExtractor={(item, index) => item + index}
             renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH, height: '88%', justifyContent: 'center', alignItems: 'center' }}>
-                <CachedImage uri={item} style={{ width: SCREEN_WIDTH, height: '100%' }} resizeMode="contain" />
+              <View style={{ width: Dimensions.get('window').width, height: '88%', justifyContent: 'center', alignItems: 'center' }}>
+                <CachedImage uri={item} style={{ width: Dimensions.get('window').width, height: '100%' }} resizeMode="contain" />
               </View>
             )}
           />
@@ -3803,12 +4121,12 @@ export const DiscussionRoomDetailScreen = ({
           <View style={[styles.messageInfoCard, { backgroundColor: themeColors.bgCard }]}>
             <View style={[styles.messageInfoHeader, { borderBottomColor: themeColors.border }]}>
               <Text style={[styles.messageInfoTitle, { color: themeColors.textPrimary }]}>Message Info</Text>
-              <TouchableOpacity
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                 onPress={() => setInfoModalMessage(null)}
                 style={styles.messageInfoCloseBtn}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <Icon name="x" size={20} color={themeColors.iconSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -4002,7 +4320,7 @@ export const DiscussionRoomDetailScreen = ({
                 <View style={styles.messageInfoSection}>
                   <View style={styles.messageInfoSectionHeader}>
                     <View style={styles.messageInfoSectionTitleRow}>
-                      <Text style={{ fontSize: 15 }}>✨</Text>
+                      <Text style={{ fontSize: 16 }}>✨</Text>
                       <Text style={[styles.messageInfoSectionTitle, { color: themeColors.textPrimary }]}>
                         Reactions ({infoModalMessage.reactions.length})
                       </Text>
@@ -4032,9 +4350,9 @@ export const DiscussionRoomDetailScreen = ({
             <TouchableWithoutFeedback>
               <View style={[styles.roomInfoCard, { backgroundColor: themeColors.bgCard }]}>
                 <View style={styles.roomInfoHeader}>
-                  <Text style={[styles.roomInfoTitle, { color: themeColors.textPrimary }]}>💬 {roomTitle || 'Test- private'}</Text>
-                  <TouchableOpacity onPress={() => setShowRoomInfo(false)}>
-                    <Icon name="x" size={20} color={themeColors.textSecondary} />
+                  <Text style={[styles.roomInfoTitle, { color: themeColors.textPrimary }]}>💬 {roomTitle || 'Discussion room'}</Text>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setShowRoomInfo(false)}>
+                    <Icon name="x" size={20} color={themeColors.iconSecondary} />
                   </TouchableOpacity>
                 </View>
 
@@ -4042,7 +4360,7 @@ export const DiscussionRoomDetailScreen = ({
 
                 <View style={styles.roomInfoMetaRow}>
                   <View style={[styles.roomInfoBadge, { backgroundColor: themeColors.chipBg }]}>
-                    <Icon name="users" size={13} color={themeColors.textSecondary} />
+                    <Icon name="users" size={13} color={themeColors.iconSecondary} />
                     <Text style={[styles.roomInfoBadgeText, { color: themeColors.textSecondary }]}>{memberCount} Members</Text>
                   </View>
 
@@ -4099,6 +4417,13 @@ export const DiscussionRoomDetailScreen = ({
         }}
         onRoomDeleted={() => navigation.goBack()}
       />
+      <CallDetailsModal
+        visible={!!selectedCallMessage}
+        onClose={() => setSelectedCallMessage(null)}
+        message={selectedCallMessage}
+        roomType="discussion"
+        roomId={roomId || ''}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -4131,7 +4456,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   selectionCountText: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
   },
   selectionHeaderActions: {
@@ -4167,7 +4492,7 @@ const styles = StyleSheet.create({
   webHeaderTitle: {
     color: INK,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: -0.3,
   },
   webRadioBtn: {
@@ -4219,8 +4544,8 @@ const styles = StyleSheet.create({
   },
   headerLiveText: {
     color: '#EF4444',
-    fontSize: 9,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   webRadioPulseCircleActive: {
@@ -4253,7 +4578,7 @@ const styles = StyleSheet.create({
   callChatTabDiscussionText: {
     color: '#EF4444',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   callChatTabChat: {
@@ -4262,7 +4587,7 @@ const styles = StyleSheet.create({
   callChatTabChatText: {
     color: ORANGE,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   callChatActiveIndicator: {
@@ -4298,7 +4623,7 @@ const styles = StyleSheet.create({
   loadOlderText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#64748B',
   },
   emptyState: {
     alignItems: 'center',
@@ -4308,12 +4633,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: INK,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     marginTop: 14,
     marginBottom: 6,
   },
   emptySubtitle: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 13,
     textAlign: 'center',
   },
@@ -4329,7 +4654,7 @@ const styles = StyleSheet.create({
   },
   dateHeaderText: {
     color: '#64748B',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.6,
   },
@@ -4370,8 +4695,11 @@ const styles = StyleSheet.create({
   },
   webCallEventText: {
     color: INK,
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
+  },
+  webCallEventTime: {
+    fontSize: 12,
   },
   webCallActionBadge: {
     paddingHorizontal: 10,
@@ -4386,8 +4714,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
   },
   webCallActionText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   webCallJoinText: {
     color: '#059669',
@@ -4446,7 +4774,7 @@ const styles = StyleSheet.create({
   avatarText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   msgSmileyBtnLeft: {
     marginRight: 6,
@@ -4454,7 +4782,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   bubbleColWrap: {
-    maxWidth: '78%',
+    maxWidth: BUBBLE_CAP_PX ?? '78%',
     position: 'relative',
   },
   bubbleColWrapOwn: {
@@ -4490,7 +4818,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   reactionEmojiText: {
-    fontSize: 22,
+    fontSize: 24,
   },
   unifiedReactionsPill: {
     flexDirection: 'row',
@@ -4523,11 +4851,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   unifiedReactionEmoji: {
-    fontSize: 13.5,
+    fontSize: 14,
     lineHeight: 16,
   },
   unifiedReactionCountText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   touchableBubbleWrap: {
@@ -4541,7 +4869,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   msgBubbleWrapper: {
-    maxWidth: '75%',
+    maxWidth: BUBBLE_CAP_PX ?? '75%',
     position: 'relative',
   },
   msgBubbleWrapperOwn: {
@@ -4578,7 +4906,7 @@ const styles = StyleSheet.create({
   },
   msgAuthor: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   textRow: {
     flexDirection: 'row',
@@ -4606,7 +4934,7 @@ const styles = StyleSheet.create({
     color: INK,
   },
   inlineTime: {
-    fontSize: 10.5,
+    fontSize: 12,
   },
   inlineTimeOwn: {
     color: 'rgba(255, 255, 255, 0.9)',
@@ -4616,14 +4944,14 @@ const styles = StyleSheet.create({
   },
   seenByText: {
     color: ORANGE,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     marginTop: 6,
     alignSelf: 'flex-end',
   },
   sentStatusText: {
     color: '#94A3B8',
-    fontSize: 10,
+    fontSize: 12,
     marginTop: 4,
     alignSelf: 'flex-end',
   },
@@ -4649,8 +4977,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#0F172A',
-    width: 220,
-    height: 140,
+    width: isTabletDevice ? 320 : 220,
+    height: isTabletDevice ? 200 : 140,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -4673,8 +5001,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   mediaImage: {
-    width: 220,
-    height: 160,
+    width: isTabletDevice ? 320 : 220,
+    height: isTabletDevice ? 232 : 160,
     borderRadius: 14,
   },
   shareCardContainer: {
@@ -4692,8 +5020,8 @@ const styles = StyleSheet.create({
   },
   replyBannerText: {
     flex: 1,
-    color: '#6B7280',
-    fontSize: 11,
+    color: '#64748B',
+    fontSize: 12,
   },
   attachedFileBar: {
     flexDirection: 'row',
@@ -4706,7 +5034,7 @@ const styles = StyleSheet.create({
   attachedFileName: {
     flex: 1,
     color: INK,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   googleEmojiKeyboard: {
@@ -4805,7 +5133,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   googleEmojiCategoryHint: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.3,
   },
@@ -4822,7 +5150,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   googleEmojiDelText: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
   },
   webInputToolbar: {
@@ -4955,6 +5283,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   roomInfoCard: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -4968,12 +5299,12 @@ const styles = StyleSheet.create({
   },
   roomInfoTitle: {
     color: INK,
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   roomInfoDesc: {
     color: '#4B5563',
-    fontSize: 13.5,
+    fontSize: 14,
     lineHeight: 20,
   },
   roomInfoMetaRow: {
@@ -4991,7 +5322,7 @@ const styles = StyleSheet.create({
   },
   roomInfoBadgeText: {
     color: '#4B5563',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   roomInfoSecurity: {
@@ -5019,8 +5350,8 @@ const styles = StyleSheet.create({
   },
   roomInfoCallBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   forwardOverlay: {
     flex: 1,
@@ -5028,6 +5359,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   forwardCard: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '65%',
@@ -5045,7 +5379,7 @@ const styles = StyleSheet.create({
   },
   forwardTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   forwardList: {
     maxHeight: 340,
@@ -5072,7 +5406,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   forwardRoomType: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
     textTransform: 'capitalize',
   },
@@ -5104,6 +5438,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   messageInfoCard: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '75%',
@@ -5120,8 +5457,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   messageInfoTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   messageInfoCloseBtn: {
     padding: 4,
@@ -5144,10 +5481,10 @@ const styles = StyleSheet.create({
   },
   messageInfoSenderName: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   messageInfoTimeText: {
-    fontSize: 11,
+    fontSize: 12,
   },
   messageInfoMediaPreview: {
     flexDirection: 'row',
@@ -5160,7 +5497,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 75, 51, 0.08)',
   },
   messageInfoMediaText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   messageInfoContentText: {
@@ -5176,7 +5513,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   messageInfoSecurityText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '600',
     color: '#10B981',
   },
@@ -5192,9 +5529,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   messageInfoSectionTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontSize: 14,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   messageInfoMemberRow: {
@@ -5221,29 +5557,29 @@ const styles = StyleSheet.create({
   },
   messageInfoAvatarInitial: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: ORANGE,
   },
   messageInfoMemberInfo: {
     flex: 1,
   },
   messageInfoMemberName: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   messageInfoReadTime: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   messageInfoEmptyRow: {
     paddingVertical: 12,
   },
   messageInfoEmptyText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontStyle: 'italic',
   },
   messageInfoDeliveredText: {
-    fontSize: 12.5,
+    fontSize: 12,
     lineHeight: 18,
   },
   messageInfoReactionsWrap: {
@@ -5270,10 +5606,21 @@ const styles = StyleSheet.create({
     paddingRight: 2,
   },
   readReceiptMeText: {
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
     color: ORANGE,
   },
 });
+
+/** Members open the room as before; staff first pass the audited-access gate and then only observe. */
+export const DiscussionRoomDetailScreen = (props: { route: any; navigation: any }) => {
+  const p = props.route?.params || {};
+  const rawId = p.roomId || p.room_id || p.relatedId || p.id;
+  return (
+    <StaffAccessGuard targetType="room" rawId={rawId} title={p.roomTitle} onBack={() => props.navigation.goBack()}>
+      <DiscussionRoomDetailScreenInner {...props} />
+    </StaffAccessGuard>
+  );
+};
 
 export default DiscussionRoomDetailScreen;

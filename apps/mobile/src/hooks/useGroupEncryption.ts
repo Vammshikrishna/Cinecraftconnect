@@ -9,6 +9,7 @@ import {
 import { NativeSecureKeyStore } from '../services/mobileStorage';
 import { getCurrentUserIdSync, resolveCurrentUserId } from '../services/offlineCache';
 import { subscribeToKeyChanges, getSyncPrivateKey } from '../services/e2eeKeyEvents';
+import { getE2EEState } from '../services/e2eeState';
 
 const groupKeyRawCache = new Map<string, string>();
 const decryptedPayloadCache = new Map<string, string>();
@@ -16,6 +17,7 @@ const decryptedPayloadCache = new Map<string, string>();
 // Encrypted group keys for every space/room the user belongs to, fetched in ONE query right after login.
 // Without this, each chat opened on a fresh login paid its own DB round trip before it could decrypt.
 const encryptedKeyPrefetch = new Map<string, string>();
+const encryptedKeyPrefetchEpoch = new Map<string, number>();
 let encryptedKeyPrefetchPromise: Promise<void> | null = null;
 // Rows are encrypted to ONE user's public key, so they must never be reused after an account switch.
 let encryptedKeyPrefetchUserId: string | null = null;
@@ -28,12 +30,13 @@ export function prefetchGroupKeys(userId: string): Promise<void> {
     try {
       const { data } = await (getSupabaseClient() as any)
         .from('group_keys')
-        .select('target_type, target_id, encrypted_symmetric_key')
+        .select('target_type, target_id, encrypted_symmetric_key, epoch')
         .eq('user_id', userId)
         .limit(2000);
       (data || []).forEach((row: any) => {
         if (row?.encrypted_symmetric_key) {
           encryptedKeyPrefetch.set(`${row.target_type}_${row.target_id}`, row.encrypted_symmetric_key);
+          if (typeof row.epoch === 'number') encryptedKeyPrefetchEpoch.set(`${row.target_type}_${row.target_id}`, row.epoch);
         }
       });
     } catch {
@@ -43,10 +46,107 @@ export function prefetchGroupKeys(userId: string): Promise<void> {
   return encryptedKeyPrefetchPromise;
 }
 
+/** The key version each chat's cached key belongs to, by `${type}_${id}`. */
+const groupKeyEpochCache = new Map<string, number>();
+
+// A failed key change (somebody else changed it first, or the server refused) is not retried for a while, and a chat's key is
+// re-checked at most every 20 seconds. Without this, every open copy of the chat could try again at once and again and again:
+// the database logged hundreds of thousands of EPOCH_CONFLICT errors an hour.
+const rotationCooldownUntil = new Map<string, number>();
+const lastKeyCheckAt = new Map<string, number>();
+const ROTATION_COOLDOWN_MS = 60_000;
+const KEY_CHECK_MIN_GAP_MS = 20_000;
+
+/**
+ * Brings this device's copy of a chat key up to date.
+ *  - If a member was removed (or someone no longer allowed still holds a copy), this member's app creates a NEW key,
+ *    wraps it for everyone still in the chat and asks the server to switch (it only accepts "current version + 1").
+ *  - If somebody else already changed the key, it fetches and opens the new copy.
+ * Returns the new key and version, or null when the cached key is already current (or nothing could be done).
+ */
+async function refreshGroupKey(
+  targetType: 'project_space' | 'room',
+  targetId: string,
+  userId: string,
+  privateKeyStr: string,
+  cachedEpoch: number | undefined
+): Promise<{ raw: string; epoch: number } | null> {
+  const supabase = getSupabaseClient() as any;
+  const checkId = `${targetType}_${targetId}`;
+  const nowMs = Date.now();
+  if (cachedEpoch !== undefined && nowMs - (lastKeyCheckAt.get(checkId) ?? 0) < KEY_CHECK_MIN_GAP_MS) return null;
+  lastKeyCheckAt.set(checkId, nowMs);
+  const { data: statusData } = await supabase.rpc('group_key_status', { p_type: targetType, p_id: targetId });
+  const status = Array.isArray(statusData) ? statusData[0] : statusData;
+  if (!status) return null; // not a member (or no key state yet)
+  const epoch: number = status.epoch ?? 1;
+  if (!status.needs_rotation && cachedEpoch === epoch) return null;
+
+  if (status.needs_rotation && nowMs >= (rotationCooldownUntil.get(checkId) ?? 0)) {
+    try {
+      const raw = generateRandomBytes(32).toString('base64');
+      const ids = new Set<string>([userId]);
+      if (targetType === 'project_space') {
+        const { data: members } = await supabase.from('project_space_members').select('user_id').eq('project_space_id', targetId);
+        (members || []).forEach((m: any) => ids.add(m.user_id));
+        const { data: sp } = await supabase.from('project_spaces').select('creator_id, projects(creator_id)').eq('id', targetId).maybeSingle();
+        if (sp?.creator_id) ids.add(sp.creator_id);
+        if (sp?.projects?.creator_id) ids.add(sp.projects.creator_id);
+      } else {
+        const { data: members } = await supabase.from('room_members').select('user_id').eq('room_id', targetId);
+        (members || []).forEach((m: any) => ids.add(m.user_id));
+        const { data: rm } = await supabase.from('discussion_rooms').select('creator_id').eq('id', targetId).maybeSingle();
+        if (rm?.creator_id) ids.add(rm.creator_id);
+      }
+      const { data: grants } = await supabase
+        .from('space_access_grants').select('user_id')
+        .eq('target_type', targetType).eq('target_id', targetId).gt('expires_at', new Date().toISOString());
+      (grants || []).forEach((g: any) => ids.add(g.user_id));
+
+      const { data: profiles } = await supabase.from('profiles').select('id, public_key').in('id', Array.from(ids));
+      const rows: Array<{ user_id: string; encrypted_symmetric_key: string }> = [];
+      for (const p of profiles || []) {
+        if (!p.public_key) continue;
+        try {
+          rows.push({ user_id: p.id, encrypted_symmetric_key: await encryptWithPublicKey(raw, p.public_key) });
+        } catch (e) {
+          console.error('[useGroupEncryption] Could not wrap the new key for', p.id, e);
+        }
+      }
+      if (rows.some((r) => r.user_id === userId)) {
+        const { error } = await supabase.rpc('rotate_group_key', {
+          p_type: targetType, p_id: targetId, p_new_epoch: epoch + 1, p_rows: rows,
+        });
+        if (!error) return { raw, epoch: epoch + 1 };
+        rotationCooldownUntil.set(checkId, Date.now() + ROTATION_COOLDOWN_MS);
+        if (!String(error.message || '').includes('EPOCH_CONFLICT')) console.error('[useGroupEncryption] Key rotation failed:', error);
+      }
+    } catch (e) {
+      rotationCooldownUntil.set(checkId, Date.now() + ROTATION_COOLDOWN_MS);
+      console.error('[useGroupEncryption] Key rotation error:', e);
+    }
+  }
+
+  // Somebody else changed the key (or we could not): load the current copy.
+  const { data: row } = await supabase
+    .from('group_keys').select('encrypted_symmetric_key, epoch')
+    .eq('target_type', targetType).eq('target_id', targetId).eq('user_id', userId).maybeSingle();
+  if (!row?.encrypted_symmetric_key) return null;
+  try {
+    const raw = await decryptWithPrivateKey(row.encrypted_symmetric_key, privateKeyStr);
+    return { raw, epoch: row.epoch ?? epoch };
+  } catch (e) {
+    console.error('[useGroupEncryption] Could not open the current chat key:', e);
+    return null;
+  }
+}
+
 export function clearGroupKeyRawCache(): void {
+  groupKeyEpochCache.clear();
   groupKeyRawCache.clear();
   decryptedPayloadCache.clear();
   encryptedKeyPrefetch.clear();
+  encryptedKeyPrefetchEpoch.clear();
   encryptedKeyPrefetchPromise = null;
   encryptedKeyPrefetchUserId = null;
 }
@@ -72,12 +172,35 @@ function generateRandomBytes(n: number): Buffer {
 
 export const useGroupEncryption = (
   targetType: 'project_space' | 'room',
-  targetId: string | null
+  targetId: string | null,
+  /** true for project spaces and private/secret rooms: sending fails closed instead of falling back to plain text */
+  requireEncryption: boolean = targetType === 'project_space'
 ) => {
   const cacheKey = targetId ? `${targetType}_${targetId}` : '';
   const initialKey = cacheKey && groupKeyRawCache.has(cacheKey) ? groupKeyRawCache.get(cacheKey)! : null;
   const rawKeyRef = useRef<string | null>(initialKey);
+  const epochRef = useRef<number | undefined>(cacheKey ? groupKeyEpochCache.get(cacheKey) : undefined);
   const [isReady, setIsReady] = useState(!!initialKey);
+
+  /** Make sure the key in use is the chat's current one (changing it first if a removal is waiting). */
+  const ensureCurrentKey = useCallback(async (): Promise<void> => {
+    if (!targetId) return;
+    const userId = getCurrentUserIdSync();
+    if (!userId) return;
+    const priv = getSyncPrivateKey(userId);
+    if (!priv) return;
+    const fresh = await refreshGroupKey(targetType, targetId, userId, priv, epochRef.current).catch(() => null);
+    if (!fresh) return;
+    const key = `${targetType}_${targetId}`;
+    groupKeyRawCache.set(key, fresh.raw);
+    groupKeyEpochCache.set(key, fresh.epoch);
+    decryptedPayloadCache.clear();
+    epochRef.current = fresh.epoch;
+    rawKeyRef.current = fresh.raw;
+    await new NativeSecureKeyStore().setKey(`group_key_${targetId}`, fresh.raw).catch(() => { });
+    await new NativeSecureKeyStore().setKey(`group_key_epoch_${targetId}`, String(fresh.epoch)).catch(() => { });
+    setIsReady(true);
+  }, [targetId, targetType]);
 
   useEffect(() => {
     let mounted = true;
@@ -86,6 +209,8 @@ export const useGroupEncryption = (
     if (groupKeyRawCache.has(cacheKey)) {
       rawKeyRef.current = groupKeyRawCache.get(cacheKey)!;
       setIsReady(true);
+      // the cached key may be out of date (the chat's key was changed since): check quietly
+      ensureCurrentKey().catch(() => { });
       return;
     }
 
@@ -97,8 +222,15 @@ export const useGroupEncryption = (
       if (savedGroupKey && mounted) {
         groupKeyRawCache.set(cacheKey, savedGroupKey);
         rawKeyRef.current = savedGroupKey;
+        const savedEpoch = Number(await secureStore.getKey(`group_key_epoch_${targetId}`).catch(() => null));
+        if (Number.isFinite(savedEpoch) && savedEpoch > 0) {
+          groupKeyEpochCache.set(cacheKey, savedEpoch);
+          epochRef.current = savedEpoch;
+        }
         setIsReady(true);
-        return; // Already have the key — no network call needed
+        // Works offline; when online, quietly check whether the chat's key was changed since.
+        ensureCurrentKey().catch(() => { });
+        return;
       }
       try {
         const supabase = getSupabaseClient();
@@ -152,10 +284,10 @@ export const useGroupEncryption = (
         }
         const prefetched = prefetchIsForThisUser ? encryptedKeyPrefetch.get(cacheKey) : undefined;
         const { data, error: fetchErr } = prefetched
-          ? { data: { encrypted_symmetric_key: prefetched }, error: null }
+          ? { data: { encrypted_symmetric_key: prefetched, epoch: encryptedKeyPrefetchEpoch.get(cacheKey) }, error: null }
           : await (supabase
             .from('group_keys' as any)
-            .select('encrypted_symmetric_key')
+            .select('encrypted_symmetric_key, epoch')
             .eq('target_type', targetType)
             .eq('target_id', targetId)
             .eq('user_id', userId)
@@ -171,10 +303,17 @@ export const useGroupEncryption = (
             console.log('[useGroupEncryption] Group key decrypted, length:', rawSymmetricKeyBase64.length);
             groupKeyRawCache.set(cacheKey, rawSymmetricKeyBase64);
             await secureStore.setKey(`group_key_${targetId}`, rawSymmetricKeyBase64).catch(() => { });
+            if (typeof (data as any).epoch === 'number') {
+              groupKeyEpochCache.set(cacheKey, (data as any).epoch);
+              epochRef.current = (data as any).epoch;
+              await secureStore.setKey(`group_key_epoch_${targetId}`, String((data as any).epoch)).catch(() => { });
+            }
             if (mounted) {
               rawKeyRef.current = rawSymmetricKeyBase64;
               setIsReady(true);
             }
+            // a removal may be waiting for the key to be changed: do it now
+            ensureCurrentKey().catch(() => { });
           } catch (decryptErr) {
             console.error('[useGroupEncryption] Failed to decrypt group key with local private key:', decryptErr);
             // DO NOT delete the row from DB: deleting it destroys key sync for this space
@@ -360,11 +499,16 @@ export const useGroupEncryption = (
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Auth required');
 
+    // Never encrypt with an out-of-date key: if the chat's key was changed (or a removal is waiting), update first.
+    if (requireEncryption && targetId) await ensureCurrentKey();
+
     const rawKey = rawKeyRef.current;
     if (!rawKey) {
-      // Project spaces are advertised as end-to-end encrypted: never send plaintext without a key.
-      if (targetType === 'project_space') {
-        throw new Error('The secure key for this space is not available yet. Your message was not sent. Try again in a moment, or enter your encryption PIN if prompted.');
+      // Encrypted groups never fall back to plain text. Say why, so the person knows what to do.
+      if (requireEncryption) {
+        if (getE2EEState().enabled !== true) throw new Error('Turn on encrypted messages in Settings to send messages here.');
+        if (!getSyncPrivateKey(user.id)) throw new Error('Unlock encrypted messages with your PIN to send messages here.');
+        throw new Error('The secure key for this conversation is not available yet. Your message was not sent. Try again in a moment.');
       }
       // Public discussion rooms have no group key by design.
       return plaintext;
@@ -416,13 +560,13 @@ export const useGroupEncryption = (
       ciphertext: ciphertextB64,
       header: {
         n_msg: 0,
-        epoch: 1,
+        epoch: epochRef.current ?? 1,
         iv: ivB64,
       },
     };
 
     return JSON.stringify(envelope);
-  }, [targetId]);
+  }, [targetId, requireEncryption, ensureCurrentKey]);
 
   const decryptGroupMessage = useCallback(async (rawPayload: string): Promise<string> => {
     if (!rawPayload) return rawPayload;

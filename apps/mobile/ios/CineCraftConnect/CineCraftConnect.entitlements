@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push notifications. "development" for Xcode / TestFlight-internal debug builds; Xcode switches it to "production" when you archive for the App Store.
+	     Needs a PAID Apple Developer account. With a free personal team, clear "Code Signing Entitlements" in the target's Build Settings (IOS_SETUP.md). -->
+	<key>aps-environment</key>
+	<string>development</string>
+
+	<!-- Incoming call / mention banners that break through Focus modes. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+
+	<!-- Universal links: https://cinecraftconnect.com/... opens the app. Needs /.well-known/apple-app-site-association on that domain. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:cinecraftconnect.com</string>
+	</array>
+
+	<!-- Shared with the ScreenShare broadcast extension: the screen frames travel through a socket file in this container. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.cinecraftconnect.app</string>
+	</array>
+</dict>
+</plist>

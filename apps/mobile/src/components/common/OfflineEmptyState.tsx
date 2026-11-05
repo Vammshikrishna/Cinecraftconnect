@@ -1,20 +1,25 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Icon } from './Icon';
 import { useUserSettings } from '../../contexts/SettingsContext';
 
-export const OfflineEmptyState = () => {
+export const OfflineEmptyState: React.FC<{ onRetry?: () => void }> = ({ onRetry }) => {
   const { themeColors } = useUserSettings();
 
   return (
     <View style={styles.container}>
       <View style={[styles.card, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
         <View style={styles.iconBox}>
-          <Icon name="wifi-off" size={30} color="#FF4B33" />
+          <Icon name="wifi-off" size={30} color={themeColors.primary} />
         </View>
         <Text style={[styles.title, { color: themeColors.textPrimary }]}>
           Please connect to the internet to view this page.
         </Text>
+        {onRetry ? (
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Try again" onPress={onRetry} style={{ marginTop: 14, minHeight: 44, paddingHorizontal: 20, justifyContent: 'center' }}>
+            <Text style={{ color: themeColors.primary, fontSize: 14, fontWeight: '700' }}>Try again</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );
@@ -50,7 +55,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   title: {
-    fontSize: 17,
+    fontSize: 18,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     marginBottom: 6,

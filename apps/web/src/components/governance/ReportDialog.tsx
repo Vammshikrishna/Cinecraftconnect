@@ -27,33 +27,32 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import { friendlyError } from '@cinecraft/core';
+import { REPORT_REASONS, buildReportRow } from '@/lib/reportReasons';
 
-export type ReportTargetType = 'project' | 'discussion' | 'post' | 'profile' | 'comment';
+// Only target types the database accepts. A project has no table of its own: it is reported as
+// 'project' and filed against its owner (see buildReportRow).
+export type ReportTargetType = 'room' | 'post' | 'user' | 'comment';
 
 interface ReportDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  targetType: ReportTargetType;
+  targetType: ReportTargetType | 'project';
   targetId: string;
   targetTitle: string;
+  /** required when targetType is 'project': the project owner */
+  ownerId?: string | null;
 }
 
-const REASONS = [
-  { id: 'spam', label: 'Spam or Misleading', description: 'Repeated content or deceptive advertising' },
-  { id: 'harassment', label: 'Harassment', description: 'Attacking or bullying specific individuals' },
-  { id: 'inappropriate', label: 'Inappropriate Content', description: 'Adult content or graphic violence' },
-  { id: 'hate_speech', label: 'Hate Speech', description: 'Attacking protected groups or inciting violence' },
-  { id: 'intellectual_property', label: 'Copyright Violation', description: 'Using assets without permission' },
-  { id: 'security', label: 'Security Risk', description: 'Malicious links or phishing attempts' },
-  { id: 'other', label: 'Other', description: 'Anything else that violates our terms' }
-];
+const REASONS = REPORT_REASONS;
 
 export const ReportDialog = ({
   isOpen,
   onOpenChange,
   targetType,
   targetId,
-  targetTitle
+  targetTitle,
+  ownerId
 }: ReportDialogProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -68,19 +67,24 @@ export const ReportDialog = ({
       return;
     }
 
+    if (!user) {
+      toast({ title: "Authentication Required", description: "Please log in to report content.", variant: "destructive" });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const { error } = await (supabase as any)
-        .from('content_reports')
-        .insert({
-          reporter_id: user?.id,
-          target_type: targetType,
-          target_id: targetId,
-          target_title: targetTitle,
-          reason,
-          details,
-          priority: (reason === 'security' || reason === 'hate_speech') ? 'high' : 'medium'
-        });
+      // priority is decided by the database rules, never by the form
+      const row = buildReportRow({
+        reporterId: user.id,
+        targetType,
+        targetId,
+        targetTitle,
+        ownerId,
+        reasonId: reason,
+        details,
+      });
+      const { error } = await (supabase as any).from('content_reports').insert(row);
 
       if (error) throw error;
 
@@ -96,7 +100,7 @@ export const ReportDialog = ({
       }, 2000);
 
     } catch (error: any) {
-      toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Submission Failed", description: friendlyError(error), variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -104,7 +108,7 @@ export const ReportDialog = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border-border/50 bg-background/95 backdrop-blur-xl">
+      <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border-border/50 bg-background/95">
         <AnimatePresence mode="wait">
           {!isSuccess ? (
             <motion.div
@@ -121,7 +125,7 @@ export const ReportDialog = ({
                   </div>
                   <div>
                     <DialogTitle className="text-xl font-black uppercase tracking-tight">Report Content</DialogTitle>
-                    <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <DialogDescription className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                       Target: {targetType} • {targetTitle.slice(0, 30)}{targetTitle.length > 30 ? '...' : ''}
                     </DialogDescription>
                   </div>
@@ -142,7 +146,7 @@ export const ReportDialog = ({
                         <SelectItem key={r.id} value={r.id} className="py-3">
                           <div className="flex flex-col gap-0.5">
                             <span className="font-bold text-sm">{r.label}</span>
-                            <span className="text-[10px] text-muted-foreground leading-none">{r.description}</span>
+                            <span className="text-[12px] text-muted-foreground leading-none">{r.description}</span>
                           </div>
                         </SelectItem>
                       ))}
@@ -165,7 +169,7 @@ export const ReportDialog = ({
 
                 <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 flex gap-3">
                   <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-[10px] leading-relaxed text-amber-200/70 font-medium">
+                  <p className="text-[12px] leading-relaxed text-amber-200/70 font-medium">
                     Misuse of the reporting system may lead to account restrictions. Only flag content that clearly violates our community guidelines.
                   </p>
                 </div>
@@ -175,14 +179,14 @@ export const ReportDialog = ({
                 <Button 
                   variant="ghost" 
                   onClick={() => onOpenChange(false)}
-                  className="rounded-xl font-bold uppercase tracking-widest text-[10px]"
+                  className="rounded-xl font-bold uppercase tracking-widest text-[12px]"
                 >
                   Cancel
                 </Button>
                 <Button 
                   onClick={handleSubmit} 
                   disabled={isSubmitting || !reason}
-                  className="rounded-xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest text-[10px] px-8 shadow-lg shadow-red-600/20"
+                  className="rounded-xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest text-[12px] px-8 shadow-lg shadow-red-600/20"
                 >
                   {isSubmitting ? "Submitting..." : "Submit Report"}
                   {!isSubmitting && <ChevronRight className="w-3 h-3 ml-2" />}
@@ -196,7 +200,7 @@ export const ReportDialog = ({
               animate={{ opacity: 1, scale: 1 }}
               className="p-12 flex flex-col items-center text-center space-y-6"
             >
-              <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center animate-pulse">
+              <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center">
                 <CheckCircle2 className="w-10 h-10 text-green-500" />
               </div>
               <div className="space-y-2">

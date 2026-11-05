@@ -1,25 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
-import { Loader2, Send, Star, LifeBuoy, CheckCircle2 } from 'lucide-react';
-import { TICKET_CATEGORY_LABEL } from '@cinecraft/core';
+import { Send, Star, LifeBuoy, CheckCircle2 } from 'lucide-react';
+import { ToastAction } from '@/components/ui/toast';
+import { TICKET_CATEGORY_LABEL, friendlyError } from '@cinecraft/core';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useSignedStorageUrl } from '@/lib/signedStorageUrl';
 import { Button } from '@/components/ui/button';
+import { starLabel } from '@/components/settings/settingsLogic';
 import { Textarea } from '@/components/ui/textarea';
 import { HelpBack, StatusBadge } from '@/components/help/HelpParts';
 import { cn } from '@/lib/utils';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
 
 const db = supabase as any;
 
-const Attachment = ({ refPath }: { refPath: string }) => {
+const Attachment = ({ refPath, n }: { refPath: string; n: number }) => {
   const src = useSignedStorageUrl(refPath, ['support']);
   if (!src) return <div className="h-24 w-24 rounded-xl bg-muted animate-pulse" />;
   return (
     <a href={src} target="_blank" rel="noopener noreferrer" className="block h-24 w-24 rounded-xl overflow-hidden border">
-      <img src={src} alt="Attachment" className="h-full w-full object-cover" />
+      <img src={src} alt={`Attachment ${n}`} className="h-full w-full object-cover" />
     </a>
   );
 };
@@ -32,17 +35,20 @@ const HelpTicketPage = () => {
   const [ticket, setTicket] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
   const [rating, setRating] = useState(0);
   const [ratingNote, setRatingNote] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const seenCount = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     const [t, m] = await Promise.all([
       db.from('support_tickets').select('*').eq('id', id).maybeSingle(),
       db.from('support_ticket_messages').select('id, sender_id, content, created_at').eq('ticket_id', id).order('created_at', { ascending: true }),
     ]);
+    if (t.error || m.error) setLoadError(true); else setLoadError(false);
     setTicket(t.data || null);
     setMessages(m.data || []);
     setLoading(false);
@@ -57,28 +63,38 @@ const HelpTicketPage = () => {
     return () => { supabase.removeChannel(ch); };
   }, [id, load]);
 
+  // Only follow NEW messages. The first load must leave the page at the top so the ticket header stays in view.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length]);
+    if (loading) return;
+    if (seenCount.current === null) { seenCount.current = messages.length; return; }
+    if (messages.length > seenCount.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    seenCount.current = messages.length;
+  }, [messages.length, loading]);
 
   const run = async (fn: string, args: any, ok?: string) => {
     const { error } = await db.rpc(fn, args);
-    if (error) toast({ title: 'Could not complete', description: error.message, variant: 'destructive' });
+    if (error) toast({ title: 'Could not complete', description: friendlyError(error), variant: 'destructive' });
     else if (ok) toast({ title: ok });
     load();
+    return !error;
   };
 
   const send = async () => {
     if (!reply.trim() || !user) return;
     setSending(true);
-    const { error } = await db.from('support_ticket_messages').insert({ ticket_id: id, sender_id: user.id, content: reply.trim() });
+    const { data: inserted, error } = await db.from('support_ticket_messages').insert({ ticket_id: id, sender_id: user.id, content: reply.trim() }).select('id, sender_id, content, created_at').maybeSingle();
     setSending(false);
-    if (error) return toast({ title: 'Could not send', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not send', description: friendlyError(error), variant: 'destructive' });
+    // show it now; the refetch below reconciles
+    if (inserted) setMessages(prev => (prev.some(x => x.id === inserted.id) ? prev : [...prev, inserted]));
     setReply('');
     load();
   };
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) return <ScreenSkeleton variant="detail" />;
+  if (loadError && !ticket) {
+    return (<><HelpBack to="/settings/help/requests" label="Your requests" /><div role="alert" className="space-y-3"><p className="text-destructive">Could not load this request.</p><Button size="sm" variant="outline" onClick={() => { setLoading(true); load(); }}>Try again</Button></div></>);
+  }
   if (!ticket) {
     return (<><HelpBack to="/settings/help/requests" label="Your requests" /><p className="text-muted-foreground">This request was not found.</p></>);
   }
@@ -95,7 +111,7 @@ const HelpTicketPage = () => {
           <StatusBadge status={ticket.status} />
           <span className="text-xs text-muted-foreground">{TICKET_CATEGORY_LABEL[ticket.category] || ticket.category} · #{ticket.id.slice(0, 8)}</span>
         </div>
-        <h2 className="text-xl font-bold leading-snug">{ticket.subject}</h2>
+        <h1 className="text-xl font-bold leading-snug break-words">{ticket.subject}</h1>
         <p className="text-xs text-muted-foreground mt-1">Opened {format(new Date(ticket.created_at), 'd MMM yyyy, h:mm a')}</p>
       </div>
 
@@ -110,9 +126,9 @@ const HelpTicketPage = () => {
       <div className="space-y-4 mb-6">
         <div className="flex justify-end">
           <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-3">
-            <p className="text-[15px] whitespace-pre-wrap break-words">{ticket.message}</p>
-            {attachments.length > 0 && <div className="flex gap-2 mt-3 flex-wrap">{attachments.map(a => <Attachment key={a} refPath={a} />)}</div>}
-            <p className="text-[11px] opacity-70 mt-1.5">{formatDistanceToNow(new Date(ticket.created_at), { addSuffix: true })}</p>
+            <p className="text-base whitespace-pre-wrap break-words">{ticket.message}</p>
+            {attachments.length > 0 && <div className="flex gap-2 mt-3 flex-wrap">{attachments.map((a, i) => <Attachment key={a} refPath={a} n={i + 1} />)}</div>}
+            <p className="text-[12px] opacity-70 mt-1.5">{formatDistanceToNow(new Date(ticket.created_at), { addSuffix: true })}</p>
           </div>
         </div>
 
@@ -121,9 +137,9 @@ const HelpTicketPage = () => {
           return (
             <div key={m.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
               <div className={cn('max-w-[85%] rounded-2xl px-4 py-3', mine ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md bg-muted')}>
-                {!mine && <p className="text-[11px] font-semibold text-primary mb-0.5">CineCraft Support</p>}
-                <p className="text-[15px] whitespace-pre-wrap break-words">{m.content}</p>
-                <p className={cn('text-[11px] mt-1.5', mine ? 'opacity-70' : 'text-muted-foreground')}>{formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}</p>
+                {!mine && <p className="text-[12px] font-semibold text-primary mb-0.5">CineCraft Support</p>}
+                <p className="text-base whitespace-pre-wrap break-words">{m.content}</p>
+                <p className={cn('text-[12px] mt-1.5', mine ? 'opacity-70' : 'text-muted-foreground')}>{formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}</p>
               </div>
             </div>
           );
@@ -138,17 +154,17 @@ const HelpTicketPage = () => {
             <p className="text-sm flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> You rated this {ticket.csat_rating} out of 5. Thank you.</p>
           ) : (
             <>
-              <p className="font-semibold text-[15px] mb-2">How did we do?</p>
+              <p className="font-semibold text-base mb-2">How did we do?</p>
               <div className="flex gap-1 mb-3">
                 {[1, 2, 3, 4, 5].map(n => (
-                  <button key={n} onClick={() => setRating(n)} aria-label={`${n} stars`}>
+                  <button key={n} type="button" onClick={() => setRating(n)} aria-label={starLabel(n)} aria-pressed={n === rating} className="h-11 w-11 grid place-items-center active:scale-90 transition-transform duration-100">
                     <Star className={cn('h-7 w-7', n <= rating ? 'text-amber-500 fill-amber-500' : 'text-muted-foreground/40')} />
                   </button>
                 ))}
               </div>
               {rating > 0 && (
-                <div className="space-y-2">
-                  <Textarea rows={2} maxLength={500} value={ratingNote} onChange={e => setRatingNote(e.target.value)} placeholder="Anything you want to add? (optional)" className="resize-none" />
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <Textarea autoFocus aria-label="Anything you want to add?" rows={2} maxLength={500} value={ratingNote} onChange={e => setRatingNote(e.target.value)} placeholder="Anything you want to add? (optional)" className="resize-none" />
                   <Button size="sm" onClick={() => run('rate_support_ticket', { p_id: id, p_rating: rating, p_comment: ratingNote || null }, 'Thanks for your feedback')}>Submit</Button>
                 </div>
               )}
@@ -165,9 +181,16 @@ const HelpTicketPage = () => {
         </div>
       ) : (
         <div className="space-y-3">
-          <Textarea rows={3} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder={done ? 'Reply to reopen this request…' : 'Write a reply…'} className="resize-none" />
+          <Textarea rows={3} maxLength={4000} aria-label="Reply" value={reply} onChange={e => setReply(e.target.value)} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); void send(); } }} placeholder={done ? 'Reply to reopen this request…' : 'Write a reply…'} className="resize-none" />
           <div className="flex items-center justify-between gap-3">
-            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => run('close_support_ticket', { p_id: id }, 'Request closed')}>Close request</Button>
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={async () => {
+              if (!(await run('close_support_ticket', { p_id: id }))) return;
+              toast({
+                title: 'Request closed',
+                description: 'You can reopen it if you still need help.',
+                action: <ToastAction altText="Undo" onClick={() => run('reopen_support_ticket', { p_id: id }, 'Request reopened')}>Undo</ToastAction>,
+              });
+            }}>Close request</Button>
             <Button onClick={send} disabled={!reply.trim() || sending}><Send className="h-4 w-4 mr-1.5" />{sending ? 'Sending…' : 'Send'}</Button>
           </div>
         </div>

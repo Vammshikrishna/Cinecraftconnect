@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { initializeApp, cert, getApps } from "npm:firebase-admin@12.1.0/app";
 import { getMessaging } from "npm:firebase-admin@12.1.0/messaging";
+import { handleRateLimit } from "../_shared/rateLimit.ts";
 
 function isEncryptedContent(content: string | null): boolean {
     if (!content) return false;
@@ -94,20 +95,118 @@ serve(async (req) => {
         let encryptedContent = "";
         let perUserEncryptedKeys: Record<string, string> = {};
 
+        // Two kinds of caller reach this function:
+        //  1. the database webhook (table / record in the body), which must send the shared secret;
+        //  2. a signed-in app ringing people for a call (recipientIds in the body), which must be a real user
+        //     and may only ring people who belong to the same room.
+        const isFastPath = Array.isArray(reqBody.recipientIds) && reqBody.recipientIds.length > 0;
+        const reply = (body: unknown, status: number) =>
+            new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        let callerUserId: string | null = null;
+        if (isFastPath) {
+            const bearer = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
+            const { data: callerData, error: callerErr } = bearer
+                ? await supabase.auth.getUser(bearer)
+                : ({ data: null, error: new Error("no token") } as any);
+            if (callerErr || !callerData?.user) return reply({ error: "UNAUTHORIZED" }, 401);
+            callerUserId = callerData.user.id as string;
+            const rl = await handleRateLimit(req, "push-delivery", 120, 60000);
+            if (!rl.allowed) return rl.response!;
+        } else {
+            const expected = Deno.env.get("PUSH_WEBHOOK_SECRET");
+            if (expected) {
+                const got = req.headers.get("x-webhook-secret") || "";
+                let diff = got.length ^ expected.length;
+                for (let i = 0; i < Math.min(got.length, expected.length); i++) diff |= got.charCodeAt(i) ^ expected.charCodeAt(i);
+                if (diff !== 0) return reply({ error: "UNAUTHORIZED" }, 401);
+            } else {
+                console.warn("[push-delivery] PUSH_WEBHOOK_SECRET is not set: database webhook calls are NOT authenticated yet.");
+            }
+        }
+
         // DIRECT FAST-PATH FOR INSTANT 0-LATENCY CALL FCM PUSH & MULTI-DEVICE SYNC
-        if (reqBody.recipientIds && Array.isArray(reqBody.recipientIds) && reqBody.recipientIds.length > 0) {
-            targetUserIds = reqBody.recipientIds;
-            payload.type = reqBody.type || "incoming_call";
-            payload.title = reqBody.title || (reqBody.type === "call_answered" ? "Call Answered" : "Incoming Video Call");
-            payload.body = reqBody.body || `${reqBody.callerName || "Someone"} is calling you...`;
-            payload.id = reqBody.roomId || String(Date.now());
-            payload.conversationId = reqBody.roomId || "";
-            payload.senderId = reqBody.callerId || "system";
-            payload.actionUrl = reqBody.actionUrl || "/";
-            payload.senderName = reqBody.callerName || "CineCraft Call";
-            if (reqBody.callId) (payload as any).callId = reqBody.callId;
-            if (reqBody.roomId) (payload as any).roomId = reqBody.roomId;
-            if (reqBody.avatarUrl) payload.avatarUrl = reqBody.avatarUrl;
+        if (isFastPath && callerUserId) {
+            const reqType = String(reqBody.type || "incoming_call");
+            if (!["incoming_call", "call_answered", "call_cancelled"].includes(reqType)) {
+                return reply({ error: "BAD_REQUEST", message: "Unsupported push type" }, 400);
+            }
+            const roomIdStr = String(reqBody.roomId || "").slice(0, 300);
+            const roomTypeStr = String(reqBody.roomType || "");
+            let recipients: string[] = Array.from(new Set((reqBody.recipientIds as unknown[]).map(String)))
+                .filter((id) => uuidRe.test(id))
+                .slice(0, 100);
+            if (recipients.length === 0) return reply({ error: "BAD_REQUEST", message: "No valid recipients" }, 400);
+
+            let resolvedRoomType = roomTypeStr;
+            let resolvedRoomRef = roomIdStr;
+
+            if (reqType === "call_answered") {
+                // Multi-device sync: the answering user may only tell their own other devices.
+                recipients = recipients.filter((id) => id === callerUserId);
+            } else if (reqType === "call_cancelled") {
+                // The cancel notice carries no room type, so find the call this person started or is part of.
+                const { data: callRows } = await supabase
+                    .from("calls")
+                    .select("room_type, daily_room_name, started_by, created_at")
+                    .or(`daily_room_name.eq.${roomIdStr.replace(/[^A-Za-z0-9_-]/g, "")},room_id.eq.${uuidRe.test(roomIdStr) ? roomIdStr : "00000000-0000-0000-0000-000000000000"}`)
+                    .order("created_at", { ascending: false })
+                    .limit(1);
+                const callRow = callRows?.[0];
+                if (!callRow || callRow.started_by !== callerUserId) {
+                    return reply({ error: "FORBIDDEN", message: "Only the person who started the call can cancel it" }, 403);
+                }
+                resolvedRoomType = callRow.room_type;
+                resolvedRoomRef = callRow.daily_room_name || roomIdStr;
+            } else {
+                if (!["project", "discussion", "direct"].includes(roomTypeStr) || !roomIdStr) {
+                    return reply({ error: "BAD_REQUEST", message: "Missing room" }, 400);
+                }
+                const { data: callerOk } = await supabase.rpc("verify_call_room_membership", {
+                    p_user_id: callerUserId, p_room_type: roomTypeStr, p_room_id: roomIdStr,
+                });
+                if (callerOk !== true) return reply({ error: "FORBIDDEN", message: "You are not part of this room" }, 403);
+            }
+
+            if (reqType !== "call_answered") {
+                // Only people who belong to the same room can be rung.
+                const checks = await Promise.all(recipients.map(async (id) => {
+                    if (id === callerUserId) return null;
+                    const { data: ok } = await supabase.rpc("verify_call_room_membership", {
+                        p_user_id: id, p_room_type: resolvedRoomType, p_room_id: resolvedRoomRef,
+                    });
+                    return ok === true ? id : null;
+                }));
+                recipients = checks.filter((id): id is string => !!id);
+            }
+            if (recipients.length === 0) return reply({ error: "FORBIDDEN", message: "No one in this room to notify" }, 403);
+
+            // Name and picture come from the caller's profile, never from the request.
+            const { data: callerProfile } = await supabase
+                .from("profiles").select("full_name, avatar_url").eq("id", callerUserId).maybeSingle();
+            const callerName = String(callerProfile?.full_name || "Someone").slice(0, 80);
+
+            // Links stay inside the app.
+            let safeActionUrl = String(reqBody.actionUrl || "/");
+            if (!safeActionUrl.startsWith("/") || safeActionUrl.startsWith("//")) safeActionUrl = "/";
+
+            targetUserIds = recipients;
+            payload.type = reqType;
+            payload.title = reqType === "call_answered" ? "Call Answered" : callerName;
+            payload.body = `${callerName} is calling you...`;
+            payload.id = roomIdStr || String(Date.now());
+            payload.conversationId = roomIdStr;
+            payload.senderId = callerUserId;
+            payload.actionUrl = safeActionUrl;
+            payload.senderName = callerName;
+            if (typeof reqBody.callId === "string" && uuidRe.test(reqBody.callId)) (payload as any).callId = reqBody.callId;
+            if (roomIdStr) (payload as any).roomId = roomIdStr;
+            if (callerProfile?.avatar_url) payload.avatarUrl = callerProfile.avatar_url;
+            // what the ringing screen on the phone needs to show and to join the right room
+            if (resolvedRoomType) (payload as any).roomType = resolvedRoomType;
+            if (reqBody.roomName) (payload as any).roomName = String(reqBody.roomName).slice(0, 120);
+            if (typeof reqBody.isVideo === "boolean") (payload as any).isVideo = reqBody.isVideo;
         } else if (table === "notifications" && type === "INSERT") {
             // Check if this is a message notification loop from our own insertions
             if (record.type === "new_message") {
@@ -207,6 +306,22 @@ serve(async (req) => {
                 .insert(notificationToInsert);
             if (insertErr) {
                 console.error("Failed to insert DM notification row:", insertErr);
+            }
+
+            // The receiver muted this chat (conversation_prefs, part GE): keep the in-app row but send no push.
+            // If the table does not exist yet the query errors and the push goes out as before.
+            try {
+                const { data: pref, error: prefErr } = await supabase
+                    .from("conversation_prefs")
+                    .select("muted")
+                    .eq("user_id", record.receiver_id)
+                    .eq("partner_id", record.sender_id)
+                    .maybeSingle();
+                if (!prefErr && pref?.muted) {
+                    return new Response(JSON.stringify({ success: true, message: "Skipped push: chat muted by receiver" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+                }
+            } catch (e) {
+                console.warn("Mute check failed, sending push:", e);
             }
 
         } else if (table === "room_messages" && type === "INSERT") {
@@ -498,6 +613,9 @@ serve(async (req) => {
             sanitizedData["sentAt"] = String(Date.now());
             if ((payload as any).callId) sanitizedData["callId"] = String((payload as any).callId);
             if ((payload as any).roomId) sanitizedData["roomId"] = String((payload as any).roomId);
+            if ((payload as any).roomType) sanitizedData["roomType"] = String((payload as any).roomType);
+            if ((payload as any).roomName) sanitizedData["roomName"] = String((payload as any).roomName);
+            if ((payload as any).isVideo !== undefined) sanitizedData["isVideo"] = String((payload as any).isVideo);
             if ((payload as any).spaceId) sanitizedData["spaceId"] = String((payload as any).spaceId);
             if ((payload as any).projectId) sanitizedData["projectId"] = String((payload as any).projectId);
             if ((payload as any).senderId) sanitizedData["senderId"] = String((payload as any).senderId);
@@ -525,6 +643,9 @@ serve(async (req) => {
                 }
             }
 
+            // A hang-up notice only has to stop the ringing: no banner, no sound, nothing for the person to read.
+            const isCancelNotice = String(payload.type || '') === 'call_cancelled';
+
             const message: any = {
                 token: token,
                 data: sanitizedData,
@@ -532,7 +653,10 @@ serve(async (req) => {
                     priority: "high" as const,
                     ttl: 0,
                 },
-                apns: {
+                apns: isCancelNotice ? {
+                    headers: { "apns-priority": "5", "apns-push-type": "background" },
+                    payload: { aps: { "content-available": 1 } }
+                } : {
                     headers: {
                         "apns-priority": "10",
                     },
@@ -545,6 +669,9 @@ serve(async (req) => {
                             sound: "default",
                             badge: 1,
                             "mutable-content": 1,
+                            // Reply / mark-as-read buttons on iOS (registered in AppDelegate). Project spaces are end-to-end
+                            // encrypted, so they only get "mark as read".
+                            category: pType === 'dm' || pType === 'room' ? 'cc_message' : (pType === 'project' ? 'cc_message_readonly' : undefined),
                             threadId: payload.conversationId || payload.id
                         }
                     }

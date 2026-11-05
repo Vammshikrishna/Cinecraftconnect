@@ -348,7 +348,7 @@ export const RealTimeAnalytics = () => {
         {stats.map((stat) => (
           <Card
             key={stat.title}
-            className="group relative overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:scale-[1.02]"
+            className="group relative overflow-hidden border-border/50 bg-card/50 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition duration-300 hover:scale-[1.02]"
           >
             {/* Gradient background */}
             <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
@@ -406,7 +406,7 @@ export const RealTimeAnalytics = () => {
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5 text-primary text-[10px] font-black uppercase tracking-widest border border-primary/10">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5 text-primary text-[12px] font-black uppercase tracking-widest border border-primary/10">
             <Calendar className="h-3 w-3" />
             Last updated: Just now
           </div>

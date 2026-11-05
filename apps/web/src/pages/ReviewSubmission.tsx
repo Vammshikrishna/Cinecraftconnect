@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { safeHref } from '@/lib/safeUrl';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -23,9 +24,15 @@ import {
 import { formatDistanceToNow, format } from 'date-fns';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
-import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import SEO from '@/components/common/SEO';
 import { useToast } from '@/hooks/use-toast';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { ReviewNotesPanel } from '@/components/pitch/ReviewNotesPanel';
+import ReportDialog from '@/components/common/ReportDialog';
+import { openNdaRecord } from '@/lib/ndaRecord';
+import { undoable } from '@/lib/undoable';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { blockUser, attachmentLabel, friendlyError } from '@cinecraft/core';
 
 const STATUS_ACTIONS = [
     { value: 'seen',              label: 'Mark as Seen',       icon: Eye,          color: 'text-purple-400',     ring: 'border-purple-400/30',    activeBg: 'bg-purple-500' },
@@ -169,7 +176,7 @@ const NDAGate = ({ submissionId, onSigned }: { submissionId: string; onSigned: (
                 <div className="h-20 w-20 rounded-3xl bg-amber-500/10 border-2 border-amber-500/20 flex items-center justify-center">
                     <PenLine className="h-10 w-10 text-amber-500" />
                 </div>
-                <div className="absolute inset-0 rounded-3xl bg-amber-500/5 animate-ping" />
+                <div className="absolute inset-0 rounded-3xl bg-amber-500/5" />
             </div>
             <div className="space-y-2">
                 <h2 className="text-2xl font-black">NDA Required</h2>
@@ -189,7 +196,7 @@ const NDAGate = ({ submissionId, onSigned }: { submissionId: string; onSigned: (
                         placeholder={(profile as any)?.full_name || 'Your full legal name'}
                         value={signature}
                         onChange={e => setSignature(e.target.value)}
-                        className={cn('h-12 transition-all', signature.trim().length >= 3 ? 'border-green-500/50 bg-green-500/5' : 'border-amber-400/40')}
+                        className={cn('h-12 transition-colors', signature.trim().length >= 3 ? 'border-green-500/50 bg-green-500/5' : 'border-amber-400/40')}
                     />
                     {signature.trim().length >= 3 && (
                         <p className="text-xs text-green-500 font-semibold flex items-center gap-1.5">
@@ -209,11 +216,37 @@ const NDAGate = ({ submissionId, onSigned }: { submissionId: string; onSigned: (
 const AttachmentLink = ({ href, label, submissionId }: { href: string; label: string; ndaSigned: boolean; submissionId: string }) => {
     const [showWarning, setShowWarning] = useState(false);
     const { user } = useAuth();
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    // Escape closes; Tab stays inside the dialog; focus moves in and returns to the trigger
+    useEffect(() => {
+        if (!showWarning) return;
+        const node = dialogRef.current;
+        const focusables = () => Array.from(node?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])') || []);
+        focusables()[0]?.focus();
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') { e.stopPropagation(); setShowWarning(false); return; }
+            if (e.key !== 'Tab') return;
+            const els = focusables();
+            if (els.length === 0) return;
+            const first = els[0], last = els[els.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        };
+        document.addEventListener('keydown', onKey, true);
+        const trigger = triggerRef.current;
+        return () => { document.removeEventListener('keydown', onKey, true); trigger?.focus(); };
+    }, [showWarning]);
     const handleProceed = async () => {
         await (supabase as any).from('pitch_access_logs').insert({ pitch_submission_id: submissionId, accessed_by: user?.id, action: 'attachment_downloaded' }).then(()=>{}).catch(()=>{});
         try {
-            const target = await toSignedStorageUrl(href);
-            window.open(target, '_blank', 'noopener,noreferrer');
+            // The link is typed by the writer: open it only if it is a normal web link (after signing a stored file).
+            const target = safeHref(await toSignedStorageUrl(href));
+            if (!target) {
+                console.warn('Blocked an attachment link that is not a web link');
+            } else {
+                window.open(target, '_blank', 'noopener,noreferrer');
+            }
         } catch (e) {
             console.error('Could not open attachment:', e);
         }
@@ -221,17 +254,17 @@ const AttachmentLink = ({ href, label, submissionId }: { href: string; label: st
     };
     return (
         <>
-            <button onClick={() => setShowWarning(true)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/40 border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all text-sm font-semibold group">
+            <button ref={triggerRef} onClick={() => setShowWarning(true)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/40 border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition text-sm font-semibold group">
                 <FileText className="h-4 w-4 text-primary" />{label}
                 <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors" />
             </button>
             {showWarning && (
-                <div className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4" onClick={() => setShowWarning(false)}>
-                    <div className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/70 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-150" onClick={() => setShowWarning(false)}>
+                    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Confidential attachment" className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
                         <div className="flex items-start gap-3 mb-4">
                             <div className="h-10 w-10 bg-amber-500/10 rounded-xl flex items-center justify-center shrink-0"><AlertTriangle className="h-5 w-5 text-amber-500" /></div>
                             <div><p className="font-black">Confidential Attachment</p><p className="text-xs text-muted-foreground">Access will be permanently logged</p></div>
-                            <button onClick={() => setShowWarning(false)} className="ml-auto text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+                            <button aria-label="Close" onClick={() => setShowWarning(false)} className="ml-auto text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
                         </div>
                         <p className="text-xs text-muted-foreground leading-relaxed mb-5">Sharing this document violates the NDA you signed. This event is permanently recorded as legal evidence.</p>
                         <div className="flex gap-2">
@@ -259,6 +292,7 @@ export default function ReviewSubmission() {
     const [checkingNda, setCheckingNda] = useState(true);
     const [downloading, setDownloading] = useState(false);
     const [updatingStatus, setUpdatingStatus] = useState('');
+    const [reportOpen, setReportOpen] = useState(false);
 
     useEffect(() => {
         if (!submissionId) return;
@@ -272,20 +306,23 @@ export default function ReviewSubmission() {
                     .single();
                 if (error) throw error;
                 
-                // If it is newly submitted, automatically mark it as seen/read
-                if (data.status === 'submitted') {
-                    await supabase
+                // A new pitch is marked "seen" only once its reader is past the NDA gate, and only by the call owner
+                // (the database refuses it for anyone else, so the label never changes by mistake).
+                const markSeen = async () => {
+                    if (data.status !== 'submitted' || !user || user.id === (data as any).submitter_id) return;
+                    const { error: seenError } = await supabase
                         .from('pitch_submissions')
                         .update({ status: 'seen', seen_at: new Date().toISOString() } as any)
                         .eq('id', submissionId);
-                    data.status = 'seen';
-                }
-                
-                setSubmission(data as any);
+                    if (!seenError) data.status = 'seen';
+                };
+
                 const nda = !!(data as any).pitch_calls?.nda_required;
                 setNdaRequired(nda);
-                if (!nda || !user) { setNdaGatePassed(true); setCheckingNda(false); return; }
+                if (!nda || !user) { await markSeen(); setSubmission(data as any); setNdaGatePassed(true); setCheckingNda(false); return; }
                 const { data: sig } = await (supabase as any).from('nda_viewer_signatures').select('id').eq('pitch_submission_id', submissionId).eq('signed_by', user.id).maybeSingle();
+                if (sig || user.id === (data as any).submitter_id) await markSeen();
+                setSubmission(data as any);
                 setNdaGatePassed(!!sig);
             } catch {
                 toast({ title: 'Error', description: 'Could not load submission.', variant: 'destructive' });
@@ -307,12 +344,25 @@ export default function ReviewSubmission() {
     };
 
     const handleUpdateStatus = async (status: string) => {
-        if (!submission) return;
-        setUpdatingStatus(status);
-        await supabase.from('pitch_submissions').update({ status } as any).eq('id', submission.id);
-        setSubmission(prev => prev ? { ...prev, status } : prev);
-        setUpdatingStatus('');
-        toast({ title: 'Status updated', duration: 2000 });
+        if (!submission || status === submission.status) return;
+        if (status === 'passed' && !(await confirmDialog('Pass on this pitch? The writer is told you passed.', { title: 'Pass respectfully?', confirmLabel: 'Pass', destructive: false }))) return;
+        const submissionId = submission.id;
+        const previous = submission.status;
+        // Show the new status now; save it (and so tell the writer) after a few seconds unless the producer taps Undo.
+        undoable({
+            title: 'Status updated',
+            description: 'The writer is told in a few seconds. Tap Undo to cancel.',
+            apply: () => { setUpdatingStatus(status); setSubmission(prev => prev ? { ...prev, status } : prev); },
+            revert: () => { setUpdatingStatus(''); setSubmission(prev => prev ? { ...prev, status: previous } : prev); },
+            commit: async () => {
+                const { error: statusError } = await supabase.from('pitch_submissions').update({ status } as any).eq('id', submissionId);
+                setUpdatingStatus('');
+                if (statusError) {
+                    setSubmission(prev => prev ? { ...prev, status: previous } : prev);
+                    toast({ title: 'Could not update the status', description: friendlyError(statusError), variant: 'destructive' });
+                }
+            },
+        });
     };
 
     const handleDownload = async () => {
@@ -325,9 +375,7 @@ export default function ReviewSubmission() {
 
     if (fetching || checkingNda) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
-                <LoadingSpinner size="lg" />
-            </div>
+            <ScreenSkeleton variant="form" />
         );
     }
 
@@ -355,12 +403,13 @@ export default function ReviewSubmission() {
     const hasCredentials = !!(swaMemberId || swaRegNum || copyrightRegNum || iftdaMemberId);
 
     const statusInfo = PITCH_STATUS_LABELS[submission.status || 'submitted'];
+    const isWriter = !!user && user.id === (submission as any).submitter_id;
     const avatarUrl = getSafeImageUrl(submission.profiles?.avatar_url || null);
     const initials = (submission.profiles?.full_name || 'W').split(' ').map(n => n[0]).join('').toUpperCase();
     const pitchCallTitle = (submission as any).pitch_calls?.title;
 
     return (
-        <div className="min-h-screen bg-background text-foreground pb-28">
+        <div className="min-h-dvh bg-background text-foreground pb-28">
             <SEO title={`Reviewing: ${submission.title} | CineCraft`} />
 
             {/* Ambient blobs */}
@@ -369,7 +418,7 @@ export default function ReviewSubmission() {
                 <div className="absolute bottom-10 right-0 w-72 h-72 rounded-full bg-purple-500/4 blur-[120px]" />
             </div>
 
-            <div className="max-w-5xl mx-auto px-4 md:px-8 pt-6 md:pt-20 relative z-10 space-y-6">
+            <div className="max-w-[1280px] mx-auto px-4 md:px-8 pt-6 md:pt-20 relative z-10 space-y-6">
 
                 {/* ── TOP CONTROL BAR — always visible ── */}
                 <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -389,7 +438,7 @@ export default function ReviewSubmission() {
                             <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-9 gap-2 rounded-xl border-primary/30 text-primary hover:bg-primary/10 font-bold"
+                                className="h-10 md:h-9 gap-2 rounded-xl border-primary/30 text-primary hover:bg-primary/10 font-bold"
                                 onClick={handleDownload}
                                 disabled={downloading}
                             >
@@ -411,7 +460,7 @@ export default function ReviewSubmission() {
                             <Megaphone className="h-4.5 w-4.5 text-primary" />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-primary/70 mb-0.5">Submitted in response to</p>
+                            <p className="text-[12px] font-black uppercase tracking-widest text-primary/70 mb-0.5">Submitted in response to</p>
                             <p className="font-black text-foreground text-base leading-tight truncate">"{pitchCallTitle}"</p>
                         </div>
                         <button
@@ -483,7 +532,7 @@ export default function ReviewSubmission() {
 
                             {/* Short Synopsis */}
                             <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="bg-card border border-border/60 rounded-2xl p-6 space-y-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Short Synopsis</p>
+                                <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Short Synopsis</p>
                                 <p className="text-sm leading-relaxed text-foreground/90">{submission.short_synopsis}</p>
                             </motion.section>
 
@@ -505,7 +554,7 @@ export default function ReviewSubmission() {
                             {/* Why it Fits */}
                             {submission.why_fits && (
                                 <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }} className="bg-card border border-border/60 rounded-2xl p-6 space-y-3">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Why This Fits Your Call</p>
+                                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Why This Fits Your Call</p>
                                     <p className="text-sm leading-relaxed text-muted-foreground">{submission.why_fits}</p>
                                 </motion.section>
                             )}
@@ -514,27 +563,30 @@ export default function ReviewSubmission() {
                             {submission.character_notes && (
                                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
                                     <WatermarkedContent className="bg-card border border-border/60 rounded-2xl p-6 space-y-3">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Character Notes</p>
+                                        <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Character Notes</p>
                                         <p className="text-sm leading-relaxed">{submission.character_notes}</p>
                                     </WatermarkedContent>
                                 </motion.div>
                             )}
 
                             {/* Attachments */}
-                            {(submission.treatment_url || submission.lookbook_url || (submission as any).full_deck_url) && (
+                            {(submission.treatment_url || submission.lookbook_url || (submission as any).full_deck_url || ((submission as any).attachment_paths || []).length > 0) && (
                                 <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }} className="bg-card border border-border/60 rounded-2xl p-6 space-y-3">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Attachments</p>
+                                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Attachments</p>
                                     <div className="flex gap-2 flex-wrap">
                                         {(submission as any).full_deck_url && <AttachmentLink href={(submission as any).full_deck_url} label="Full Deck (Requested)" ndaSigned={ndaGatePassed} submissionId={submission.id} />}
                                         {submission.treatment_url && <AttachmentLink href={submission.treatment_url} label="Treatment / Pitch Deck" ndaSigned={ndaGatePassed} submissionId={submission.id} />}
                                         {submission.lookbook_url && <AttachmentLink href={submission.lookbook_url} label="Lookbook" ndaSigned={ndaGatePassed} submissionId={submission.id} />}
+                                        {((submission as any).attachment_paths || []).map((ref: string, i: number) => (
+                                            <AttachmentLink key={ref} href={ref} label={`Writer's file: ${attachmentLabel(ref, i)}`} ndaSigned={ndaGatePassed} submissionId={submission.id} />
+                                        ))}
                                     </div>
                                 </motion.section>
                             )}
 
                             {/* IP Declarations */}
                             <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="p-5 bg-green-500/5 border border-green-500/20 rounded-2xl space-y-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-green-600/80">IP Declarations</p>
+                                <p className="text-[12px] font-black uppercase tracking-widest text-green-600/80">IP Declarations</p>
                                 <div className="flex flex-wrap items-center gap-3">
                                     <span className={cn('flex items-center gap-1.5 text-sm font-bold', submission.rights_owned ? 'text-green-500' : 'text-destructive')}>
                                         {submission.rights_owned ? <CheckCircle2 className="h-4 w-4" /> : <X className="h-4 w-4" />} Rights Owned
@@ -553,7 +605,7 @@ export default function ReviewSubmission() {
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-primary" />
                                                 <span className="text-xs font-bold text-muted-foreground">SWA Member ID:</span>
-                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md text-primary font-medium">
                                                     {swaMemberId}
                                                 </code>
                                             </div>
@@ -562,7 +614,7 @@ export default function ReviewSubmission() {
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-primary" />
                                                 <span className="text-xs font-bold text-muted-foreground">SWA Registration:</span>
-                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md text-primary font-medium">
                                                     {swaRegNum}
                                                 </code>
                                             </div>
@@ -571,7 +623,7 @@ export default function ReviewSubmission() {
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-primary" />
                                                 <span className="text-xs font-bold text-muted-foreground">Copyright Reg:</span>
-                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md text-primary font-medium">
                                                     {copyrightRegNum}
                                                 </code>
                                             </div>
@@ -580,7 +632,7 @@ export default function ReviewSubmission() {
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-primary" />
                                                 <span className="text-xs font-bold text-muted-foreground">IFTDA Member ID:</span>
-                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md text-primary font-medium">
                                                     {iftdaMemberId}
                                                 </code>
                                             </div>
@@ -603,8 +655,15 @@ export default function ReviewSubmission() {
                                 transition={{ delay: 0.08 }}
                                 className="sticky top-24 bg-card border border-border/60 rounded-2xl p-5 space-y-4"
                             >
+                                {isWriter ? (
+                                    <div>
+                                        <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60 mb-1">Your submission</p>
+                                        <p className="text-xs text-muted-foreground">Only the owner of the pitch call can change the status. Current status: {statusInfo?.label || submission.status}.</p>
+                                    </div>
+                                ) : (
+                                <>
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 mb-1">Your Decision</p>
+                                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60 mb-1">Your Decision</p>
                                     <p className="text-xs text-muted-foreground">How do you feel about this pitch?</p>
                                 </div>
 
@@ -615,9 +674,9 @@ export default function ReviewSubmission() {
                                             <button
                                                 key={action.value}
                                                 onClick={() => handleUpdateStatus(action.value)}
-                                                disabled={updatingStatus !== ''}
+                                                disabled={updatingStatus !== '' || submission.status === 'withdrawn'}
                                                 className={cn(
-                                                    'w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-bold transition-all text-left',
+                                                    'w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-bold transition-[background-color,box-shadow,transform] active:scale-[0.98] text-left',
                                                     isActive
                                                         ? `${action.activeBg} text-white border-transparent shadow-md`
                                                         : `bg-card/50 ${action.ring} ${action.color} hover:bg-muted/30`
@@ -646,11 +705,33 @@ export default function ReviewSubmission() {
                                     </Button>
                                 )}
 
-                                <div className="pt-2 border-t border-border/40">
+                                {user && submission.status !== 'withdrawn' && <ReviewNotesPanel submissionId={submission.id} ownerId={user.id} initialFeedback={(submission as any).feedback} />}
+
+                                </>
+                                )}
+
+                                {!isWriter && (
+                                <div className="pt-2 border-t border-border/40 space-y-1">
+                                    {(submission as any).nda_signature && (
+                                        <Button variant="ghost" size="sm" className="w-full gap-2 text-muted-foreground hover:text-foreground text-xs" onClick={async () => { if (!(await openNdaRecord(submission.id))) toast({ title: 'Could not open the NDA record', variant: 'destructive' }); }}>
+                                            <FileText className="h-3.5 w-3.5" /> NDA record (print / PDF)
+                                        </Button>
+                                    )}
+                                    <Button variant="ghost" size="sm" className="w-full gap-2 text-muted-foreground hover:text-foreground text-xs" onClick={() => setReportOpen(true)}>
+                                        <AlertTriangle className="h-3.5 w-3.5" /> Report this pitch
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="w-full gap-2 text-muted-foreground hover:text-destructive text-xs" onClick={async () => {
+                                        if (!user || !(await confirmDialog('Block this writer? They will not be able to message you or send you pitches.', { title: 'Block this writer?', confirmLabel: 'Block', destructive: true }))) return;
+                                        try { await blockUser(supabase, user.id, submission.submitter_id); toast({ title: 'Writer blocked' }); } catch (e: any) { toast({ title: 'Could not block', description: friendlyError(e), variant: 'destructive' }); }
+                                    }}>
+                                        <User className="h-3.5 w-3.5" /> Block this writer
+                                    </Button>
                                     <Button variant="ghost" size="sm" className="w-full gap-2 text-muted-foreground hover:text-foreground text-xs" onClick={() => push(`/profile/${submission.submitter_id}`)}>
                                         <User className="h-3.5 w-3.5" /> View Writer's Profile
                                     </Button>
                                 </div>
+                                )}
+                                {submission && <ReportDialog open={reportOpen} onOpenChange={setReportOpen} targetId={submission.id} targetType="pitch_submission" />}
                             </motion.div>
                         </div>
                     </div>

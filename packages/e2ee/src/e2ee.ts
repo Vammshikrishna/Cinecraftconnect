@@ -100,13 +100,10 @@ const concatUint8Arrays = (a: Uint8Array, b: Uint8Array): Uint8Array => {
 // Utilities for ArrayBuffer <-> Base64
 export const bufferToBase64 = (buffer: ArrayBuffer): string => {
   const g = globalThis as any;
-  if (g.nativeCrypto) {
+  if (g.nativeCrypto && g.quickBase64?.fromByteArray) {
     try {
-      const quickBase64 = require('react-native-quick-base64');
-      if (quickBase64?.fromByteArray) {
-        const bytes = new Uint8Array(buffer);
-        return quickBase64.fromByteArray(bytes);
-      }
+      const bytes = new Uint8Array(buffer);
+      return g.quickBase64.fromByteArray(bytes);
     } catch {
       // Fall through to standard JS btoa
     }
@@ -122,13 +119,10 @@ export const bufferToBase64 = (buffer: ArrayBuffer): string => {
 
 export const base64ToBuffer = (base64: string): ArrayBuffer => {
   const g = globalThis as any;
-  if (g.nativeCrypto) {
+  if (g.nativeCrypto && g.quickBase64?.toByteArray) {
     try {
-      const quickBase64 = require('react-native-quick-base64');
-      if (quickBase64?.toByteArray) {
-        const bytes = quickBase64.toByteArray(base64);
-        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-      }
+      const bytes = g.quickBase64.toByteArray(base64);
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     } catch {
       // Fall through to standard JS atob
     }

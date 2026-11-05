@@ -125,7 +125,6 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
         try {
           localStorage.setItem('cc_project_bookmark_sync', JSON.stringify({ projectId: project.id, isBookmarked: false, ts: Date.now() }));
         } catch {}
-        toast({ title: "Bookmark removed" });
       }
     } else {
       const { error } = await supabase
@@ -139,7 +138,6 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
         try {
           localStorage.setItem('cc_project_bookmark_sync', JSON.stringify({ projectId: project.id, isBookmarked: true, ts: Date.now() }));
         } catch {}
-        toast({ title: "Project bookmarked!" });
       }
     }
   };
@@ -185,7 +183,7 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
                 {!isOwner && (
                   <Button
                     size="sm"
-                    className="bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs h-8 px-3 shadow-sm"
+                    className="bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs h-10 md:h-8 px-3 shadow-sm"
                     onClick={() => {
                       if (!user) {
                         toast({
@@ -265,7 +263,7 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
                 <Briefcase className="mr-2 h-4 w-4" />
                 {isOwner ? 'Manage Workspace' : 'Enter Workspace'}
               </Button>
-              <Button
+              <Button aria-label="Save"
                 variant="outline"
                 size="icon"
                 className="rounded-xl"

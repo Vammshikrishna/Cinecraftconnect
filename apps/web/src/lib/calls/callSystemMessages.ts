@@ -34,6 +34,32 @@ export const formatCallDuration = (durationMs: number): string => {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
+/**
+ * Sends one event on the shared call broadcast channel. The incoming-call overlay (GlobalCallOverlay) already has this channel joined on
+ * every page, and supabase.channel(name) hands back that same channel: calling subscribe() on it again does nothing, so the old
+ * "subscribe, then send when SUBSCRIBED" code never sent anything (the caller hanging up did not clear the callee's ringing banner,
+ * and a decline never reached the caller). Send straight away when joined; subscribe first only when nobody has joined yet.
+ */
+export const sendCallBroadcast = (event: string, payload: Record<string, unknown>[] | Record<string, unknown>) => {
+  try {
+    const channel = supabase.channel('global-call-invites-broadcast');
+    const items = Array.isArray(payload) ? payload : [payload];
+    const send = () => { for (const p of items) channel.send({ type: 'broadcast', event, payload: p }).catch(() => {}); };
+    if ((channel as any).state === 'joined') { send(); return; }
+    channel.subscribe((status) => { if (status === 'SUBSCRIBED') send(); });
+  } catch {}
+};
+
+/**
+ * A direct chat's room id is the pair's channel id, not the other person's id. The helpers below used to find the other person from
+ * messages already in the channel, which fails in a brand-new chat (nothing sent yet): the call message and the ring went to the
+ * channel id and were refused. The open chat registers who it is with, and the helpers look here first.
+ */
+const directPartners = new Map<string, string>();
+export const rememberDirectPartner = (channelId: string | null | undefined, partnerId: string | null | undefined) => {
+  if (channelId && partnerId) directPartners.set(channelId, partnerId);
+};
+
 export const sendCallNotifications = async (
   roomType: 'discussion' | 'project' | 'direct' | null,
   roomId: string | null,
@@ -59,9 +85,11 @@ export const sendCallNotifications = async (
 
     if (roomType === 'direct') {
       const userIds = new Set<string>();
+      const known = directPartners.get(roomId);
+      if (known && known !== userId) userIds.add(known);
 
       // 1. Check conversations table
-      const { data: conv } = await (supabase
+      const { data: conv } = userIds.size ? { data: null } : await (supabase
         .from('conversations' as any)
         .select('user1_id, user2_id')
         .eq('id', roomId)
@@ -196,6 +224,7 @@ export const sendCallNotifications = async (
     }
 
     const uniqueRecipients = Array.from(new Set(recipients));
+    if (kind !== 'space') ringingRecipients.set(roomId, uniqueRecipients);
 
     // An audio space is an invitation to listen, not a phone call: a normal notification, no ringing.
     if (kind === 'space') {
@@ -234,34 +263,25 @@ export const sendCallNotifications = async (
           callerId: userId,
           callerName,
           avatarUrl: (callerProfile as any)?.avatar_url,
-          roomId
+          roomId,
+          roomType,
+          roomName
         }
       }).catch(pErr => console.warn('[sendCallNotifications] Fast-path edge function warning:', pErr));
     } catch (e) {}
 
     // Broadcast real-time call invitation to connected clients for instant in-app overlay
     try {
-      const channel = supabase.channel('global-call-invites-broadcast');
-      channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          for (const recipientId of uniqueRecipients) {
-            channel.send({
-              type: 'broadcast',
-              event: 'incoming_call_invite',
-              payload: {
-                targetUserId: recipientId,
-                callerId: userId,
-                callerName,
-                callerAvatar: (callerProfile as any)?.avatar_url,
-                roomId,
-                roomName: roomName || 'Live Call',
-                roomType,
-                actionUrl
-              }
-            }).catch(() => {});
-          }
-        }
-      });
+      sendCallBroadcast('incoming_call_invite', uniqueRecipients.map((recipientId) => ({
+        targetUserId: recipientId,
+        callerId: userId,
+        callerName,
+        callerAvatar: (callerProfile as any)?.avatar_url,
+        roomId,
+        roomName: roomName || 'Live Call',
+        roomType,
+        actionUrl,
+      })));
     } catch (bErr) {
       console.warn('[sendCallNotifications] Realtime broadcast warning:', bErr);
     }
@@ -270,10 +290,23 @@ export const sendCallNotifications = async (
   }
 };
 
+/** Who was rung for each room, so that the person who started the call can tell them it is over (their phone stops ringing). */
+const ringingRecipients = new Map<string, string[]>();
+
+export const sendCallCancelled = (roomId: string) => {
+  const recipients = ringingRecipients.get(roomId);
+  if (!recipients || recipients.length === 0) return;
+  ringingRecipients.delete(roomId);
+  try {
+    supabase.functions.invoke('push-delivery', { body: { recipientIds: recipients, type: 'call_cancelled', roomId } }).catch(() => {});
+  } catch {}
+  sendCallBroadcast('incoming_call_cancelled', { roomId, targetUserIds: recipients });
+};
+
 export const postCallSystemMessage = async (
   roomType: 'discussion' | 'project' | 'direct' | null,
   roomId: string | null,
-  event: 'started' | 'ended',
+  event: 'started' | 'ended' | 'missed',
   duration?: string,
   userId?: string,
   kind: 'call' | 'space' = 'call'
@@ -286,17 +319,23 @@ export const postCallSystemMessage = async (
   try {
     const durationLabel = duration ? ` • Duration ${duration}` : '';
     // The leading phone emoji keeps both apps rendering these as call events.
+    // 'missed' = nobody answered (the caller hung up, the person declined or never picked up). The chat shows it as "Missed call" to the
+    // person who was called and "No answer" to the caller (same row, worded per viewer).
     const contentText = event === 'started'
       ? (kind === 'space' ? '📞 Audio space started' : '📞 Video call started')
-      : (kind === 'space' ? `📞 Audio space ended${durationLabel}` : `📞 Call ended${durationLabel}`);
+      : event === 'missed'
+        ? '📞 Missed call'
+        : (kind === 'space' ? `📞 Audio space ended${durationLabel}` : `📞 Call ended${durationLabel}`);
+
+    if (event === 'ended' || event === 'missed') sendCallCancelled(roomId);
 
     console.log('[postCallSystemMessage] Inserting call system event:', { roomType, roomId, event, contentText });
 
     if (roomType === 'direct') {
-      let partnerId = userId;
+      let partnerId = directPartners.get(roomId) || userId;
 
       // Query recent messages in channel to find partner ID
-      const { data: directMsgs } = await (supabase
+      const { data: directMsgs } = partnerId !== userId ? { data: null } : await (supabase
         .from('direct_messages') as any)
         .select('sender_id, receiver_id')
         .eq('channel_id', roomId)
@@ -330,6 +369,23 @@ export const postCallSystemMessage = async (
 
       if (error) console.error('[postCallSystemMessage] Direct message insert error:', error);
       else console.log('[postCallSystemMessage] Direct message inserted successfully:', data);
+
+      // a missed-call notification for the person who was called (shows in their notification list and badge)
+      if (event === 'missed' && partnerId && partnerId !== userId) {
+        try {
+          const { data: me } = await supabase.from('profiles').select('full_name, username').eq('id', userId).maybeSingle();
+          const who = (me as any)?.full_name || (me as any)?.username || 'Someone';
+          await (supabase.from('notifications') as any).insert({
+            user_id: partnerId,
+            trigger_user_id: userId,
+            type: 'missed_call',
+            title: 'Missed call',
+            message: `${who} tried to call you`,
+            action_url: `/messages?chat=${roomId}`,
+            is_read: false,
+          });
+        } catch (nErr) { console.warn('[postCallSystemMessage] missed-call notification failed:', nErr); }
+      }
     } else if (roomType === 'discussion') {
       const { data, error } = await (supabase.from('room_messages') as any).insert({
         room_id: roomId,

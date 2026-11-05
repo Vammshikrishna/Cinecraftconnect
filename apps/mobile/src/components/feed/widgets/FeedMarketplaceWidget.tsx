@@ -1,3 +1,4 @@
+import { WT } from './widgetScale';
 import React from 'react';
 import {
   View,
@@ -11,7 +12,7 @@ import { Icon } from '../../common/Icon';
 import { useUserSettings } from '../../../hooks/useUserSettings';
 
 const ORANGE = '#FF4B33';
-const MUTED = '#6B7280';
+const MUTED = '#64748B';
 const BORDER = '#E5E7EB';
 
 interface MarketplaceItem {
@@ -44,7 +45,7 @@ export const FeedMarketplaceWidget: React.FC<FeedMarketplaceWidgetProps> = ({
       <View style={styles.sectionHeader}>
         <View style={styles.titleGroup}>
           <Icon name="shopping-bag" size={17} color={ORANGE} />
-          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Marketplace Highlights</Text>
+          <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>Popular in Marketplace</Text>
         </View>
         <TouchableOpacity onPress={onSeeAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={[styles.seeAllText, { color: themeColors.textSecondary }]}>Explore →</Text>
@@ -102,7 +103,7 @@ export const FeedMarketplaceWidget: React.FC<FeedMarketplaceWidgetProps> = ({
                     ]}
                   >
                     <Text style={styles.categoryText} numberOfLines={1}>
-                      CAT // {String(item.category).toUpperCase()}
+                      {String(item.category)}
                     </Text>
                   </View>
                 )}
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   titleGroup: {
     flexDirection: 'row',
@@ -133,14 +134,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0D0D0D',
-    fontSize: 16,
+    fontSize: WT.sectionTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   seeAllText: {
     color: '#4B5563',
-    fontSize: 12,
+    fontSize: WT.seeAll,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -185,7 +186,7 @@ const styles = StyleSheet.create({
   },
   priceText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: WT.badge,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -195,7 +196,7 @@ const styles = StyleSheet.create({
   },
   itemTitle: {
     color: '#0D0D0D',
-    fontSize: 14,
+    fontSize: WT.cardTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     marginBottom: 8,
@@ -205,15 +206,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFE5DF',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
     alignSelf: 'flex-start',
   },
   categoryText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
 });

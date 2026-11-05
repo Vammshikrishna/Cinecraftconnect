@@ -10,13 +10,15 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useUserSettings } from '../../hooks/useUserSettings';
 import { getSupabaseClient } from '@cinecraft/api';
+import { friendlyError } from '@cinecraft/core';
 
 interface ReportModalProps {
   visible: boolean;
   onClose: () => void;
   targetTitle?: string;
-  targetType?: 'post' | 'comment' | 'user' | 'job' | 'listing' | 'room' | 'message' | 'announcement' | 'review' | 'cinema';
+  targetType?: 'post' | 'comment' | 'user' | 'job' | 'listing' | 'room' | 'message' | 'announcement' | 'review' | 'cinema' | 'pitch_call' | 'pitch_submission';
   targetId?: string | null;
   /** For E2EE chat messages: the reporter consents to share the decrypted text with moderators. */
   messageReport?: {
@@ -35,21 +37,25 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   targetId,
   messageReport,
 }) => {
+  const { themeColors } = useUserSettings();
   // label -> value allowed by the content_reports_reason_check constraint
   const reasonMap: Record<string, string> = {
     'Inappropriate Content': 'explicit_content',
     'Spam or Scam': 'spam',
-    'Copyright Violation': 'fraud',
+    // there is no copyright reason in the database: stored as "other" and tagged in the details (see below)
+    'Copyright Violation': 'other',
     'Harassment or Hate Speech': 'harassment',
     'Misleading Information': 'misinformation',
+    'Child safety concern': 'child_safety',
   };
-  const [reason, setReason] = useState('Inappropriate Content');
+  const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const reasons = Object.keys(reasonMap);
 
   const handleSubmit = async () => {
+    if (!reason) return;
     if (!targetId && !messageReport) {
       Alert.alert('Cannot report', 'This item could not be identified. Please try again later.');
       return;
@@ -74,7 +80,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         });
         if (flagError) throw flagError;
         setDetails('');
-        Alert.alert('Report Submitted', 'Our moderation team has received your report and will review it.');
+        setReason('');
+        Alert.alert('Report Submitted', 'Thank you. Our team has received your report and will look at it.');
         onClose();
         return;
       }
@@ -83,15 +90,23 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         target_type: targetType,
         target_id: String(targetId),
         reason: reasonMap[reason] || 'other',
-        details: details.trim() || null,
+        details: (reason === 'Copyright Violation'
+          ? ['Copyright violation', details.trim()].filter(Boolean).join(' - ')
+          : details.trim()) || null,
         status: 'pending',
       });
       if (error) throw error;
       setDetails('');
-      Alert.alert('Report Submitted', 'Our moderation team has received your report and will review it.');
+      setReason('');
+      Alert.alert('Report Submitted', 'Thank you. Our team has received your report and will look at it.');
       onClose();
     } catch (e: any) {
-      Alert.alert('Report failed', e?.message || 'Could not submit your report. Please try again.');
+      const raw = `${e?.code || ''} ${e?.message || ''}`.toLowerCase();
+      if (raw.includes('23505') || raw.includes('duplicate') || raw.includes('already')) {
+        Alert.alert('Already reported', 'You already reported this. Our team is looking at it.');
+      } else {
+        Alert.alert('Report failed', friendlyError(e, 'Could not submit your report. Please try again.'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -100,18 +115,18 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.overlay}>
+        <View style={[styles.overlay, { backgroundColor: themeColors.overlay }]}>
           <TouchableWithoutFeedback>
-            <View style={styles.modalContent}>
-              <View style={styles.handleBar} />
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgElevated }]}>
+              <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
               <View style={styles.headerRow}>
-                <Text style={styles.title}>Report Content</Text>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color="#6B7280" />
+                <Text style={[styles.title, { color: themeColors.textPrimary }]}>Report Content</Text>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.subText}>
+              <Text style={[styles.subText, { color: themeColors.textSecondary }]}>
                 Why are you reporting {targetTitle}?
               </Text>
 
@@ -120,13 +135,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 return (
                   <TouchableOpacity
                     key={r}
-                    style={[styles.reasonRow, isSelected && styles.reasonRowActive]}
+                    style={[styles.reasonRow, { borderBottomColor: themeColors.divider }, isSelected && [styles.reasonRowActive, { backgroundColor: themeColors.primarySoft }]]}
                     onPress={() => setReason(r)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
                   >
-                    <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
-                      {isSelected && <View style={styles.radioDot} />}
+                    <View style={[styles.radioCircle, { borderColor: themeColors.border }, isSelected && { borderColor: themeColors.primary }]}>
+                      {isSelected && <View style={[styles.radioDot, { backgroundColor: themeColors.primary }]} />}
                     </View>
-                    <Text style={[styles.reasonText, isSelected && styles.reasonTextActive]}>
+                    <Text style={[styles.reasonText, { color: themeColors.textSecondary }, isSelected && [styles.reasonTextActive, { color: themeColors.primary }]]}>
                       {r}
                     </Text>
                   </TouchableOpacity>
@@ -134,22 +151,22 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               })}
 
               {messageReport && (
-                <Text style={[styles.subText, { marginTop: 10 }]}>
-                  By reporting this message you consent to sharing its decrypted content with our moderation team.
+                <Text style={[styles.subText, { marginTop: 10, color: themeColors.textSecondary }]}>
+                  By reporting this message you agree to share its text with our team so they can review it.
                 </Text>
               )}
-              <Text style={[styles.label, { marginTop: 14 }]}>ADDITIONAL DETAILS (OPTIONAL)</Text>
+              <Text style={[styles.label, { marginTop: 14, color: themeColors.textSecondary }]}>ADDITIONAL DETAILS (OPTIONAL)</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Provide additional context for moderators..."
-                placeholderTextColor="#9CA3AF"
+                style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
+                placeholder="Tell us a little more..."
+                placeholderTextColor={themeColors.textMuted}
                 value={details}
                 onChangeText={setDetails}
                 multiline
               />
 
-              <TouchableOpacity style={[styles.submitBtn, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
-                <Text style={styles.submitText}>Submit Report →</Text>
+              <TouchableOpacity style={[styles.submitBtn, { backgroundColor: themeColors.danger }, (submitting || !reason) && { opacity: 0.5 }]} onPress={handleSubmit} disabled={submitting || !reason} accessibilityRole="button" accessibilityState={{ disabled: submitting || !reason }}>
+                <Text style={[styles.submitText, { color: themeColors.onPrimary }]}>Submit Report →</Text>
               </TouchableOpacity>
             </View>
           </TouchableWithoutFeedback>
@@ -171,6 +188,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 20,
     paddingBottom: 32,
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -188,11 +208,11 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#0D0D0D',
-    fontSize: 17,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subText: {
-    color: '#6B7280',
+    color: '#64748B',
     fontSize: 13,
     marginBottom: 14,
   },
@@ -234,12 +254,12 @@ const styles = StyleSheet.create({
   },
   reasonTextActive: {
     color: '#FF4B33',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   label: {
     color: '#374151',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -250,7 +270,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#0D0D0D',
     height: 60,
     textAlignVertical: 'top',
@@ -266,7 +286,7 @@ const styles = StyleSheet.create({
   submitText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

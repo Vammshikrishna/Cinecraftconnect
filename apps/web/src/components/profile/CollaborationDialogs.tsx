@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Check, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@cinecraft/core';
 
 const db = supabase as any;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -37,7 +38,7 @@ export const RequestDatesDialog = ({ open, onOpenChange, targetId, targetName }:
       p_currency: currency || 'INR', p_note: note.trim() || null, p_project_title: project.trim() || null,
     });
     setSending(false);
-    if (error) return toast({ title: 'Could not send the request', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not send the request', description: friendlyError(error), variant: 'destructive' });
     toast({ title: 'Request sent', description: `${targetName} will be notified.` });
     onOpenChange(false);
   };
@@ -95,7 +96,7 @@ export const InviteToProjectDialog = ({ open, onOpenChange, targetId, targetName
     setSending(true);
     const { error } = await db.rpc('invite_to_project', { p_space: space, p_invitee: targetId, p_crew_role: role.trim() || null, p_message: message.trim() || null });
     setSending(false);
-    if (error) return toast({ title: 'Could not send the invitation', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not send the invitation', description: friendlyError(error), variant: 'destructive' });
     toast({ title: 'Invitation sent', description: `${targetName} will be notified.` });
     onOpenChange(false);
   };
@@ -149,7 +150,7 @@ export const RecommendDialog = ({ open, onOpenChange, targetId, targetName, onDo
     setSending(true);
     const { error } = await db.rpc('write_recommendation', { p_subject: targetId, p_relationship: relationship, p_body: body.trim(), p_project_title: project.trim() || null });
     setSending(false);
-    if (error) return toast({ title: 'Could not send the recommendation', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not send the recommendation', description: friendlyError(error), variant: 'destructive' });
     toast({ title: 'Recommendation sent', description: `${targetName} will approve it before it shows on their profile.` });
     onOpenChange(false);
     onDone?.();
@@ -213,7 +214,7 @@ export const AddToShortlistDialog = ({ open, onOpenChange, targetId, targetName 
       : await db.from('crew_shortlist_members').delete().eq('shortlist_id', listId).eq('person_id', targetId);
     if (error && error.code !== '23505') {
       setMember(m => ({ ...m, [listId]: !on }));
-      toast({ title: 'Could not update the shortlist', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not update the shortlist', description: friendlyError(error), variant: 'destructive' });
     }
   };
 
@@ -221,7 +222,7 @@ export const AddToShortlistDialog = ({ open, onOpenChange, targetId, targetName 
     const { data: me } = await supabase.auth.getUser();
     if (!me.user || !name.trim()) return;
     const { data, error } = await db.from('crew_shortlists').insert({ owner_id: me.user.id, name: name.trim() }).select('id').single();
-    if (error) return toast({ title: 'Could not create the shortlist', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not create the shortlist', description: friendlyError(error), variant: 'destructive' });
     await db.from('crew_shortlist_members').insert({ shortlist_id: data.id, person_id: targetId, note: note.trim() || null });
     setName('');
     load();
@@ -248,7 +249,7 @@ export const AddToShortlistDialog = ({ open, onOpenChange, targetId, targetName 
         )}
         <div className="flex gap-2 pt-2 border-t">
           <Input value={name} onChange={e => setName(e.target.value)} placeholder="New shortlist, e.g. Short film - camera team" maxLength={80} onKeyDown={e => e.key === 'Enter' && create()} />
-          <Button onClick={create} disabled={!name.trim()}><Plus className="h-4 w-4" /></Button>
+          <Button aria-label="Add" onClick={create} disabled={!name.trim()}><Plus className="h-4 w-4" /></Button>
         </div>
       </DialogContent>
     </Dialog>

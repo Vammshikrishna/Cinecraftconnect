@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { X } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
 
 interface Props {
   open: boolean;
@@ -53,7 +54,7 @@ export const ConnectionNoteDialog = ({ open, onOpenChange, otherId, name, note: 
       : await (supabase as any).from('connection_notes').upsert({ owner_id: user.id, other_id: otherId, note: note.trim() || null, tags }, { onConflict: 'owner_id,other_id' });
     setSaving(false);
     if (error) {
-      toast({ title: 'Could not save', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not save', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     queryClient.invalidateQueries({ queryKey: ['connections_manual'] });

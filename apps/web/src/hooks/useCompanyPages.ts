@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { CompanyPage, CompanyPageMember } from '@/types/companyPages';
+import { friendlyError } from '@cinecraft/core';
 
 // Fetch all company pages (browse)
 export function useCompanyPages(searchQuery?: string) {
@@ -254,7 +255,7 @@ export function useCreateCompanyPage() {
       toast({ title: 'Success', description: 'Your company page has been created!' });
     },
     onError: (err: any) => {
-      toast({ title: 'Error', description: err.message || 'Failed to create page', variant: 'destructive' });
+      toast({ title: 'Error', description: friendlyError(err, 'Failed to create page'), variant: 'destructive' });
     },
   });
 }
@@ -369,7 +370,7 @@ export function useUpdateCompanyPage() {
       toast({ title: 'Success', description: 'Page details updated successfully.' });
     },
     onError: (err: any) => {
-      toast({ title: 'Error', description: err.message || 'Failed to update page', variant: 'destructive' });
+      toast({ title: 'Error', description: friendlyError(err, 'Failed to update page'), variant: 'destructive' });
     },
   });
 }

@@ -32,21 +32,21 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement
+    const mq = window.matchMedia("(prefers-color-scheme: dark)")
 
-    // Note: Instead of just classList.toggle("dark", isDark), we set the proper class
-    root.classList.remove("light", "dark")
-
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-        .matches
-        ? "dark"
-        : "light"
-
-      root.classList.add(systemTheme)
-      return
+    const apply = () => {
+      const resolved = theme === "system" ? (mq.matches ? "dark" : "light") : theme
+      root.classList.remove("light", "dark")
+      root.classList.add(resolved)
+      // native form controls and scrollbars follow the theme too
+      root.style.colorScheme = resolved
     }
+    apply()
 
-    root.classList.add(theme)
+    // in system mode, follow the OS when it flips (sunset, user toggles it)
+    if (theme !== "system") return
+    mq.addEventListener("change", apply)
+    return () => mq.removeEventListener("change", apply)
   }, [theme])
 
   const value = {

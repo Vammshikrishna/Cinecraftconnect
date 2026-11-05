@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { STORAGE_BUCKETS, buildUserFilePath } from '@/lib/storage';
 import { ANNOUNCEMENT_CATEGORIES, type AnnouncementRow } from '@/components/announcements/AnnouncementItem';
 import { ImagePlus, X } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
 
 interface CreateAnnouncementDialogProps {
     open: boolean;
@@ -87,7 +88,7 @@ export const CreateAnnouncementDialog = ({
             if (error) throw error;
             setImageUrl(supabase.storage.from(STORAGE_BUCKETS.AVATARS).getPublicUrl(path).data.publicUrl);
         } catch (e: any) {
-            toast({ title: 'Could not upload the image', description: e?.message, variant: 'destructive' });
+            toast({ title: 'Could not upload the image', description: friendlyError(e), variant: 'destructive' });
         } finally {
             setUploading(false);
         }
@@ -182,7 +183,7 @@ export const CreateAnnouncementDialog = ({
             console.error('Error creating announcement:', error);
             toast({
                 title: "Error",
-                description: error?.message || "Failed to create announcement.",
+                description: friendlyError(error, "Failed to create announcement."),
                 variant: "destructive"
             });
         } finally {
@@ -229,7 +230,7 @@ export const CreateAnnouncementDialog = ({
                                             </div>
                                             <div className="flex flex-col items-start">
                                                 <span className="font-semibold text-sm">Personal Profile</span>
-                                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">Default</span>
+                                                <span className="text-[12px] text-muted-foreground uppercase tracking-wider font-bold">Default</span>
                                             </div>
                                         </div>
                                     </SelectItem>
@@ -242,7 +243,7 @@ export const CreateAnnouncementDialog = ({
                                                 </Avatar>
                                                 <div className="flex flex-col items-start">
                                                     <span className="font-semibold text-sm">{page.name}</span>
-                                                    <span className="text-[10px] text-primary uppercase tracking-wider font-bold">Company Page</span>
+                                                    <span className="text-[12px] text-primary uppercase tracking-wider font-bold">Company Page</span>
                                                 </div>
                                             </div>
                                         </SelectItem>
@@ -309,7 +310,7 @@ export const CreateAnnouncementDialog = ({
                         {imageUrl ? (
                             <div className="relative">
                                 <img src={imageUrl} alt="" className="h-20 w-32 rounded-xl object-cover border border-border" />
-                                <button type="button" onClick={() => setImageUrl(null)} className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-background border border-border flex items-center justify-center"><X size={12} /></button>
+                                <button aria-label="Close" type="button" onClick={() => setImageUrl(null)} className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-background border border-border flex items-center justify-center"><X size={12} /></button>
                             </div>
                         ) : (
                             <label className="flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-sm font-semibold cursor-pointer hover:bg-muted/30">

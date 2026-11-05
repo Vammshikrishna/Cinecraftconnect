@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Star } from 'lucide-react';
+import { friendlyError } from '@cinecraft/core';
 
 interface LeaveReviewModalProps {
     open: boolean;
@@ -64,17 +65,17 @@ export const LeaveReviewModal = ({ open, onOpenChange, listingId, vendorId, onSu
             onSuccess();
             onOpenChange(false);
         } catch (error: any) {
-            toast({ title: 'Error', description: error.message, variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
         } finally {
             setLoading(false);
         }
     };
 
-    const renderStars = (currentRating: number, setFn: (r: number) => void) => {
+    const renderStars = (currentRating: number, setFn: (r: number) => void, what: string) => {
         return (
             <div className="flex gap-1">
                 {[1, 2, 3, 4, 5].map((star) => (
-                    <button
+                    <button aria-label={`${what}: ${star} out of 5`} aria-pressed={currentRating >= star}
                         key={star}
                         type="button"
                         onClick={() => setFn(star)}
@@ -97,13 +98,13 @@ export const LeaveReviewModal = ({ open, onOpenChange, listingId, vendorId, onSu
                 <div className="space-y-6 pt-4">
                     <div>
                         <Label className="block mb-2 text-sm text-muted-foreground">Overall Rating</Label>
-                        {renderStars(rating, setRating)}
+                        {renderStars(rating, setRating, 'Overall rating')}
                     </div>
 
                     {!vendorId && (
                         <div>
                             <Label className="block mb-2 text-sm text-muted-foreground">Condition Rating (Did it match the description?)</Label>
-                            {renderStars(conditionRating, setConditionRating)}
+                            {renderStars(conditionRating, setConditionRating, 'Condition rating')}
                         </div>
                     )}
 

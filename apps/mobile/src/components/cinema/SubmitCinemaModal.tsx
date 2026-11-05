@@ -17,6 +17,7 @@ import { Icon } from '../common/Icon';
 import { ImagePickerBox } from '../common/ImagePickerBox';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -80,7 +81,7 @@ export const SubmitCinemaModal: React.FC<SubmitCinemaModalProps> = ({
       setBackdropUrl('');
       setTrailerUrl('');
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not submit film work.');
+      Alert.alert('Error', friendlyError(e, 'Could not submit film work.'));
     } finally {
       setLoading(false);
     }
@@ -105,8 +106,8 @@ export const SubmitCinemaModal: React.FC<SubmitCinemaModalProps> = ({
                   <Icon name="film" size={20} color={ORANGE} />
                   <Text style={[styles.modalTitle, { color: themeColors.textPrimary }]}>Submit Your Work</Text>
                 </View>
-                <TouchableOpacity onPress={onClose}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={onClose}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -221,6 +222,9 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   modalHeaderRow: {
     flexDirection: 'row',
@@ -235,17 +239,17 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   modalSub: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#64748B',
     marginBottom: 14,
   },
   inputLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 8,
@@ -258,7 +262,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
     marginBottom: 8,
   },
@@ -305,7 +309,7 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     color: '#64748B',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   submitBtn: {
     flex: 1,
@@ -318,7 +322,7 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

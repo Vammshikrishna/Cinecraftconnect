@@ -14,9 +14,25 @@ import {
   Platform,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { getCache, saveCache } from '../../services/offlineCache';
+import { friendlyError } from '@cinecraft/core';
+
+// Same rules as the web app's validateRoomForm (components/discussions/roomForm.ts).
+const ROOM_TITLE_MAX = 80;
+const ROOM_DESCRIPTION_MAX = 500;
+function validateRoomForm(input: { title: string; description: string; categoryId?: string | null }):
+  { ok: true; title: string; description: string } | { ok: false; message: string } {
+  const title = (input.title || '').trim().replace(/\s+/g, ' ');
+  const description = (input.description || '').trim();
+  if (!title) return { ok: false, message: 'Please enter a room name.' };
+  if (!input.categoryId) return { ok: false, message: 'Please choose a category.' };
+  if (title.length > ROOM_TITLE_MAX) return { ok: false, message: `Room name can be at most ${ROOM_TITLE_MAX} characters.` };
+  if (description.length > ROOM_DESCRIPTION_MAX) return { ok: false, message: `Description can be at most ${ROOM_DESCRIPTION_MAX} characters.` };
+  return { ok: true, title, description };
+}
 
 interface RoomCategory {
   id: string;
@@ -37,6 +53,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   onCreated,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
@@ -44,9 +61,12 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
   const [categories, setCategories] = useState<RoomCategory[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [formError, setFormError] = useState('');
 
   useEffect(() => {
     if (visible) {
+      setSelectedCategoryId('');
+      setFormError('');
       fetchCategories();
     }
   }, [visible]);
@@ -62,9 +82,6 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
       if (!error && data && data.length > 0) {
         setCategories(data);
-        if (!selectedCategoryId) {
-          setSelectedCategoryId(data[0].id);
-        }
       } else {
         // Fallback default names if DB table is empty or pending seed
         setCategories([
@@ -75,7 +92,6 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           { id: 'vfx', name: 'Editing & VFX' },
           { id: 'sound', name: 'Audio & Sound' },
         ]);
-        if (!selectedCategoryId) setSelectedCategoryId('general');
       }
     } catch {
       setCategories([
@@ -84,7 +100,6 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
         { id: 'cinematography', name: 'Cinematography' },
         { id: 'screenwriting', name: 'Screenwriting' },
       ]);
-      if (!selectedCategoryId) setSelectedCategoryId('general');
     } finally {
       setLoadingCategories(false);
     }
@@ -94,13 +109,20 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     setTitle('');
     setDescription('');
     setIsPrivate(false);
+    setSelectedCategoryId('');
+    setFormError('');
   };
 
   const handleCreate = async () => {
-    if (!title.trim()) {
-      Alert.alert('Missing Title', 'Please provide a topic or title for the discussion room.');
+    const check = validateRoomForm({ title, description, categoryId: selectedCategoryId });
+    if (check.ok === false) {
+      setFormError(check.message);
       return;
     }
+    setFormError('');
+    // trimmed, whitespace-collapsed values from here on
+    const cleanTitle = check.title;
+    const cleanDescription = check.description;
 
     setLoading(true);
     try {
@@ -125,8 +147,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
             {
               c_id: user.id,
               cat_id: validCategoryId,
-              room_title: title.trim(),
-              room_description: description.trim() || 'Live discussion stage for filmmakers and creators.',
+              room_title: cleanTitle,
+              room_description: cleanDescription ||'Live discussion stage for filmmakers and creators.',
               type: isPrivate ? 'private' : 'public',
               room_tags: [],
             }
@@ -145,8 +167,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
       // 2. Direct Table Insert Fallback if RPC failed or not defined
       if (!createdRoomId) {
         const roomPayload: any = {
-          title: title.trim(),
-          description: description.trim() || 'Live discussion stage for filmmakers and creators.',
+          title: cleanTitle,
+          description: cleanDescription ||'Live discussion stage for filmmakers and creators.',
           creator_id: user.id,
           room_type: isPrivate ? 'private' : 'public',
           is_public: !isPrivate,
@@ -185,7 +207,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
         const matchedCat = categories.find((c) => c.id === validCategoryId);
         createdRoomData = {
-          ...(data || { id: createdRoomId, title: title.trim(), description: description.trim() }),
+          ...(data || { id: createdRoomId, title: cleanTitle, description: cleanDescription }),
           room_categories: matchedCat ? { name: matchedCat.name } : null,
         };
       }
@@ -223,7 +245,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
       onClose();
       Alert.alert('Room Launched! 🚀', 'Your discussion stage is now live for filmmakers.');
     } catch (e: any) {
-      Alert.alert('Failed to Create Room', e.message || 'Could not launch discussion room. Please try again.');
+      Alert.alert('Failed to Create Room', friendlyError(e, 'Could not launch discussion room. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -236,19 +258,19 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
           <TouchableWithoutFeedback>
             <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}
+              style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}
             >
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
               <View style={styles.headerRow}>
                 <View style={styles.titleBadgeGroup}>
                   <Text style={[styles.title, { color: themeColors.textPrimary }]}>Launch Discussion Room</Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad }}>
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>ROOM TOPIC / TITLE *</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
@@ -256,9 +278,10 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   placeholderTextColor={themeColors.textMuted}
                   value={title}
                   onChangeText={setTitle}
+                  maxLength={ROOM_TITLE_MAX}
                 />
 
-                <Text style={[styles.label, { color: themeColors.textSecondary }]}>CRAFT CATEGORY</Text>
+                <Text style={[styles.label, { color: themeColors.textSecondary }]}>CRAFT CATEGORY *</Text>
                 {loadingCategories ? (
                   <ActivityIndicator size="small" color="#FF4B33" style={{ marginVertical: 8, alignSelf: 'flex-start' }} />
                 ) : (
@@ -273,7 +296,9 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                             { backgroundColor: themeColors.chipBg, borderColor: themeColors.border },
                             active && styles.catChipActive,
                           ]}
-                          onPress={() => setSelectedCategoryId(cat.id)}
+                          onPress={() => { setSelectedCategoryId(cat.id); setFormError(''); }}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
                         >
                           <Text style={[styles.catText, { color: themeColors.textSecondary }, active && styles.catTextActive]}>
                             {cat.name.toUpperCase()}
@@ -291,6 +316,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   placeholderTextColor={themeColors.textMuted}
                   value={description}
                   onChangeText={setDescription}
+                  maxLength={ROOM_DESCRIPTION_MAX}
                   multiline
                 />
 
@@ -302,6 +328,9 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                     </Text>
                   </View>
                   <TouchableOpacity
+                    accessibilityRole="switch"
+                    accessibilityLabel="Private room, invite only"
+                    accessibilityState={{ checked: isPrivate }}
                     style={[styles.toggleBtn, isPrivate && styles.toggleBtnActive]}
                     onPress={() => setIsPrivate(!isPrivate)}
                   >
@@ -311,6 +340,9 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
+                {!!formError && (
+                  <Text accessibilityRole="alert" style={{ color: '#DC2626', fontSize: 13, fontWeight: '600', marginBottom: 10 }}>{formError}</Text>
+                )}
                 <TouchableOpacity
                   style={[styles.createBtn, loading && styles.btnDisabled]}
                   onPress={handleCreate}
@@ -343,6 +375,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '85%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -366,12 +401,12 @@ const styles = StyleSheet.create({
   title: {
     color: '#0D0D0D',
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   label: {
     color: '#374151',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -409,12 +444,12 @@ const styles = StyleSheet.create({
   },
   catText: {
     color: '#4B5563',
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   catTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   privacyRow: {
     flexDirection: 'row',
@@ -429,7 +464,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   privacySubtext: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   toggleBtn: {
@@ -445,9 +480,9 @@ const styles = StyleSheet.create({
     borderColor: '#FF4B33',
   },
   toggleText: {
-    color: '#6B7280',
-    fontSize: 10,
-    fontWeight: '800',
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
   },
   toggleTextActive: {
     color: '#FF4B33',
@@ -466,7 +501,7 @@ const styles = StyleSheet.create({
   createBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

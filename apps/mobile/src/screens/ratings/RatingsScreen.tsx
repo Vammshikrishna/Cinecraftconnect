@@ -15,8 +15,10 @@ import {
   Platform,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
 const FlashListAny = FlashList as any;
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
 import { Icon } from '../../components/common/Icon';
@@ -49,6 +51,9 @@ import { useAutoRefreshOnReconnect } from '../../hooks/useAutoRefreshOnReconnect
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useAccountType } from '../../hooks/useAccountType';
 import { useAppRole } from '../../hooks/useAppRole';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
+import { isTabletDevice } from '../../utils/pageType';
+import { useResponsive } from '../../hooks/useResponsive';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -83,9 +88,10 @@ interface MovieCardProps {
 }
 
 const MovieCard = React.memo(({ item, userRating, onRate, onPress, themeColors, isDark }: MovieCardProps) => {
+  const { isInternal: staffViewer } = useAppRole();
   const title = item.title || item.name || 'Untitled';
   const releaseDate = item.release_date || item.first_air_date || '';
-  const year = releaseDate ? releaseDate.substring(0, 4) : '2026';
+  const year = releaseDate ? releaseDate.substring(0, 4) : '';
   const langCode = (item.original_language || 'en').toLowerCase();
   const langLabel = LANGUAGE_NAMES[langCode] || langCode.toUpperCase();
   const posterUrl = getThumbnailImageUrl(item.poster_path);
@@ -101,7 +107,7 @@ const MovieCard = React.memo(({ item, userRating, onRate, onPress, themeColors, 
           <CachedImage uri={posterUrl} style={styles.posterImage} resizeMode="cover" />
         ) : (
           <View style={styles.posterFallback}>
-            <Icon name="film" size={28} color={themeColors.textMuted} />
+            <Icon name="film" size={28} color={themeColors.iconMuted} />
           </View>
         )}
 
@@ -123,9 +129,10 @@ const MovieCard = React.memo(({ item, userRating, onRate, onPress, themeColors, 
           <Text style={[styles.yearText, { color: themeColors.textMuted }]}>{year}</Text>
         </View>
 
+        {!staffViewer && (
         <View style={styles.starRatingRow}>
           {[1, 2, 3, 4, 5].map((star) => (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Rate ${star} out of 5`} accessibilityState={{ selected: star <= userRating }} hitSlop={{ top: 12, bottom: 12, left: 3, right: 3 }}
               key={star}
               onPress={() => onRate(item, star)}
               activeOpacity={0.7}
@@ -139,6 +146,7 @@ const MovieCard = React.memo(({ item, userRating, onRate, onPress, themeColors, 
             </TouchableOpacity>
           ))}
         </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -204,6 +212,7 @@ const CategoryRow = React.memo(({
         </ScrollView>
       ) : (
         <FlashListAny
+          keyboardShouldPersistTaps="handled"
           horizontal
           data={displayItems}
           keyExtractor={keyExtractor}
@@ -235,6 +244,7 @@ const CategoryRow = React.memo(({
 export const RatingsScreen = ({ navigation }: { navigation: any }) => {
   const isOffline = useIsOffline();
   const { themeColors, isDark } = useUserSettings();
+  const { numPosterColumns } = useResponsive();
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
@@ -453,7 +463,8 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
     const tmdbId = item.id;
     const mediaType = item.title ? 'movie' : 'tv';
 
-    // Optimistic Update
+    // Optimistic Update (rolled back if the save fails)
+    const previousRating = userRatings[tmdbId];
     setUserRatings((prev) => ({ ...prev, [tmdbId]: rating }));
 
     try {
@@ -469,7 +480,13 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
 
       if (error) throw error;
     } catch (e: any) {
-      Alert.alert('Rating Error', e.message || 'Could not save rating.');
+      setUserRatings((prev) => {
+        const next = { ...prev };
+        if (previousRating === undefined) delete next[tmdbId];
+        else next[tmdbId] = previousRating;
+        return next;
+      });
+      Alert.alert('Rating Error', friendlyError(e, 'Could not save rating.'));
     }
   };
 
@@ -500,11 +517,11 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
       <View style={styles.pageHeaderRow}>
         <View style={styles.pageTitleGroup}>
           <Icon name="star" size={22} color={ORANGE} strokeWidth={2.2} />
-          <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Ratings</Text>
+          <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Ratings</Text>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={[styles.submitWorkBtn, { backgroundColor: themeColors.chipBg, borderWidth: 1, borderColor: themeColors.border }]}
             onPress={() => navigation.navigate('MyRatings')}
             accessibilityLabel="My Ratings"
@@ -512,7 +529,7 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
             <Icon name="bookmark" size={16} color={themeColors.textPrimary} />
           </TouchableOpacity>
           {!isFan && !isInternal && (
-            <TouchableOpacity
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={styles.submitWorkBtn}
               onPress={() => setIsSubmitModalOpen(true)}
               accessibilityLabel="Submit Your Work"
@@ -523,14 +540,14 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
         </View>
       </View>
 
-      <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+      <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
         Discover trending content, rate what you've watched, and showcase your own cinematic creations.
       </Text>
 
       {/* Search Box */}
       <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-        <Icon name="search" size={16} color={themeColors.textMuted} />
-        <TextInput
+        <Icon name="search" size={16} color={themeColors.iconMuted} />
+        <TextInput returnKeyType="search" accessibilityLabel="Search movies or TV shows"
           style={[styles.searchInput, { color: themeColors.textPrimary }]}
           placeholder="Search movies or TV shows..."
           placeholderTextColor={themeColors.textMuted}
@@ -538,8 +555,8 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Icon name="x" size={16} color={themeColors.textMuted} />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setSearchQuery('')}>
+            <Icon name="x" size={16} color={themeColors.iconMuted} />
           </TouchableOpacity>
         )}
       </View>
@@ -552,7 +569,7 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
               <TouchableOpacity
                 key={r.platform_cinema_id || r.tmdb_id}
                 activeOpacity={0.85}
-                style={{ width: 110 }}
+                style={{ width: isTabletDevice ? 150 : 110 }}
                 onPress={() =>
                   navigation.navigate('ContentDetail', {
                     contentId: r.platform_cinema_id || r.tmdb_id,
@@ -563,15 +580,15 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
                 }
               >
                 {r.poster_path ? (
-                  <CachedImage uri={getSafeImageUrl(r.poster_path)} style={{ width: 110, height: 165, borderRadius: 12 }} resizeMode="cover" />
+                  <CachedImage uri={getSafeImageUrl(r.poster_path)} style={{ width: isTabletDevice ? 150 : 110, height: isTabletDevice ? 225 : 165, borderRadius: 12 }} resizeMode="cover" />
                 ) : (
-                  <View style={{ width: 110, height: 165, borderRadius: 12, backgroundColor: themeColors.chipBg }} />
+                  <View style={{ width: isTabletDevice ? 150 : 110, height: isTabletDevice ? 225 : 165, borderRadius: 12, backgroundColor: themeColors.chipBg }} />
                 )}
-                <Text style={{ color: themeColors.textPrimary, fontSize: 12.5, fontWeight: '800', marginTop: 5 }} numberOfLines={1}>{r.title}</Text>
+                <Text style={{ color: themeColors.textPrimary, fontSize: 12, fontWeight: '700', marginTop: 5 }} numberOfLines={1}>{r.title}</Text>
                 {r.average_rating != null && (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                     <Icon name="star" size={11} color="#F59E0B" />
-                    <Text style={{ color: themeColors.textSecondary, fontSize: 11.5 }}>{Number(r.average_rating).toFixed(1)}</Text>
+                    <Text style={{ color: themeColors.textSecondary, fontSize: 12 }}>{Number(r.average_rating).toFixed(1)}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -604,21 +621,46 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
     [categoryData, loadingCategory, userRatings, handleRateMovie, handleMoviePress, handleViewAll, themeColors, isDark]
   );
 
-  const renderSearchMovieItem = useCallback(
-    ({ item }: { item: TMDBContent }) => (
-      <View style={{ flex: 1, padding: 4 }}>
-        <MovieCard
-          item={item}
-          userRating={userRatings[item.id] || 0}
-          onRate={handleRateMovie}
-          onPress={handleMoviePress}
-          themeColors={themeColors}
-          isDark={isDark}
-        />
-      </View>
-    ),
-    [userRatings, handleRateMovie, handleMoviePress, themeColors, isDark]
+  // Search results are chunked into rows so ONE FlashList (single column) serves both the category view and
+  // the search view. Swapping between two different lists on the first typed character unmounted the search box.
+  const searchRows = React.useMemo(() => {
+    const cols = Math.max(1, numPosterColumns || 1);
+    const rows: { rowKey: string; cells: TMDBContent[] }[] = [];
+    for (let i = 0; i < searchResults.length; i += cols) {
+      const cells = searchResults.slice(i, i + cols);
+      rows.push({ rowKey: `search-row-${cells.map((c: any) => c.id).join('-')}`, cells });
+    }
+    return rows;
+  }, [searchResults, numPosterColumns]);
+
+  const renderSearchRow = useCallback(
+    (row: { rowKey: string; cells: TMDBContent[] }) => {
+      const cols = Math.max(1, numPosterColumns || 1);
+      const padded: (TMDBContent | null)[] = [...row.cells];
+      while (padded.length < cols) padded.push(null);
+      return (
+        <View style={{ flexDirection: 'row' }}>
+          {padded.map((item, idx) => (
+            <View key={item ? `c-${item.id}` : `empty-${idx}`} style={{ flex: 1, padding: 4 }}>
+              {item ? (
+                <MovieCard
+                  item={item}
+                  userRating={userRatings[item.id] || 0}
+                  onRate={handleRateMovie}
+                  onPress={handleMoviePress}
+                  themeColors={themeColors}
+                  isDark={isDark}
+                />
+              ) : null}
+            </View>
+          ))}
+        </View>
+      );
+    },
+    [numPosterColumns, userRatings, handleRateMovie, handleMoviePress, themeColors, isDark]
   );
+
+  const isSearching = searchQuery.trim().length > 0;
 
   return (
     <TabletContainer
@@ -633,26 +675,41 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
         />
       }
     >
-      {searchQuery.trim().length > 0 ? (
-        <FlashListAny
-          data={searchResults}
-          keyExtractor={(item: any) => `search-${item.id}`}
-          renderItem={renderSearchMovieItem}
-          estimatedItemSize={260}
-          numColumns={2}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <>
-              {renderListHeader()}
+      <FlashListAny
+        keyboardShouldPersistTaps="handled"
+        {...scrollChrome}
+        data={isSearching ? searchRows : categories}
+        keyExtractor={(item: any) => (isSearching ? item.rowKey : item.id)}
+        getItemType={() => (isSearching ? 'search-row' : 'category')}
+        renderItem={({ item }: any) => (isSearching ? renderSearchRow(item) : renderCategoryItem({ item }))}
+        extraData={isSearching ? searchRows : [categoryData, loadingCategory, userRatings, themeColors]}
+        estimatedItemSize={isSearching ? 260 : 280}
+        ListHeaderComponent={
+          <>
+            {renderListHeader()}
+            {isSearching && (
               <View style={styles.searchResultsContainer}>
                 <Text style={[styles.sectionTitle, { color: themeColors.textPrimary }]}>
                   Search Results for "{searchQuery}"
                 </Text>
               </View>
-            </>
-          }
-          ListEmptyComponent={
+            )}
+          </>
+        }
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          isSearching ? undefined : (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={ORANGE}
+              colors={[ORANGE]}
+            />
+          )
+        }
+        ListEmptyComponent={
+          isSearching ? (
             searching ? (
               <View style={styles.searchResultsGrid}>
                 <MovieCardSkeleton />
@@ -665,37 +722,16 @@ export const RatingsScreen = ({ navigation }: { navigation: any }) => {
                 No movies or TV shows found matching your search.
               </Text>
             )
-          }
-        />
-      ) : (
-        <FlashListAny
-          data={categories}
-          keyExtractor={(item: any) => item.id}
-          renderItem={renderCategoryItem}
-          estimatedItemSize={280}
-          ListHeaderComponent={renderListHeader}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={ORANGE}
-              colors={[ORANGE]}
-            />
-          }
-          ListEmptyComponent={
-            isOffline ? (
-              <OfflineEmptyState />
-            ) : (
-              <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 }}>
-                <Icon name="star" size={36} color={themeColors.textMuted} />
-                <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '800' }}>No Categories Found</Text>
-              </View>
-            )
-          }
-        />
-      )}
+          ) : isOffline ? (
+            <OfflineEmptyState />
+          ) : (
+            <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 }}>
+              <Icon name="star" size={36} color={themeColors.iconMuted} />
+              <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '700' }}>No Categories Found</Text>
+            </View>
+          )
+        }
+      />
 
       {/* Submit Cinema Work Modal */}
       <SubmitCinemaModal
@@ -732,19 +768,19 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 18.5,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   pageSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 12,
   },
   submitWorkBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -759,7 +795,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 8,
@@ -768,7 +804,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: INK,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   categorySection: {
     marginTop: 14,
@@ -782,8 +818,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   categoryTitle: {
-    fontSize: 15.5,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
@@ -795,7 +831,7 @@ const styles = StyleSheet.create({
   viewAllText: {
     color: ORANGE,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   rowScrollContainer: {
     paddingLeft: 16,
@@ -805,14 +841,14 @@ const styles = StyleSheet.create({
     paddingLeft: 16,
   },
   skeletonBox: {
-    width: 155,
-    height: 250,
+    width: isTabletDevice ? 190 : 155,
+    height: isTabletDevice ? 300 : 250,
     borderRadius: 16,
     backgroundColor: '#E2E8F0',
     marginRight: 14,
   },
   movieVerticalCard: {
-    width: 155,
+    width: isTabletDevice ? 190 : 155,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
@@ -827,7 +863,7 @@ const styles = StyleSheet.create({
   },
   posterWrapper: {
     width: '100%',
-    height: 220,
+    height: isTabletDevice ? 280 : 220,
     position: 'relative',
     backgroundColor: '#F1F5F9',
   },
@@ -855,15 +891,15 @@ const styles = StyleSheet.create({
   },
   appRatingText: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardInfoBody: {
     padding: 10,
   },
   movieTitleText: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     lineHeight: 16,
@@ -880,13 +916,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   langText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.5,
   },
   yearText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
   },
@@ -905,7 +941,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     marginBottom: 12,
   },

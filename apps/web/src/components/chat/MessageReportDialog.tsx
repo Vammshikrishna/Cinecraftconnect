@@ -16,6 +16,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import { friendlyError } from '@cinecraft/core';
+import { REPORT_REASONS, toDbReason } from '@/lib/reportReasons';
 
 export type ReportTargetType = 'dm' | 'project_space' | 'room';
 
@@ -28,14 +30,8 @@ interface MessageReportDialogProps {
   decryptedContent: string;
 }
 
-const REASONS = [
-  { id: 'spam', label: 'Spam', description: 'Unwanted repetitive messages' },
-  { id: 'harassment', label: 'Harassment', description: 'Attacking or bullying behavior' },
-  { id: 'inappropriate', label: 'Inappropriate Content', description: 'NSFW or violent content' },
-  { id: 'hate_speech', label: 'Hate Speech', description: 'Attacking protected groups' },
-  { id: 'security', label: 'Phishing/Scam', description: 'Malicious links or scams' },
-  { id: 'other', label: 'Other', description: 'Other terms of service violation' }
-];
+// The same reasons as every other report form (shared list, stored as one of the nine database reasons).
+const REASONS = REPORT_REASONS;
 
 export const MessageReportDialog = ({
   isOpen,
@@ -68,7 +64,7 @@ export const MessageReportDialog = ({
           channel_id: channelId,
           target_type: targetType,
           decrypted_content: decryptedContent,
-          reason,
+          reason: toDbReason(reason) ?? 'other',
           status: 'pending'
         });
 
@@ -85,7 +81,7 @@ export const MessageReportDialog = ({
       }, 2000);
 
     } catch (error: any) {
-      toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Submission Failed", description: friendlyError(error), variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -93,7 +89,7 @@ export const MessageReportDialog = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border-border/50 bg-background/95 backdrop-blur-xl">
+      <DialogContent className="sm:max-w-[480px] p-0 overflow-hidden border-border/50 bg-background/95">
         <AnimatePresence mode="wait">
           {!isSuccess ? (
             <motion.div
@@ -110,7 +106,7 @@ export const MessageReportDialog = ({
                   </div>
                   <div>
                     <DialogTitle className="text-xl font-black uppercase tracking-tight">Report Message</DialogTitle>
-                    <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <DialogDescription className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                       Moderators will review the decrypted message content.
                     </DialogDescription>
                   </div>
@@ -140,7 +136,7 @@ export const MessageReportDialog = ({
                         <SelectItem key={r.id} value={r.id} className="py-3">
                           <div className="flex flex-col gap-0.5">
                             <span className="font-bold text-sm">{r.label}</span>
-                            <span className="text-[10px] text-muted-foreground leading-none">{r.description}</span>
+                            <span className="text-[12px] text-muted-foreground leading-none">{r.description}</span>
                           </div>
                         </SelectItem>
                       ))}
@@ -150,7 +146,7 @@ export const MessageReportDialog = ({
 
                 <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 flex gap-3">
                   <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-[10px] leading-relaxed text-amber-200/70 font-medium">
+                  <p className="text-[12px] leading-relaxed text-amber-200/70 font-medium">
                     By reporting this message, you consent to sharing its decrypted content with our moderation team for review.
                   </p>
                 </div>
@@ -160,14 +156,14 @@ export const MessageReportDialog = ({
                 <Button 
                   variant="ghost" 
                   onClick={() => onOpenChange(false)}
-                  className="rounded-xl font-bold uppercase tracking-widest text-[10px]"
+                  className="rounded-xl font-bold uppercase tracking-widest text-[12px]"
                 >
                   Cancel
                 </Button>
                 <Button 
                   onClick={handleSubmit} 
                   disabled={isSubmitting || !reason}
-                  className="rounded-xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest text-[10px] px-8 shadow-lg shadow-red-600/20"
+                  className="rounded-xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest text-[12px] px-8 shadow-lg shadow-red-600/20"
                 >
                   {isSubmitting ? "Submitting..." : "Report Message"}
                   {!isSubmitting && <ChevronRight className="w-3 h-3 ml-2" />}
@@ -181,7 +177,7 @@ export const MessageReportDialog = ({
               animate={{ opacity: 1, scale: 1 }}
               className="p-12 flex flex-col items-center text-center space-y-6"
             >
-              <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center animate-pulse">
+              <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center">
                 <CheckCircle2 className="w-10 h-10 text-green-500" />
               </div>
               <div className="space-y-2">

@@ -7,6 +7,8 @@ import { PhoneCall, PhoneOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 import { useNativeCallKit } from '@/hooks/useNativeCallKit';
+import { verifyCallInvite } from '@/lib/calls/verifyInvite';
+import { sendCallBroadcast } from '@/lib/calls/callSystemMessages';
 
 const LiveKitCallContainer = lazy(() => import('./LiveKitCallContainer').then(m => ({ default: m.LiveKitCallContainer })));
 
@@ -39,19 +41,30 @@ export const GlobalCallOverlay = () => {
     });
 
     broadcastChannel
-      .on('broadcast', { event: 'incoming_call_invite' }, (payload) => {
+      .on('broadcast', { event: 'incoming_call_invite' }, async (payload) => {
         const data = payload.payload;
         if (data && data.targetUserId === user.id && data.callerId !== user.id) {
+          // anyone can send on this channel: only ring for a call the database confirms, with the caller's real name
+          const verified = await verifyCallInvite(data);
+          if (!verified) return;
+          const safeUrl = typeof data.actionUrl === 'string' && /^\/(?!\/)/.test(data.actionUrl) ? data.actionUrl : undefined;
           setIncomingCall({
             callerId: data.callerId,
-            callerName: data.callerName || 'Team Member',
-            callerAvatar: data.callerAvatar,
+            callerName: verified.callerName,
+            callerAvatar: verified.callerAvatar,
             roomId: data.roomId,
-            roomName: data.roomName || 'Live Call',
-            roomType: data.roomType || 'project',
-            actionUrl: data.actionUrl,
+            roomName: String(data.roomName || 'Live Call').slice(0, 80),
+            roomType: ['project', 'discussion', 'direct'].includes(data.roomType) ? data.roomType : 'project',
+            actionUrl: safeUrl,
           });
         }
+      })
+      .on('broadcast', { event: 'incoming_call_cancelled' }, (payload) => {
+        // the caller hung up before anyone answered
+        const data = payload.payload;
+        if (!data?.roomId) return;
+        if (Array.isArray(data.targetUserIds) && !data.targetUserIds.includes(user.id)) return;
+        setIncomingCall((current) => (current && current.roomId === data.roomId ? null : current));
       })
       .subscribe();
 
@@ -68,6 +81,7 @@ export const GlobalCallOverlay = () => {
         async (payload) => {
           const n = payload.new;
           if (!n || n.trigger_user_id === user.id) return;
+          if (n.type === 'missed_call') return; // a record of a call that already ended, not a ringing call
 
           const isCallNotification =
             n.type === 'call_invite' ||
@@ -224,24 +238,25 @@ export const GlobalCallOverlay = () => {
     if (!incomingCall) return;
     const { roomType, roomId, roomName } = incomingCall;
     setIncomingCall(null);
+    // A room call belongs in its room: open the room, which joins the call in its Live Call tab (like the mobile app),
+    // instead of putting the call over whatever page is open. One-to-one calls have no tab and still join right here.
+    if (roomType === 'project') {
+      navigate(`/projects/${roomId}/space?autoJoin=true`);
+      return;
+    }
+    if (roomType === 'discussion') {
+      navigate(`/discussions/${roomId}?autoJoin=true`);
+      return;
+    }
     await joinCall(roomType, roomId, roomName, 'member');
   };
 
   const handleDeclineCall = () => {
     if (incomingCall) {
-      const channel = supabase.channel('global-call-invites-broadcast');
-      channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          channel.send({
-            type: 'broadcast',
-            event: 'call_declined',
-            payload: {
-              roomId: incomingCall.roomId,
-              targetUserId: incomingCall.callerId,
-              declinerId: user?.id,
-            }
-          });
-        }
+      sendCallBroadcast('call_declined', {
+        roomId: incomingCall.roomId,
+        targetUserId: incomingCall.callerId,
+        declinerId: user?.id,
       });
     }
     setIncomingCall(null);
@@ -251,18 +266,18 @@ export const GlobalCallOverlay = () => {
     <>
       {/* Real-time Incoming Call Banner (Teams/WhatsApp Style) */}
       {incomingCall && !callState.isActive && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999999] w-[calc(100%-2rem)] max-w-md bg-[#0c0c14]/95 backdrop-blur-3xl border-2 border-primary/50 rounded-[28px] p-4 shadow-[0_20px_70px_rgba(255,107,0,0.5)] animate-in slide-in-from-top-6 duration-300">
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999999] w-[calc(100%-2rem)] max-w-md bg-card/95 backdrop-blur-3xl border-2 border-primary/50 rounded-[28px] p-4 shadow-[0_20px_70px_rgba(255,107,0,0.5)] animate-in slide-in-from-top-6 duration-300">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3.5 min-w-0">
               <div className="relative shrink-0">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary/30 to-orange-500/30 border-2 border-primary/60 flex items-center justify-center text-white font-black overflow-hidden shadow-inner">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary/30 to-orange-500/30 border-2 border-primary/60 flex items-center justify-center text-foreground font-black overflow-hidden shadow-inner">
                   {incomingCall.callerAvatar ? (
                     <img loading="lazy" decoding="async" src={incomingCall.callerAvatar} alt={incomingCall.callerName} className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-base">{incomingCall.callerName[0]?.toUpperCase()}</span>
                   )}
                 </div>
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-[#0c0c14] flex items-center justify-center animate-pulse">
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-card flex items-center justify-center animate-pulse">
                   <PhoneCall className="w-2.5 h-2.5 text-white" />
                 </div>
               </div>
@@ -270,10 +285,10 @@ export const GlobalCallOverlay = () => {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-ping" />
-                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">Incoming Video Call</p>
+                  <p className="text-[12px] font-black text-primary uppercase tracking-widest">Incoming Video Call</p>
                 </div>
-                <p className="text-base font-bold text-white truncate leading-tight mt-0.5">{incomingCall.callerName}</p>
-                <p className="text-xs text-gray-300 truncate mt-0.5">Invited you to join <span className="text-primary font-bold">{incomingCall.roomName}</span></p>
+                <p className="text-base font-bold text-foreground truncate leading-tight mt-0.5">{incomingCall.callerName}</p>
+                <p className="text-xs text-muted-foreground truncate mt-0.5">Invited you to join <span className="text-primary font-bold">{incomingCall.roomName}</span></p>
               </div>
             </div>
 
@@ -281,7 +296,7 @@ export const GlobalCallOverlay = () => {
               <Button
                 size="sm"
                 onClick={handleDeclineCall}
-                className="h-10 w-10 p-0 rounded-full bg-white/10 hover:bg-red-500/20 text-gray-300 hover:text-red-400 border border-white/10 backdrop-blur-md transition-all"
+                className="h-10 w-10 p-0 rounded-full bg-muted hover:bg-red-500/20 text-muted-foreground hover:text-red-500 border border-border transition"
                 title="Decline"
               >
                 <PhoneOff className="w-4 h-4" />
@@ -289,7 +304,7 @@ export const GlobalCallOverlay = () => {
               <Button
                 size="sm"
                 onClick={handleAcceptCall}
-                className="h-10 px-5 rounded-full bg-green-600 hover:bg-green-500 text-white font-bold text-xs shadow-[0_0_20px_rgba(34,197,94,0.5)] transition-all flex items-center gap-1.5 animate-pulse"
+                className="h-10 px-5 rounded-full bg-green-600 hover:bg-green-500 text-white font-bold text-xs shadow-[0_0_20px_rgba(34,197,94,0.5)] transition flex items-center gap-1.5 animate-pulse"
                 title="Accept & Join Call"
               >
                 <PhoneCall className="w-4 h-4" />

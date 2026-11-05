@@ -1,157 +1,248 @@
 import { useState } from 'react';
-import { useProjectTasks } from '@/hooks/useProjectTasks';
+import { useProjectTasks, type ProjectTask } from '@/hooks/useProjectTasks';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Layers, Search, ShieldAlert, RefreshCw } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, ListChecks, Loader2, PartyPopper, Plus, RefreshCw, Search, ShieldAlert, Target, Trash2 } from 'lucide-react';
 import { useAppRole } from '@/hooks/useAppRole';
+import { cn } from '@/lib/utils';
+import { FilterChips, WorkspaceCard, WorkspaceEmpty, WorkspaceHero, WorkspaceNotice } from './WorkspaceUI';
 
 interface TasksProps {
   project_id: string;
 }
 
+type Filter = 'all' | 'open' | 'done';
+
+/** A round progress dial for the side panel. */
+const Dial = ({ percent }: { percent: number }) => {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="relative h-36 w-36 mx-auto" role="img" aria-label={`${percent}% of tasks done`}>
+      <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90">
+        <circle cx="64" cy="64" r={r} fill="none" strokeWidth="12" className="stroke-muted" />
+        <circle cx="64" cy="64" r={r} fill="none" strokeWidth="12" strokeLinecap="round" className="stroke-primary transition duration-700" strokeDasharray={c} strokeDashoffset={c - (c * percent) / 100} />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center">
+        <div className="text-center">
+          <p className="text-3xl font-bold tabular-nums leading-none">{percent}%</p>
+          <p className="text-xs text-muted-foreground mt-1">complete</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const dueLabel = (iso: string | null) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
+  const text = diff === 0 ? 'Due today' : diff === 1 ? 'Due tomorrow' : diff < 0 ? `${-diff}d overdue` : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return { text, overdue: diff < 0, soon: diff >= 0 && diff <= 1 };
+};
+
 const Tasks = ({ project_id }: TasksProps) => {
   const { isInternal } = useAppRole();
   const [newTask, setNewTask] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [showDone, setShowDone] = useState(true);
 
-  const { tasks, isLoading, error, addTask, toggleTask } = useProjectTasks(project_id);
+  const { tasks, isLoading, error, addTask, toggleTask, deleteTask } = useProjectTasks(project_id);
 
-  const filteredTasks = tasks.filter((t) =>
-    t.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const done = tasks.filter((t) => t.is_completed).length;
+  const open = tasks.length - done;
+  const percent = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+
+  const visible = tasks
+    .filter((t) => t.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter((t) => filter === 'all' || (filter === 'done' ? t.is_completed : !t.is_completed));
+  const todo = visible.filter((t) => !t.is_completed);
+  const finished = visible.filter((t) => t.is_completed);
+  const upNext = tasks.find((t) => !t.is_completed);
 
   const handleAddTask = () => {
     const title = newTask.trim();
     if (!title) return;
-    addTask.mutate(title, {
-      onSuccess: () => setNewTask(''),
-    });
+    addTask.mutate(title, { onSuccess: () => setNewTask('') });
+  };
+
+  const Row = ({ task }: { task: ProjectTask }) => {
+    const due = dueLabel(task.due_date);
+    return (
+      <li className="group flex items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-primary/5">
+        <Checkbox
+          id={`task-${task.id}`}
+          checked={task.is_completed}
+          onCheckedChange={() => !isInternal && toggleTask.mutate({ id: task.id, currentStatus: task.is_completed })}
+          disabled={isInternal || toggleTask.isPending}
+          className="h-5 w-5 rounded-full"
+          aria-label={task.is_completed ? `Mark "${task.name}" as not done` : `Mark "${task.name}" as done`}
+        />
+        <label htmlFor={`task-${task.id}`} className={cn('flex-1 min-w-0 text-base leading-snug break-words', !isInternal && 'cursor-pointer', task.is_completed ? 'line-through text-muted-foreground' : 'text-foreground')}>
+          {task.name}
+          {task.description && <span className="block text-sm text-muted-foreground no-underline mt-0.5">{task.description}</span>}
+        </label>
+        {due && !task.is_completed && (
+          <span className={cn('hidden sm:inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium', due.overdue ? 'bg-destructive/10 text-destructive' : due.soon ? 'bg-amber-500/15 text-amber-600' : 'bg-muted text-muted-foreground')}>
+            <CalendarDays className="h-3 w-3" /> {due.text}
+          </span>
+        )}
+        {task.is_completed && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" aria-hidden />}
+        {!isInternal && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Delete task "${task.name}"`}
+            onClick={() => deleteTask.mutate(task.id)}
+            className="h-8 w-8 rounded-full text-muted-foreground opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-opacity"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
+      </li>
+    );
   };
 
   return (
-    <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Workspace</h1>
-          <p className="text-3xl font-extrabold text-foreground">Production Tasks</p>
-        </div>
+    <div className="h-full overflow-y-auto no-scrollbar">
+      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-6 pb-24 space-y-6">
+        <WorkspaceHero
+          icon={ListChecks}
+          title="Tasks"
+          description={tasks.length > 0 ? `${done} of ${tasks.length} done` : 'What still needs doing on this production.'}
+          stats={[
+            { label: 'Total', value: tasks.length },
+            { label: 'Open', value: open, tone: 'warn' },
+            { label: 'Done', value: done, tone: 'success' },
+            { label: 'Progress', value: `${percent}%`, tone: 'primary' },
+          ]}
+        />
 
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <div className="relative flex-grow min-w-[200px] sm:min-w-[300px]">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Find a task or asset..."
-              className="pl-11 pr-4 h-12 bg-card border-border rounded-xl placeholder:text-muted-foreground focus:border-primary/50 transition-all"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-8 p-4 bg-destructive/10 border border-destructive/20 rounded-2xl flex items-center justify-between gap-3 text-destructive">
-          <div className="flex items-center gap-3">
-            <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
-            <div>
-              <p className="text-sm font-bold">Connection Issue</p>
-              <p className="text-xs opacity-70">{(error as Error).message}</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="h-8 hover:bg-destructive/20 text-destructive font-bold"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" /> Retry
-          </Button>
-        </div>
-      )}
-
-      {!isInternal ? (
-        <div className="bg-card border border-border p-4 sm:p-6 rounded-2xl mb-8 shadow-sm">
-          <div className="flex flex-col sm:flex-row items-end gap-4">
-            <div className="flex-1 space-y-2 w-full">
-              <label className="text-[10px] font-bold text-primary uppercase tracking-widest ml-1">
-                New Production Step
-              </label>
-              <Input
-                value={newTask}
-                onChange={(e) => setNewTask(e.target.value)}
-                placeholder="Enter task name..."
-                className="h-14 bg-background border-border rounded-2xl placeholder:text-muted-foreground px-6 focus:border-primary/50 text-lg transition-all"
-                onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-              />
-            </div>
-            <Button
-              onClick={handleAddTask}
-              disabled={addTask.isPending || !newTask.trim()}
-              className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/80 text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 transition-all w-full sm:w-auto"
-            >
-              {addTask.isPending ? <Loader2 className="animate-spin h-6 w-6" /> : 'Deploy Task'}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="mb-8 p-4 bg-muted/30 border border-border/50 rounded-2xl text-center">
-          <p className="text-sm text-muted-foreground italic font-medium">
-            Internal staff are in observation mode and cannot modify production tasks.
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-3 pb-24">
-        {isLoading && tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 opacity-30">
-            <Loader2 className="h-10 w-10 animate-spin mb-4" />
-            <p className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
-              Fetching backlog...
-            </p>
-          </div>
-        ) : filteredTasks.length > 0 ? (
-          filteredTasks.map((task) => (
-            <div
-              key={task.id}
-              className="group flex items-center gap-4 p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm"
-            >
-              <Checkbox
-                id={`task-${task.id}`}
-                checked={task.is_completed}
-                onCheckedChange={() =>
-                  !isInternal &&
-                  toggleTask.mutate({ id: task.id, currentStatus: task.is_completed })
-                }
-                disabled={isInternal || toggleTask.isPending}
-                className="h-6 w-6 border-2 border-primary/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-              />
-              <label
-                htmlFor={`task-${task.id}`}
-                className={`flex-1 cursor-pointer text-lg font-bold leading-tight transition-all ${
-                  task.is_completed ? 'line-through opacity-30 italic' : 'text-foreground'
-                }`}
-              >
-                {task.name}
-              </label>
-              <div className="opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
-                <p className="text-[9px] font-black uppercase text-primary tracking-tighter bg-primary/10 px-2 py-1 rounded-lg">
-                  Production Log
-                </p>
+        {error && (
+          <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-2xl flex items-center justify-between gap-3 text-destructive" role="alert">
+            <div className="flex items-center gap-3">
+              <ShieldAlert className="h-5 w-5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold">Tasks could not be loaded</p>
+                <p className="text-xs opacity-80">{(error as Error).message}</p>
               </div>
             </div>
-          ))
-        ) : (
-          <div className="flex flex-col items-center justify-center py-24 text-center opacity-50">
-            <Layers className="h-16 w-16 mb-4 text-muted-foreground" />
-            <p className="text-lg font-bold text-foreground uppercase tracking-widest">
-              No Active Tasks
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Keep the production moving by adding items above.
-            </p>
+            <Button variant="ghost" size="sm" onClick={() => window.location.reload()} className="text-destructive hover:bg-destructive/15 font-semibold">
+              <RefreshCw className="h-4 w-4 mr-2" /> Try again
+            </Button>
           </div>
         )}
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
+          {/* ── Left: add, filter, list ───────────────────────────── */}
+          <div className="space-y-4 min-w-0">
+            {!isInternal ? (
+              <WorkspaceCard className="p-3">
+                <form onSubmit={(e) => { e.preventDefault(); handleAddTask(); }} className="flex items-center gap-2">
+                  <span className="h-10 w-10 rounded-xl bg-primary/10 text-primary grid place-items-center shrink-0"><Plus className="h-5 w-5" /></span>
+                  <Input
+                    value={newTask}
+                    onChange={(e) => setNewTask(e.target.value)}
+                    placeholder="Add a task, for example “Confirm the location permit”"
+                    aria-label="New task"
+                    className="h-10 border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 text-base"
+                  />
+                  <Button type="submit" disabled={addTask.isPending || !newTask.trim()} className="h-10 rounded-xl px-5 font-semibold shrink-0">
+                    {addTask.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : 'Add task'}
+                  </Button>
+                </form>
+              </WorkspaceCard>
+            ) : (
+              <WorkspaceNotice>Staff are in observation mode and cannot change tasks.</WorkspaceNotice>
+            )}
+
+            {tasks.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <FilterChips<Filter>
+                  label="Filter tasks"
+                  value={filter}
+                  onChange={setFilter}
+                  options={[{ id: 'all', label: 'All', count: tasks.length }, { id: 'open', label: 'Open', count: open }, { id: 'done', label: 'Done', count: done }]}
+                />
+                <div className="relative w-full sm:w-56">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search tasks" aria-label="Search tasks" className="pl-9 h-9 bg-card rounded-full" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {isLoading && tasks.length === 0 ? (
+              <div className="flex justify-center py-16" role="status" aria-label="Loading tasks">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : visible.length > 0 ? (
+              <div className="space-y-4">
+                {todo.length > 0 && (
+                  <WorkspaceCard className="overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+                      <h2 className="text-sm font-semibold">To do</h2>
+                      <span className="text-xs text-muted-foreground tabular-nums">{todo.length}</span>
+                    </div>
+                    <ul className="divide-y divide-border">{todo.map((t) => <Row key={t.id} task={t} />)}</ul>
+                  </WorkspaceCard>
+                )}
+                {finished.length > 0 && (
+                  <WorkspaceCard className="overflow-hidden">
+                    <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone} className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors">
+                      <h2 className="text-sm font-semibold flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Completed</h2>
+                      <span className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">{finished.length}<ChevronDown className={cn('h-4 w-4 transition-transform', showDone && 'rotate-180')} /></span>
+                    </button>
+                    {showDone && <ul className="divide-y divide-border border-t border-border">{finished.map((t) => <Row key={t.id} task={t} />)}</ul>}
+                  </WorkspaceCard>
+                )}
+              </div>
+            ) : (
+              <WorkspaceCard>
+                <WorkspaceEmpty
+                  icon={ListChecks}
+                  title={searchQuery || filter !== 'all' ? 'No matching tasks' : 'No tasks yet'}
+                  description={searchQuery || filter !== 'all' ? 'Try a different word or filter.' : 'Add the first task above to start tracking the work.'}
+                />
+              </WorkspaceCard>
+            )}
+          </div>
+
+          {/* ── Right: how the work is going ──────────────────────── */}
+          <aside className="space-y-4 lg:sticky lg:top-0">
+            <WorkspaceCard className="p-5">
+              <h2 className="text-sm font-semibold mb-4">Overall progress</h2>
+              <Dial percent={percent} />
+              <p className="text-center text-sm text-muted-foreground mt-4">
+                {tasks.length === 0 ? 'Nothing to track yet.' : open === 0 ? 'Everything is done.' : `${open} ${open === 1 ? 'task' : 'tasks'} left to finish`}
+              </p>
+            </WorkspaceCard>
+
+            <WorkspaceCard className="p-5">
+              <h2 className="text-sm font-semibold flex items-center gap-2 mb-3">
+                {open === 0 && tasks.length > 0 ? <PartyPopper className="h-4 w-4 text-primary" /> : <Target className="h-4 w-4 text-primary" />}
+                {open === 0 && tasks.length > 0 ? 'All wrapped up' : 'Up next'}
+              </h2>
+              {upNext ? (
+                <div className="rounded-xl bg-primary/5 border border-primary/15 p-3">
+                  <p className="text-sm font-medium text-foreground break-words">{upNext.name}</p>
+                  {dueLabel(upNext.due_date) && <p className="text-xs text-muted-foreground mt-1">{dueLabel(upNext.due_date)!.text}</p>}
+                  {!isInternal && (
+                    <Button size="sm" variant="outline" className="mt-3 h-8 rounded-lg" onClick={() => toggleTask.mutate({ id: upNext.id, currentStatus: false })}>
+                      Mark as done
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">{tasks.length === 0 ? 'Your next task will show here.' : 'Nothing left to do. Add a task when something new comes up.'}</p>
+              )}
+            </WorkspaceCard>
+          </aside>
+        </div>
       </div>
     </div>
   );

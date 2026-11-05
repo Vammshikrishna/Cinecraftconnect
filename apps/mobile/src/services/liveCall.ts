@@ -427,6 +427,21 @@ const resolveCall = async (
   }
   // An audio space only exists as a row in the database. If it could not be created (typically because the
   // database update has not been applied) do NOT quietly start a plain call: nobody could ever join it as a space.
+  if (!callId && startError && /not authorized for this room|FORBIDDEN/i.test(startError)) {
+    throw new Error(
+      roomType === 'project'
+        ? 'Only members of this project space can start a call or space. Ask the project owner to add you to the team.'
+        : roomType === 'discussion'
+          ? 'You are not a member of this room, so you cannot start a call or space here.'
+          : 'You cannot start a call with this person.'
+    );
+  }
+  if (!callId && startError && /Authentication required|UNAUTHORIZED|JWT/i.test(startError)) {
+    throw new Error('Your session expired. Sign in again and retry.');
+  }
+  if (!callId && startError && /fetch|network|timed? ?out|Failed to send/i.test(startError)) {
+    throw new Error('Your connection dropped. Check your internet and try again.');
+  }
   if (mode === 'audio_space' && !callId) {
     throw new Error(
       `Audio spaces are not enabled on the server yet. The database update (part_n) and the livekit-token / space-control functions need to be deployed first.${startError ? ` (${startError})` : ''}`
@@ -834,10 +849,24 @@ export const rejoinLiveCall = (): Promise<LiveCallSnapshot> => {
   return joinLiveCall(lastJoinOpts);
 };
 
-/** Screen sharing uses Android's MediaProjection (the WebRTC library starts its own foreground service for it). */
+let showScreenSharePicker: (() => void) | null = null;
+
+/** iOS: ScreenSharePickerHost registers the function that opens the system broadcast sheet. */
+export const registerScreenSharePicker = (show: (() => void) | null): void => {
+  showScreenSharePicker = show;
+};
+
+/**
+ * Screen sharing. Android uses MediaProjection (the WebRTC library starts its own foreground service for it). iOS uses a
+ * ReplayKit broadcast extension (ios/ScreenShare): the system sheet is opened first, and the share starts when the person
+ * taps "Start Broadcast" in it.
+ */
 export const setScreenShareEnabled = async (enabled: boolean): Promise<boolean> => {
   if (!room) return false;
-  if (Platform.OS !== 'android') return false; // iOS needs a ReplayKit broadcast extension (see docs)
+  if (Platform.OS === 'ios' && enabled) {
+    if (!showScreenSharePicker) return false;
+    showScreenSharePicker();
+  }
   try {
     await room.localParticipant.setScreenShareEnabled(enabled, { audio: false });
     refreshParticipants();

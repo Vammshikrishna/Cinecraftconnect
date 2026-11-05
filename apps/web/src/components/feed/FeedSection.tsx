@@ -45,7 +45,7 @@ const FeedSection = ({ title, icon: Icon, linkTo, children, className }: FeedSec
 
             <div className="relative w-full group">
                 {/* Previous Button */}
-                <Button
+                <Button aria-label="Back"
                     variant="ghost"
                     size="icon"
                     onClick={() => scroll('left')}
@@ -63,7 +63,7 @@ const FeedSection = ({ title, icon: Icon, linkTo, children, className }: FeedSec
                 </div>
 
                 {/* Next Button */}
-                <Button
+                <Button aria-label="Next"
                     variant="ghost"
                     size="icon"
                     onClick={() => scroll('right')}

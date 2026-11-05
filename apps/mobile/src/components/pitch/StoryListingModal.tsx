@@ -16,6 +16,7 @@ import {
 import { Icon } from '../common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { getSupabaseClient } from '@cinecraft/api';
+import { fetchStoryFullSynopsis, friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -70,12 +71,20 @@ export const StoryListingModal: React.FC<StoryListingModalProps> = ({
   const [ndaRequired, setNdaRequired] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const [fullLoaded, setFullLoaded] = useState(!listingId);
+  useEffect(() => {
+    if (!listingId) return;
+    fetchStoryFullSynopsis(getSupabaseClient(), listingId)
+      .then((t) => { setSynopsisFull(t || ''); setFullLoaded(true); })
+      .catch(() => { /* leave it untouched */ });
+  }, [listingId]);
+
   useEffect(() => {
     if (initialData) {
       setTitle(initialData.title || '');
       setLogline(initialData.logline || '');
       setSynopsisTeaser(initialData.synopsis_teaser || '');
-      setSynopsisFull(initialData.synopsis_full || '');
+      if (initialData.synopsis_full) setSynopsisFull(initialData.synopsis_full);
       setGenre(initialData.genre || 'Thriller');
       setFormat(initialData.format || 'film');
       setLanguage(initialData.language || 'Hindi');
@@ -117,7 +126,6 @@ export const StoryListingModal: React.FC<StoryListingModalProps> = ({
         title: title.trim(),
         logline: logline.trim(),
         synopsis_teaser: synopsisTeaser.trim(),
-        synopsis_full: synopsisFull.trim() || null,
         genre,
         format,
         language,
@@ -127,6 +135,9 @@ export const StoryListingModal: React.FC<StoryListingModalProps> = ({
         nda_required: ndaRequired,
         creator_id: user.id,
       };
+
+      // on an edit the full synopsis is only sent once it has been loaded, so it is never blanked by accident
+      if (!listingId || fullLoaded) payload.synopsis_full = synopsisFull.trim() || null;
 
       if (listingId) {
         const { error } = await (supabase as any)
@@ -144,7 +155,7 @@ export const StoryListingModal: React.FC<StoryListingModalProps> = ({
       onCreated?.();
       onClose();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save story listing.');
+      Alert.alert('Error', friendlyError(err, 'Failed to save story listing.'));
     } finally {
       setSubmitting(false);
     }
@@ -169,12 +180,12 @@ export const StoryListingModal: React.FC<StoryListingModalProps> = ({
                 {listingId ? 'Edit Story Concept' : 'List Original Concept'}
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Icon name="x" size={20} color={themeColors.textSecondary} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="x" size={20} color={themeColors.iconSecondary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* Title */}
             <Text style={[styles.label, { color: themeColors.textMuted }]}>STORY TITLE *</Text>
             <TextInput
@@ -393,7 +404,7 @@ export const StoryListingModal: React.FC<StoryListingModalProps> = ({
                   Producers must digitally e-sign NDA before requesting full concept details.
                 </Text>
               </View>
-              <Switch value={ndaRequired} onValueChange={setNdaRequired} trackColor={{ true: ORANGE }} />
+              <Switch accessibilityLabel="Require Signed NDA to Unlock Full Synopsis" value={ndaRequired} onValueChange={setNdaRequired} trackColor={{ true: ORANGE }} />
             </View>
 
             {/* Submit Button */}
@@ -427,6 +438,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -465,8 +479,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalTitle: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     color: INK,
   },
   modalBody: {
@@ -474,8 +488,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   label: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 14,
@@ -527,7 +541,7 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   switchRow: {
     flexDirection: 'row',
@@ -540,12 +554,12 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   switchLabel: {
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: INK,
   },
   switchSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
@@ -562,8 +576,8 @@ const styles = StyleSheet.create({
   },
   submitBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

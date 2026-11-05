@@ -7,9 +7,9 @@ type Analytics = Awaited<ReturnType<typeof fetchAnalytics>>;
 
 const Tile = ({ icon: Icon, label, value, hint }: { icon: any; label: string; value: number | string; hint?: string }) => (
   <div className="rounded-2xl border border-border/60 bg-card p-4">
-    <div className="flex items-center gap-2 text-muted-foreground"><Icon className="w-4 h-4" /><span className="text-[10px] font-black uppercase tracking-widest">{label}</span></div>
+    <div className="flex items-center gap-2 text-muted-foreground"><Icon className="w-4 h-4" /><span className="text-xs font-black uppercase tracking-widest">{label}</span></div>
     <p className="text-3xl font-black mt-2">{value}</p>
-    {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+    {hint && <p className="text-[12px] text-muted-foreground mt-0.5">{hint}</p>}
   </div>
 );
 
@@ -46,7 +46,7 @@ export const JobAnalyticsPanel = ({ jobId }: { jobId: string }) => {
       </div>
 
       <div className="rounded-2xl border border-border/60 bg-card p-5">
-        <h4 className="text-[11px] font-black uppercase tracking-widest text-muted-foreground mb-4">Hiring funnel</h4>
+        <h4 className="text-[12px] font-black uppercase tracking-widest text-muted-foreground mb-4">Hiring funnel</h4>
         <div className="space-y-2.5">
           {PIPELINE_STAGES.map((s) => {
             const count = data.by_status[s.key] || 0;
@@ -54,7 +54,7 @@ export const JobAnalyticsPanel = ({ jobId }: { jobId: string }) => {
               <div key={s.key} className="flex items-center gap-3">
                 <span className="w-20 text-xs font-bold">{s.label}</span>
                 <div className="flex-1 h-6 rounded-full bg-muted/50 overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${(count / funnelMax) * 100}%`, backgroundColor: s.color, minWidth: count ? 8 : 0 }} />
+                  <div className="h-full rounded-full transition-[width]" style={{ width: `${(count / funnelMax) * 100}%`, backgroundColor: s.color, minWidth: count ? 8 : 0 }} />
                 </div>
                 <span className="w-8 text-right text-sm font-black">{count}</span>
               </div>
@@ -65,8 +65,8 @@ export const JobAnalyticsPanel = ({ jobId }: { jobId: string }) => {
 
       <div className="rounded-2xl border border-border/60 bg-card p-5">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Last 14 days</h4>
-          <div className="flex items-center gap-3 text-[11px] font-semibold">
+          <h4 className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">Last 14 days</h4>
+          <div className="flex items-center gap-3 text-[12px] font-semibold">
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary/60" /> Views</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Applications</span>
           </div>

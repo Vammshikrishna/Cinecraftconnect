@@ -1,22 +1,17 @@
-import { Link, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { Home, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BackButton } from '@/components/common/BackButton';
 
 const NotFound = () => {
-  const location = useLocation();
-
-  useEffect(() => {
-    console.error(
-      "404 Error: User attempted to access non-existent route:",
-      location.pathname
-    );
-  }, [location.pathname]);
+  const { user } = useAuth();
+  // signed in: the feed; signed out: the public landing page (the feed would bounce to sign-in)
+  const exploreTo = user ? '/feed' : '/';
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-dvh bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md text-center glass-card">
         <CardContent className="pt-6">
           <div className="space-y-6">
@@ -37,9 +32,9 @@ const NotFound = () => {
               </Button>
               
               <Button variant="outline" asChild className="w-full">
-                <Link to="/feed">
+                <Link to={exploreTo}>
                   <Search className="h-4 w-4 mr-2" />
-                  Explore
+                  {user ? 'Open my feed' : 'Explore'}
                 </Link>
               </Button>
               

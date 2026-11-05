@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { LazyImage } from '@/components/performance/LazyImage';
 import { MarketplaceListing } from '@/types/marketplace';
@@ -15,6 +16,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { friendlyError } from '@cinecraft/core';
 
 interface ListingCardProps {
     listing: MarketplaceListing;
@@ -28,6 +31,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
     const queryClient = useQueryClient();
     const { push } = useAppNavigation();
     
+    const [imageFailed, setImageFailed] = useState(false);
     const isOwner = user?.id === listing.user_id;
     const canManage = isOwner || isInternal;
 
@@ -35,7 +39,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
         e.preventDefault();
         e.stopPropagation();
         
-        if (!confirm('Are you sure you want to delete this listing?')) return;
+        if (!await confirmDialog('Are you sure you want to delete this listing?')) return;
         
         const { error } = await supabase
             .from('marketplace_listings')
@@ -43,7 +47,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
             .eq('id', listing.id);
             
         if (error) {
-            toast({ title: 'Error', description: error.message, variant: 'destructive' });
+            toast({ title: 'Error', description: friendlyError(error), variant: 'destructive' });
         } else {
             toast({ title: 'Success', description: 'Listing deleted successfully' });
             queryClient.invalidateQueries({ queryKey: ['marketplace-listings'] });
@@ -74,20 +78,21 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
             return;
         }
 
-        if (isWishlisted) {
-            await supabase
-                .from('marketplace_wishlists' as any)
-                .delete()
-                .eq('listing_id', listing.id)
-                .eq('user_id', user.id);
-            toast({ title: 'Removed', description: 'Removed from wishlist' });
-        } else {
-            await supabase
-                .from('marketplace_wishlists' as any)
-                .insert({ listing_id: listing.id, user_id: user.id });
-            toast({ title: 'Saved', description: 'Added to wishlist' });
+        const key = ['wishlist', listing.id, user.id];
+        const wasWishlisted = !!isWishlisted;
+        // fill/empty the heart right away, roll back if the server says no
+        queryClient.setQueryData(key, !wasWishlisted);
+        const { error } = wasWishlisted
+            ? await supabase.from('marketplace_wishlists' as any).delete().eq('listing_id', listing.id).eq('user_id', user.id)
+            : await supabase.from('marketplace_wishlists' as any).insert({ listing_id: listing.id, user_id: user.id });
+        if (error) {
+            queryClient.setQueryData(key, wasWishlisted);
+            toast({ title: 'Could not update your wishlist', description: friendlyError(error), variant: 'destructive' });
+            return;
         }
-        queryClient.invalidateQueries({ queryKey: ['wishlist', listing.id, user?.id] });
+        queryClient.invalidateQueries({ queryKey: key });
+        // the wishlist page lists these, so it must drop (or gain) the card too
+        queryClient.invalidateQueries({ queryKey: ['marketplace_wishlist'] });
     };
 
     const primaryImage = listing.images && listing.images.length > 0
@@ -108,23 +113,20 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
     };
 
     return (
-        <div onClick={() => push(`/marketplace/${listing.id}`)} className="no-underline block group h-full cursor-pointer">
-            <div className="glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2">
+        <div role="button" tabIndex={0} onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => push(`/marketplace/${listing.id}`)} className="no-underline block group h-full cursor-pointer">
+            <div className="glass-card-premium h-full flex flex-col transition-transform duration-200 hover:-translate-y-1">
                 {/* Image Section */}
                 <div className="relative aspect-video overflow-hidden bg-muted flex-shrink-0">
-                    {primaryImage ? (
+                    {primaryImage && !imageFailed ? (
                         <LazyImage
                             src={primaryImage}
                             alt={listing.title}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                            onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                            }}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={() => setImageFailed(true)}
                         />
                     ) : (
                         <div className="w-full h-full bg-gradient-to-br from-primary/10 via-background to-primary/5 flex items-center justify-center">
-                            <div className="text-muted-foreground/30 font-black uppercase tracking-widest text-[10px]">No Image</div>
+                            <div className="text-muted-foreground/30 font-black uppercase tracking-widest text-[12px]">No Image</div>
                         </div>
                     )}
 
@@ -135,8 +137,9 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                                 e.stopPropagation();
                                 onDismiss(listing.id);
                             }}
-                            className="absolute top-3 left-3 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+                            className="absolute top-3 left-3 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/80 hover:text-white transition opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100 before:absolute before:-inset-2 backdrop-blur-md border border-white/10 hover:border-white/20"
                             title="Dismiss suggestion"
+                            aria-label="Dismiss suggestion"
                         >
                             <X size={14} strokeWidth={3} />
                         </button>
@@ -145,27 +148,27 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                     {/* Category Badge overlaying image */}
                     <div className="absolute top-3 right-3 flex items-center gap-2 shadow-lg">
                         {listing.is_bundle && (
-                            <div className="px-2.5 py-1 rounded-full bg-purple-600/90 backdrop-blur-md border border-white/20 text-[9px] font-black text-white uppercase tracking-[0.1em] flex items-center gap-1 shadow-lg shadow-purple-900/20">
+                            <div className="px-2.5 py-1 rounded-full bg-purple-600/90 border border-white/20 text-[12px] font-black text-white uppercase tracking-[0.1em] flex items-center gap-1 shadow-lg shadow-purple-900/20">
                                 <span>📦</span> BUNDLE
                             </div>
                         )}
                         {listing.condition_grade && (
-                            <div className={`px-2.5 py-1 rounded-full backdrop-blur-md border border-white/20 text-[9px] font-black uppercase tracking-[0.1em] shadow-lg ${getConditionColor(listing.condition_grade)}`}>
+                            <div className={`px-2.5 py-1 rounded-full backdrop-blur-md border border-white/20 text-[12px] font-black uppercase tracking-[0.1em] shadow-lg ${getConditionColor(listing.condition_grade)}`}>
                                 {listing.condition_grade}
                             </div>
                         )}
-                        <div className="px-2.5 py-1 rounded-full bg-background/80 backdrop-blur-md border border-white/20 text-[9px] font-black text-foreground uppercase tracking-[0.1em]">
+                        <div className="px-2.5 py-1 rounded-full bg-background/80 border border-white/20 text-[12px] font-black text-foreground uppercase tracking-[0.1em]">
                             {listing.category}
                         </div>
                         
                         {user && !isOwner && (
-                            <Button 
+                            <Button aria-label="Like" 
                                 variant="ghost" 
                                 size="icon" 
                                 onClick={toggleWishlist}
                                 disabled={isWishlistLoading}
                                 className={cn(
-                                    "h-6 w-6 rounded-full backdrop-blur-md border border-white/20 hover:scale-110 transition-transform",
+                                    "relative h-6 w-6 rounded-full border border-white/20 transition-transform before:absolute before:-inset-2.5 before:content-['']",
                                     isWishlisted ? "bg-red-500/20 hover:bg-red-500/30" : "bg-background/80 hover:bg-background"
                                 )}
                             >
@@ -180,7 +183,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                             <div className="relative z-30" onClick={(e) => e.stopPropagation()}>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full bg-background/80 backdrop-blur-md hover:bg-background border border-white/20">
+                                        <Button aria-label="More options" variant="ghost" size="icon" className="relative h-6 w-6 rounded-full bg-background/80 hover:bg-background border border-white/20 before:absolute before:-inset-2.5 before:content-['']">
                                             <MoreVertical size={12} className="text-foreground" />
                                         </Button>
                                     </DropdownMenuTrigger>
@@ -206,14 +209,14 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                                 <div className="px-2 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex flex-col items-center justify-center shrink-0 mt-0.5">
                                     <div className="flex items-center gap-0.5">
                                         <Star size={10} className="text-yellow-500 fill-yellow-500" />
-                                        <span className="text-[10px] font-black text-yellow-600 dark:text-yellow-400">{averageRating.toFixed(1)}</span>
+                                        <span className="text-[12px] font-black text-yellow-600 dark:text-yellow-400">{averageRating.toFixed(1)}</span>
                                     </div>
-                                    <span className="text-[7px] font-bold text-yellow-600/60 dark:text-yellow-400/60 uppercase tracking-widest">{reviewCount}</span>
+                                    <span className="text-[12px] font-bold text-yellow-600/60 dark:text-yellow-400/60 uppercase tracking-widest">{reviewCount}</span>
                                 </div>
                             )}
                         </div>
 
-                        <p className="text-[11px] md:text-xs text-muted-foreground/80 leading-relaxed line-clamp-2 font-medium">
+                        <p className="text-[12px] md:text-xs text-muted-foreground/80 leading-relaxed line-clamp-2 font-medium">
                             {listing.description}
                         </p>
                     </div>
@@ -221,13 +224,13 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                     <div className="space-y-2.5 mt-auto pt-2">
                         {/* Meta Rows */}
                         <div className="flex flex-wrap items-center gap-2 mt-auto">
-                            <div className="font-mono flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
-                                <span className="truncate">LOC // {listing.location}</span>
+                            <div className="flex items-center text-[12px] font-medium text-muted-foreground gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
+                                <span className="truncate">{listing.location}</span>
                             </div>
                             
                             {listing.profiles && (
-                                <div className="font-mono flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
-                                    <span className="truncate">USER // {listing.profiles.username || listing.profiles.full_name || 'Anonymous'}</span>
+                                <div className="flex items-center text-[12px] font-medium text-muted-foreground gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
+                                    <span className="truncate">{listing.profiles.username || listing.profiles.full_name || 'Anonymous'}</span>
                                 </div>
                             )}
                         </div>
@@ -236,12 +239,12 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                         <div className="flex items-end justify-between pt-3 border-t border-black/5 dark:border-white/5 mt-2">
                             <div className="flex items-baseline text-primary font-black">
                                 <span className="text-sm mr-0.5 opacity-60">₹</span>
-                                <span className="text-2xl tracking-tighter">{listing.price_per_day}</span>
-                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1.5 opacity-60">/ Day</span>
+                                <span className="text-2xl tracking-tighter">{Number(listing.price_per_day).toLocaleString('en-IN')}</span>
+                                <span className="text-[12px] font-black uppercase tracking-widest text-muted-foreground ml-1.5 opacity-60">/ Day</span>
                             </div>
                             {listing.price_per_week && (
-                                <div className="text-[10px] font-bold text-muted-foreground uppercase bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
-                                    ₹{listing.price_per_week} / Wk
+                                <div className="text-[12px] font-bold text-muted-foreground uppercase bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
+                                    ₹{Number(listing.price_per_week).toLocaleString('en-IN')} / Wk
                                 </div>
                             )}
                         </div>

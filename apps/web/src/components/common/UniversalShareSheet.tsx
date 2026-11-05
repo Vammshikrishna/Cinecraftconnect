@@ -6,14 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Link as LinkIcon, Share2, Film, MessageSquare } from "lucide-react";
+import { Search, Link as LinkIcon, Film, MessageSquare, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useToast } from "@/hooks/use-toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useConnections } from "@/hooks/useConnections";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { copyToClipboard, getAppOrigin } from "@/lib/utils/share";
 import { useAccountType } from "@/hooks/useAccountType";
 import { generateDirectRoomId } from "@/lib/chat-utils";
+import { friendlyError, loadContactSignals, contactScore } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
+import { useAppNavigation } from '@/contexts/NavigationContext';
+import { useAppRole } from '@/hooks/useAppRole';
 
 export type ShareType = 'project' | 'room' | 'job' | 'post' | 'marketplace' | 'announcement' | 'vendor' | 'pitch' | 'profile' | 'company' | 'content' | 'wishlist';
 
@@ -31,34 +35,62 @@ interface ShareTarget {
     avatar_url: string | null;
     type: 'user' | 'project' | 'room';
     subtitle?: string;
+    /** when the last message in this chat, room or space was sent; used to put the busiest first */
+    lastAt?: string | null;
 }
 
+const byName = (a: ShareTarget, b: ShareTarget) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+const byActivity = (a: ShareTarget, b: ShareTarget) => (b.lastAt || '').localeCompare(a.lastAt || '') || byName(a, b);
+
+/** How well a name matches what was typed: exact, starts with, a word starts with, contains. Lower is better. */
+const matchRank = (text: string, q: string): number => {
+    const t = text.toLowerCase();
+    if (t === q) return 0;
+    if (t.startsWith(q)) return 1;
+    if (t.split(/[\s._-]+/).some((w) => w.startsWith(q))) return 2;
+    if (t.includes(q)) return 3;
+    return 99;
+};
+
 export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, shareData }: UniversalShareSheetProps) {
+    // "To feed" opens Create Post with the job card attached, so every post option is available (it used to post at once)
+    const { push } = useAppNavigation();
+    const { isInternal: isStaffAccount } = useAppRole();   // staff accounts cannot create posts, so they do not get "To feed"
     const [searchQuery, setSearchQuery] = useState("");
     const [targets, setTargets] = useState<ShareTarget[]>([]);
     const [loading, setLoading] = useState(false);
     const [sending, setSending] = useState<string | null>(null);
     const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+    const [selected, setSelected] = useState<Map<string, ShareTarget>>(new Map());
     const [activeTab, setActiveTab] = useState("connections");
     const { user } = useAuth();
     const { isFan } = useAccountType();
     const { toast } = useToast();
     const { connections } = useConnections();
     const isDesktop = useMediaQuery("(min-width: 768px)");
-    const [snap, setSnap] = useState<string | number | null>(0.6);
 
     const typeLabel = 
         shareType === 'room' ? 'Discussion' :
         shareType === 'marketplace' ? 'Listing' :
         shareType === 'company' ? 'Company' :
         shareType.charAt(0).toUpperCase() + shareType.slice(1);
-    const titleText = `Share ${typeLabel} to...`;
+    const titleText = 'Share';
+    const keyOf = (t: ShareTarget) => `${t.type}-${t.id}`;
 
     useEffect(() => {
         if (isOpen && user) {
             fetchTargets();
         }
     }, [isOpen, user, connections]);
+
+    // every time the sheet opens it starts clean
+    useEffect(() => {
+        if (isOpen) {
+            setSelected(new Map());
+            setSentTo(new Set());
+            setSearchQuery('');
+        }
+    }, [isOpen]);
 
     const fetchTargets = async () => {
         if (!user) return;
@@ -75,40 +107,50 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
 
             const newTargets: ShareTarget[] = [];
 
-            // 1. Process Connections
+            // 1. People, ranked like a social app: how often and how recently I message them, whose posts I like or
+            //    comment on, whose profile I visit, who I follow, and my connections
+            const signals = await loadContactSignals(supabase, user.id);
+            const profiles = new Map<string, { name: string; avatar: string | null; subtitle?: string }>();
+
+            ((recentConvosRes.data as any[]) || []).forEach((c: any) => {
+                if (c.other_user_id) profiles.set(c.other_user_id, { name: c.other_user_full_name || 'Unknown', avatar: c.other_user_avatar_url || null });
+            });
+            (connections || []).forEach((conn: any) => {
+                const profile = conn.follower_id === user.id ? conn.following_profile : conn.follower_profile;
+                if (!profile) return;
+                profiles.set(profile.id, { name: profile.full_name || profile.username || 'Unknown', avatar: profile.avatar_url || null });
+                const sig = signals.get(profile.id) || { id: profile.id, messages: 0, lastMessageAt: null, unreadFromThem: 0, likes: 0, comments: 0, views: 0, iFollow: false, followsMe: false, isConnection: false };
+                sig.isConnection = true;
+                signals.set(profile.id, sig);
+            });
+
+            const top = [...signals.values()]
+                .map((sig) => ({ sig, score: contactScore(sig) }))
+                .filter((x) => x.score > 0 && x.sig.id !== user.id)
+                .sort((x, y) => y.score - x.score)
+                .slice(0, 40);
+
+            // people I follow or interact with who are not in a chat or connection yet need their profile loaded
+            const missing = top.map((x) => x.sig.id).filter((id) => !profiles.has(id));
+            if (missing.length > 0) {
+                const { data: extra } = await supabase.from('profiles').select('id, full_name, username, avatar_url').in('id', missing);
+                (extra || []).forEach((p: any) => profiles.set(p.id, { name: p.full_name || p.username || 'Unknown', avatar: p.avatar_url || null }));
+            }
+
             const addedUserIds = new Set<string>();
-
-            if (recentConvosRes.data) {
-                recentConvosRes.data.forEach((c: any) => {
-                    if (!addedUserIds.has(c.other_user_id)) {
-                        newTargets.push({
-                            id: c.other_user_id,
-                            name: c.other_user_full_name || 'Unknown',
-                            avatar_url: c.other_user_avatar_url,
-                            type: 'user',
-                            subtitle: 'Recent Interaction'
-                        });
-                        addedUserIds.add(c.other_user_id);
-                    }
+            top.forEach(({ sig }) => {
+                const p = profiles.get(sig.id);
+                if (!p || addedUserIds.has(sig.id)) return;
+                addedUserIds.add(sig.id);
+                newTargets.push({
+                    id: sig.id,
+                    name: p.name,
+                    avatar_url: p.avatar,
+                    type: 'user',
+                    subtitle: sig.messages > 0 ? 'Recent Interaction' : sig.isConnection ? 'Connection' : sig.iFollow ? 'Following' : 'Suggested',
+                    lastAt: sig.lastMessageAt
                 });
-            }
-
-            if (connections) {
-                connections.forEach(conn => {
-                    const isFollower = conn.follower_id === user.id;
-                    const profile = isFollower ? conn.following_profile : conn.follower_profile;
-                    if (profile && !addedUserIds.has(profile.id)) {
-                        newTargets.push({
-                            id: profile.id,
-                            name: profile.full_name || profile.username || 'Unknown',
-                            avatar_url: profile.avatar_url,
-                            type: 'user',
-                            subtitle: 'Connection'
-                        });
-                        addedUserIds.add(profile.id);
-                    }
-                });
-            }
+            });
 
             // 2. Process Project Spaces
             const knownSpaceIds = memberSpacesRes.data?.map(m => m.project_space_id) || [];
@@ -126,17 +168,18 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             if (allSpaceIds.length > 0) {
                 const { data: spacesData } = await supabase
                     .from('project_spaces')
-                    .select('id, name, projects!inner(title)')
+                    .select('id, name, projects!inner(title, image_url)')
                     .in('id', allSpaceIds);
 
                 if (spacesData) {
                     spacesData.forEach((space: any) => {
-                        const projectTitle = Array.isArray(space.projects) ? space.projects[0]?.title : space.projects?.title;
+                        const project = Array.isArray(space.projects) ? space.projects[0] : space.projects;
+                        const projectTitle = project?.title;
                         if (projectTitle) {
                             newTargets.push({
                                 id: space.id,
                                 name: projectTitle,
-                                avatar_url: null,
+                                avatar_url: project?.image_url || null,
                                 type: 'project',
                                 subtitle: `Project Space • ${space.name}`
                             });
@@ -187,7 +230,23 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                 index === self.findIndex((t) => t.id === target.id && t.type === target.type)
             );
 
-            setTargets(uniqueTargets);
+            // busiest rooms and project spaces first (people keep the order above)
+            const roomIds = uniqueTargets.filter((t) => t.type === 'room').map((t) => t.id);
+            const spaceIds = uniqueTargets.filter((t) => t.type === 'project').map((t) => t.id);
+            const [roomActivity, spaceActivity] = await Promise.all([
+                roomIds.length ? supabase.from('room_messages').select('room_id, created_at').in('room_id', roomIds).order('created_at', { ascending: false }).limit(500) : Promise.resolve({ data: [] as any[] }),
+                spaceIds.length ? supabase.from('project_space_messages').select('project_space_id, created_at').in('project_space_id', spaceIds).order('created_at', { ascending: false }).limit(500) : Promise.resolve({ data: [] as any[] }),
+            ]);
+            const latest = new Map<string, string>();
+            ((roomActivity as any).data || []).forEach((r: any) => { if (!latest.has(r.room_id)) latest.set(r.room_id, r.created_at); });
+            ((spaceActivity as any).data || []).forEach((r: any) => { if (!latest.has(r.project_space_id)) latest.set(r.project_space_id, r.created_at); });
+            uniqueTargets.forEach((t) => { if (t.type !== 'user') t.lastAt = latest.get(t.id) || null; });
+
+            setTargets([
+                ...uniqueTargets.filter((t) => t.type === 'user'),
+                ...uniqueTargets.filter((t) => t.type === 'project').sort(byActivity),
+                ...uniqueTargets.filter((t) => t.type === 'room').sort(byActivity),
+            ]);
         } catch (error) {
             console.error("Error in fetchTargets:", error);
         } finally {
@@ -195,99 +254,89 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         }
     };
 
-    const handleSend = async (target: ShareTarget) => {
+    // sends the shared item to one person, room or project space; throws if the database refuses it
+    const sendOne = async (target: ShareTarget) => {
         if (!user) return;
-        setSending(target.id);
+        const prefix = shareType === 'room' ? 'DISCUSSION_SHARE::' : `${shareType.toUpperCase()}_SHARE::`;
 
-        try {
-            const prefix = shareType === 'room' ? 'DISCUSSION_SHARE::' : `${shareType.toUpperCase()}_SHARE::`;
-            
-            // Defensive check: Ensure shares always have an identifier in shareData
-            let finalShareData = { ...shareData };
-            if (!finalShareData.id) {
-                console.log('UniversalShareSheet: Injecting missing identifier', shareId);
-                finalShareData.id = shareId; // Fallback to shareId if data is missing
-            }
+        // Defensive check: Ensure shares always have an identifier in shareData
+        const finalShareData = { ...shareData };
+        if (!finalShareData.id) finalShareData.id = shareId;
 
-            const messageContent = `${prefix}${JSON.stringify(finalShareData)}`;
+        // Wishlists have no chat card (a WISHLIST_SHARE:: message would show as raw JSON), so they go as a readable message with the link.
+        const messageContent = shareType === 'wishlist'
+            ? `${shareData?.title || 'Gear wishlist'}
+${getAppOrigin()}/marketplace/wishlist/shared/${shareId}`
+            : `${prefix}${JSON.stringify(finalShareData)}`;
 
-            if (target.type === 'user') {
-                const channelId = generateDirectRoomId(user.id, target.id);
-                await supabase.from('direct_messages').insert({
-                    content: messageContent,
-                    sender_id: user.id,
-                    channel_id: channelId,
-                    receiver_id: target.id
-                });
+        if (target.type === 'user') {
+            const channelId = generateDirectRoomId(user.id, target.id);
+            const { error: dmError } = await supabase.from('direct_messages').insert({
+                content: messageContent,
+                sender_id: user.id,
+                channel_id: channelId,
+                receiver_id: target.id
+            });
+            if (dmError) throw dmError;
 
-                // Dispatch local event for instant UI update
-                console.log('[UniversalShareSheet] Dispatching local chat_list_update event');
-                window.dispatchEvent(new CustomEvent('chat_list_update', {
-                    detail: { senderId: user.id, receiverId: target.id }
-                }));
+            // Dispatch local event for instant UI update
+            window.dispatchEvent(new CustomEvent('chat_list_update', {
+                detail: { senderId: user.id, receiverId: target.id }
+            }));
 
-                // Safely broadcast globally
-                const globalChannel = supabase.channel('global_chat_updates');
-                globalChannel.send({
-                    type: 'broadcast',
-                    event: 'chat_list_update',
-                    payload: { senderId: user.id, receiverId: target.id }
-                }).catch(console.error);
-            } else if (target.type === 'project') {
-                await supabase.from('project_space_messages').insert({
-                    project_space_id: target.id,
-                    user_id: user.id,
-                    content: messageContent
-                });
-            } else if (target.type === 'room') {
-                await supabase.from('room_messages').insert({
-                    room_id: target.id,
-                    user_id: user.id,
-                    content: messageContent
-                });
-            }
-
-            setSentTo(prev => new Set(prev).add(target.id));
-            toast({ title: "Sent", description: `Shared to ${target.name}` });
-
-        } catch (error) {
-            console.error("Error sending:", error);
-            toast({ title: "Error", description: "Failed to share.", variant: "destructive" });
-        } finally {
-            setSending(null);
+            // Safely broadcast globally
+            const globalChannel = supabase.channel('global_chat_updates');
+            globalChannel.send({
+                type: 'broadcast',
+                event: 'chat_list_update',
+                payload: { senderId: user.id, receiverId: target.id }
+            }).catch(console.error);
+        } else if (target.type === 'project') {
+            const { error: spaceError } = await supabase.from('project_space_messages').insert({
+                project_space_id: target.id,
+                user_id: user.id,
+                content: messageContent
+            });
+            if (spaceError) throw spaceError;
+        } else if (target.type === 'room') {
+            const { error: roomError } = await supabase.from('room_messages').insert({
+                room_id: target.id,
+                user_id: user.id,
+                content: messageContent
+            });
+            if (roomError) throw roomError;
         }
     };
 
-    const handleShareToFeedPost = async () => {
-        if (!user) return;
-        setSending('feed_post');
-        try {
-            const prefix = `JOB_SHARE::`;
-            const finalShareData = { ...shareData, id: shareId };
-            const content = `${prefix}${JSON.stringify(finalShareData)}`;
+    // the Send button: everyone selected gets it; the ones that worked are marked, the rest stay selected to retry
+    const handleSendSelected = async () => {
+        if (!user || selected.size === 0) return;
+        setSending('batch');
+        const items = [...selected.values()];
+        const results = await Promise.allSettled(items.map(sendOne));
+        const done = items.filter((_, i) => results[i].status === 'fulfilled');
+        const firstFailure = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
 
-            const { error } = await supabase.from('posts').insert({
-                author_id: user.id,
-                content: content,
-            });
-
-            if (error) throw error;
-
-            toast({
-                title: "Shared to Post",
-                description: "This job opportunity has been posted to your profile and feed.",
-            });
-            onOpenChange(false);
-        } catch (err: any) {
-            console.error("Error sharing to post:", err);
-            toast({
-                title: "Error sharing to post",
-                description: err.message || "Failed to share job as a post.",
-                variant: "destructive"
-            });
-        } finally {
-            setSending(null);
+        if (done.length > 0) {
+            setSentTo((prev) => { const n = new Set(prev); done.forEach((t) => n.add(t.id)); return n; });
+            setSelected((prev) => { const n = new Map(prev); done.forEach((t) => n.delete(keyOf(t))); return n; });
+            toast({ title: 'Sent', description: done.length === 1 ? `Shared to ${done[0].name}` : `Shared to ${done.length} chats` });
         }
+        if (firstFailure) {
+            console.error('Error sending:', firstFailure.reason);
+            toast({ title: 'Could not share', description: friendlyError(firstFailure.reason, 'Please try again.'), variant: 'destructive' });
+        }
+        setSending(null);
+    };
+
+    const toggleSelected = (t: ShareTarget) => {
+        if (sentTo.has(t.id)) return;
+        setSelected((prev) => {
+            const n = new Map(prev);
+            const k = keyOf(t);
+            if (n.has(k)) n.delete(k); else n.set(k, t);
+            return n;
+        });
     };
 
     const handleShareToAnnouncement = async () => {
@@ -316,7 +365,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             console.error("Error sharing to announcements:", err);
             toast({
                 title: "Error sharing to announcements",
-                description: err.message || "Failed to publish announcement.",
+                description: friendlyError(err, "Failed to publish announcement."),
                 variant: "destructive"
             });
         } finally {
@@ -337,7 +386,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             case 'pitch': path = `/pitch/${shareId}`; break;
             case 'profile': path = `/profile/${shareId}`; break;
             case 'company': path = `/pages/${shareId}`; break;
-            case 'wishlist': path = `/wishlist/${shareId}`; break;
+            case 'wishlist': path = `/marketplace/wishlist/shared/${shareId}`; break;
             case 'content': {
                 const { type, id } = shareData;
                 path = `/content/${type}/${id}`;
@@ -366,7 +415,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             case 'pitch': path = `/pitch/${shareId}`; break;
             case 'profile': path = `/profile/${shareId}`; break;
             case 'company': path = `/pages/${shareId}`; break;
-            case 'wishlist': path = `/wishlist/${shareId}`; break;
+            case 'wishlist': path = `/marketplace/wishlist/shared/${shareId}`; break;
             case 'content': {
                 const { type, id } = shareData;
                 path = `/content/${type}/${id}`;
@@ -402,11 +451,14 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             }
 
             try {
+                // % _ and , would change what the search means, so they are removed from what was typed
+                const term = searchQuery.trim().replace(/[%_,()\\]/g, ' ').trim();
+                if (!term) { setSearchResults([]); return; }
                 const { data } = await supabase
                     .from('profiles')
                     .select('id, full_name, username, avatar_url')
-                    .ilike('full_name', `%${searchQuery}%`)
-                    .limit(10);
+                    .or(`full_name.ilike.%${term}%,username.ilike.%${term}%`)
+                    .limit(20);
 
                 if (data) {
                     const newResults: ShareTarget[] = data
@@ -436,143 +488,153 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         return false;
     });
 
-    const displayTargetsRaw = searchQuery.trim()
+    const q = searchQuery.trim().toLowerCase();
+    const known = new Set(filteredTargets.map((t) => keyOf(t)));
+    const displayTargetsRaw = q
         ? [
+            // people I already chat with or know come before strangers; within each group the closest name match first
+            ...filteredTargets,
             ...(activeTab === "connections" ? searchResults : []),
-            ...filteredTargets.filter(t =>
-                t.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-                !searchResults.some(r => r.id === t.id && r.type === t.type)
-            )
         ]
+            .map((t) => ({ t, rank: Math.min(matchRank(t.name, q), t.subtitle?.startsWith('@') ? matchRank(t.subtitle.slice(1), q) : 99) }))
+            .filter((x) => x.rank < 99)
+            .sort((x, y) => x.rank - y.rank || Number(known.has(keyOf(y.t))) - Number(known.has(keyOf(x.t))) || byName(x.t, y.t))
+            .map((x) => x.t)
         : filteredTargets;
 
     const displayTargets = displayTargetsRaw.filter((target, index, self) =>
         index === self.findIndex((t) => t.id === target.id && t.type === target.type)
     );
 
+    const TABS: { id: string; label: string }[] = [
+        { id: 'connections', label: 'People' },
+        { id: 'discussions', label: 'Discussions' },
+        ...(isFan ? [] : [{ id: 'projects', label: 'Projects' }]),
+    ];
+    const roundAction = 'h-12 w-12 rounded-full bg-muted hover:bg-muted/70 text-foreground grid place-items-center transition active:scale-90 disabled:opacity-50';
+
     const Content = (
         <div className="flex flex-col h-full overflow-hidden bg-background">
-            <div className="p-4 sm:p-6 space-y-4">
-
-                {/* Search Bar */}
-                <div className="relative group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#ff4d4d] h-4 w-4" />
+            <div className="px-4 pt-1 pb-3 space-y-3 shrink-0">
+                {/* Search */}
+                <div className="relative">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
                     <Input
-                        placeholder={`Search connections...`}
+                        placeholder="Search"
+                        aria-label="Search people, rooms and projects"
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-11 bg-white dark:bg-zinc-900 border-[#ff4d4d]/20 rounded-2xl h-12 focus-visible:ring-1 focus-visible:ring-[#ff4d4d]/30 transition-all font-medium text-foreground"
+                        className="pl-10 bg-muted border-transparent rounded-xl h-10 focus-visible:ring-1 focus-visible:ring-primary/40 font-medium"
                     />
                 </div>
 
-                {/* Quick Actions */}
-                <div className="flex gap-3 px-1">
-                    <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="flex-1 gap-2 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border-none transition-all font-bold text-foreground text-xs" 
-                        onClick={handleCopyLink}
-                    >
-                        <LinkIcon className="h-3.5 w-3.5" /> Copy Link
-                    </Button>
-                    <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="flex-1 gap-2 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border-none transition-all font-bold text-foreground text-xs" 
-                        onClick={handleSystemShare}
-                    >
-                        <Share2 className="h-3.5 w-3.5" /> Share via...
-                    </Button>
+                {/* What to share to */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar" role="tablist" aria-label="Share to">
+                    {TABS.map((tab) => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={activeTab === tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={cn(
+                                'shrink-0 h-9 px-4 rounded-full text-[13px] font-semibold transition-colors',
+                                activeTab === tab.id ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground'
+                            )}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
                 </div>
-
-                {shareType === 'job' && !isFan && (
-                    <div className="flex gap-3 px-1">
-                        <Button 
-                            variant="secondary" 
-                            size="sm" 
-                            disabled={sending === 'feed_post'}
-                            className="flex-1 gap-2 h-10 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border-none transition-all font-bold text-xs" 
-                            onClick={handleShareToFeedPost}
-                        >
-                            {sending === 'feed_post' ? "Sharing..." : "Share to Post"}
-                        </Button>
-                        <Button 
-                            variant="secondary" 
-                            size="sm" 
-                            disabled={sending === 'announcement'}
-                            className="flex-1 gap-2 h-10 rounded-xl bg-secondary/10 hover:bg-secondary/20 text-secondary border-none transition-all font-bold text-xs" 
-                            onClick={handleShareToAnnouncement}
-                        >
-                            {sending === 'announcement' ? "Sharing..." : "Share to Announcement"}
-                        </Button>
-                    </div>
-                )}
-
-                {/* Tabs */}
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className={`w-full grid ${isFan ? 'grid-cols-2' : 'grid-cols-3'} bg-zinc-100 dark:bg-zinc-800/50 p-1.5 rounded-2xl h-12`}>
-                        <TabsTrigger value="connections" className="text-[10px] font-black uppercase tracking-widest rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:text-[#ff4d4d] data-[state=active]:shadow-sm transition-all h-full">Connections</TabsTrigger>
-                        <TabsTrigger value="discussions" className="text-[10px] font-black uppercase tracking-widest rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:text-[#ff4d4d] data-[state=active]:shadow-sm transition-all h-full">Discussions</TabsTrigger>
-                        {!isFan && (
-                            <TabsTrigger value="projects" className="text-[10px] font-black uppercase tracking-widest rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:text-[#ff4d4d] data-[state=active]:shadow-sm transition-all h-full">Projects</TabsTrigger>
-                        )}
-                    </TabsList>
-                </Tabs>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 pb-24 md:pb-6 custom-scrollbar">
+            {/* people, rooms and projects as a grid of round pictures */}
+            <div className="flex-1 overflow-y-auto px-3 pb-3 custom-scrollbar min-h-0">
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground opacity-70">
-                        <div className="h-8 w-8 rounded-full border-2 border-[#ff4d4d] border-t-transparent animate-spin" />
-                        <p className="text-[10px] font-black uppercase tracking-widest animate-pulse">Syncing...</p>
+                    <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground" role="status">
+                        <div className="h-7 w-7 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                        <p className="text-[13px] font-medium">Loading</p>
                     </div>
                 ) : displayTargets.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center px-6">
-                        <div className="p-4 bg-zinc-100 dark:bg-zinc-800 rounded-full mb-3 text-muted-foreground/30">
-                            <Search className="h-10 w-10" />
-                        </div>
-                        <p className="text-sm font-bold text-muted-foreground">No matches found</p>
+                        <Search className="h-8 w-8 text-muted-foreground/40 mb-3" />
+                        <p className="text-sm font-semibold text-foreground">No matches found</p>
+                        <p className="text-[13px] text-muted-foreground mt-1">
+                            {searchQuery.trim() ? 'Try a different name.' : activeTab === 'connections' ? 'Connect with people to share with them here.' : 'Nothing to show here yet.'}
+                        </p>
                     </div>
                 ) : (
-                    <div className="space-y-2">
-                        {displayTargets.map((target) => (
-                            <div 
-                                key={`${target.type}-${target.id}`} 
-                                className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/30 rounded-2xl transition-all group active:scale-[0.98]"
-                            >
-                                <div className="flex items-center gap-3 overflow-hidden flex-1">
-                                    <div className="relative shrink-0">
-                                        <Avatar className="h-12 w-12 border-2 border-background shadow-sm">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-x-2 gap-y-3">
+                        {displayTargets.map((target) => {
+                            const isSel = selected.has(keyOf(target));
+                            const isSent = sentTo.has(target.id);
+                            return (
+                                <button
+                                    key={keyOf(target)}
+                                    type="button"
+                                    aria-pressed={isSel}
+                                    disabled={isSent || sending === 'batch'}
+                                    onClick={() => toggleSelected(target)}
+                                    className="flex flex-col items-center gap-1.5 p-1.5 rounded-xl transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-default"
+                                >
+                                    <span className="relative">
+                                        <Avatar className={cn('h-16 w-16 transition-[transform,box-shadow] duration-200', isSel && 'scale-95 ring-2 ring-primary ring-offset-2 ring-offset-background')}>
                                             <AvatarImage src={target.avatar_url || undefined} className="object-cover" />
-                                            <AvatarFallback className="bg-zinc-100 dark:bg-zinc-800 text-[#ff4d4d] font-bold">
-                                                {target.type === 'project' ? <Film size={18} /> :
-                                                    target.type === 'room' ? <MessageSquare size={18} /> :
-                                                        target.name[0]}
+                                            <AvatarFallback className="bg-muted text-muted-foreground font-semibold text-lg">
+                                                {target.type === 'project' ? <Film size={22} /> :
+                                                    target.type === 'room' ? <MessageSquare size={22} /> :
+                                                        (target.name[0] || '?').toUpperCase()}
                                             </AvatarFallback>
                                         </Avatar>
-                                        <div className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-background bg-blue-500 shadow-sm" />
-                                    </div>
-                                    <div className="flex flex-col overflow-hidden">
-                                        <span className={`font-bold text-sm truncate ${activeTab === 'connections' ? 'text-[#ff4d4d]' : 'text-foreground'}`}>
-                                            {target.name}
-                                        </span>
-                                        <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest truncate">
-                                            {target.subtitle}
-                                        </span>
-                                    </div>
-                                </div>
-                                <Button
-                                    size="sm"
-                                    className={sentTo.has(target.id) 
-                                        ? "bg-zinc-200 dark:bg-zinc-700 text-muted-foreground rounded-xl min-w-[70px] h-9 font-bold" 
-                                        : "bg-[#ff4d4d] text-white hover:bg-[#ff3333] rounded-xl h-9 px-5 font-bold min-w-[70px] shadow-lg shadow-[#ff4d4d]/20 transition-all"}
-                                    disabled={sending === target.id || sentTo.has(target.id)}
-                                    onClick={() => handleSend(target)}
-                                >
-                                    {sentTo.has(target.id) ? "Sent" : sending === target.id ? "..." : "Send"}
-                                </Button>
-                            </div>
-                        ))}
+                                        {(isSel || isSent) && (
+                                            <span className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-primary text-primary-foreground grid place-items-center border-2 border-background animate-in zoom-in-50 duration-150">
+                                                <Check className="h-3 w-3" strokeWidth={3} />
+                                            </span>
+                                        )}
+                                    </span>
+                                    <span className="w-full text-[12px] leading-tight text-center text-foreground line-clamp-2 break-words">{target.name}</span>
+                                    {isSent && <span className="text-xs text-muted-foreground -mt-1">Sent</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* bottom: Send once someone is picked, otherwise the other ways to share */}
+            <div className="shrink-0 border-t border-border/60 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+12px)]">
+                {selected.size > 0 ? (
+                    <Button
+                        className="w-full h-11 rounded-xl font-semibold animate-in fade-in slide-in-from-bottom-2 duration-200"
+                        disabled={sending === 'batch'}
+                        onClick={handleSendSelected}
+                    >
+                        {sending === 'batch' ? 'Sending…' : selected.size === 1 ? 'Send' : `Send to ${selected.size}`}
+                    </Button>
+                ) : (
+                    <div className="flex items-start justify-center gap-6 animate-in fade-in duration-200">
+                        <button type="button" onClick={handleCopyLink} className="flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                            <span className={roundAction}><LinkIcon className="h-5 w-5" /></span>
+                            Copy link
+                        </button>
+                        <button type="button" onClick={handleSystemShare} className="flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                            <span className={roundAction}><ShareIcon className="h-5 w-5" /></span>
+                            Share via
+                        </button>
+                        {shareType === 'job' && !isFan && (
+                            <>
+                                {!isStaffAccount && (
+                                <button type="button" onClick={() => { onOpenChange(false); push('/create', { sharedJob: { ...shareData, id: shareId, jobId: shareData?.jobId || shareId } }); }} className="flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                    <span className={roundAction}><MessageSquare className="h-5 w-5" /></span>
+                                    To feed
+                                </button>
+                                )}
+                                <button type="button" disabled={sending === 'announcement'} onClick={handleShareToAnnouncement} className="flex flex-col items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                    <span className={roundAction}><Search className="h-5 w-5" /></span>
+                                    {sending === 'announcement' ? 'Sharing…' : 'Announce'}
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
@@ -581,10 +643,11 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
 
     if (isDesktop) {
         return (
+            <>
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent onOpenAutoFocus={(e) => e.preventDefault()} className="sm:max-w-[420px] max-h-[85vh] md:max-h-[620px] flex flex-col p-0 gap-0 bg-background border-none shadow-2xl overflow-hidden rounded-[32px]">
-                    <DialogHeader className="p-6 pb-2 text-center shrink-0">
-                        <DialogTitle className="text-2xl font-black text-foreground">{titleText}</DialogTitle>
+                <DialogContent onOpenAutoFocus={(e) => e.preventDefault()} className="sm:max-w-[420px] h-[85vh] md:h-[600px] max-h-[85vh] flex flex-col p-0 gap-0 bg-background border-none shadow-2xl overflow-hidden rounded-2xl">
+                    <DialogHeader className="px-6 pt-4 pb-3 text-center shrink-0">
+                        <DialogTitle className="text-base font-semibold text-foreground">{titleText}</DialogTitle>
                         <DialogDescription className="sr-only">Share this content with your network</DialogDescription>
                     </DialogHeader>
                     <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
@@ -592,22 +655,20 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                     </div>
                 </DialogContent>
             </Dialog>
+            </>
         );
     }
 
     return (
+        <>
         <Drawer 
             open={isOpen} 
             onOpenChange={onOpenChange}
-            snapPoints={[0.6, 1]}
-            activeSnapPoint={snap}
-            setActiveSnapPoint={setSnap}
             shouldScaleBackground
         >
-            <DrawerContent onOpenAutoFocus={(e) => e.preventDefault()} className="bg-background flex flex-col border-none rounded-t-[32px] max-h-[96dvh] h-full outline-none">
-                <div className="mx-auto mt-2.5 h-1.5 w-12 rounded-full bg-muted/20 shrink-0" />
-                <DrawerHeader className="pt-2 pb-1 text-center shrink-0">
-                    <DrawerTitle className="text-2xl font-black text-foreground">{titleText}</DrawerTitle>
+            <DrawerContent onOpenAutoFocus={(e) => e.preventDefault()} className="bg-background flex flex-col border-none rounded-t-2xl h-[78dvh] max-h-[92dvh] outline-none">
+                <DrawerHeader className="pt-2 pb-2 text-center shrink-0">
+                    <DrawerTitle className="text-base font-semibold text-foreground">{titleText}</DrawerTitle>
                     <DrawerDescription className="sr-only">Share this content with your network</DrawerDescription>
                 </DrawerHeader>
                 <div className="flex-1 overflow-hidden flex flex-col">
@@ -615,5 +676,6 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                 </div>
             </DrawerContent>
         </Drawer>
+        </>
     );
 }

@@ -1,10 +1,12 @@
 import { orTerm } from '../../utils/postgrest';
+import { usePagedList, PAGE_SIZE } from '../../hooks/usePagedList';
 import { CachedImage } from '../../components/common/CachedImage';
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   FlatList,
+  ActivityIndicator,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -14,10 +16,13 @@ import {
   Switch,
   Alert,
   InteractionManager,
+  RefreshControl,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
 const FlashListAny = FlashList as any;
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useFocusEffect } from '@react-navigation/native';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
@@ -33,6 +38,7 @@ import { useResponsive } from '../../hooks/useResponsive';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useAccountType } from '../../hooks/useAccountType';
 import { useAppRole } from '../../hooks/useAppRole';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -96,19 +102,19 @@ const VendorServiceCardItem = React.memo(({ item, themeColors, isTablet, navigat
           {item.coverage_area ? (
             <View style={[styles.svcMono, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
               <Text style={[styles.svcMonoText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                LOC // {item.coverage_area}
+                {item.coverage_area}
               </Text>
             </View>
           ) : null}
           <View style={[styles.svcMono, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
             <Text style={[styles.svcMonoText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-              VENDOR // {vendorName}
+              {vendorName}
             </Text>
           </View>
           {item.crew_capacity ? (
             <View style={[styles.svcMono, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
               <Text style={[styles.svcMonoText, { color: themeColors.textSecondary }]} numberOfLines={1}>
-                CREW // UP TO {item.crew_capacity}
+                Crew up to {item.crew_capacity}
               </Text>
             </View>
           ) : null}
@@ -141,7 +147,15 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
   const [vendors, setVendors] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  // Server query for services is debounced so typing never reloads the list into a skeleton.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
   const [loading, setLoading] = useState(true);
+  const loadedTabsRef = useRef<Record<string, boolean>>({});
+  const [refreshing, setRefreshing] = useState(false);
   const [registerModalVisible, setRegisterModalVisible] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -153,52 +167,83 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
 
   const productionTypes = ['Feature Film', 'Commercial', 'Web Series', 'Documentary', 'Short Film'];
 
+  const vendorPaging = usePagedList<any>();
+  const servicePaging = usePagedList<any>();
+
+  const buildVendorsQuery = useCallback(() => {
+    let query = ((getSupabaseClient() as any).from('vendors') as any).select('*');
+    if (filterVerifiedOnly) {
+      query = query.eq('is_verified', true);
+    }
+    const q = orTerm(debouncedQuery);
+    if (q) {
+      query = query.or(`business_name.ilike.%${q}%,description.ilike.%${q}%,location.ilike.%${q}%`);
+    }
+    return query.order('created_at', { ascending: false });
+  }, [filterVerifiedOnly, debouncedQuery]);
+
+  const loadMoreVendors = useCallback(
+    () =>
+      vendorPaging.loadMore(
+        vendors.length,
+        async (from, to) => {
+          const { data, error } = await buildVendorsQuery().range(from, to);
+          if (error) throw error;
+          return data || [];
+        },
+        setVendors,
+      ),
+    [vendorPaging.loadMore, vendors.length, buildVendorsQuery],
+  );
+
   const fetchVendors = useCallback(async () => {
     const cacheKey = `vendors_${filterVerifiedOnly}`;
-    const cached = await getCache<any[]>(cacheKey);
+    // Only the plain (no search) first page is cached; a search always asks the server.
+    const isDefaultQuery = !orTerm(debouncedQuery);
+    const cached = isDefaultQuery ? await getCache<any[]>(cacheKey) : null;
     if (cached && cached.length > 0) {
       setVendors(cached);
       setLoading(false);
     }
 
+    const loadFirstPage = async () => {
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+
+      const { data, error } = await buildVendorsQuery().range(0, PAGE_SIZE - 1);
+
+      // Throw so a failed query does not overwrite the good cache with [].
+      if (error) throw error;
+      vendorPaging.resetPaging((data || []).length);
+      return data || [];
+    };
+
     try {
-      await fetchWithCache(
-        cacheKey,
-        async () => {
-          const supabase = getSupabaseClient();
-          const { data: { session } } = await supabase.auth.getSession();
-          const user = session?.user;
-          if (user) {
-            setCurrentUserId(user.id);
-          }
-
-          let query = ((supabase as any).from('vendors') as any).select('*');
-          if (filterVerifiedOnly) {
-            query = query.eq('is_verified', true);
-          }
-          const { data, error } = await query.order('created_at', { ascending: false }).limit(25);
-
-          return !error && data ? data : [];
-        },
-        {
+      if (isDefaultQuery) {
+        await fetchWithCache(cacheKey, loadFirstPage, {
           timeoutMs: 2500,
           onCacheHit: (data) => {
             if (data) setVendors(data);
           },
           onFreshData: (data) => {
-            if (data && data.length > 0) setVendors(data);
+            if (data) setVendors(data);
           },
-        }
-      );
+        });
+      } else {
+        setVendors(await loadFirstPage());
+      }
     } catch (e) {
       console.warn('[Vendors] Error fetching vendors:', e);
     } finally {
       setLoading(false);
     }
-  }, [filterVerifiedOnly]);
+  }, [filterVerifiedOnly, debouncedQuery, buildVendorsQuery, vendorPaging.resetPaging]);
 
-  const fetchServices = useCallback(async () => {
-    try {
+  const buildServicesQuery = useCallback(() => {
       const supabase = getSupabaseClient();
       let query = ((supabase as any).from('vendor_services') as any)
         .select(`
@@ -214,8 +259,8 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
         `)
         .eq('is_active', true);
 
-      if (searchQuery) {
-        query = query.or(`title.ilike.%${orTerm(searchQuery)}%,description.ilike.%${orTerm(searchQuery)}%`);
+      if (debouncedQuery) {
+        query = query.or(`title.ilike.%${orTerm(debouncedQuery)}%,description.ilike.%${orTerm(debouncedQuery)}%`);
       }
 
       if (filterMinCapacity) {
@@ -225,22 +270,44 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
         }
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false }).limit(25);
+      return query.order('created_at', { ascending: false });
+  }, [debouncedQuery, filterMinCapacity]);
+
+  const loadMoreServices = useCallback(
+    () =>
+      servicePaging.loadMore(
+        services.length,
+        async (from, to) => {
+          const { data, error } = await buildServicesQuery().range(from, to);
+          if (error) throw error;
+          return data || [];
+        },
+        setServices,
+      ),
+    [servicePaging.loadMore, services.length, buildServicesQuery],
+  );
+
+  const fetchServices = useCallback(async () => {
+    try {
+      const { data, error } = await buildServicesQuery().range(0, PAGE_SIZE - 1);
       if (!error && data) {
         setServices(data);
+        servicePaging.resetPaging(data.length);
       }
     } catch (e) {
       console.warn('[Vendors] Error fetching services:', e);
     }
-  }, [searchQuery, filterMinCapacity]);
+  }, [buildServicesQuery, servicePaging.resetPaging]);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
+    // Only show the skeleton the first time a tab loads; refetches keep the current list on screen.
+    if (!loadedTabsRef.current[activeTab]) setLoading(true);
     if (activeTab === 'vendors') {
       await fetchVendors();
     } else {
       await fetchServices();
     }
+    loadedTabsRef.current[activeTab] = true;
     setLoading(false);
   }, [activeTab, fetchVendors, fetchServices]);
 
@@ -301,7 +368,7 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
             if (error) throw error;
             setVendors((prev) => prev.filter((v) => v.id !== vendorId));
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to delete vendor.');
+            Alert.alert('Error', friendlyError(e, 'Failed to delete vendor.'));
           }
         },
       },
@@ -336,7 +403,7 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
   }, [services, filterProductionType]);
 
   const renderServiceItem = useCallback(({ item: s }: { item: any }) => (
-    <View style={isTablet ? (isLandscape ? styles.tabletCardWrapper3Col : styles.tabletCardWrapper) : undefined}>
+    <View style={isTablet ? styles.tabletCell : undefined}>
       <VendorServiceCardItem
         item={s}
         themeColors={themeColors}
@@ -347,7 +414,7 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
   ), [isTablet, isLandscape, themeColors, navigation]);
 
   const renderVendorItem = useCallback(({ item: v }: { item: any }) => (
-    <View style={isTablet ? (isLandscape ? styles.tabletCardWrapper3Col : styles.tabletCardWrapper) : undefined}>
+    <View style={isTablet ? styles.tabletCell : undefined}>
       <VendorCard
         vendor={v}
         style={isTablet && { marginHorizontal: 0, marginBottom: 0, width: '100%' }}
@@ -379,12 +446,12 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
         ) : (
           <View style={styles.pageTitleGroup}>
             <Icon name="vendor" size={26} color={themeColors.textPrimary} />
-            <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Vendor Directory</Text>
+            <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Vendor Directory</Text>
           </View>
         )}
 
         {!isFan && !isInternal && (
-          <TouchableOpacity
+          <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.registerBtn}
             onPress={() => setRegisterModalVisible(true)}
             accessibilityLabel="Register Business"
@@ -396,7 +463,7 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
 
       {!embedded && (
       <>
-      <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+      <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
         Find film equipment rentals, studios, DI suites, and production services.
       </Text>
 
@@ -404,17 +471,19 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <TouchableOpacity
+            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 999, borderWidth: 1, backgroundColor: themeColors.bgCard, borderColor: themeColors.border }}
             onPress={() => navigation.navigate('MyQuotes')}
           >
-            <Icon name="file-text" size={13} color={themeColors.textSecondary} />
+            <Icon name="file-text" size={13} color={themeColors.iconSecondary} />
             <Text style={{ color: themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>Quotes</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            hitSlop={{ top: 5, bottom: 5, left: 4, right: 4 }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 999, borderWidth: 1, backgroundColor: themeColors.bgCard, borderColor: themeColors.border }}
             onPress={() => navigation.navigate('SellerHub')}
           >
-            <Icon name="shopping-bag" size={13} color={themeColors.textSecondary} />
+            <Icon name="shopping-bag" size={13} color={themeColors.iconSecondary} />
             <Text style={{ color: themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>Seller Hub</Text>
           </TouchableOpacity>
         </View>
@@ -423,18 +492,12 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
       )}
 
 
-      {isFan && (
-        <View style={{ backgroundColor: isDark ? 'rgba(255, 75, 51, 0.1)' : '#FFF0ED', borderRadius: 8, padding: 10, marginTop: 8, marginBottom: 12, borderWidth: 1, borderColor: isDark ? 'rgba(255, 75, 51, 0.25)' : '#FFE5DF', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Icon name="eye" size={14} color={ORANGE} />
-          <Text style={{ flex: 1, fontSize: 11.5, color: themeColors.textSecondary }}>
-            <Text style={{ fontWeight: '700', color: ORANGE }}>Fan Account (Viewer Mode):</Text> Vendor directory is available for browsing. Registering a rental business requires a Creator or Studio account.
-          </Text>
-        </View>
-      )}
-
+      {/* Fans have no Marketplace, Pitch or Vendors on the web or in the app, so there is no "viewer mode" banner here. */}
       {/* Web Underline Tabs Row */}
       <View style={[styles.tabUnderlineRow, { borderBottomColor: themeColors.border }]}>
         <TouchableOpacity
+          accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'vendors' }}
+          hitSlop={{ top: 10, bottom: 10 }}
           style={[styles.tabUnderlineBtn, activeTab === 'vendors' && styles.tabUnderlineBtnActive]}
           onPress={() => setActiveTab('vendors')}
         >
@@ -450,6 +513,8 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
         </TouchableOpacity>
 
         <TouchableOpacity
+          accessibilityRole="tab" accessibilityState={{ selected: activeTab === 'services' }}
+          hitSlop={{ top: 10, bottom: 10 }}
           style={[styles.tabUnderlineBtn, activeTab === 'services' && styles.tabUnderlineBtnActive]}
           onPress={() => setActiveTab('services')}
         >
@@ -468,7 +533,7 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
       {/* Search & Filter Bar */}
       <View style={styles.searchFilterRow}>
         <View style={[styles.searchBox, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-          <Icon name="search" size={16} color={themeColors.textMuted} />
+          <Icon name="search" size={16} color={themeColors.iconMuted} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.textPrimary }]}
             placeholder={
@@ -481,13 +546,13 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Icon name="x" size={16} color={themeColors.textMuted} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setSearchQuery('')}>
+              <Icon name="x" size={16} color={themeColors.iconMuted} />
             </TouchableOpacity>
           )}
         </View>
 
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Filter" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           style={[
             styles.filterBtn,
             { backgroundColor: hasActiveFilters ? ORANGE : themeColors.inputBg, borderColor: hasActiveFilters ? ORANGE : themeColors.border },
@@ -525,7 +590,7 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
       )}
     >
       {loading ? (
-        <ScrollView contentContainerStyle={styles.listContent}>
+        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
           {renderHeader()}
           <View style={isTablet ? styles.tabletGridContainer : { paddingHorizontal: 16 }}>
             <View style={isTablet ? (isLandscape ? styles.tabletCardWrapper3Col : styles.tabletCardWrapper) : undefined}>
@@ -543,6 +608,8 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
         </ScrollView>
       ) : activeTab === 'vendors' ? (
         <FlashListAny
+          keyboardShouldPersistTaps="handled"
+          {...scrollChrome}
           key={`vendors-list-${numColumns}`}
           data={filteredVendors}
           keyExtractor={(item: any) => item.id}
@@ -551,13 +618,17 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
           numColumns={numColumns}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={renderHeader()}
+          onEndReached={loadMoreVendors}
+          onEndReachedThreshold={0.6}
+          ListFooterComponent={vendorPaging.loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color={ORANGE} /> : null}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); try { await loadData(); } finally { setRefreshing(false); } }} tintColor={ORANGE} colors={[ORANGE]} />}
           ListEmptyComponent={
             isOffline ? (
               <OfflineEmptyState />
             ) : (
               <View style={styles.emptyState}>
-                <Icon name="truck" size={40} color={themeColors.textMuted} />
+                <Icon name="truck" size={40} color={themeColors.iconMuted} />
                 <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Vendors Found</Text>
                 <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>Be the first to list your production rental house!</Text>
                 {!isFan && (
@@ -574,6 +645,8 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
         />
       ) : (
         <FlashListAny
+          keyboardShouldPersistTaps="handled"
+          {...scrollChrome}
           key={`services-list-${numColumns}`}
           data={filteredServices}
           keyExtractor={(item: any) => item.id}
@@ -582,15 +655,19 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
           numColumns={numColumns}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={renderHeader()}
+          onEndReached={loadMoreServices}
+          onEndReachedThreshold={0.6}
+          ListFooterComponent={servicePaging.loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color={ORANGE} /> : null}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); try { await loadData(); } finally { setRefreshing(false); } }} tintColor={ORANGE} colors={[ORANGE]} />}
           ListEmptyComponent={
             isOffline ? (
               <OfflineEmptyState />
             ) : (
               <View style={styles.emptyState}>
-                <Icon name="package" size={40} color="#9CA3AF" />
-                <Text style={styles.emptyTitle}>No Service Packages</Text>
-                <Text style={styles.emptySub}>No active service packages match your filter criteria.</Text>
+                <Icon name="package" size={40} color={themeColors.iconMuted} />
+                <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Service Packages</Text>
+                <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>No active service packages match your filter criteria.</Text>
               </View>
             )
           }
@@ -616,13 +693,13 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
           activeOpacity={1}
           onPress={() => setFilterModalVisible(false)}
         >
-          <View style={[styles.filterModalContent, { backgroundColor: themeColors.bgCard }]}>
+          <View style={[styles.filterModalContent, isTablet && { maxHeight: 560, padding: 28, borderRadius: 24, marginBottom: 24 }, { backgroundColor: themeColors.bgCard }]}>
             <View style={styles.filterHeaderRow}>
               <Text style={[styles.filterTitle, { color: themeColors.textPrimary }]}>
                 Filter {activeTab === 'vendors' ? 'Vendors' : 'Service Packages'}
               </Text>
-              <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
-                <Icon name="x" size={20} color={themeColors.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => setFilterModalVisible(false)}>
+                <Icon name="x" size={20} color={themeColors.iconSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -631,6 +708,7 @@ export const VendorsScreen = ({ navigation, embedded = false }: { navigation: an
                 <Text style={[styles.switchLabel, { color: themeColors.textPrimary }]}>Verified Professionals Only</Text>
                 <Switch
                   value={filterVerifiedOnly}
+                  accessibilityLabel="Verified Professionals Only"
                   onValueChange={setFilterVerifiedOnly}
                   trackColor={{ false: themeColors.border, true: ORANGE }}
                   thumbColor="#FFFFFF"
@@ -726,19 +804,19 @@ const styles = StyleSheet.create({
   svcImage: { width: '100%', height: '100%' },
   svcBadgesRow: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   svcBadge: { backgroundColor: 'rgba(13,13,13,0.75)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  svcBadgeText: { color: '#FFFFFF', fontSize: 9.5, fontWeight: '800' },
+  svcBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   svcBody: { padding: 14 },
-  svcTitle: { fontSize: 14, fontWeight: '900', fontFamily: 'Lora-Bold', lineHeight: 18, marginBottom: 4 },
-  svcDesc: { fontSize: 11.5, lineHeight: 16, marginBottom: 8 },
+  svcTitle: { fontSize: 14, fontWeight: '700', fontFamily: 'Lora-Bold', lineHeight: 18, marginBottom: 4 },
+  svcDesc: { fontSize: 12, lineHeight: 16, marginBottom: 8 },
   svcMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
   svcMono: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, maxWidth: '100%' },
-  svcMonoText: { fontSize: 10, fontWeight: '800' },
+  svcMonoText: { fontSize: 12, fontWeight: '700' },
   svcFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 8 },
-  svcCurrency: { color: ORANGE, fontSize: 13, fontWeight: '800' },
-  svcPrice: { color: ORANGE, fontSize: 18, fontWeight: '900', marginHorizontal: 1 },
-  svcPerDay: { fontSize: 10, fontWeight: '700', marginLeft: 3 },
+  svcCurrency: { color: ORANGE, fontSize: 13, fontWeight: '700' },
+  svcPrice: { color: ORANGE, fontSize: 18, fontWeight: '700', marginHorizontal: 1 },
+  svcPerDay: { fontSize: 12, fontWeight: '700', marginLeft: 3 },
   svcMin: { backgroundColor: '#FFF7F5', borderWidth: 1, borderColor: '#FFE5DF', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  svcMinText: { color: ORANGE, fontSize: 10, fontWeight: '800' },
+  svcMinText: { color: ORANGE, fontSize: 12, fontWeight: '700' },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
@@ -748,6 +826,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: 16,
     gap: 16,
+  },
+  // inside a list column: space either side of a card that fills its cell
+  tabletCell: {
+    // fills its list column (a list cell does not stretch its child by itself)
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingBottom: 16,
   },
   tabletCardWrapper: {
     width: '48.5%',
@@ -776,19 +861,19 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 18.5,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   pageSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 14,
   },
   registerBtn: {
     width: 36,
-    height: 36,
+    height: 44,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -814,7 +899,7 @@ const styles = StyleSheet.create({
   },
   tabUnderlineText: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.5,
   },
@@ -833,7 +918,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     gap: 8,
@@ -841,11 +926,11 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: INK,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   filterBtn: {
     width: 42,
-    height: 42,
+    height: 44,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
@@ -865,7 +950,7 @@ const styles = StyleSheet.create({
   },
   sectionHeaderTitle: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
     letterSpacing: -0.2,
@@ -887,7 +972,7 @@ const styles = StyleSheet.create({
   },
   serviceTitle: {
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
@@ -901,16 +986,16 @@ const styles = StyleSheet.create({
   },
   dayRateNum: {
     fontSize: 18,
-    fontWeight: '900',
+    fontWeight: '700',
     color: ORANGE,
   },
   dayRateLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '700',
   },
   serviceDesc: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#475569',
     lineHeight: 16,
     marginBottom: 10,
@@ -933,7 +1018,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   servicePillText: {
-    fontSize: 10.5,
+    fontSize: 12,
     fontWeight: '700',
     color: ORANGE,
   },
@@ -942,14 +1027,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 10,
-    height: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   serviceFooterBtnText: {
     color: INK,
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',
@@ -959,7 +1044,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   emptySub: {
@@ -978,7 +1063,7 @@ const styles = StyleSheet.create({
   emptyRegisterBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
@@ -986,6 +1071,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   filterModalContent: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -1000,7 +1088,7 @@ const styles = StyleSheet.create({
   },
   filterTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   switchRow: {
@@ -1017,8 +1105,8 @@ const styles = StyleSheet.create({
     color: INK,
   },
   filterLabel: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 8,
@@ -1039,13 +1127,13 @@ const styles = StyleSheet.create({
     backgroundColor: ORANGE,
   },
   prodChipText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
   prodChipTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   filterInput: {
     backgroundColor: '#F8FAFC',
@@ -1054,7 +1142,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
     marginBottom: 8,
   },
@@ -1074,7 +1162,7 @@ const styles = StyleSheet.create({
   resetFilterBtnText: {
     color: '#64748B',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   applyFilterBtn: {
     flex: 1,
@@ -1087,7 +1175,7 @@ const styles = StyleSheet.create({
   applyFilterBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

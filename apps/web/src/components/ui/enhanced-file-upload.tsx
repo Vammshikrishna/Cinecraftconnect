@@ -204,7 +204,7 @@ export const EnhancedFileUpload: React.FC<FileUploadProps> = ({
                     </p>
                     <div className="flex items-center gap-2">
                       {getStatusIcon(uploadingFile.status)}
-                      <Button
+                      <Button aria-label="Close"
                         variant="ghost"
                         size="sm"
                         onClick={() => removeFile(uploadingFile.file)}

@@ -10,6 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { AvailabilityBadge } from '@/components/network/AvailabilityBadge';
 import { Plus, Trash2, Users } from 'lucide-react';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { LoadError } from '@/components/settings/LoadError';
+import { friendlyError } from '@cinecraft/core';
+import { undoable } from '@/lib/undoable';
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
 
 const db = supabase as any;
 
@@ -19,67 +24,93 @@ const Shortlists = () => {
   const { toast } = useToast();
   const [lists, setLists] = useState<any[]>([]);
   const [name, setName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
-    const { data } = await db.rpc('my_shortlists');
-    setLists(data || []);
+    const { data, error } = await db.rpc('my_shortlists');
+    if (error) {
+      setLoadFailed(true);
+    } else {
+      setLoadFailed(false);
+      setLists(data || []);
+    }
+    setLoading(false);
   }, []);
   useEffect(() => {
     load();
   }, [load]);
 
   const create = async () => {
-    if (!user || !name.trim()) return;
+    if (!user || !name.trim() || creating) return;
+    setCreating(true);
     const { error } = await db.from('crew_shortlists').insert({ owner_id: user.id, name: name.trim() });
-    if (error) return toast({ title: 'Could not create the shortlist', description: error.message, variant: 'destructive' });
+    setCreating(false);
+    if (error) return toast({ title: 'Could not create the shortlist', description: friendlyError(error), variant: 'destructive' });
+    toast({ title: 'Shortlist created', description: name.trim() });
     setName('');
     load();
   };
   const removeList = async (id: string) => {
-    if (!window.confirm('Delete this shortlist? The people are not affected.')) return;
+    if (!await confirmDialog('Delete this shortlist? The people are not affected.')) return;
     const { error } = await db.from('crew_shortlists').delete().eq('id', id);
-    if (error) return toast({ title: 'Could not delete', description: error.message, variant: 'destructive' });
+    if (error) return toast({ title: 'Could not delete', description: friendlyError(error), variant: 'destructive' });
     load();
   };
-  const removeMember = async (listId: string, personId: string) => {
-    const { error } = await db.from('crew_shortlist_members').delete().eq('shortlist_id', listId).eq('person_id', personId);
-    if (error) return toast({ title: 'Could not remove', description: error.message, variant: 'destructive' });
-    load();
+  // The person disappears at once; the delete (and so the note) is only made final after the Undo window.
+  const removeMember = (listId: string, listName: string, person: any) => {
+    const snapshot = lists;
+    undoable({
+      title: `Removed from ${listName}`,
+      description: person.full_name || person.username || undefined,
+      apply: () => setLists((prev) => prev.map((l) => (l.id === listId ? { ...l, members: l.members.filter((m: any) => m.id !== person.id) } : l))),
+      revert: () => setLists(snapshot),
+      commit: async () => {
+        const { error } = await db.from('crew_shortlist_members').delete().eq('shortlist_id', listId).eq('person_id', person.id);
+        if (error) toast({ title: 'Could not remove', description: friendlyError(error), variant: 'destructive' });
+        load();
+      },
+    });
   };
 
   return (
-    <div className="min-h-screen bg-background pt-20 pb-36">
-      <div className="max-w-4xl mx-auto px-4 md:px-8 space-y-6">
+    <div className="min-h-dvh bg-background pt-20 pb-36">
+      <div className="max-w-[1152px] mx-auto px-4 md:px-8 space-y-6">
         <BackButton label="BACK" />
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-2"><Users className="h-7 w-7 text-primary" /> Crew shortlists</h1>
           <p className="text-muted-foreground">Private lists of people you may hire, with a note about each. Add people from their profile.</p>
         </div>
         <div className="flex gap-2 max-w-md">
-          <Input value={name} onChange={e => setName(e.target.value)} placeholder="New shortlist, e.g. Short film - camera team" maxLength={80} onKeyDown={e => e.key === 'Enter' && create()} />
-          <Button onClick={create} disabled={!name.trim()}><Plus className="h-4 w-4 mr-1" />Create</Button>
+          <Input aria-label="New shortlist name" disabled={creating} value={name} onChange={e => setName(e.target.value)} placeholder="New shortlist, e.g. Short film - camera team" maxLength={80} onKeyDown={e => e.key === 'Enter' && create()} />
+          <Button onClick={create} disabled={!name.trim() || creating}><Plus className="h-4 w-4 mr-1" />Create</Button>
         </div>
 
-        {lists.length === 0 ? (
+        {loading ? (
+          <ScreenSkeleton variant="list" />
+        ) : loadFailed && lists.length === 0 ? (
+          <LoadError title="Could not load your shortlists" onRetry={() => { setLoading(true); load(); }} />
+        ) : lists.length === 0 ? (
           <p className="text-center text-muted-foreground py-16">No shortlists yet.</p>
         ) : lists.map(l => (
           <Card key={l.id} className="bg-card/40 overflow-hidden">
             <div className="p-4 flex items-center justify-between border-b">
-              <h2 className="font-semibold">{l.name} <span className="text-sm text-muted-foreground font-normal">· {l.members.length}</span></h2>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => removeList(l.id)}><Trash2 className="h-4 w-4" /></Button>
+              <h2 className="font-semibold min-w-0 break-words">{l.name} <span className="text-sm text-muted-foreground font-normal">· {l.members.length}</span></h2>
+              <Button aria-label={`Delete shortlist ${l.name}`} size="icon" variant="ghost" className="shrink-0" onClick={() => removeList(l.id)}><Trash2 className="h-4 w-4" /></Button>
             </div>
-            {l.members.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Empty. Open a profile and tap Shortlist.</p> : (
+            {l.members.length === 0 ? <p className="p-4 text-sm text-muted-foreground">Empty. Open a profile and tap Shortlist, or <Link to="/network" className="text-primary underline">find people</Link>.</p> : (
               <div className="divide-y">
                 {l.members.map((m: any) => (
                   <div key={m.id} className="p-3 flex items-center gap-3">
-                    <Link to={`/profile/${m.id}`}><Avatar className="h-10 w-10"><AvatarImage src={m.avatar_url || undefined} /><AvatarFallback>{(m.full_name || '?')[0]}</AvatarFallback></Avatar></Link>
+                    <Link to={`/profile/${m.id}`} aria-hidden="true" tabIndex={-1}><Avatar className="h-10 w-10"><AvatarImage src={m.avatar_url || undefined} /><AvatarFallback>{Array.from(m.full_name || m.username || '?')[0]?.toString().toUpperCase()}</AvatarFallback></Avatar></Link>
                     <div className="min-w-0 flex-1">
-                      <Link to={`/profile/${m.id}`} className="font-semibold text-sm hover:text-primary">{m.full_name}</Link>
+                      <Link to={`/profile/${m.id}`} className="font-semibold text-sm hover:text-primary break-words">{m.full_name || m.username || 'Unknown'}</Link>
                       <p className="text-xs text-muted-foreground truncate">{[m.craft, m.location].filter(Boolean).join(' · ')}</p>
                       {m.note && <p className="text-xs italic mt-0.5">“{m.note}”</p>}
                     </div>
                     <AvailabilityBadge status={m.availability} />
-                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => removeMember(l.id, m.id)}><Trash2 className="h-4 w-4" /></Button>
+                    <Button aria-label={`Remove ${m.full_name || 'person'} from ${l.name}`} size="icon" variant="ghost" className="shrink-0" onClick={() => removeMember(l.id, l.name, m)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 ))}
               </div>

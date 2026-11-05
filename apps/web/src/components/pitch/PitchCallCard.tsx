@@ -4,10 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PitchCall } from '@/hooks/usePitch';
-import { 
-    Bookmark, Share2, Megaphone, Calendar, DollarSign, 
-    Globe, Film, Users, CheckCircle2, MapPin, Clock, Shield, Award, SlidersHorizontal
-} from 'lucide-react';
+import { Bookmark, Megaphone, Calendar, DollarSign, Globe, Film, Users, CheckCircle2, MapPin, Clock, Shield, Award, SlidersHorizontal } from 'lucide-react';
 import { formatDistanceToNow, isPast, parseISO } from 'date-fns';
 import VerificationBadge from '@/components/common/VerificationBadge';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
@@ -15,6 +12,8 @@ import { getSafeImageUrl } from '@/services/tmdb';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useToast } from '@/hooks/use-toast';
+import { hasGuildClaim, GUILD_CLAIM_HINT } from '@cinecraft/core';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const FORMAT_LABELS: Record<string, string> = {
     film: 'Feature Film', series: 'Series', short: 'Short Film',
@@ -73,9 +72,13 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
+                transition={{ delay: Math.min(index, 8) * 0.04 }}
                 onClick={() => push(`/pitch/${pitchCall.id}`)}
-                className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg hover:border-primary/20 transition-all duration-300 group cursor-pointer"
+                onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); push(`/pitch/${pitchCall.id}`); } }}
+                role="link"
+                tabIndex={0}
+                aria-label={pitchCall.title}
+                className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg hover:border-primary/20 transition-[box-shadow,border-color] duration-300 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
                 <div className="p-5 space-y-4">
                     {/* Top Header Row: Title & Subtitle */}
@@ -86,24 +89,24 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
 
                     {/* Meta Badges */}
                     <div className="flex flex-wrap gap-1.5">
-                        {pitchCall.attachments?.producers_guild_member_id && (
-                            <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1">
-                                <Award className="h-3 w-3" /> GUILD VERIFIED
+                        {hasGuildClaim(pitchCall.attachments) && (
+                            <div title={GUILD_CLAIM_HINT} className="text-[12px] font-medium text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1">
+                                <Award className="h-3 w-3" /> GUILD (CLAIMED)
                             </div>
                         )}
                         {pitchCall.project_type && (
-                            <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
-                                TYPE // {FORMAT_LABELS[pitchCall.project_type] || pitchCall.project_type}
+                            <div className="text-[12px] font-medium text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                                {FORMAT_LABELS[pitchCall.project_type] || pitchCall.project_type}
                             </div>
                         )}
                         {pitchCall.genre && pitchCall.genre.length > 0 && (
-                            <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
-                                GENRE // {pitchCall.genre.join(', ').toUpperCase()}
+                            <div className="text-[12px] font-medium text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
+                                {pitchCall.genre.join(', ')}
                             </div>
                         )}
                         {pitchCall.language && pitchCall.language.length > 0 && (
-                            <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded flex items-center gap-1">
-                                <Globe className="h-2.5 w-2.5" /> LANGUAGE // {pitchCall.language.join(', ').toUpperCase()}
+                            <div className="text-[12px] font-medium text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded flex items-center gap-1">
+                                <Globe className="h-2.5 w-2.5" /> {pitchCall.language.join(', ')}
                             </div>
                         )}
                     </div>
@@ -132,17 +135,17 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
                     {/* Feature Toggles */}
                     <div className="flex flex-wrap gap-2">
                         {pitchCall.is_open_to_debut && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
+                            <span className="flex items-center gap-1 text-[12px] font-bold text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
                                 <Users className="h-2.5 w-2.5" /> Debut Writers Welcome
                             </span>
                         )}
                         {pitchCall.is_regional_welcome && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-full">
+                            <span className="flex items-center gap-1 text-[12px] font-bold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-full">
                                 <MapPin className="h-2.5 w-2.5" /> Regional Stories
                             </span>
                         )}
                         {pitchCall.nda_required && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-full">
+                            <span className="flex items-center gap-1 text-[12px] font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-full">
                                 <Shield className="h-2.5 w-2.5" /> NDA Required
                             </span>
                         )}
@@ -176,28 +179,28 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
                             <Button disabled className="flex-1" variant="outline">Closed</Button>
                         ) : (
                             <Button
-                                className="flex-1 bg-primary hover:bg-primary/90 font-bold"
+                                className="flex-1 bg-primary/10 text-primary hover:bg-primary/15 font-semibold"
                                 onClick={(e) => { e.stopPropagation(); handlePitchNow(); }}
                             >
                                 <Megaphone className="h-4 w-4 mr-2" />
                                 Pitch Now
                             </Button>
                         )}
-                        <Button
+                        <Button aria-label={localSaved ? 'Saved' : 'Save pitch call'} aria-pressed={localSaved}
                             variant="outline"
                             size="icon"
-                            className="h-10 w-10 shrink-0"
+                            className="h-11 w-11 shrink-0"
                             onClick={(e) => { e.stopPropagation(); handleSave(); }}
                         >
                             <Bookmark className={`h-4 w-4 transition-colors ${localSaved ? 'fill-primary text-primary' : 'text-muted-foreground'}`} />
                         </Button>
-                        <Button
+                        <Button aria-label="Share"
                             variant="outline"
                             size="icon"
-                            className="h-10 w-10 shrink-0"
+                            className="h-11 w-11 shrink-0"
                             onClick={(e) => { e.stopPropagation(); setShowShare(true); }}
                         >
-                            <Share2 className="h-4 w-4 text-muted-foreground" />
+                            <ShareIcon className="h-4 w-4 text-muted-foreground" />
                         </Button>
                     </div>
                 </div>

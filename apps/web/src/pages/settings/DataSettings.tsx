@@ -36,6 +36,7 @@ const DataSettings = () => {
         <SettingsLinkRow
           title={isExporting ? 'Preparing your file…' : 'Download your information'}
           description="Profile, posts, projects, connections and activity as a JSON file"
+          value={isExporting ? 'Working…' : undefined}
           onClick={() => !isExporting && handleExportData()}
         />
       </SettingsSection>

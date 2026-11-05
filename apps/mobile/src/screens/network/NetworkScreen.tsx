@@ -11,11 +11,11 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Dimensions,
   InteractionManager,
   Modal,
 } from 'react-native';
 import { Header } from '../../components/Header';
+import { scrollChrome } from '../../components/common/scrollChrome';
 import { useFocusEffect } from '@react-navigation/native';
 import { useIsOffline } from '../../hooks/useIsOffline';
 import { OfflineEmptyState } from '../../components/common/OfflineEmptyState';
@@ -27,17 +27,22 @@ import { CardSkeleton } from '../../components/common/Skeleton';
 import { fetchWithCache, getCache } from '../../services/offlineCache';
 import { CachedImage } from '../../components/common/CachedImage';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
+import { easeLayout } from '../../utils/motion';
 const FlashListAny = FlashList as any;
 import { useAutoRefreshOnReconnect } from '../../hooks/useAutoRefreshOnReconnect';
 import { useResponsive } from '../../hooks/useResponsive';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useAppRole } from '../../hooks/useAppRole';
 
 import { useAccountType } from '../../hooks/useAccountType';
 import { ReportModal } from '../../components/modals/ReportModal';
+import { DropdownTrigger, DropdownItem } from '../../components/common/DropdownMenu';
 import { ConnectNoteModal } from '../../components/modals/ConnectNoteModal';
 import { ConnectionNotesModal } from '../../components/modals/NetworkModals';
 import { AvailabilityBadge, CollaboratorsRow, NetworkInsightsCard, IntroductionsSection } from '../../components/network/NetworkParts';
 import { WorkRequestsSection } from '../../components/network/WorkRequestsSection';
+import { tabletPageTitle, tabletPageSubtitle } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -90,7 +95,7 @@ const UserCardGridItem = React.memo(({
   userCraft?: string;
   userLocation?: string;
   onDismiss: (id: string) => void;
-  onMenu: (item: any, displayName: string) => void;
+  onMenu: (item: any, displayName: string) => DropdownItem[];
   onProfilePress: (item: any, displayName: string) => void;
   onFollow: (id: string) => void;
   onUnfollow: (id: string) => void;
@@ -100,6 +105,7 @@ const UserCardGridItem = React.memo(({
   onReject: (id: string) => void;
   onMessage: (recipientId: string, recipientName: string) => void;
 }) => {
+  const { isInternal } = useAppRole(); // staff accounts do not follow or connect
   const displayName = item.full_name || item.username || 'TEST USER';
   const initials = getInitials(displayName);
 
@@ -125,26 +131,16 @@ const UserCardGridItem = React.memo(({
       style={[
         styles.webUserCardGridItem,
         { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
-        isTablet && isLandscape && styles.webUserCardGridItem3Col,
+        isTablet && styles.webUserCardGridItem3Col,
       ]}
     >
       {/* Dismiss (X) button at top right */}
-      <TouchableOpacity
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Dismiss suggestion" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         style={[styles.dismissBtn, { backgroundColor: themeColors.inputBg }]}
         onPress={() => onDismiss(item.id)}
         activeOpacity={0.7}
       >
-        <Icon name="x" size={11} color={themeColors.textSecondary} strokeWidth={3} />
-      </TouchableOpacity>
-
-      {/* More (view / report / block) at top left */}
-      <TouchableOpacity
-        style={[styles.dismissBtn, { backgroundColor: themeColors.inputBg, left: 8, right: undefined }]}
-        onPress={() => onMenu(item, displayName)}
-        activeOpacity={0.7}
-        accessibilityLabel="More options"
-      >
-        <Icon name="more-horizontal" size={12} color={themeColors.textSecondary} />
+        <Icon name="x" size={11} color={themeColors.iconSecondary} strokeWidth={3} />
       </TouchableOpacity>
 
       {/* Avatar Container with Light Peach Fallback & Initials */}
@@ -161,11 +157,6 @@ const UserCardGridItem = React.memo(({
           </View>
         )}
 
-        {!!item.is_verified && (
-          <View style={[styles.verifiedCheckBadge, { borderColor: themeColors.bgCard }]}>
-            <Icon name="check" size={8} color="#FFFFFF" strokeWidth={3} />
-          </View>
-        )}
       </TouchableOpacity>
 
       {/* User Full Name (Centered Bold Serif) */}
@@ -182,25 +173,21 @@ const UserCardGridItem = React.memo(({
 
       {/* Craft Mono Badge Box */}
       <View style={[styles.craftTagPill, { backgroundColor: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF7F5', borderColor: isDark ? 'rgba(255, 75, 51, 0.3)' : '#FFE5DF' }]}>
-        <Text style={styles.craftTagText}>
-          {item.account_type === 'fan' ? 'FAN // MEMBER' : `CRAFT // ${(item.craft || 'FILMMAKER').toUpperCase()}`}
+        <Text style={styles.craftTagText} numberOfLines={1} ellipsizeMode="tail">
+          {item.account_type === 'fan' ? 'Fan' : `${(item.craft || 'Filmmaker')}`}
         </Text>
       </View>
 
-      {!!item.availability && (
-        <View style={{ marginBottom: 6 }}>
-          <AvailabilityBadge status={item.availability} />
-        </View>
-      )}
-
       {/* Reason Tag Box */}
       <View style={[styles.reasonTagRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F8FAFC', borderColor: themeColors.border }]}>
-        <Icon name="sparkles" size={9} color={ORANGE} />
-        <Text style={[styles.reasonTagText, { color: themeColors.textSecondary }]}>REASON // {suggestionReason}</Text>
+        <Icon name="sparkles" size={8} color={ORANGE} />
+        <Text style={[styles.reasonTagText, { color: themeColors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">{suggestionReason}</Text>
       </View>
 
       {/* Action Button Footer */}
       <View style={styles.cardActionFooter}>
+      {!isInternal && (
+      <View style={styles.cardActionMain}>
         {(isFan || item.account_type === 'fan') ? (
           isFollowing ? (
             <TouchableOpacity
@@ -230,6 +217,9 @@ const UserCardGridItem = React.memo(({
         ) : sentReq ? (
           <TouchableOpacity
             style={[styles.pendingBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel="Request pending"
+            accessibilityHint="Tap to withdraw the request"
             onPress={() => onWithdraw(sentReq.id)}
           >
             <Icon name="clock" size={12} color="#D97706" />
@@ -260,6 +250,17 @@ const UserCardGridItem = React.memo(({
           </TouchableOpacity>
         )}
       </View>
+      )}
+        {/* More (view / report / block), next to the main action */}
+        <DropdownTrigger
+          accessibilityLabel={`More options for ${displayName}`}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          style={[styles.moreBtn, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}
+          items={() => onMenu(item, displayName)}
+        >
+          <Icon name="more-horizontal" size={16} color={themeColors.iconSecondary} />
+        </DropdownTrigger>
+      </View>
     </View>
   );
 });
@@ -269,8 +270,9 @@ const DISCOVER_PAGE = 24;
 export const NetworkScreen = ({ navigation }: { navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
   const isOffline = useIsOffline();
-  const { isTablet, isLandscape } = useResponsive();
-  const numColumns = isTablet ? (isLandscape ? 3 : 2) : 2;
+  const { isTablet, isLandscape, width: winW } = useResponsive();
+  const numColumns = isTablet ? (isLandscape ? (winW >= 1100 ? 4 : 3) : 3) : 2;
+  const tabletCardPct = `${(100 - 3 * (numColumns - 1)) / numColumns}%` as `${number}%`;
   const { isFan, accountType } = useAccountType();
   const [activeTab, setActiveTab] = useState<'discover' | 'discover-creators' | 'discover-fans' | 'connections' | 'requests'>('discover');
   const isCurrentTab = (tab: string) => (activeTab as string) === tab;
@@ -469,7 +471,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
       setFollowingIds((prev) => [...prev, targetUserId]);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not follow user.');
+      Alert.alert('Error', friendlyError(e, 'Could not follow user.'));
     }
   }, [currentUserId]);
 
@@ -484,7 +486,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
       setFollowingIds((prev) => prev.filter((id) => id !== targetUserId));
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not unfollow user.');
+      Alert.alert('Error', friendlyError(e, 'Could not unfollow user.'));
     }
   }, [currentUserId]);
 
@@ -505,8 +507,20 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
 
       if (data) {
-        setSentRequests((prev) => [...prev, data]);
+        // make sure the row carries who it is for, so the card flips to "Pending" and the Sent list can show the name
+        const target: any = creators.find((c: any) => c.id === targetUserId);
+        const row = {
+          ...data,
+          follower_id: currentUserId,
+          following_id: targetUserId,
+          status: 'pending',
+          partner: data.partner || (target ? {
+            id: target.id, full_name: target.full_name, username: target.username, avatar_url: target.avatar_url, craft: target.craft,
+          } : undefined),
+        };
+        setSentRequests((prev) => [...prev.filter((r) => r.following_id !== targetUserId), row]);
         Alert.alert('Connection Request Sent', 'Waiting for crew member approval.');
+        fetchNetworkData(); // pick up the full details from the server
       }
     } catch (e: any) {
       // they had already asked you: your request simply accepted theirs
@@ -515,9 +529,9 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
         fetchNetworkData();
         return;
       }
-      Alert.alert('Error', e.message || 'Could not send connection request.');
+      Alert.alert('Error', friendlyError(e, 'Could not send connection request.'));
     }
-  }, [currentUserId, fetchNetworkData]);
+  }, [currentUserId, fetchNetworkData, creators]);
 
   const handleAcceptRequest = useCallback(async (requestId: string) => {
     try {
@@ -531,7 +545,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
       Alert.alert('Accepted ✅', 'You are now connected!');
       fetchNetworkData();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not accept connection request.');
+      Alert.alert('Error', friendlyError(e, 'Could not accept connection request.'));
     }
   }, [fetchNetworkData]);
 
@@ -545,11 +559,18 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
       setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not reject request.');
+      Alert.alert('Error', friendlyError(e, 'Could not reject request.'));
     }
   }, []);
 
-  const handleWithdrawRequest = useCallback(async (requestId: string) => {
+  const handleWithdrawRequest = useCallback((requestId: string) => {
+    Alert.alert('Request pending', 'Your connection request is waiting for a reply. Withdraw it?', [
+      { text: 'Keep request', style: 'cancel' },
+      { text: 'Withdraw', style: 'destructive', onPress: () => { void doWithdrawRequest(requestId); } },
+    ]);
+  }, []);
+
+  const doWithdrawRequest = useCallback(async (requestId: string) => {
     try {
       const supabase = getSupabaseClient();
       const { error } = await (supabase.from('user_connections') as any)
@@ -559,11 +580,12 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
       setSentRequests((prev) => prev.filter((r) => r.id !== requestId));
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not withdraw request.');
+      Alert.alert('Error', friendlyError(e, 'Could not withdraw request.'));
     }
   }, []);
 
   const handleDismissCard = useCallback((id: string) => {
+    easeLayout();
     setDismissedUserIds((prev) => [...prev, id]);
     if (currentUserId) {
       (getSupabaseClient() as any).from('network_dismissed').upsert({ user_id: currentUserId, dismissed_id: id }, { onConflict: 'user_id,dismissed_id' }).then(() => {});
@@ -592,7 +614,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
 
   const handleIgnoreRequest = useCallback(async (requestId: string, ignore: boolean) => {
     const { error } = await (getSupabaseClient() as any).rpc('ignore_connection_request', { p_id: requestId, p_ignore: ignore });
-    if (error) return Alert.alert('Error', error.message);
+    if (error) return Alert.alert('Error', friendlyError(error));
     fetchNetworkData();
   }, [fetchNetworkData]);
 
@@ -604,7 +626,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
         style: 'destructive',
         onPress: async () => {
           const { error } = await (getSupabaseClient() as any).from('user_connections').delete().eq('id', connectionId);
-          if (error) return Alert.alert('Error', error.message);
+          if (error) return Alert.alert('Error', friendlyError(error));
           setConnections((prev) => prev.filter((x) => x.id !== connectionId));
         },
       },
@@ -620,7 +642,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
         onPress: async () => {
           if (!currentUserId) return;
           const { error } = await (getSupabaseClient() as any).from('blocked_users').insert({ user_id: currentUserId, blocked_user_id: userId });
-          if (error && error.code !== '23505') return Alert.alert('Could not block', error.message);
+          if (error && error.code !== '23505') return Alert.alert('Could not block', friendlyError(error));
           setCreators((prev) => prev.filter((x) => x.id !== userId));
           fetchNetworkData();
         },
@@ -631,16 +653,15 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
   // ⋯ on a card or a connection row: view / remove / report / block
   const handleCardMenu = useCallback((item: any, displayName: string) => {
     const conn = connections.find((x) => x.partner?.id === item.id);
-    const buttons: any[] = [
-      { text: 'View profile', onPress: () => navigation.navigate('PublicProfile', { creatorName: displayName, craft: item.craft, userId: item.id }) },
+    const entries: DropdownItem[] = [
+      { label: 'View profile', icon: 'user', onPress: () => navigation.navigate('PublicProfile', { creatorName: displayName, craft: item.craft, userId: item.id }) },
     ];
-    if (conn) buttons.push({ text: 'Notes & tags', onPress: () => setNotesFor({ id: item.id, name: displayName, note: conn.my_note, tags: conn.my_tags }) });
-    if (conn) buttons.push({ text: 'Remove connection', style: 'destructive', onPress: () => handleRemoveConnection(conn.id, displayName) });
-    buttons.push({ text: 'Report', onPress: () => setReportUser({ id: item.id, name: displayName }) });
-    buttons.push({ text: 'Block', style: 'destructive', onPress: () => handleBlockUser(item.id, displayName) });
-    buttons.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert(displayName, undefined, buttons);
-  }, [connections, navigation, handleRemoveConnection, handleBlockUser]);
+    if (conn) entries.push({ label: 'Notes & tags', icon: 'edit', onPress: () => setNotesFor({ id: item.id, name: displayName, note: conn.my_note, tags: conn.my_tags }) });
+    if (conn) entries.push({ label: 'Remove connection', icon: 'user-x', destructive: true, onPress: () => handleRemoveConnection(conn.id, displayName) });
+    entries.push({ label: 'Report', icon: 'flag', destructive: true, onPress: () => setReportUser({ id: item.id, name: displayName }) });
+    entries.push({ label: 'Block', icon: 'user-x', destructive: true, onPress: () => handleBlockUser(item.id, displayName) });
+    return entries;
+  },[connections, navigation, handleRemoveConnection, handleBlockUser]);
 
   const allTags = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -737,9 +758,9 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
             <View style={styles.pageHeaderSection}>
               <View style={styles.pageTitleGroup}>
                 <Icon name="users" size={22} color={ORANGE} strokeWidth={2.2} />
-                <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Creator Network</Text>
+                <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Creator Network</Text>
               </View>
-              <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+              <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                 Connect with directors, cinematographers, editors, and film crew.
               </Text>
             </View>
@@ -753,6 +774,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
             {/* DISCOVER TAB (2-COLUMN GRID matching Image 2) */}
             {(activeTab === 'discover' || activeTab === 'discover-creators' || activeTab === 'discover-fans') && (
               <FlashListAny
+                {...scrollChrome}
                 key={`network-creators-grid-${numColumns}`}
                 data={filteredCreators}
                 renderItem={renderUserCard2Col}
@@ -766,16 +788,16 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                   <View style={styles.pageHeaderSection}>
                     <View style={styles.pageTitleGroup}>
                       <Icon name="users" size={22} color={ORANGE} strokeWidth={2.2} />
-                      <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Creator Network</Text>
+                      <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Creator Network</Text>
                     </View>
-                    <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+                    <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                       Connect with directors, cinematographers, editors, and film crew.
                     </Text>
 
                     {isFan && (
                       <View style={{ backgroundColor: isDark ? 'rgba(255, 75, 51, 0.1)' : '#FFF0ED', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: isDark ? 'rgba(255, 75, 51, 0.25)' : '#FFE5DF', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Icon name="eye" size={14} color={ORANGE} />
-                        <Text style={{ flex: 1, fontSize: 11.5, color: themeColors.textSecondary }}>
+                        <Text style={{ flex: 1, fontSize: 12, color: themeColors.textSecondary }}>
                           <Text style={{ fontWeight: '700', color: ORANGE }}>Fan Account (Viewer Mode):</Text> Direct connection requests and crew management are reserved for Creator and Studio accounts. You can follow creators and browse public profiles.
                         </Text>
                       </View>
@@ -871,14 +893,24 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
 
                     {/* SEARCH BAR */}
                     <View style={[styles.searchBox, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                      <Icon name="search" size={16} color={themeColors.textMuted} />
-                      <TextInput
+                      <Icon name="search" size={16} color={themeColors.iconMuted} />
+                      <TextInput returnKeyType="search" accessibilityLabel="Search creators by name, craft, location"
                         style={[styles.searchInput, { color: themeColors.textPrimary }]}
                         placeholder="Search creators by name, craft, location..."
                         placeholderTextColor={themeColors.textMuted}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                       />
+                      {searchQuery ? (
+                        <TouchableOpacity
+                          onPress={() => setSearchQuery('')}
+                          accessibilityRole="button"
+                          accessibilityLabel="Clear search"
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Icon name="x" size={16} color={themeColors.iconMuted} />
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
 
                     {/* CRAFT FILTER PILLS */}
@@ -894,7 +926,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                         ]}
                         onPress={() => setAvailableOnly((v) => !v)}
                       >
-                        <Text style={[styles.craftPillText, { color: availableOnly ? '#FFFFFF' : '#059669', fontWeight: '800' }]}>● Available now</Text>
+                        <Text style={[styles.craftPillText, { color: availableOnly ? '#FFFFFF' : '#059669', fontWeight: '700' }]}>● Available now</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[
@@ -903,7 +935,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                         ]}
                         onPress={() => { setDraftFilters(filters); setFiltersOpen(true); }}
                       >
-                        <Text style={[styles.craftPillText, { color: Object.values(filters).some(Boolean) ? '#FFFFFF' : themeColors.textSecondary, fontWeight: '800' }]}>
+                        <Text style={[styles.craftPillText, { color: Object.values(filters).some(Boolean) ? '#FFFFFF' : themeColors.textSecondary, fontWeight: '700' }]}>
                           Filters{Object.values(filters).some(Boolean) ? ' •' : ''}
                         </Text>
                       </TouchableOpacity>
@@ -923,7 +955,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                               style={[
                                 styles.craftPillText,
                                 { color: themeColors.textSecondary },
-                                isActive && { color: isDark ? '#0D0D0D' : '#FFFFFF', fontWeight: '800' },
+                                isActive && { color: isDark ? '#0D0D0D' : '#FFFFFF', fontWeight: '700' },
                               ]}
                             >
                               {item}
@@ -939,8 +971,8 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                     <OfflineEmptyState />
                   ) : (
                     <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 }}>
-                      <Icon name="search" size={36} color={themeColors.textMuted} />
-                      <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '800' }}>No Users Found</Text>
+                      <Icon name="search" size={36} color={themeColors.iconMuted} />
+                      <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '700' }}>No Users Found</Text>
                       <Text style={{ color: themeColors.textSecondary, fontSize: 13, textAlign: 'center' }}>Try adjusting your filters.</Text>
                     </View>
                   )
@@ -962,9 +994,9 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                 <View style={styles.pageHeaderSection}>
                   <View style={styles.pageTitleGroup}>
                     <Icon name="users" size={22} color={ORANGE} strokeWidth={2.2} />
-                    <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Your Connections</Text>
+                    <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Your Connections</Text>
                   </View>
-                  <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+                  <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                     Professional contacts and active network connections ({connections.length}).
                   </Text>
 
@@ -1018,8 +1050,8 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 14, marginBottom: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.bgCard }}
                   >
                     <Icon name="users" size={16} color={ORANGE} />
-                    <Text style={{ color: themeColors.textPrimary, fontWeight: '800', flex: 1 }}>Crew shortlists</Text>
-                    <Icon name="chevron-right" size={16} color={themeColors.textMuted} />
+                    <Text style={{ color: themeColors.textPrimary, fontWeight: '700', flex: 1 }}>Crew shortlists</Text>
+                    <Icon name="chevron-right" size={16} color={themeColors.iconMuted} />
                   </TouchableOpacity>
                 )}
 
@@ -1037,7 +1069,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                         ]}
                         onPress={() => setTagFilter(t)}
                       >
-                        <Text style={[styles.craftPillText, { color: tagFilter === t ? '#FFFFFF' : themeColors.textSecondary, fontWeight: '800' }]}>{t ? `#${t}` : 'All tags'}</Text>
+                        <Text style={[styles.craftPillText, { color: tagFilter === t ? '#FFFFFF' : themeColors.textSecondary, fontWeight: '700' }]}>{t ? `#${t}` : 'All tags'}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -1055,7 +1087,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                         ]}
                         onPress={() => setConnSort(k)}
                       >
-                        <Text style={[styles.craftPillText, { color: themeColors.textSecondary }, connSort === k && { color: isDark ? '#0D0D0D' : '#FFFFFF', fontWeight: '800' }]}>{label}</Text>
+                        <Text style={[styles.craftPillText, { color: themeColors.textSecondary }, connSort === k && { color: isDark ? '#0D0D0D' : '#FFFFFF', fontWeight: '700' }]}>{label}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -1066,7 +1098,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                     <OfflineEmptyState />
                   ) : (
                     <View style={[styles.emptyState, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
-                      <Icon name="users" size={36} color={themeColors.textMuted} />
+                      <Icon name="users" size={36} color={themeColors.iconMuted} />
                       <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Connections Yet</Text>
                       <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>Connect with other creators in the Discover tab.</Text>
                     </View>
@@ -1077,7 +1109,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                       const partner = c.partner;
                       if (!partner) return null;
                       return (
-                        <View key={c.id} style={isTablet ? (isLandscape ? styles.tabletCardWrapper3Col : styles.tabletCardWrapper) : undefined}>
+                        <View key={c.id} style={isTablet ? { width: tabletCardPct } : undefined}>
                           <View style={[styles.connRowCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }, isTablet && { marginHorizontal: 0, marginBottom: 0, width: '100%' }]}>
                             {partner.avatar_url ? (
                               <CachedImage uri={partner.avatar_url} style={styles.connAvatar} />
@@ -1092,13 +1124,10 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                               <Text style={[styles.connName, { color: themeColors.textPrimary }]}>{partner.full_name || partner.username}</Text>
                               <Text style={[styles.connCraft, { color: themeColors.textSecondary }]}>{partner.craft || 'Filmmaker'}</Text>
                               {(c.mutual_count || 0) > 0 && (
-                                <Text style={{ color: themeColors.textMuted, fontSize: 11, marginTop: 1 }}>{c.mutual_count} mutual connection{c.mutual_count === 1 ? '' : 's'}</Text>
-                              )}
-                              {!!c.availability && c.availability !== 'not_looking' && (
-                                <View style={{ alignSelf: 'flex-start', marginTop: 3 }}><AvailabilityBadge status={c.availability} /></View>
+                                <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 1 }}>{c.mutual_count} mutual connection{c.mutual_count === 1 ? '' : 's'}</Text>
                               )}
                               {(c.my_tags || []).length > 0 && (
-                                <Text style={{ color: ORANGE, fontSize: 11, fontWeight: '700', marginTop: 2 }} numberOfLines={1}>{(c.my_tags || []).map((t: string) => `#${t}`).join('  ')}</Text>
+                                <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700', marginTop: 2 }} numberOfLines={1}>{(c.my_tags || []).map((t: string) => `#${t}`).join('  ')}</Text>
                               )}
                             </View>
                             <TouchableOpacity
@@ -1113,13 +1142,13 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                               <Icon name="message-square" size={14} color={ORANGE} />
                               <Text style={[styles.msgBtnSmallText, { color: themeColors.textPrimary }]}>Message</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => handleCardMenu(partner, partner.full_name || partner.username || 'this person')}
+                            <DropdownTrigger
+                              items={() => handleCardMenu(partner, partner.full_name || partner.username || 'this person')}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                               accessibilityLabel="More options"
                             >
-                              <Icon name="more-horizontal" size={18} color={themeColors.textSecondary} />
-                            </TouchableOpacity>
+                              <Icon name="more-horizontal" size={18} color={themeColors.iconSecondary} />
+                            </DropdownTrigger>
                           </View>
                         </View>
                       );
@@ -1135,9 +1164,9 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                 <View style={styles.pageHeaderSection}>
                   <View style={styles.pageTitleGroup}>
                     <Icon name="user-check" size={22} color={ORANGE} strokeWidth={2.2} />
-                    <Text style={[styles.pageTitle, { color: themeColors.textPrimary }]}>Connection Requests</Text>
+                    <Text style={[styles.pageTitle, tabletPageTitle, { color: themeColors.textPrimary }]}>Connection Requests</Text>
                   </View>
-                  <Text style={[styles.pageSubtitle, { color: themeColors.textSecondary }]}>
+                  <Text style={[styles.pageSubtitle, tabletPageSubtitle, { color: themeColors.textSecondary }]}>
                     Manage pending incoming invitations and sent connection requests.
                   </Text>
 
@@ -1193,10 +1222,11 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={[styles.emptyCardText, { color: themeColors.textSecondary }]}>No pending incoming connection requests.</Text>
                   </View>
                 ) : (
-                  pendingRequests.map((req) => {
+                  <View style={isTablet ? styles.tabletReqWrap : undefined}>
+                  {pendingRequests.map((req) => {
                     const partner = req.follower_profile;
                     return (
-                      <View key={req.id} style={[styles.connRowCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                      <View key={req.id} style={[styles.connRowCard, isTablet && styles.tabletReqCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                         {partner?.avatar_url ? (
                           <CachedImage uri={partner.avatar_url} style={styles.connAvatar} />
                         ) : (
@@ -1210,13 +1240,13 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                           <Text style={[styles.connName, { color: themeColors.textPrimary }]}>{partner?.full_name || partner?.username}</Text>
                           <Text style={[styles.connCraft, { color: themeColors.textSecondary }]}>{partner?.craft || 'Filmmaker'}</Text>
                           {(req.mutual_count || 0) > 0 && (
-                            <Text style={{ color: themeColors.textMuted, fontSize: 11, marginTop: 1 }}>{req.mutual_count} mutual connection{req.mutual_count === 1 ? '' : 's'}</Text>
+                            <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 1 }}>{req.mutual_count} mutual connection{req.mutual_count === 1 ? '' : 's'}</Text>
                           )}
                           {!!req.note && (
                             <Text style={{ color: themeColors.textPrimary, fontSize: 12, marginTop: 4, fontStyle: 'italic' }} numberOfLines={3}>“{req.note}”</Text>
                           )}
                           <TouchableOpacity onPress={() => handleIgnoreRequest(req.id, true)} style={{ marginTop: 4 }}>
-                            <Text style={{ color: themeColors.textMuted, fontSize: 11.5, fontWeight: '700' }}>Ignore</Text>
+                            <Text style={{ color: themeColors.textMuted, fontSize: 12, fontWeight: '700' }}>Ignore</Text>
                           </TouchableOpacity>
                         </View>
                         <TouchableOpacity
@@ -1233,7 +1263,8 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                         </TouchableOpacity>
                       </View>
                     );
-                  })
+                  })}
+                  </View>
                 )}
 
                 <Text style={[styles.sectionHeader, { marginTop: 20, color: themeColors.textMuted }]}>SENT REQUESTS ({sentRequests.length})</Text>
@@ -1242,10 +1273,13 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                     <Text style={[styles.emptyCardText, { color: themeColors.textSecondary }]}>No sent connection requests pending.</Text>
                   </View>
                 ) : (
-                  sentRequests.map((req) => (
-                    <View key={req.id} style={[styles.connRowCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                  <View style={isTablet ? styles.tabletReqWrap : undefined}>
+                  {sentRequests.map((req) => (
+                    <View key={req.id} style={[styles.connRowCard, isTablet && styles.tabletReqCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
                       <Text style={{ flex: 1, fontSize: 13, color: themeColors.textPrimary, fontWeight: '700' }}>
-                        Sent Connection Request
+                        {req.partner?.full_name || req.partner?.username
+                          ? `Request sent to ${req.partner.full_name || req.partner.username}`
+                          : 'Sent Connection Request'}
                       </Text>
                       <TouchableOpacity
                         style={[styles.rejectBtnSmall, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
@@ -1254,7 +1288,8 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                         <Text style={[styles.rejectBtnText, { color: themeColors.textSecondary }]}>Withdraw</Text>
                       </TouchableOpacity>
                     </View>
-                  ))
+                  ))}
+                  </View>
                 )}
 
                 {ignoredRequests.length > 0 && (
@@ -1272,7 +1307,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
                             <Text style={[styles.connName, { color: themeColors.textPrimary }]}>{partner?.full_name || partner?.username}</Text>
                             <Text style={[styles.connCraft, { color: themeColors.textSecondary }]}>{partner?.craft || 'Filmmaker'}</Text>
                             <TouchableOpacity onPress={() => handleIgnoreRequest(req.id, false)} style={{ marginTop: 4 }}>
-                              <Text style={{ color: ORANGE, fontSize: 11.5, fontWeight: '800' }}>Move back to invitations</Text>
+                              <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>Move back to invitations</Text>
                             </TouchableOpacity>
                           </View>
                           <TouchableOpacity style={styles.acceptBtnSmall} onPress={() => handleAcceptRequest(req.id)}>
@@ -1306,7 +1341,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setFiltersOpen(false)} />
           <View style={{ backgroundColor: themeColors.bgCard, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 }}>
-            <Text style={{ color: themeColors.textPrimary, fontSize: 17, fontWeight: '900', marginBottom: 6 }}>Filters</Text>
+            <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 6 }}>Filters</Text>
             {([['skill', 'Skill, e.g. Color Grading'], ['gear', 'Gear, e.g. ARRI Alexa'], ['language', 'Language, e.g. Telugu'], ['city', 'City, e.g. Hyderabad']] as const).map(([k, ph]) => (
               <TextInput
                 key={k}
@@ -1319,7 +1354,7 @@ export const NetworkScreen = ({ navigation }: { navigation: any }) => {
             ))}
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
               <TouchableOpacity style={{ flex: 1, height: 44, borderRadius: 12, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center' }} onPress={() => { setFilters(draftFilters); setFiltersOpen(false); }}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Apply</Text>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Apply</Text>
               </TouchableOpacity>
               <TouchableOpacity style={{ height: 44, paddingHorizontal: 18, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center', justifyContent: 'center' }} onPress={() => { const e = { skill: '', gear: '', language: '', city: '' }; setDraftFilters(e); setFilters(e); setFiltersOpen(false); }}>
                 <Text style={{ color: themeColors.textSecondary, fontWeight: '700' }}>Clear</Text>
@@ -1348,7 +1383,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingBottom: 30,
+    paddingBottom: 100,
   },
   pageHeaderSection: {
     paddingHorizontal: 14,
@@ -1363,13 +1398,13 @@ const styles = StyleSheet.create({
   },
   pageTitle: {
     color: INK,
-    fontSize: 18.5,
-    fontWeight: '900',
+    fontSize: 18,
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   pageSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 12,
     lineHeight: 16,
     marginBottom: 12,
   },
@@ -1390,13 +1425,13 @@ const styles = StyleSheet.create({
   },
   topTabBtnActive: {},
   topTabText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
   topTabTextActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   reqBadge: {
     backgroundColor: ORANGE,
@@ -1406,8 +1441,8 @@ const styles = StyleSheet.create({
   },
   reqBadgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchBox: {
     flexDirection: 'row',
@@ -1415,7 +1450,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
     paddingHorizontal: 12,
-    height: 42,
+    height: 44,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 12,
@@ -1427,6 +1462,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 16,
   },
+  tabletReqWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 14,
+    columnGap: 12,
+  },
+  tabletReqCard: {
+    width: '48.8%',
+    marginHorizontal: 0,
+  },
   tabletCardWrapper: {
     width: '48.5%',
   },
@@ -1436,7 +1481,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     color: INK,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   craftsRow: {
     marginBottom: 4,
@@ -1491,9 +1536,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     right: 8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1526,7 +1571,7 @@ const styles = StyleSheet.create({
   avatarFallbackInitials: {
     color: ORANGE,
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   verifiedCheckBadge: {
@@ -1543,6 +1588,7 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   nameContainer: {
+    maxWidth: "100%",
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -1550,8 +1596,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   userNameTitleText: {
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 13,
+    flexShrink: 1,
+    fontWeight: '700',
     color: INK,
     textAlign: 'center',
     fontFamily: 'Lora-Bold',
@@ -1561,35 +1608,56 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFE5DF',
     borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginBottom: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginBottom: 5,
+    // size to the text, but never wider than the card (the text wraps instead of being cut)
+    alignSelf: 'center',
+    maxWidth: '100%',
   },
   craftTagText: {
     color: ORANGE,
-    fontSize: 8.5,
-    fontWeight: '800',
-    letterSpacing: 0.6,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    // no letterSpacing: on Android it made the pill measure narrower than the text, which cut "Cinematographer" to "Cinemat"
   },
   reasonTagRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
     gap: 3,
     marginBottom: 10,
+    maxWidth: '100%',
   },
   reasonTagText: {
     color: '#64748B',
-    fontSize: 7.5,
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0,
+    flexShrink: 1,
   },
   cardActionFooter: {
     width: '100%',
     marginTop: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardActionMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  moreBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   webConnectBtn: {
     width: '100%',
@@ -1597,14 +1665,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ORANGE,
-    height: 36,
+    height: 44,
     borderRadius: 10,
     gap: 4,
   },
   webConnectBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   msgConnectedBtn: {
     width: '100%',
@@ -1614,14 +1682,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF7F5',
     borderWidth: 1,
     borderColor: '#FFE5DF',
-    height: 36,
+    height: 44,
     borderRadius: 10,
     gap: 4,
   },
   msgConnectedBtnText: {
     color: ORANGE,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   pendingBtn: {
     width: '100%',
@@ -1631,14 +1699,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF3C7',
     borderWidth: 1,
     borderColor: '#FDE68A',
-    height: 36,
+    height: 44,
     borderRadius: 10,
     gap: 4,
   },
   pendingBtnText: {
     color: '#D97706',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   dualActionRow: {
     width: '100%',
@@ -1648,28 +1716,28 @@ const styles = StyleSheet.create({
   acceptBtn: {
     flex: 1,
     backgroundColor: ORANGE,
-    height: 34,
+    height: 44,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   acceptBtnText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   rejectBtn: {
     flex: 1,
     backgroundColor: '#F1F5F9',
-    height: 34,
+    height: 44,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rejectBtnText: {
     color: '#64748B',
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   connRowCard: {
     flexDirection: 'row',
@@ -1699,15 +1767,15 @@ const styles = StyleSheet.create({
   connAvatarFallbackText: {
     color: '#FF4B33',
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   connName: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   connCraft: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
@@ -1723,7 +1791,7 @@ const styles = StyleSheet.create({
   msgBtnSmallText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   acceptBtnSmall: {
     backgroundColor: ORANGE,
@@ -1738,8 +1806,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   sectionHeader: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.8,
     marginHorizontal: 14,
@@ -1765,7 +1833,7 @@ const styles = StyleSheet.create({
   emptyTitle: {
     color: INK,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptySub: {
     color: '#64748B',

@@ -38,7 +38,7 @@ export function FormattedText({ text, className }: FormattedTextProps) {
   if (!text) return null;
 
   // Match URLs, mentions (@username), and hashtags (#tag)
-  const regex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_-]+|#[a-zA-Z0-9_-]+)/g;
+  const regex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_-]+|#[\p{L}\p{M}\p{N}_-]+)/gu;
 
   const parts = text.split(regex);
 
@@ -56,7 +56,7 @@ export function FormattedText({ text, className }: FormattedTextProps) {
               target="_blank"
               rel="noopener noreferrer"
               className={cn(
-                "inline-flex items-center gap-1 font-bold transition-all hover:underline underline-offset-2 mx-0.5",
+                "inline-flex items-center gap-1 font-bold transition hover:underline underline-offset-2 mx-0.5",
                 platform.color
               )}
               onClick={(e) => e.stopPropagation()}
@@ -86,7 +86,7 @@ export function FormattedText({ text, className }: FormattedTextProps) {
           return (
             <Link
               key={index}
-              to={`/search?q=${encodeURIComponent(tag)}`}
+              to={`/search?q=${encodeURIComponent(`#${tag}`)}`}
               className="text-primary font-medium hover:underline decoration-primary/30 underline-offset-2"
               onClick={(e) => e.stopPropagation()}
             >

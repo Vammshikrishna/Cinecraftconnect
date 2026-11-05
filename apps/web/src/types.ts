@@ -47,7 +47,6 @@ export interface Comment {
 export interface Profile {
   id: string;
   avatar_url: string | null;
-  cover_image_url: string | null;
   bio: string | null;
   craft: string | null;
   experience: string | null;

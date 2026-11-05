@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { ImagePickerBox } from '../common/ImagePickerBox';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
+import { useProductAccess } from '../../hooks/useBilling';
+import ProductNotice from '../billing/ProductNotice';
 
 const ORANGE = '#FF4B33';
 
@@ -56,17 +60,33 @@ interface CreateListingModalProps {
   onClose: () => void;
   onSuccess?: (newListing: any) => void;
   onCreated?: () => void;
+  /** When set, the modal edits this listing (prefilled) instead of creating one. */
+  listingToEdit?: any | null;
 }
+
+// A day price must be a real amount, and a week can never cost less than one day.
+const listingPriceProblem = (dayRaw: string, weekRaw: string): string | null => {
+  const day = parseFloat(dayRaw);
+  const week = weekRaw.trim() ? parseFloat(weekRaw) : null;
+  if (dayRaw.trim() && !(day > 0)) return 'The price per day must be more than 0.';
+  if (week !== null && !(week > 0)) return 'The weekly price must be more than 0, or leave it empty.';
+  if (week !== null && day > 0 && week < day) return 'The weekly price cannot be lower than the daily price.';
+  return null;
+};
 
 export const CreateListingModal: React.FC<CreateListingModalProps> = ({
   visible,
   onClose,
   onSuccess,
   onCreated,
+  listingToEdit,
 }) => {
+  const isEdit = !!listingToEdit?.id;
   const { themeColors, isDark } = useUserSettings();
+  const sheet = useSheetMetrics();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [loading, setLoading] = useState(false);
+  const seller = useProductAccess('marketplace_seller', undefined, visible);
 
   // Form State
   const [listingType, setListingType] = useState<'equipment' | 'location' | 'bundle'>('equipment');
@@ -85,6 +105,29 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
   const [conditionGrade, setConditionGrade] = useState<'Mint' | 'Excellent' | 'Good' | 'Fair'>('Excellent');
 
   const categories = listingType === 'location' ? LOCATION_CATEGORIES : EQUIPMENT_CATEGORIES;
+  const priceProblem = listingPriceProblem(pricePerDay, pricePerWeek);
+
+  // Prefill when editing an existing listing.
+  useEffect(() => {
+    if (!visible || !listingToEdit?.id) return;
+    const l = listingToEdit;
+    setStep(2);
+    setListingType(l.is_bundle ? 'bundle' : l.listing_type === 'location' ? 'location' : 'equipment');
+    setTitle(l.title || '');
+    setDescription(l.description || '');
+    setCategory(l.category || 'Camera');
+    setLocation(l.location || '');
+    setPricePerDay(l.price_per_day != null ? String(l.price_per_day) : '');
+    setPricePerWeek(l.price_per_week != null ? String(l.price_per_week) : '');
+    setImageUrl(Array.isArray(l.images) && l.images[0] ? String(l.images[0]) : '');
+    const g = ['Mint', 'Excellent', 'Good', 'Fair'].includes(l.condition_grade) ? l.condition_grade : 'Excellent';
+    setConditionGrade(g);
+    // Already confirmed when first listed (unless an admin flagged it: ask again).
+    const confirmed = !!l.condition_grade && !l.admin_flagged;
+    setNoScratches(confirmed);
+    setIsFunctional(confirmed);
+    setAccurateState(confirmed);
+  }, [visible, listingToEdit]);
 
   const resetForm = () => {
     setStep(1);
@@ -105,6 +148,10 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
   const handlePost = async () => {
     if (!title.trim() || !pricePerDay.trim()) {
       Alert.alert('Missing Required Info', 'Please enter listing title and daily rate.');
+      return;
+    }
+    if (priceProblem) {
+      Alert.alert('Check the price', priceProblem);
       return;
     }
 
@@ -139,24 +186,40 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
         condition_grade: listingType !== 'location' ? conditionGrade : null,
       };
 
-      const { data, error } = await (supabase as any)
-        .from('marketplace_listings')
-        .insert(newListing)
-        .select()
-        .single();
-
-      if (error) throw error;
+      let data: any;
+      if (isEdit) {
+        // Update only the editable fields; owner and active state stay as they are.
+        const { user_id: _u, is_active: _a, ...changes } = newListing;
+        const res = await (supabase as any)
+          .from('marketplace_listings')
+          .update(changes)
+          .eq('id', listingToEdit.id)
+          .select()
+          .single();
+        if (res.error) throw res.error;
+        data = res.data;
+      } else {
+        const res = await (supabase as any)
+          .from('marketplace_listings')
+          .insert(newListing)
+          .select()
+          .single();
+        if (res.error) throw res.error;
+        data = res.data;
+      }
 
       if (onSuccess) onSuccess(data);
       if (onCreated) onCreated();
       resetForm();
       onClose();
       Alert.alert(
-        'Listing Active! 🎬',
-        `"${title.trim()}" is now published on the marketplace.`
+        isEdit ? 'Listing Updated' : 'Listing Active! 🎬',
+        isEdit
+          ? `"${title.trim()}" has been updated.`
+          : `"${title.trim()}" is now published on the marketplace.`
       );
     } catch (e: any) {
-      Alert.alert('Failed to Create Listing', e.message || 'Could not post listing. Please try again.');
+      Alert.alert('Failed to Create Listing', friendlyError(e, 'Could not post listing. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -167,14 +230,14 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}>
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
 
               {/* HEADER */}
               <View style={styles.headerRow}>
                 <View>
                   <Text style={[styles.title, { color: themeColors.textPrimary }]}>
-                    List Gear / Location (Step {step}/4)
+                    {isEdit ? 'Edit Listing' : 'List Gear / Location'} (Step {step}/4)
                   </Text>
                   <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
                     {step === 1 && 'Choose listing type'}
@@ -183,8 +246,8 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
                     {step === 4 && 'Photos & final launch'}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -193,7 +256,8 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
                 <View style={[styles.progressBar, { width: `${step * 25}%` }]} />
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad + 8 }}>
+                <ProductNotice access={seller.access} buying={seller.buying} onBuy={seller.buy} />
                 {/* STEP 1: TYPE SELECTION */}
                 {step === 1 && (
                   <>
@@ -429,6 +493,9 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
                       value={pricePerWeek}
                       onChangeText={setPricePerWeek}
                     />
+                    {priceProblem && (
+                      <Text accessibilityRole="alert" style={{ color: '#DC2626', fontSize: 12, marginBottom: 8 }}>{priceProblem}</Text>
+                    )}
 
                     <View style={styles.stepActionsRow}>
                       <TouchableOpacity style={[styles.backBtn, { borderColor: themeColors.border }]} onPress={() => setStep(2)}>
@@ -436,15 +503,16 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.nextBtn, { flex: 2, marginTop: 0 }, !pricePerDay.trim() && styles.btnDisabled]}
+                        style={[styles.nextBtn, { flex: 2, marginTop: 0 }, (!pricePerDay.trim() || !!priceProblem) && styles.btnDisabled]}
                         onPress={() => {
                           if (!pricePerDay.trim()) {
                             Alert.alert('Missing Price', 'Please enter a daily rate.');
                             return;
                           }
+                          if (priceProblem) return;
                           setStep(4);
                         }}
-                        disabled={!pricePerDay.trim()}
+                        disabled={!pricePerDay.trim() || !!priceProblem}
                       >
                         <Text style={styles.nextBtnText}>Next: Cover Image →</Text>
                       </TouchableOpacity>
@@ -469,14 +537,14 @@ export const CreateListingModal: React.FC<CreateListingModalProps> = ({
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.postBtn, { flex: 2, marginTop: 0 }, loading && styles.btnDisabled]}
+                        style={[styles.postBtn, { flex: 2, marginTop: 0 }, (loading || (!isEdit && seller.needsPurchase)) && styles.btnDisabled]}
                         onPress={handlePost}
-                        disabled={loading}
+                        disabled={loading || (!isEdit && seller.needsPurchase)}
                       >
                         {loading ? (
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
-                          <Text style={styles.postBtnText}>Publish to Marketplace ✨</Text>
+                          <Text style={styles.postBtnText}>{isEdit ? 'Save Changes' : 'Publish to Marketplace ✨'}</Text>
                         )}
                       </TouchableOpacity>
                     </View>
@@ -503,6 +571,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     maxHeight: '90%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -518,11 +589,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   progressTrack: {
@@ -536,8 +607,8 @@ const styles = StyleSheet.create({
     backgroundColor: ORANGE,
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 4,
@@ -564,12 +635,12 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   typeTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     marginTop: 6,
   },
   typeSub: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   chipGrid: {
@@ -585,7 +656,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   conditionBox: {
@@ -596,7 +667,7 @@ const styles = StyleSheet.create({
   },
   conditionTitle: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     marginBottom: 10,
   },
   checkRow: {
@@ -620,12 +691,12 @@ const styles = StyleSheet.create({
   },
   checkMark: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   checkText: {
     flex: 1,
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   nextBtn: {
@@ -638,8 +709,8 @@ const styles = StyleSheet.create({
   },
   nextBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   stepActionsRow: {
     flexDirection: 'row',
@@ -667,8 +738,8 @@ const styles = StyleSheet.create({
   },
   postBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

@@ -23,6 +23,9 @@ import { CompanyPage, PAGE_INDUSTRIES as INDUSTRIES, COMPANY_SIZES } from "@/typ
 import { Building2, Upload, Loader2, Globe, MapPin, Mail } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
+import { useToast } from '@/hooks/use-toast';
+import { pageDetailsProblem } from '@/lib/pageDetails';
 
 interface EditPageModalProps {
   page: CompanyPage;
@@ -31,6 +34,7 @@ interface EditPageModalProps {
 }
 
 export function EditPageModal({ page, open, onOpenChange }: EditPageModalProps) {
+  const guardDiscard = useDiscardGuard(open, onOpenChange);
   const updatePage = useUpdateCompanyPage();
   const [isLoading, setIsLoading] = useState(false);
   // the contact email is stored privately; only send it back when the person actually changes it
@@ -87,6 +91,7 @@ export function EditPageModal({ page, open, onOpenChange }: EditPageModalProps) 
       }
     } catch (error) {
       console.error(`Error uploading ${type}:`, error);
+      toast({ title: `Could not upload the ${type === 'logo' ? 'logo' : 'cover photo'}`, description: 'Check that it is an image and try again.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -95,8 +100,14 @@ export function EditPageModal({ page, open, onOpenChange }: EditPageModalProps) 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => handleFileUpload(e, 'logo');
   const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => handleFileUpload(e, 'cover');
 
+  const { toast } = useToast();
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const problem = pageDetailsProblem({ website: formData.website, email: emailTouched ? formData.email : '' });
+    if (problem) {
+      toast({ title: 'Check the page details', description: problem, variant: 'destructive' });
+      return;
+    }
     updatePage.mutate(
       {
         id: page.id,
@@ -113,7 +124,7 @@ export function EditPageModal({ page, open, onOpenChange }: EditPageModalProps) 
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={guardDiscard}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Page Details</DialogTitle>

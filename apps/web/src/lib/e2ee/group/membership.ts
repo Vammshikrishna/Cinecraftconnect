@@ -1,3 +1,8 @@
+// DO NOT USE (F-07). Nothing in web or mobile calls rotateGroupEpochForMembershipChange: both apps rotate keys with the
+// `rotate_group_key` RPC (supabase/manual/part_cv_group_key_rotation.sql), which is atomic. This helper upserts into
+// `group_keys` directly and would bypass that atomic rotation (and its checks) if someone wired it in again.
+// The file is kept only because its client-side behaviour is unit tested (tests/collab/keyRotation.test.ts).
+
 import { supabase } from '@/integrations/supabase/client';
 import { advanceGroupEpoch } from './mls';
 import { exportSymmetricKey, importPublicKey, encryptWithPublicKey } from '../core';

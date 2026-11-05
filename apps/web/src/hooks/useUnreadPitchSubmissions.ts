@@ -26,11 +26,11 @@ export const useUnreadPitchSubmissions = () => {
         if (!user) return;
 
         try {
-            // Get all pitch call IDs owned by this user
+            // Calls you own plus private (direct) pitches sent to you: the same set the inbox shows
             const { data: myCalls, error: callsError } = await (supabase as any)
                 .from('pitch_calls')
                 .select('id')
-                .eq('creator_id', user.id);
+                .or(`creator_id.eq.${user.id},attachments->>target_producer_id.eq.${user.id}`);
 
             if (callsError || !myCalls?.length) {
                 setUnreadCount(0);

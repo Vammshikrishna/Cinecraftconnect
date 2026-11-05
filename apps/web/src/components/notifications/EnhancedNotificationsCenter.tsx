@@ -6,11 +6,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from '@/components/common/PageHeader';
+import { undoable } from '@/lib/undoable';
 import { getNotificationIcon as getIcon, getDisplayMessage } from '@/lib/chat-utils';
 import { useNotificationMutation } from '@/hooks/mutations/useNotificationMutation';
 
@@ -45,11 +46,14 @@ const EnhancedNotificationsCenter = () => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [activeTab, setActiveTab] = useState('all');
   const [unreadCount, setUnreadCount] = useState(0);
   const [sortBy, setSortBy] = useState('newest');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { markAsRead: mutateMarkAsRead, markAllAsRead: mutateMarkAllAsRead, deleteNotification: mutateDeleteNotification, resolveNotificationAction } = useNotificationMutation();
 
   useEffect(() => {
@@ -63,16 +67,18 @@ const EnhancedNotificationsCenter = () => {
           .from('notifications')
           .select('*')
           .eq('user_id', userId)
-          .neq('type', 'new_message')
+          .not('type', 'in', '(new_message,call_started,incoming_call,call,call_answered,call_event,call_invite,call_missed,call_ended,call_declined,space_started)')
           .order('created_at', { ascending: false });
 
         if (error) throw error;
         if (mounted) {
+          setLoadError(false);
           setNotifications((data || []) as unknown as Notification[]);
           setUnreadCount((data || []).filter((n: any) => !n.is_read).length);
         }
       } catch (err) {
         console.error('Error fetching notifications:', err);
+        if (mounted) setLoadError(true);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -103,7 +109,7 @@ const EnhancedNotificationsCenter = () => {
       mounted = false;
       supabase.removeChannel(channel);
     };
-  }, [user, toast]);
+  }, [user, toast, reloadKey]);
 
   const markAsRead = async (id: string) => {
     try {
@@ -131,17 +137,28 @@ const EnhancedNotificationsCenter = () => {
     }
   };
 
-  const deleteNotification = async (id: string) => {
-    try {
-      setNotifications(prev => prev.filter(n => n.id !== id));
-      await mutateDeleteNotification(id);
-      toast({
-        title: "Dismissed",
-        description: "Notification removed"
-      });
-    } catch (error) {
-      // Silent error for notification dismissal
-    }
+  const deleteNotification = (id: string) => {
+    const original = notifications.find(n => n.id === id);
+    if (!original) return;
+    const putBack = () => setNotifications(prev => (
+      prev.some(n => n.id === id)
+        ? prev
+        : [...prev, original].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    ));
+    // Hide it now; the real delete happens after a few seconds unless the person taps Undo.
+    undoable({
+      title: 'Notification dismissed',
+      apply: () => setNotifications(prev => prev.filter(n => n.id !== id)),
+      revert: putBack,
+      commit: async () => {
+        try {
+          await mutateDeleteNotification(id);
+        } catch {
+          putBack();
+          toast({ title: 'Could not dismiss the notification', variant: 'destructive' });
+        }
+      },
+    });
   };
 
   const handleAction = async (notification: Notification, action: 'accept' | 'decline') => {
@@ -183,7 +200,7 @@ const EnhancedNotificationsCenter = () => {
   };
 
   const getNotificationIcon = (type: string) => {
-    return <span className="text-2xl">{getIcon(type)}</span>;
+    return <span className="text-xl leading-none">{getIcon(type)}</span>;
   };
 
   const formatMessageContent = (content: string) => {
@@ -203,7 +220,8 @@ const EnhancedNotificationsCenter = () => {
     }
   };
 
-  const filteredNotifications = filterNotifications(notifications, activeTab).sort((a, b) => {
+  const isCallNotification = (n: Notification) => n.type !== 'missed_call' && /(incoming|missed|declined) .*call|started an? (voice |video |group |audio )?(call|space)/i.test(`${n.title || ''} ${n.message || ''}`);
+  const filteredNotifications = filterNotifications(notifications.filter(n => !isCallNotification(n)), activeTab).sort((a, b) => {
     if (sortBy === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     if (sortBy === 'priority') {
       const pMap: any = { high: 3, medium: 2, low: 1 };
@@ -211,6 +229,27 @@ const EnhancedNotificationsCenter = () => {
     }
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
+
+  const openNotification = (n: Notification) => {
+    if (!n.action_url) return;
+    if (!n.is_read) markAsRead(n.id);
+    navigate(n.action_url);
+  };
+
+  const groupByDay = (items: Notification[]) => {
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const today = startOfDay(new Date());
+    const day = 86400000;
+    const groups: { label: string; items: Notification[] }[] = [];
+    for (const n of items) {
+      const t = startOfDay(new Date(n.created_at));
+      const label = t >= today ? 'Today' : t >= today - day ? 'Yesterday' : t >= today - 7 * day ? 'This week' : 'Earlier';
+      let g = groups.find((x) => x.label === label);
+      if (!g) { g = { label, items: [] }; groups.push(g); }
+      g.items.push(n);
+    }
+    return groups;
+  };
 
   if (loading) {
     return (
@@ -220,7 +259,7 @@ const EnhancedNotificationsCenter = () => {
           <div className="h-10 w-32 bg-muted animate-pulse rounded-lg" />
         </div>
         {[1, 2, 3, 4].map(i => (
-          <Card key={i} className="border-border/50 bg-card/50 backdrop-blur-sm">
+          <Card key={i} className="border-border/50 bg-card/50">
             <CardContent className="p-6 flex items-center gap-4">
               <div className="h-12 w-12 rounded-full bg-muted animate-pulse" />
               <div className="space-y-2 flex-1">
@@ -235,7 +274,7 @@ const EnhancedNotificationsCenter = () => {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-5 animate-in fade-in duration-500">
       <PageHeader 
         title="Notifications" 
         subtitle="Stay updated with your latest project breakthroughs and cinematic achievements." 
@@ -246,16 +285,16 @@ const EnhancedNotificationsCenter = () => {
               variant="outline" 
               onClick={markAllAsRead}
               disabled={unreadCount === 0}
-              className="rounded-2xl border-border/50 bg-background/50 backdrop-blur-md hover:bg-primary/10 hover:border-primary/30 transition-all font-black text-xs uppercase tracking-widest px-6 h-12 gap-2 shadow-sm"
+              className="rounded-xl border-border/50 bg-background/50 hover:bg-primary/10 hover:border-primary/30 transition-colors font-semibold text-sm px-4 h-10 gap-2"
             >
               <Check className="h-4 w-4" />
               Mark All Read
             </Button>
             <Link to="/settings/notifications">
-              <Button 
+              <Button aria-label="Settings" 
                 variant="ghost" 
                 size="icon" 
-                className="rounded-2xl h-12 w-12 hover:bg-muted/50 border border-white/5 shadow-inner"
+                className="rounded-xl h-10 w-10 hover:bg-muted/50 border border-border/50"
               >
                 <Settings className="h-5 w-5" />
               </Button>
@@ -265,8 +304,8 @@ const EnhancedNotificationsCenter = () => {
       />
 
       <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="flex items-center justify-between mb-8 overflow-x-auto scrollbar-none pb-2 border-b border-border/20">
-          <TabsList className="bg-transparent gap-2">
+        <div className="flex items-center justify-between gap-3 mb-4 overflow-x-auto scrollbar-none pb-2 border-b border-border/30">
+          <TabsList className="bg-transparent gap-1 p-0 h-auto">
             {[
               { value: 'all', label: 'All' },
               { value: 'unread', label: 'Unread' },
@@ -276,13 +315,13 @@ const EnhancedNotificationsCenter = () => {
               <TabsTrigger 
                 key={tab.value}
                 value={tab.value}
-                className="rounded-2xl px-8 py-3 font-black text-xs uppercase tracking-[0.1em] transition-all data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg relative"
+                className="rounded-full px-4 py-1.5 font-semibold text-sm transition-colors data-[state=active]:bg-primary data-[state=active]:text-primary-foreground relative"
               >
                 {tab.label}
                 {tab.value === 'unread' && unreadCount > 0 && (
                    <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                     <span className="relative inline-flex rounded-full h-4 w-4 bg-primary text-[8px] items-center justify-center font-bold text-white shadow-sm border border-background">
+                     <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                     <span className="relative inline-flex rounded-full h-4 w-4 bg-primary text-xs items-center justify-center font-bold text-white shadow-sm border border-background">
                        {unreadCount > 9 ? '9+' : unreadCount}
                      </span>
                    </span>
@@ -293,12 +332,12 @@ const EnhancedNotificationsCenter = () => {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="hidden md:flex items-center gap-2 text-muted-foreground hover:text-foreground font-bold hover:bg-muted/30 px-4 py-2 rounded-xl">
+              <Button variant="ghost" size="sm" className="flex items-center shrink-0 gap-2 text-muted-foreground hover:text-foreground font-medium hover:bg-muted/30 px-3 rounded-lg">
                 <Filter className="h-4 w-4" />
-                <span>Refine Feed</span>
+                <span>Sort</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 rounded-xl border-border/50 bg-background/95 backdrop-blur-md">
+            <DropdownMenuContent align="end" className="w-48 rounded-xl border-border/50 bg-background/95">
               <DropdownMenuLabel>Sort By</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setSortBy('newest')} className="cursor-pointer">Newest First</DropdownMenuItem>
@@ -308,121 +347,123 @@ const EnhancedNotificationsCenter = () => {
           </DropdownMenu>
         </div>
 
-        <ScrollArea className="h-[calc(100vh-320px)] w-full">
-          <div className="space-y-4 pr-4 pb-32">
-            {filteredNotifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
-                <div className="h-20 w-20 rounded-[2rem] bg-gradient-to-br from-muted/20 to-muted/10 flex items-center justify-center border border-white/5 group shadow-inner">
-                  <Archive className="h-8 w-8 text-muted-foreground/30 group-hover:scale-110 transition-transform duration-500" />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-xl font-black tracking-tight">System Zen</h3>
-                  <p className="text-muted-foreground font-medium max-w-[280px] text-base leading-snug">
-                    {activeTab === 'unread' 
-                      ? "You've masterfully processed all updates. Your workspace is clear." 
-                      : "We'll notify you when new opportunities arise."}
-                  </p>
-                </div>
+        <div className="pb-24">
+          {loadError && notifications.length === 0 ? (
+            <div role="alert" className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold">Could not load notifications</h3>
+                <p className="text-muted-foreground text-sm max-w-[280px]">Check your connection and try again.</p>
               </div>
-            ) : (
-              filteredNotifications.map((notification) => (
-                <Card 
-                  key={notification.id} 
-                  className={`group relative overflow-hidden border-border/40 transition-all duration-500 hover:border-primary/50 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.2)] rounded-[1.5rem] ${
-                    notification.is_read ? 'bg-card/40 opacity-80 grayscale-[0.2]' : 'bg-card/70 backdrop-blur-2xl shadow-lg ring-1 ring-primary/10'
-                  } ${notification.priority === 'high' && !notification.is_read ? 'ring-2 ring-primary/30 border-primary/20' : ''}`}
-                >
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-500 ${
-                    notification.is_read ? 'bg-transparent' : (notification.priority === 'high' ? 'bg-primary animate-pulse' : 'bg-primary')
-                  }`} />
-                  
-                  <CardContent className="p-4 sm:p-5">
-                    <div className="flex flex-row items-start gap-4">
-                      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center text-2xl shadow-xl border border-white/10 bg-gradient-to-br shrink-0 transition-transform duration-500 group-hover:scale-105 ${
-                        notification.is_read ? 'from-muted/30 to-muted/10' : 'from-primary/20 via-primary/10 to-transparent'
-                      }`}>
-                        {getNotificationIcon(notification.type)}
-                      </div>
-                      
-                      <div className="flex-1 space-y-2 min-w-0">
-                        <div className="flex items-center justify-between gap-4 w-full">
-                          <h4 className={`font-black text-xl tracking-tight truncate ${notification.is_read ? 'text-foreground/70' : 'text-foreground'}`}>
-                            {notification.title}
-                          </h4>
-                          <Badge variant="outline" className="font-black text-[9px] uppercase tracking-widest border-border/50 px-3 py-1 bg-muted/20">
-                            {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
-                          </Badge>
-                        </div>
-                        
-                        <p className={`text-base md:text-lg leading-relaxed max-w-4xl ${
-                          notification.is_read ? 'text-muted-foreground' : 'text-foreground/90 font-bold'
+              <Button variant="outline" onClick={() => setReloadKey(k => k + 1)}>Try again</Button>
+            </div>
+          ) : filteredNotifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+              <div className="h-16 w-16 rounded-2xl bg-muted/30 flex items-center justify-center border border-border/40">
+                <Archive className="h-7 w-7 text-muted-foreground/40" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold">You're all caught up</h3>
+                <p className="text-muted-foreground text-sm max-w-[280px]">
+                  {activeTab === 'unread'
+                    ? 'No unread notifications right now.'
+                    : "We'll let you know when something new happens."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            groupByDay(filteredNotifications).map((group) => (
+              <section key={group.label} className="mb-5">
+                <h3 className="px-1 mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {group.label}
+                </h3>
+                <div className="rounded-2xl border border-border/40 bg-card overflow-hidden divide-y divide-border/40">
+                  {group.items.map((notification) => (
+                    <div
+                      key={notification.id}
+                      role={notification.action_url ? 'link' : undefined}
+                      tabIndex={notification.action_url ? 0 : undefined}
+                      onClick={() => openNotification(notification)}
+                      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openNotification(notification); } }}
+                      className={`group relative flex items-start gap-3.5 px-4 py-3.5 transition-colors ${
+                        notification.action_url ? 'cursor-pointer hover:bg-muted/40' : ''
+                      } ${notification.is_read ? '' : 'bg-primary/[0.04]'}`}
+                    >
+                      <div className="relative shrink-0">
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center border border-border/40 ${
+                          notification.is_read ? 'bg-muted/50' : 'bg-primary/10'
                         }`}>
-                          {formatMessageContent(notification.message)}
+                          {getNotificationIcon(notification.type)}
+                        </div>
+                        {!notification.is_read && (
+                          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-card" />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm leading-snug">
+                          <span className={notification.is_read ? 'font-medium text-foreground/80' : 'font-semibold text-foreground'}>
+                            {notification.title}
+                          </span>
+                          <span className="text-muted-foreground"> · {formatMessageContent(notification.message)}</span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
                         </p>
 
-                        <div className="flex flex-wrap items-center gap-4 pt-4">
-                          {notification.action_url && (
-                            <Link 
-                              to={notification.action_url}
-                              className="text-primary-foreground hover:shadow-lg shadow-primary/20 text-xs font-black uppercase tracking-widest flex items-center gap-2 px-6 py-3 rounded-2xl bg-primary hover:bg-primary/90 transition-all transform active:scale-95"
-                              onClick={() => markAsRead(notification.id)}
+                        {notification.is_actionable && !notification.is_read && (
+                          <div className="mt-2.5 flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); handleAction(notification, 'accept'); }}
+                              disabled={!!actionLoading}
+                              className="h-10 md:h-8 rounded-lg px-4 text-xs font-semibold"
                             >
-                              <span>Enter Space</span>
-                            </Link>
-                          )}
-                          
-                          {notification.is_actionable && !notification.is_read && (
-                            <div className="flex items-center gap-3">
-                              <Button 
-                                onClick={() => handleAction(notification, 'accept')}
-                                disabled={!!actionLoading}
-                                className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-primary hover:bg-primary shadow-lg shadow-emerald-500/20"
-                              >
-                                {actionLoading === notification.id ? 'Processing...' : 'Accept'}
-                              </Button>
-                              <Button 
-                                variant="ghost" 
-                                onClick={() => handleAction(notification, 'decline')}
-                                disabled={!!actionLoading}
-                                className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-muted/40 hover:bg-muted"
-                              >
-                                Decline
-                              </Button>
-                            </div>
-                          )}
-
-                          <div className="flex-1" />
-
-                          <div className="flex items-center gap-2 animate-in fade-in duration-500 md:opacity-0 md:group-hover:opacity-100">
-                            {!notification.is_read && (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => markAsRead(notification.id)}
-                                className="h-10 rounded-xl border-primary/20 hover:bg-primary/10 text-primary font-black uppercase tracking-widest text-[9px] px-4"
-                              >
-                                <Check className="h-3.5 w-3.5 mr-2" />
-                                Mark read
-                              </Button>
-                            )}
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              onClick={() => deleteNotification(notification.id)}
-                              className="h-10 w-10 rounded-xl hover:bg-destructive/10 text-destructive/50 hover:text-destructive transition-colors"
+                              {actionLoading === notification.id ? 'Processing...' : 'Accept'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={(e) => { e.stopPropagation(); handleAction(notification, 'decline'); }}
+                              disabled={!!actionLoading}
+                              className="h-10 md:h-8 rounded-lg px-4 text-xs font-semibold"
                             >
-                              <X className="h-4 w-4" />
+                              Decline
                             </Button>
                           </div>
-                        </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {!notification.is_read && (
+                          <Button
+                            aria-label="Mark as read"
+                            title="Mark as read"
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); markAsRead(notification.id); }}
+                            className="h-11 w-11 md:h-8 md:w-8 rounded-lg text-muted-foreground hover:text-primary"
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          aria-label="Dismiss notification"
+                          title="Dismiss"
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => { e.stopPropagation(); deleteNotification(notification.id); }}
+                          className="h-11 w-11 md:h-8 md:w-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </ScrollArea>
+                  ))}
+                </div>
+              </section>
+            ))
+          )}
+        </div>
       </Tabs>
     </div>
   );

@@ -7,6 +7,7 @@ import { useUserSettings } from '../../hooks/useUserSettings';
 import { pickAndUploadImage } from '../../services/imageUploadService';
 import { pickAttachments, type PickedAttachment } from '../../services/attachmentPicker';
 import { uploadPageDoc, RESUME_MAX_BYTES } from '../../services/resumeFiles';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const db = () => getSupabaseClient() as any;
@@ -32,11 +33,11 @@ export const PageInsightsPanel = ({ pageId }: { pageId: string }) => {
   const Tile = ({ icon, label, value, sub }: { icon: string; label: string; value: string | number; sub?: string }) => (
     <View style={[s.tile, { backgroundColor: T.bgCard, borderColor: T.border }]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Icon name={icon} size={13} color={T.textMuted} />
-        <Text style={{ color: T.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 0.6 }}>{label}</Text>
+        <Icon name={icon} size={13} color={T.iconMuted} />
+        <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>{label}</Text>
       </View>
-      <Text style={{ color: T.textPrimary, fontSize: 24, fontWeight: '800', marginTop: 4 }}>{value}</Text>
-      {sub ? <Text style={{ color: T.textSecondary, fontSize: 11, marginTop: 2 }}>{sub}</Text> : null}
+      <Text style={{ color: T.textPrimary, fontSize: 24, fontWeight: '700', marginTop: 4 }}>{value}</Text>
+      {sub ? <Text style={{ color: T.textSecondary, fontSize: 12, marginTop: 2 }}>{sub}</Text> : null}
     </View>
   );
 
@@ -49,7 +50,7 @@ export const PageInsightsPanel = ({ pageId }: { pageId: string }) => {
         <Tile icon="briefcase" label="OPEN JOBS" value={data.open_jobs} sub={data.applications != null ? `${data.applications} applications` : undefined} />
       </View>
       <View style={[s.chartBox, { backgroundColor: T.bgCard, borderColor: T.border }]}>
-        <Text style={{ color: T.textMuted, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.7 }}>LAST 14 DAYS · VIEWS</Text>
+        <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 0.7 }}>LAST 14 DAYS · VIEWS</Text>
         <View style={s.chart}>
           {daily.map((d) => (
             <View key={d.day} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -57,7 +58,7 @@ export const PageInsightsPanel = ({ pageId }: { pageId: string }) => {
             </View>
           ))}
         </View>
-        <Text style={{ color: T.textMuted, fontSize: 11, marginTop: 8 }}>{data.unique_viewers} different people have viewed this page. Visits by your own team are not counted.</Text>
+        <Text style={{ color: T.textMuted, fontSize: 12, marginTop: 8 }}>{data.unique_viewers} different people have viewed this page. Visits by your own team are not counted.</Text>
       </View>
     </View>
   );
@@ -96,7 +97,7 @@ export const PageShowcasePanel = ({ pageId, canManage }: { pageId: string; canMa
         await load();
       }
     } catch (e: any) {
-      Alert.alert('Could not add the photo', e?.message || 'Please try again.');
+      Alert.alert('Could not add the photo', friendlyError(e, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -111,7 +112,7 @@ export const PageShowcasePanel = ({ pageId, canManage }: { pageId: string; canMa
       setLink('');
       await load();
     } catch (e: any) {
-      Alert.alert('Could not add the link', e?.message || 'Please try again.');
+      Alert.alert('Could not add the link', friendlyError(e, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -125,7 +126,7 @@ export const PageShowcasePanel = ({ pageId, canManage }: { pageId: string; canMa
         style: 'destructive',
         onPress: async () => {
           const { error } = await db().from('company_page_showcase').delete().eq('id', id);
-          if (error) Alert.alert('Could not remove', error.message);
+          if (error) Alert.alert('Could not remove', friendlyError(error));
           else load();
         },
       },
@@ -140,7 +141,7 @@ export const PageShowcasePanel = ({ pageId, canManage }: { pageId: string; canMa
         <View style={[s.addBox, { borderColor: T.border }]}>
           <TouchableOpacity disabled={busy} onPress={addImage} style={[s.addBtn, { borderColor: T.border }]}>
             {busy ? <ActivityIndicator color={ORANGE} /> : <Icon name="image-plus" size={15} color={ORANGE} />}
-            <Text style={{ color: ORANGE, fontWeight: '800', fontSize: 12.5 }}>Add a photo</Text>
+            <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 12 }}>Add a photo</Text>
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
             <TextInput
@@ -152,10 +153,10 @@ export const PageShowcasePanel = ({ pageId, canManage }: { pageId: string; canMa
               style={[s.input, { flex: 1, backgroundColor: T.inputBg, borderColor: T.border, color: T.textPrimary }]}
             />
             <TouchableOpacity disabled={busy || !link.trim()} onPress={addVideo} style={[s.addGo, (busy || !link.trim()) && { opacity: 0.5 }]}>
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12.5 }}>Add</Text>
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Add</Text>
             </TouchableOpacity>
           </View>
-          <Text style={{ color: T.textMuted, fontSize: 11, marginTop: 6 }}>Up to 12 items.</Text>
+          <Text style={{ color: T.textMuted, fontSize: 12, marginTop: 6 }}>Up to 12 items.</Text>
         </View>
       )}
 
@@ -174,7 +175,7 @@ export const PageShowcasePanel = ({ pageId, canManage }: { pageId: string; canMa
                 <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '700', flex: 1 }} numberOfLines={2}>{v.url.replace(/^https?:\/\//, '')}</Text>
               </TouchableOpacity>
               {canManage && (
-                <TouchableOpacity onPress={() => remove(v.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" onPress={() => remove(v.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Icon name="trash-2" size={16} color="#EF4444" />
                 </TouchableOpacity>
               )}
@@ -185,7 +186,7 @@ export const PageShowcasePanel = ({ pageId, canManage }: { pageId: string; canMa
               <View key={img.id} style={s.gridItem}>
                 <CachedImage uri={img.url} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                 {canManage && (
-                  <TouchableOpacity onPress={() => remove(img.id)} style={s.gridDelete}>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Delete" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => remove(img.id)} style={s.gridDelete}>
                     <Icon name="trash-2" size={13} color="#DC2626" />
                   </TouchableOpacity>
                 )}
@@ -225,7 +226,7 @@ export const PageVerificationModal = ({
       if (f.size && f.size > RESUME_MAX_BYTES) return Alert.alert('File too large', 'Please attach a file up to 10 MB.');
       setFile(f);
     } catch (e: any) {
-      Alert.alert('Could not attach the file', e?.message || 'Please try again.');
+      Alert.alert('Could not attach the file', friendlyError(e, 'Please try again.'));
     }
   };
 
@@ -246,7 +247,7 @@ export const PageVerificationModal = ({
       onClose();
       Alert.alert('Sent for review', "We'll notify you when your page is reviewed.", [{ text: 'OK', onPress: onSubmitted }]);
     } catch (e: any) {
-      Alert.alert('Could not submit', e?.message || 'Please try again.');
+      Alert.alert('Could not submit', friendlyError(e, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -261,11 +262,11 @@ export const PageVerificationModal = ({
           <View style={[s.sheet, { backgroundColor: T.bgCard, borderColor: T.border }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 8 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '800' }}>Get {pageName} verified</Text>
+                <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700' }}>Get {pageName} verified</Text>
                 <Text style={{ color: T.textSecondary, fontSize: 12 }}>Your document is private: only you and our review team can open it.</Text>
               </View>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Icon name="x" size={20} color={T.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon name="x" size={20} color={T.iconSecondary} />
               </TouchableOpacity>
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: 4, paddingBottom: 30 }}>
@@ -291,7 +292,7 @@ export const PageVerificationModal = ({
 
 const s = StyleSheet.create({
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tile: { width: '48.5%', borderWidth: 1, borderRadius: 14, padding: 12 },
+  tile: { flexGrow: 1, flexBasis: '47%', borderWidth: 1, borderRadius: 14, padding: 12 },
   chartBox: { borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 10 },
   chart: { flexDirection: 'row', height: 76, alignItems: 'flex-end', gap: 3, marginTop: 10 },
   addBox: { borderWidth: 1, borderStyle: 'dashed', borderRadius: 14, padding: 12, marginBottom: 14 },
@@ -303,8 +304,8 @@ const s = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   gridItem: { width: '48.5%', aspectRatio: 4 / 3, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(148,163,184,0.2)' },
   gridDelete: { position: 'absolute', top: 6, right: 6, width: 28, height: 28, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  sheet: { maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
   drop: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderStyle: 'dashed', borderRadius: 14, padding: 14, marginBottom: 12 },
   submit: { backgroundColor: ORANGE, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
-  submitText: { color: '#fff', fontWeight: '800', fontSize: 14.5 },
+  submitText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

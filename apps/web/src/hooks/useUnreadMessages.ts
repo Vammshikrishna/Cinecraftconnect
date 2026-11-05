@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
+import { sharedFetch } from '@/lib/sharedFetch';
 
 export const useUnreadMessages = () => {
   const { user } = useAuth();
@@ -18,12 +19,28 @@ export const useUnreadMessages = () => {
     if (!user) return;
 
     try {
-      const { data: previews, error: previewError } = await supabase.rpc('get_unread_message_previews');
-      
+      // several parts of the page ask at the same moment: they share the request that is already running
+      const { data: previews, error: previewError } = await sharedFetch(`unread_previews:${user.id}`, async () =>
+        supabase.rpc('get_unread_message_previews'),
+      );
+
       if (!previewError && Array.isArray(previews)) {
         // 1. DMs (Direct Messages)
         const dmPreviews = previews.filter((p: any) => (p.chat_type || p.type) === 'dm');
-        const dmCount = dmPreviews.reduce((acc: number, p: any) => acc + (p.unread_count || 0), 0);
+        let dmCount = dmPreviews.reduce((acc: number, p: any) => acc + (p.unread_count || 0), 0);
+        // message requests (part GF): their unread messages are counted once, as "N requests", not as chat unreads.
+        // Before that part is run the call fails and the number stays as it was.
+        try {
+          const { data: reqs, error: reqErr } = await sharedFetch(`message_requests:${user.id}`, async () =>
+            (supabase as any).rpc('get_message_requests'),
+          );
+          if (!reqErr && Array.isArray(reqs)) {
+            const pending = reqs.filter((r: any) => !r.hidden);
+            const hiddenUnread = reqs.filter((r: any) => r.hidden).reduce((n: number, r: any) => n + (r.unread_count || 0), 0);
+            const pendingUnread = pending.reduce((n: number, r: any) => n + (r.unread_count || 0), 0);
+            dmCount = Math.max(0, dmCount - pendingUnread - hiddenUnread) + pending.length;
+          }
+        } catch { /* keep the plain count */ }
         setUnreadCount(dmCount);
         setHasUnread(dmCount > 0);
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { friendlyError } from '@cinecraft/core';
 
 export interface EndorsementInfo {
   skill_id: number;
@@ -28,7 +29,7 @@ export const useSkillEndorsements = (userId: string) => {
   const toggle = async (skillId: number) => {
     const { error } = await (supabase as any).rpc('toggle_skill_endorsement', { p_skill_id: skillId });
     if (error) {
-      toast({ title: 'Could not endorse', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not endorse', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     load();

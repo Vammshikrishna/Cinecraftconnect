@@ -322,8 +322,6 @@ export const Icon: React.FC<IconProps> = ({
 
     case 'forward':
     case 'Forward':
-    case 'share-2':
-    case 'Share2':
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
           <Circle cx={18} cy={5} r={3} />

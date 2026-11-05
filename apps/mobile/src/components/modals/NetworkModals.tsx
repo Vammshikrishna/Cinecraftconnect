@@ -4,6 +4,7 @@ import { Icon } from '../common/Icon';
 import { CachedImage } from '../common/CachedImage';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const db = () => getSupabaseClient() as any;
@@ -16,9 +17,9 @@ export const Sheet = ({ visible, onClose, title, subtitle, children }: { visible
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
         <View style={[s.sheet, { backgroundColor: T.bgCard }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text style={{ color: T.textPrimary, fontSize: 17, fontWeight: '900', flex: 1 }} numberOfLines={2}>{title}</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Icon name="x" size={20} color={T.textSecondary} />
+            <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700', flex: 1 }} numberOfLines={2}>{title}</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="x" size={20} color={T.iconSecondary} />
             </TouchableOpacity>
           </View>
           {!!subtitle && <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4 }}>{subtitle}</Text>}
@@ -78,13 +79,13 @@ export const AvailabilityModal = ({ visible, onClose, userId }: { visible: boole
       visibility,
     }, { onConflict: 'user_id' });
     setSaving(false);
-    if (error) return Alert.alert('Could not save', error.message);
+    if (error) return Alert.alert('Could not save', friendlyError(error));
     onClose();
   };
 
   const Chip = ({ label, sub, active, onPress }: { label: string; sub?: string; active: boolean; onPress: () => void }) => (
     <TouchableOpacity onPress={onPress} style={[s.option, { borderColor: active ? ORANGE : T.border, backgroundColor: active ? 'rgba(255,75,51,0.1)' : 'transparent' }]}>
-      <Text style={{ color: T.textPrimary, fontWeight: '800', fontSize: 14 }}>{label}</Text>
+      <Text style={{ color: T.textPrimary, fontWeight: '700', fontSize: 14 }}>{label}</Text>
       {!!sub && <Text style={{ color: T.textSecondary, fontSize: 12 }}>{sub}</Text>}
     </TouchableOpacity>
   );
@@ -114,7 +115,7 @@ export const AvailabilityModal = ({ visible, onClose, userId }: { visible: boole
         <Chip label="Connections only" active={visibility === 'connections'} onPress={() => setVisibility('connections')} />
       </View>
       <TouchableOpacity style={[s.primary, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
-        {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Save</Text>}
+        {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>}
       </TouchableOpacity>
     </Sheet>
   );
@@ -153,7 +154,7 @@ export const ConnectionNotesModal = ({ visible, onClose, userId, otherId, name, 
       ? await db().from('connection_notes').delete().eq('owner_id', userId).eq('other_id', otherId)
       : await db().from('connection_notes').upsert({ owner_id: userId, other_id: otherId, note: note.trim() || null, tags }, { onConflict: 'owner_id,other_id' });
     setSaving(false);
-    if (error) return Alert.alert('Could not save', error.message);
+    if (error) return Alert.alert('Could not save', friendlyError(error));
     onSaved();
     onClose();
   };
@@ -164,7 +165,7 @@ export const ConnectionNotesModal = ({ visible, onClose, userId, otherId, name, 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
         {tags.map((t) => (
           <TouchableOpacity key={t} onPress={() => setTags(tags.filter((x) => x !== t))} style={[s.tag, { backgroundColor: 'rgba(255,75,51,0.12)' }]}>
-            <Text style={{ color: ORANGE, fontWeight: '800', fontSize: 12 }}>#{t}  ✕</Text>
+            <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 12 }}>#{t}  ✕</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -177,7 +178,7 @@ export const ConnectionNotesModal = ({ visible, onClose, userId, otherId, name, 
         ))}
       </View>
       <TouchableOpacity style={[s.primary, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
-        {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Save</Text>}
+        {saving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Save</Text>}
       </TouchableOpacity>
     </Sheet>
   );
@@ -209,7 +210,7 @@ export const IntroductionModal = ({ visible, onClose, targetId, targetName }: { 
     setSending(true);
     const { error } = await db().rpc('request_introduction', { p_target: targetId, p_via: via, p_note: note.trim() || null });
     setSending(false);
-    if (error) return Alert.alert('Could not ask for the introduction', error.message);
+    if (error) return Alert.alert('Could not ask for the introduction', friendlyError(error));
     Alert.alert('Introduction requested', 'They will be notified.');
     onClose();
   };
@@ -228,18 +229,18 @@ export const IntroductionModal = ({ visible, onClose, targetId, targetName }: { 
                 <CachedImage uri={o.avatar_url} style={{ width: 34, height: 34, borderRadius: 17 }} />
               ) : (
                 <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: T.chipBg, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ color: ORANGE, fontWeight: '900' }}>{(o.full_name || o.username || '?').charAt(0).toUpperCase()}</Text>
+                  <Text style={{ color: ORANGE, fontWeight: '700' }}>{(o.full_name || o.username || '?').charAt(0).toUpperCase()}</Text>
                 </View>
               )}
               <View style={{ flex: 1 }}>
-                <Text style={{ color: T.textPrimary, fontWeight: '800' }} numberOfLines={1}>{o.full_name || o.username}</Text>
+                <Text style={{ color: T.textPrimary, fontWeight: '700' }} numberOfLines={1}>{o.full_name || o.username}</Text>
                 <Text style={{ color: T.textSecondary, fontSize: 12 }} numberOfLines={1}>{o.craft || 'Filmmaker'}</Text>
               </View>
             </TouchableOpacity>
           ))}
           <TextInput style={[s.input, input, { minHeight: 70, textAlignVertical: 'top' }]} placeholder="Tell them why you would like to meet (optional)" placeholderTextColor={T.textMuted} value={note} onChangeText={setNote} maxLength={300} multiline />
           <TouchableOpacity style={[s.primary, (!via || sending) && { opacity: 0.5 }]} onPress={send} disabled={!via || sending}>
-            {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Ask for introduction</Text>}
+            {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Ask for introduction</Text>}
           </TouchableOpacity>
         </>
       )}
@@ -249,10 +250,10 @@ export const IntroductionModal = ({ visible, onClose, targetId, targetName }: { 
 
 const s = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
   option: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8, flex: undefined },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 8 },
-  label: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, marginTop: 14 },
+  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 14 },
   primary: { height: 46, borderRadius: 12, backgroundColor: ORANGE, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
   tag: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
 });

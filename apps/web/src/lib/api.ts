@@ -4,7 +4,7 @@ export const fetchJoinRequests = async (roomId: string) => {
   // First, fetch the join requests for the given room
   const { data: requests, error: requestsError } = await supabase
     .from('room_join_requests' as any)
-    .select('id, created_at, status, user_id')
+    .select('id, created_at, status, user_id, message')
     .eq('room_id', roomId)
     .eq('status', 'pending');
 
@@ -48,26 +48,27 @@ export const fetchJoinRequests = async (roomId: string) => {
   return data;
 };
 
-export const approveJoinRequest = async (requestId: number, userId: string, roomId: string) => {
-  // Add user to room_members table
+/**
+ * Approve: add the person to the room, then mark the request "approved" (the row stays as history and a database trigger tells the
+ * requester). Deny: mark it "rejected" (the person may ask again later). Ids are uuids.
+ */
+export const approveJoinRequest = async (requestId: string | number, userId: string, roomId: string) => {
   const { error: memberError } = await supabase.from('room_members').insert({ room_id: roomId, user_id: userId });
-  if (memberError) {
+  // 23505: they are already in the room (for example added by hand meanwhile): still close the request
+  if (memberError && (memberError as any).code !== '23505') {
     throw new Error(`Failed to add user to room: ${memberError.message}`);
   }
 
-  // Delete the join request
-  const { error: requestError } = await supabase.from('room_join_requests' as any).delete().eq('id', requestId);
+  const { error: requestError } = await supabase.from('room_join_requests' as any).update({ status: 'approved' }).eq('id', requestId as any);
   if (requestError) {
-    // Note: In a production app, you might want to handle the case where the user was added but the request wasn't deleted.
-    // This could involve a transaction or a cleanup job.
-    throw new Error(`Failed to remove join request: ${requestError.message}`);
+    throw new Error(`The person was added, but the request could not be closed: ${requestError.message}`);
   }
 
   return { success: true };
 };
 
-export const denyJoinRequest = async (requestId: number) => {
-  const { error } = await supabase.from('room_join_requests' as any).delete().eq('id', requestId);
+export const denyJoinRequest = async (requestId: string | number) => {
+  const { error } = await supabase.from('room_join_requests' as any).update({ status: 'rejected' }).eq('id', requestId as any);
   if (error) {
     throw new Error(`Failed to deny join request: ${error.message}`);
   }

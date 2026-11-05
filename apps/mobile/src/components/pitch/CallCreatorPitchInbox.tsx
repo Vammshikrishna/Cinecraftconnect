@@ -9,10 +9,17 @@ import {
   Image,
   ActivityIndicator,
   ScrollView,
+  Share,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { Icon } from '../common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useResponsive } from '../../hooks/useResponsive';
 import { getSupabaseClient } from '@cinecraft/api';
+import { submissionsToCsv, friendlyError, sortInboxSubmissions } from '@cinecraft/core';
+import { ComparePitchesModal } from './ComparePitchesModal';
+import { BULK_STATUSES, bulkUpdateStatus } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -28,6 +35,7 @@ const STATUS_FILTERS = [
   { value: 'invite_to_discuss', label: 'Invited' },
   { value: 'passed', label: 'Passed' },
   { value: 'collaborating', label: 'Collaborating' },
+  { value: 'withdrawn', label: 'Withdrawn' },
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -40,6 +48,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
   invite_to_discuss: { bg: '#E0F2FE', text: '#0284C7', label: 'Invited to Discuss' },
   passed: { bg: '#F1F5F9', text: '#64748B', label: 'Passed' },
   collaborating: { bg: '#DCFCE7', text: '#15803D', label: 'Collaborating' },
+  withdrawn: { bg: '#F1F5F9', text: '#64748B', label: 'Withdrawn' },
 };
 
 export const CallCreatorPitchInbox: React.FC<{
@@ -48,12 +57,22 @@ export const CallCreatorPitchInbox: React.FC<{
   onClearSelectedPitchCall?: () => void;
 }> = ({ navigation, selectedPitchCallId, onClearSelectedPitchCall }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isTablet, isLandscape } = useResponsive();
+  const gridCols = isTablet ? (isLandscape ? 3 : 2) : 1;
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const toggleSelected = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const leaveSelect = () => { setSelectMode(false); setSelected([]); };
 
   const fetchSubmissions = useCallback(async () => {
-    setLoading(true);
+    // only the first load shows the spinner; later refreshes update the list quietly
+    setError(false);
     try {
       const supabase = getSupabaseClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -63,9 +82,10 @@ export const CallCreatorPitchInbox: React.FC<{
       }
 
       // Fetch calls created by or targeting this producer
-      const { data: myCalls } = await (supabase.from('pitch_calls') as any)
+      const { data: myCalls, error: callsError } = await (supabase.from('pitch_calls') as any)
         .select('id')
         .or(`creator_id.eq.${user.id},attachments->>target_producer_id.eq.${user.id}`);
+      if (callsError) throw callsError;
 
       const callIds = (myCalls || []).map((c: any) => c.id);
 
@@ -85,11 +105,13 @@ export const CallCreatorPitchInbox: React.FC<{
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSubmissions(data || []);
+      setSubmissions(sortInboxSubmissions(data || []));
     } catch (e) {
       console.warn('[PitchInbox] Error:', e);
+      setError(true);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -97,17 +119,60 @@ export const CallCreatorPitchInbox: React.FC<{
     fetchSubmissions();
   }, [fetchSubmissions]);
 
+  // new pitches and status changes show up without leaving the screen
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    const channel = (supabase as any)
+      .channel(`pitch_inbox_${Date.now()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pitch_submissions' }, () => fetchSubmissions())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pitch_submissions' }, (payload: any) => {
+        setSubmissions((prev) => prev.map((s) => (s.id === payload.new?.id ? { ...s, ...payload.new } : s)));
+      })
+      .subscribe();
+    return () => { (supabase as any).removeChannel(channel); };
+  }, [fetchSubmissions]);
+
   const filtered = submissions.filter((s) => {
     if (selectedPitchCallId && s.pitch_call_id !== selectedPitchCallId) return false;
-    if (statusFilter === 'all') return true;
+    // withdrawn pitches are only shown when you ask for them
+    if (statusFilter === 'all') return s.status !== 'withdrawn';
     return s.status === statusFilter;
   });
 
-  const totalCount = submissions.length;
+  const totalCount = submissions.filter((s) => s.status !== 'withdrawn').length;
+
+  const applyBulk = (status: string, label: string) => {
+    Alert.alert(`${label} ${selected.length} pitch${selected.length > 1 ? 'es' : ''}?`, 'The writers will be told.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: label,
+        onPress: async () => {
+          try {
+            const n = await bulkUpdateStatus(getSupabaseClient(), selected, status);
+            Alert.alert(`${n} pitch${n === 1 ? '' : 'es'} updated`);
+            leaveSelect();
+            fetchSubmissions();
+          } catch (e: any) {
+            Alert.alert('Could not update', friendlyError(e, 'Please try again.'));
+          }
+        },
+      },
+    ]);
+  };
+
+  const exportCsv = () => {
+    Share.share({ title: 'Pitches', message: submissionsToCsv(filtered) }).catch(() => { });
+  };
   const newCount = submissions.filter((s) => s.status === 'submitted').length;
   const shortlistedCount = submissions.filter((s) => s.status === 'shortlisted').length;
 
-  const renderSubmissionCard = ({ item }: { item: any }) => {
+  const renderSubmissionCard = (info: { item: any }) => {
+    const card = renderSubmissionCardInner(info);
+    if (gridCols === 1) return card;
+    return <View style={{ flex: 1, maxWidth: `${100 / gridCols}%`, paddingHorizontal: 6 }}>{card}</View>;
+  };
+
+  const renderSubmissionCardInner = ({ item }: { item: any }) => {
     const status = STATUS_COLORS[item.status || 'submitted'] || {
       bg: '#F1F5F9',
       text: '#64748B',
@@ -124,12 +189,14 @@ export const CallCreatorPitchInbox: React.FC<{
           { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
         ]}
         activeOpacity={0.9}
-        onPress={() =>
-          navigation.navigate('PitchReviewDetail', {
-            submissionId: item.id,
-          })
-        }
+        onPress={() => (selectMode
+          ? toggleSelected(item.id)
+          : navigation.navigate('PitchReviewDetail', { submissionId: item.id }))}
+        accessibilityState={selectMode ? { selected: selected.includes(item.id) } : undefined}
       >
+        {selectMode && (
+          <Text style={{ fontSize: 16, fontWeight: '700', color: selected.includes(item.id) ? ORANGE : themeColors.textMuted, marginBottom: 6 }}>{selected.includes(item.id) ? '☑ Selected' : '☐ Tap to select'}</Text>
+        )}
         <View style={styles.cardHeader}>
           {writerAvatar ? (
             <CachedImage uri={writerAvatar} style={styles.avatar} />
@@ -191,13 +258,32 @@ export const CallCreatorPitchInbox: React.FC<{
     );
   }
 
+  if (error && submissions.length === 0) {
+    return (
+      <View style={styles.emptyState}>
+        <Icon name="inbox" size={40} color={themeColors.iconMuted} />
+        <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>Could not load your inbox</Text>
+        <TouchableOpacity
+          onPress={() => { setLoading(true); fetchSubmissions(); }}
+          accessibilityRole="button"
+          style={{ marginTop: 10, minHeight: 44, paddingHorizontal: 22, borderRadius: 22, backgroundColor: ORANGE, justifyContent: 'center' }}
+        >
+          <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Try again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const countFor = (value: string) =>
+    value === 'all' ? submissions.filter((s) => s.status !== 'withdrawn').length : submissions.filter((s) => s.status === value).length;
+
   return (
     <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
       {selectedPitchCallId && onClearSelectedPitchCall && (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(217,119,6,0.1)', paddingHorizontal: 14, paddingVertical: 8, marginHorizontal: 16, marginTop: 12, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(217,119,6,0.25)' }}>
-          <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#D97706' }}>Filtered for selected pitch call</Text>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: '#D97706' }}>Filtered for selected pitch call</Text>
           <TouchableOpacity onPress={onClearSelectedPitchCall}>
-            <Text style={{ fontSize: 11.5, fontWeight: '800', color: ORANGE }}>Show All</Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: ORANGE }}>Show All</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -217,6 +303,42 @@ export const CallCreatorPitchInbox: React.FC<{
         </View>
       </View>
 
+      {filtered.length > 0 && (
+        <TouchableOpacity
+          onPress={() => (selectMode ? leaveSelect() : setSelectMode(true))}
+          accessibilityRole="button"
+          style={{ alignSelf: 'flex-end', marginHorizontal: 16, marginTop: 8, minHeight: 36, paddingHorizontal: 12, justifyContent: 'center' }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: '700', color: ORANGE }}>{selectMode ? 'Done selecting' : 'Select'}</Text>
+        </TouchableOpacity>
+      )}
+
+      {selectMode && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingVertical: 8, alignItems: 'center' }}>
+          <Text style={{ fontWeight: '700', color: themeColors.textPrimary }}>{selected.length} selected</Text>
+          <TouchableOpacity disabled={selected.length < 2 || selected.length > 3} onPress={() => setCompareOpen(true)} accessibilityRole="button" style={{ minHeight: 40, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: themeColors.border, justifyContent: 'center', opacity: selected.length < 2 || selected.length > 3 ? 0.4 : 1 }}>
+            <Text style={{ fontWeight: '700', color: themeColors.textPrimary }}>Compare (2-3)</Text>
+          </TouchableOpacity>
+          {BULK_STATUSES.map((b) => (
+            <TouchableOpacity key={b.value} disabled={selected.length === 0} onPress={() => applyBulk(b.value, b.label)} accessibilityRole="button" style={{ minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: ORANGE, justifyContent: 'center', opacity: selected.length === 0 ? 0.4 : 1 }}>
+              <Text style={{ fontWeight: '700', color: '#FFFFFF' }}>{b.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {filtered.length > 0 && !selectMode && (
+        <TouchableOpacity
+          onPress={exportCsv}
+          accessibilityRole="button"
+          accessibilityLabel={`Share ${filtered.length} pitches as a spreadsheet`}
+          style={{ alignSelf: 'flex-end', marginHorizontal: 16, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 12 }}
+        >
+          <Icon name="download" size={14} color={ORANGE} />
+          <Text style={{ fontSize: 12, fontWeight: '700', color: ORANGE }}>Share {filtered.length} as spreadsheet</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Filter Tabs Horizontal */}
       <ScrollView
         horizontal
@@ -224,7 +346,7 @@ export const CallCreatorPitchInbox: React.FC<{
         style={styles.filterBar}
         contentContainerStyle={{ paddingHorizontal: 14, gap: 8 }}
       >
-        {STATUS_FILTERS.map((f) => {
+        {STATUS_FILTERS.filter((f) => f.value === 'all' || f.value === statusFilter || countFor(f.value) > 0).map((f) => {
           const active = statusFilter === f.value;
           return (
             <TouchableOpacity
@@ -243,7 +365,7 @@ export const CallCreatorPitchInbox: React.FC<{
                   active && styles.filterTextActive,
                 ]}
               >
-                {f.label}
+                {f.label} {countFor(f.value)}
               </Text>
             </TouchableOpacity>
           );
@@ -252,19 +374,31 @@ export const CallCreatorPitchInbox: React.FC<{
 
       {/* List */}
       <FlatList
+        key={`pitch-list-${gridCols}`}
+        numColumns={gridCols}
+        showsVerticalScrollIndicator={false}
         data={filtered}
         renderItem={renderSubmissionCard}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSubmissions(); }} tintColor={ORANGE} />}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Icon name="inbox" size={40} color={themeColors.textMuted} />
-            <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Submissions Found</Text>
+            <Icon name="inbox" size={40} color={themeColors.iconMuted} />
+            <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>{submissions.length === 0 ? 'No Submissions Yet' : 'No pitches match'}</Text>
             <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
-              Pitches submitted to your pitch calls will appear here in real-time.
+              {submissions.length === 0
+                ? 'Pitches submitted to your pitch calls will appear here as they come in.'
+                : 'Try another status or show all pitch calls.'}
             </Text>
           </View>
         }
+      />
+      <ComparePitchesModal
+        visible={compareOpen}
+        submissions={submissions.filter((s) => selected.includes(s.id))}
+        onClose={() => setCompareOpen(false)}
+        onOpen={(id) => { setCompareOpen(false); navigation.navigate('PitchReviewDetail', { submissionId: id }); }}
       />
     </View>
   );
@@ -294,12 +428,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statVal: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
   },
   statLabel: {
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     marginTop: 2,
     letterSpacing: 0.5,
@@ -330,7 +464,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 14,
-    paddingBottom: 24,
+    paddingBottom: 40,
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -362,11 +496,11 @@ const styles = StyleSheet.create({
   avatarText: {
     color: ORANGE,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   submissionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   writerName: {
@@ -380,8 +514,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   forCallBox: {
     flexDirection: 'row',
@@ -397,7 +531,7 @@ const styles = StyleSheet.create({
   },
   forCallText: {
     color: ORANGE,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   directPitchBox: {
@@ -415,7 +549,7 @@ const styles = StyleSheet.create({
   },
   directPitchText: {
     color: '#D97706',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   logline: {
@@ -435,12 +569,12 @@ const styles = StyleSheet.create({
   },
   timeText: {
     color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 12,
   },
   reviewBtnText: {
     color: ORANGE,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',
@@ -449,7 +583,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   emptySub: {

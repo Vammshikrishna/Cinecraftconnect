@@ -22,6 +22,29 @@ public class PipBridgeModule extends ReactContextBaseJavaModule {
         return MODULE_NAME;
     }
 
+    /** True while the phone is locked (the call screen may be showing over the lock screen). */
+    @ReactMethod
+    public void isDeviceLocked(Promise promise) {
+        try {
+            Activity activity = getCurrentActivity();
+            android.app.KeyguardManager km = (android.app.KeyguardManager) getReactApplicationContext().getSystemService(android.content.Context.KEYGUARD_SERVICE);
+            promise.resolve(km != null && km.isKeyguardLocked());
+        } catch (Exception e) {
+            promise.resolve(false);
+        }
+    }
+
+    /** Sends the app to the background (back to the lock screen) without showing any of its screens. */
+    @ReactMethod
+    public void moveToBackground() {
+        try {
+            Activity activity = getCurrentActivity();
+            if (activity != null) activity.moveTaskToBack(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     @ReactMethod
     public void isPipSupported(Promise promise) {
         try {
@@ -45,12 +68,8 @@ public class PipBridgeModule extends ReactContextBaseJavaModule {
                 int w = width > 0 ? width : 4;
                 int h = height > 0 ? height : 5;
                 Rational aspectRatio = new Rational(w, h);
-                PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder();
+                PictureInPictureParams.Builder builder = MainActivity.pipBuilder(activity, true);
                 builder.setAspectRatio(aspectRatio);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    builder.setAutoEnterEnabled(true);
-                    builder.setSeamlessResizeEnabled(true);
-                }
                 boolean success = activity.enterPictureInPictureMode(builder.build());
                 promise.resolve(success);
             } else {
@@ -61,17 +80,27 @@ public class PipBridgeModule extends ReactContextBaseJavaModule {
         }
     }
 
+    /** Keeps the mute / speaker buttons of the PiP window in step with the call. */
+    @ReactMethod
+    public void setPipCallState(boolean muted, boolean speakerOn) {
+        try {
+            MainActivity.setPipCallState(muted, speakerOn);
+            Activity activity = getCurrentActivity();
+            if (activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                activity.setPictureInPictureParams(MainActivity.pipBuilder(activity, MainActivity.isAutoPip()).build());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     @ReactMethod
     public void setAutoPipEnabled(boolean enabled) {
         try {
             MainActivity.setAutoPipEnabled(enabled);
             Activity activity = getCurrentActivity();
             if (activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder();
-                builder.setAspectRatio(new Rational(4, 5));
-                builder.setAutoEnterEnabled(enabled);
-                builder.setSeamlessResizeEnabled(true);
-                activity.setPictureInPictureParams(builder.build());
+                activity.setPictureInPictureParams(MainActivity.pipBuilder(activity, enabled).build());
             }
         } catch (Exception e) {
             e.printStackTrace();

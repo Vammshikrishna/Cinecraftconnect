@@ -9,15 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
+import { friendlyError } from '@cinecraft/core';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon, Lock, Globe, Edit } from 'lucide-react';
+import { Plus, Calendar, MapPin, Users, Image as ImageIcon, Lock, Globe, Edit } from 'lucide-react';
 
 import { Project } from '@/hooks/useProjects';
 import { useAppRole } from '@/hooks/useAppRole';
 import { generateGroupKey, exportSymmetricKey, importPublicKey, encryptWithPublicKey } from '@/lib/e2ee';
 import { syncGroupKeyToNative } from '@/lib/e2ee-bridge';
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
+import { validateBasicInfoStep, validateGenreStep, validateBudgetTimelineStep, PROJECT_NAME_MAX, PROJECT_DESCRIPTION_MAX, PROJECT_LOCATION_MAX } from './projectWizardValidation';
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
@@ -32,6 +34,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
   const { toast } = useToast();
   const { push } = useAppNavigation();
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const guardDiscard = useDiscardGuard(isOpen, setIsOpen);
 
   useEffect(() => {
     if (defaultOpen) setIsOpen(true);
@@ -112,13 +115,9 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
     }));
   };
 
-  const validateBasicInfo = () => {
-    return projectData.name.trim() !== '' && projectData.description.trim() !== '';
-  };
-
-  const validateGenreAndRoles = () => {
-    return projectData.genre.length > 0;
-  };
+  const validateBasicInfo = () => validateBasicInfoStep(projectData);
+  const validateGenreAndRoles = () => validateGenreStep(projectData);
+  const validateBudgetTimeline = () => validateBudgetTimelineStep(projectData);
 
   const handleSubmit = async () => {
     if (!user) return;
@@ -186,6 +185,8 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
           const { error: spaceError, data: spaceData } = await supabase.from('project_spaces').insert({
             project_id: newProject.id,
             name: `${projectData.name} Workspace`,
+            // without it the space has no owner of its own, so join-request notifications could not find the person to tell
+            creator_id: user.id,
           }).select().single();
 
           if (spaceError) {
@@ -234,7 +235,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
     } catch (error) {
       toast({
         title: projectToEdit ? "Update Failed" : "Creation Failed",
-        description: error instanceof Error ? error.message : "There was an error processing your request.",
+        description: friendlyError(error, "There was an error processing your request."),
         variant: "destructive",
       });
     }
@@ -249,15 +250,15 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Project Name *</Label>
-              <Input id="name" value={projectData.name} onChange={(e) => setProjectData(prev => ({ ...prev, name: e.target.value }))} placeholder="Enter your project name" className="bg-input border-border" />
+              <Input id="name" maxLength={PROJECT_NAME_MAX} value={projectData.name} onChange={(e) => setProjectData(prev => ({ ...prev, name: e.target.value }))} placeholder="Enter your project name" className="bg-input border-border" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description *</Label>
-              <Textarea id="description" value={projectData.description} onChange={(e) => setProjectData(prev => ({ ...prev, description: e.target.value }))} placeholder="Describe your project vision..." className="bg-input border-border min-h-[100px]" />
+              <Textarea id="description" maxLength={PROJECT_DESCRIPTION_MAX} value={projectData.description} onChange={(e) => setProjectData(prev => ({ ...prev, description: e.target.value }))} placeholder="Describe your project vision..." className="bg-input border-border min-h-[100px]" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="location" className="flex items-center"><MapPin className="mr-1 h-4 w-4" />Location</Label>
-              <Input id="location" value={projectData.location} onChange={(e) => setProjectData(prev => ({ ...prev, location: e.target.value }))} placeholder="Filming location" className="bg-input border-border" />
+              <Input id="location" maxLength={PROJECT_LOCATION_MAX} value={projectData.location} onChange={(e) => setProjectData(prev => ({ ...prev, location: e.target.value }))} placeholder="Filming location" className="bg-input border-border" />
             </div>
             <div className="space-y-2">
               <Label className="flex items-center">
@@ -274,6 +275,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
                   </p>
                 </div>
                 <Switch
+                  aria-label="Public project"
                   checked={projectData.is_public}
                   onCheckedChange={(checked) => setProjectData(prev => ({ ...prev, is_public: checked }))}
                 />
@@ -282,11 +284,11 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
           </div>
           <div className="space-y-2">
             <Label>Project Image</Label>
-            <div className="w-full h-48 border-2 border-dashed border-border rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors cursor-pointer relative" onClick={() => document.getElementById('image-upload')?.click()}>
+            <div className="w-full h-48 border-2 border-dashed border-border rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors cursor-pointer relative" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }} onClick={() => document.getElementById('image-upload')?.click()}>
               {!imagePreview ? (
                 <div className="text-center">
                   <ImageIcon className="mx-auto h-10 w-10 mb-2" />
-                  <p>Click to upload an image</p>
+                  <p>Tap or click to add a cover image</p>
                   <p className="text-xs">Recommended: 16:9 aspect ratio</p>
                 </div>
               ) : (
@@ -307,7 +309,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
             <Label className="text-foreground">Project Genre *</Label>
             <div className="flex flex-wrap gap-2">
               {availableGenres.map((genre) => (
-                <Badge key={genre} variant={projectData.genre.includes(genre) ? "default" : "outline"} className={`cursor-pointer transition-colors ${projectData.genre.includes(genre) ? 'bg-primary text-primary-foreground' : 'border-white/20 hover:bg-white/10'}`} onClick={() => handleGenreToggle(genre)}>{genre}</Badge>
+                <button key={genre} type="button" aria-pressed={projectData.genre.includes(genre)} onClick={() => handleGenreToggle(genre)} className={`inline-flex items-center min-h-[40px] px-3.5 rounded-full border text-sm font-semibold transition-colors active:scale-[.97] ${projectData.genre.includes(genre) ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-foreground hover:bg-muted'}`}>{genre}</button>
               ))}
             </div>
           </div>
@@ -315,7 +317,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
             <Label className="text-foreground flex items-center"><Users className="mr-1 h-4 w-4" />Required Roles</Label>
             <div className="flex flex-wrap gap-2">
               {availableRoles.map((role) => (
-                <Badge key={role} variant={projectData.required_roles.includes(role) ? "default" : "outline"} className={`cursor-pointer transition-colors ${projectData.required_roles.includes(role) ? 'bg-secondary text-secondary-foreground' : 'border-white/20 hover:bg-white/10'}`} onClick={() => handleRoleToggle(role)}>{role}</Badge>
+                <button key={role} type="button" aria-pressed={projectData.required_roles.includes(role)} onClick={() => handleRoleToggle(role)} className={`inline-flex items-center min-h-[40px] px-3.5 rounded-full border text-sm font-semibold transition-colors active:scale-[.97] ${projectData.required_roles.includes(role) ? 'bg-secondary text-secondary-foreground border-secondary' : 'border-border text-foreground hover:bg-muted'}`}>{role}</button>
               ))}
             </div>
           </div>
@@ -324,16 +326,17 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
     },
     {
       title: "Budget & Timeline",
+      validation: validateBudgetTimeline,
       component: (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="budget_min" className="flex items-center"><DollarSign className="mr-1 h-4 w-4" />Minimum Budget</Label>
-              <Input id="budget_min" type="number" value={projectData.budget_min} onChange={(e) => setProjectData(prev => ({ ...prev, budget_min: e.target.value }))} placeholder="0" className="bg-input border-border" />
+              <Label htmlFor="budget_min" className="flex items-center"><span aria-hidden="true" className="mr-1 font-semibold">₹</span>Minimum Budget</Label>
+              <Input id="budget_min" type="number" inputMode="numeric" min={0} value={projectData.budget_min} onChange={(e) => setProjectData(prev => ({ ...prev, budget_min: e.target.value }))} placeholder="0" className="bg-input border-border" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="budget_max">Maximum Budget</Label>
-              <Input id="budget_max" type="number" value={projectData.budget_max} onChange={(e) => setProjectData(prev => ({ ...prev, budget_max: e.target.value }))} placeholder="0" className="bg-input border-border" />
+              <Input id="budget_max" type="number" inputMode="numeric" min={0} value={projectData.budget_max} onChange={(e) => setProjectData(prev => ({ ...prev, budget_max: e.target.value }))} placeholder="0" className="bg-input border-border" />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -368,9 +371,9 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog open={isOpen} onOpenChange={guardDiscard}>
       <DialogTrigger asChild>
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition shrink-0 text-sm">
           {projectToEdit ? (
             <span className="flex items-center gap-2">
               <Edit className="h-4 w-4" /> 

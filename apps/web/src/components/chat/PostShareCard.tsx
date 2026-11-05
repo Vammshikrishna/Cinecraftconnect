@@ -1,3 +1,4 @@
+import { PreviewVideo } from "@/components/common/FeedVideo";
 import { useState, useEffect } from 'react';
 import { Film, Briefcase, AlertCircle } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -33,7 +34,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
             try {
                 const { data: postData, error } = await supabase
                     .from('posts')
-                    .select('id, content, media_url, media_items, profiles(username, full_name, avatar_url, is_verified)')
+                    .select('id, content, media_url, media_items, profiles:author_id(username, full_name, avatar_url, is_verified)')
                     .eq('id', postId)
                     .maybeSingle();
 
@@ -133,7 +134,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                 </div>
                 <div className="space-y-0.5">
                     <p className="text-xs font-bold text-foreground">Post unavailable</p>
-                    <p className="text-[11px] text-muted-foreground leading-snug">This post was deleted by the owner.</p>
+                    <p className="text-[12px] text-muted-foreground leading-snug">This post was deleted by the owner.</p>
                 </div>
             </div>
         );
@@ -143,15 +144,15 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
         <>
             <div
                 onClick={() => setIsOpen(true)}
-                className="relative block w-[220px] shrink-0 glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
+                className="relative block w-[220px] shrink-0 glass-card-premium rounded-xl overflow-hidden transition duration-500 hover:-translate-y-1 active:scale-[0.98] cursor-pointer group shadow-lg"
             >
                 <CornerBrackets />
                 {/* Header Section */}
-                <div className="p-3 flex items-center gap-2.5 bg-white dark:bg-black/60 backdrop-blur-md border-b border-black/10 dark:border-white/10">
+                <div className="p-3 flex items-center gap-2.5 bg-white dark:bg-black/60 border-b border-black/10 dark:border-white/10">
                     <div className="relative shrink-0">
                         <Avatar className="h-7 w-7 border border-black/20 dark:border-white/20">
                             <AvatarImage src={getOptimizedImage(author?.avatar_url || '', { width: 64, height: 64 }) || undefined} />
-                            <AvatarFallback className="bg-primary/20 text-primary text-[10px] font-bold">
+                            <AvatarFallback className="bg-primary/20 text-primary text-[12px] font-bold">
                                 {(author?.full_name || author?.username || '?').charAt(0)}
                             </AvatarFallback>
                         </Avatar>
@@ -173,15 +174,10 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                 >
                     {preview ? (
                         isVideo(preview) ? (
-                            <video
+                            <PreviewVideo
                                 src={preview}
                                 className={`w-full h-full ${hasAspectRatio ? 'object-cover' : 'object-contain'} transition-transform duration-700 group-hover:scale-105`}
                                 style={imageStyles}
-                                muted
-                                loop
-                                playsInline
-                                onMouseOver={e => e.currentTarget.play()}
-                                onMouseOut={e => e.currentTarget.pause()}
                             />
                         ) : (
                             <img loading="lazy" decoding="async"
@@ -211,9 +207,9 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                                             </div>
 
                                             <div className="relative z-10 w-full flex flex-col items-center gap-3">
-                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 backdrop-blur-md scale-90">
+                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 scale-90">
                                                     <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
-                                                    <span className="text-[8px] font-black uppercase tracking-[0.2em] text-primary">Official Opportunity</span>
+                                                    <span className="text-[12px] font-black uppercase tracking-[0.2em] text-primary">Official Opportunity</span>
                                                 </div>
 
                                                 <div className="w-full px-1">
@@ -230,14 +226,14 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                     ) : (
                         <div className="flex flex-col items-center gap-2 text-zinc-700">
                             <Film className="h-8 w-8" />
-                            <span className="text-[9px] tracking-[0.2em] font-black uppercase opacity-40">No Preview</span>
+                            <span className="text-[12px] tracking-[0.2em] font-black uppercase opacity-40">No Preview</span>
                         </div>
                     )}
                 </div>
 
                 {/* Footer / Caption Section */}
                 {text && (
-                    <div className="p-3 bg-white dark:bg-black/60 backdrop-blur-md border-t border-black/10 dark:border-white/10">
+                    <div className="p-3 bg-white dark:bg-black/60 border-t border-black/10 dark:border-white/10">
                         {text.includes('JOB_SHARE::') ? (
                             (() => {
                                 try {
@@ -248,7 +244,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                                     return (
                                         <div className="space-y-2">
                                             {actualCaption && (
-                                                <p className="text-[13px] leading-snug text-foreground/90 line-clamp-2">
+                                                <p className="text-sm leading-snug text-foreground/90 line-clamp-2">
                                                     {actualCaption}
                                                 </p>
                                             )}
@@ -261,14 +257,14 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                                     );
                                 } catch (e) {
                                     return (
-                                        <p className="text-[13px] leading-snug text-foreground/90 line-clamp-2">
+                                        <p className="text-sm leading-snug text-foreground/90 line-clamp-2">
                                             {text}
                                         </p>
                                     );
                                 }
                             })()
                         ) : (
-                            <p className="text-[13px] leading-snug text-foreground/90 line-clamp-2">
+                            <p className="text-sm leading-snug text-foreground/90 line-clamp-2">
                                 {text}
                             </p>
                         )}

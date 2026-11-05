@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@cinecraft/core';
 
 interface Props {
   open: boolean;
@@ -41,7 +42,7 @@ export const IntroductionDialog = ({ open, onOpenChange, targetId, targetName }:
     const { error } = await (supabase as any).rpc('request_introduction', { p_target: targetId, p_via: via, p_note: note.trim() || null });
     setSending(false);
     if (error) {
-      toast({ title: 'Could not ask for the introduction', description: error.message, variant: 'destructive' });
+      toast({ title: 'Could not ask for the introduction', description: friendlyError(error), variant: 'destructive' });
       return;
     }
     toast({ title: 'Introduction requested', description: 'They will be notified.' });

@@ -12,9 +12,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { dmBanner, type DmPolicyReason } from '@cinecraft/core';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useConversationPrefs } from '../../hooks/useConversationPrefs';
+import { confirmAndDeleteConversation } from '../../utils/deleteConversation';
 
 const ORANGE = '#FF5733';
 
@@ -27,10 +30,13 @@ interface DMSettingsModalProps {
   partnerCraft?: string;
   currentUserId?: string | null;
   isOnline?: boolean;
+  /** reason from decideDmEncryption for this chat; drives the encryption note so it matches the chat banner */
+  encryptionReason?: DmPolicyReason;
   onClose: () => void;
   onStartCall?: (isVideo: boolean) => void;
   onViewProfile?: () => void;
   onClearChat?: () => void;
+  onConversationDeleted?: () => void;
   onMuteChanged?: (isMuted: boolean) => void;
 }
 
@@ -43,15 +49,18 @@ export const DMSettingsModal = ({
   partnerCraft = 'FILMMAKER',
   currentUserId,
   isOnline = false,
+  encryptionReason,
   onClose,
   onStartCall,
   onViewProfile,
   onClearChat,
+  onConversationDeleted,
   onMuteChanged,
 }: DMSettingsModalProps) => {
   const { settings, updateSetting, themeColors, isDark, triggerHaptic } = useUserSettings();
 
   const [loading, setLoading] = useState(false);
+  const { prefs: convoPrefs, setMuted: setSharedMuted } = useConversationPrefs();
   const [partnerProfile, setPartnerProfile] = useState<{
     username?: string;
     bio?: string;
@@ -91,6 +100,9 @@ export const DMSettingsModal = ({
             break;
           }
         }
+
+        // the synced choice (conversation_prefs) wins over the old per-phone one
+        if (partnerId && convoPrefs[partnerId]) setMuteConversation(!!convoPrefs[partnerId].muted);
 
         // Fetch detailed profile
         if (partnerId) {
@@ -134,6 +146,7 @@ export const DMSettingsModal = ({
         await AsyncStorage.setItem(k, payload);
       }
 
+      if (partnerId) setSharedMuted(partnerId, newMute);
       onMuteChanged?.(newMute);
     } catch (err) {
       console.warn('[DMSettings] Error saving preferences:', err);
@@ -208,8 +221,8 @@ export const DMSettingsModal = ({
           {/* Header Bar */}
           <View style={[styles.headerBar, { borderBottomColor: themeColors.border }]}>
             <Text style={[styles.headerTitle, { color: themeColors.textPrimary }]}>Chat Settings</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.closeBtn}>
-              <Icon name="x" size={20} color={themeColors.textSecondary} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.closeBtn}>
+              <Icon name="x" size={20} color={themeColors.iconSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -319,6 +332,7 @@ export const DMSettingsModal = ({
                   </View>
                   <Switch
                     value={muteConversation}
+                    accessibilityLabel="Mute Notifications"
                     onValueChange={handleToggleMute}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                     thumbColor="#FFFFFF"
@@ -336,7 +350,7 @@ export const DMSettingsModal = ({
                   </View>
                   <Switch
                     value={soundAlerts}
-                    onValueChange={handleToggleSound}
+                    onValueChange={handleToggleSound} accessibilityLabel="Sound Alerts"
                     disabled={muteConversation}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                     thumbColor="#FFFFFF"
@@ -356,10 +370,21 @@ export const DMSettingsModal = ({
                     <Icon name="lock" size={16} color="#059669" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.securityTitle, { color: '#059669' }]}>End-to-End Encrypted</Text>
-                    <Text style={[styles.securityText, { color: themeColors.textSecondary }]}>
-                      Messages and calls are encrypted on your device. Only you and {partnerName} have the keys to decrypt them.
-                    </Text>
+                    {(() => {
+                      // same source as the chat banner (decideDmEncryption result), so the two can never disagree
+                      const b = dmBanner(encryptionReason || 'self_off', partnerName || 'this person');
+                      const on = b.kind === 'encrypted';
+                      return (
+                        <>
+                          <Text style={[styles.securityTitle, { color: on ? '#059669' : themeColors.textPrimary }]}>
+                            {on ? 'End-to-End Encrypted' : 'Not encrypted'}
+                          </Text>
+                          <Text style={[styles.securityText, { color: themeColors.textSecondary }]}>
+                            {on ? `Messages in this chat are encrypted on your device. Only you and ${partnerName} can read them.` : `${b.title}. ${b.detail}`}
+                          </Text>
+                        </>
+                      );
+                    })()}
                   </View>
                 </View>
 
@@ -373,7 +398,7 @@ export const DMSettingsModal = ({
                     </Text>
                   </View>
                   <Switch
-                    value={settings.read_receipts !== false}
+                    value={settings.read_receipts !== false} accessibilityLabel="Read Receipts"
                     onValueChange={(val) => {
                       triggerHaptic();
                       updateSetting('read_receipts', val);
@@ -392,8 +417,25 @@ export const DMSettingsModal = ({
 
               <View style={[styles.cardGroup, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
                 <TouchableOpacity style={styles.actionRow} onPress={handleClearChatPress}>
-                  <Icon name="trash-2" size={17} color={themeColors.textSecondary} />
+                  <Icon name="trash-2" size={17} color={themeColors.iconSecondary} />
                   <Text style={[styles.actionRowText, { color: themeColors.textPrimary }]}>Clear Chat History</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.divider, { backgroundColor: themeColors.border }]} />
+
+                <TouchableOpacity
+                  style={styles.actionRow}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    if (!currentUserId || !partnerId) return;
+                    confirmAndDeleteConversation(currentUserId, partnerId, partnerName, () => {
+                      onClose();
+                      onConversationDeleted?.();
+                    });
+                  }}
+                >
+                  <Icon name="trash" size={17} color="#EF4444" />
+                  <Text style={[styles.actionRowText, { color: '#EF4444' }]}>Delete conversation</Text>
                 </TouchableOpacity>
 
                 <View style={[styles.divider, { backgroundColor: themeColors.border }]} />
@@ -425,6 +467,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderWidth: 1,
     overflow: 'hidden',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   headerBar: {
     flexDirection: 'row',
@@ -436,7 +481,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
   closeBtn: {
@@ -478,8 +523,8 @@ const styles = StyleSheet.create({
   },
   avatarFallbackText: {
     color: '#FFFFFF',
-    fontSize: 30,
-    fontWeight: '800',
+    fontSize: 32,
+    fontWeight: '700',
   },
   onlineBadge: {
     position: 'absolute',
@@ -498,8 +543,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroName: {
-    fontSize: 19,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '700',
   },
   heroUsername: {
     fontSize: 13,
@@ -515,8 +560,8 @@ const styles = StyleSheet.create({
   },
   craftBadgeText: {
     color: ORANGE,
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   heroBio: {
@@ -564,8 +609,7 @@ const styles = StyleSheet.create({
   },
   sectionHeaderText: {
     fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   cardGroup: {
@@ -586,7 +630,7 @@ const styles = StyleSheet.create({
     paddingRight: 14,
   },
   settingTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
   },
   settingSubtitle: {
@@ -629,7 +673,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   actionRowText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
   },
 });

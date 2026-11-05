@@ -33,32 +33,43 @@ import {
   setSyncPrivateKey,
   generateAndStoreFreshKeyPair,
 } from './services/e2eeKeyEvents';
+import {
+  useE2EEState, isE2EEPromptVisible, loadE2EEEnabled, setPendingE2EEMode, resetE2EEPromptState, dismissE2EEPrompt,
+} from './services/e2eeState';
 import { CallProvider } from './contexts/CallContext';
 import { SettingsProvider, useUserSettings } from './contexts/SettingsContext';
 import { PresenceProvider } from './contexts/PresenceContext';
 import { ToastProvider, installAlertInterceptor } from './contexts/ToastContext';
+import { installDefaultFonts } from './utils/defaultFonts';
+import { installBrandTextContrast } from './utils/brandText';
+import { installTextTranslation } from './utils/translateText';
 import { GlobalCallPipOverlay } from './components/calls/GlobalCallPipOverlay';
 import { CallLifecycle } from './components/calls/CallLifecycle';
+import { ScreenSharePickerHost } from './components/calls/ScreenSharePickerHost';
 import { AccountSwitchProvider } from './contexts/AccountSwitchContext';
 import {
   saveCurrentAccount as amSaveCurrentAccount,
   updateSavedAccountTokens,
 } from './services/accountManager';
+import { fetchE2EEProfileInfo } from './services/e2eeProfiles';
+import { performMobileSignOut, isDeliberateSignOut } from './services/authService';
+import { registerThisDevice } from './services/sessionRegistry';
+import { onboardingGateDecision } from './utils/onboardingGate';
 
 // Install Universal Alert Interceptor to upgrade all standard alerts to CineCraft Toasts & Dialogs
 installAlertInterceptor();
 
-// ── Apply Global Web-Matched Typography (Lora Serif for Total App) ────────────────────────
+// ── Apply Global Web-Matched Typography (Work Sans body, Lora titles: see utils/defaultFonts) ────────
 const applyGlobalFont = () => {
   const customTextProps = {
     style: {
-      fontFamily: 'Lora-Regular',
+      fontFamily: 'WorkSans-Regular',
     },
   };
   // @ts-ignore
   if (Text.defaultProps) {
     // @ts-ignore
-    Text.defaultProps.style = [{ fontFamily: 'Lora-Regular' }, Text.defaultProps.style];
+    Text.defaultProps.style = [{ fontFamily: 'WorkSans-Regular' }, Text.defaultProps.style];
   } else {
     // @ts-ignore
     Text.defaultProps = customTextProps;
@@ -67,13 +78,24 @@ const applyGlobalFont = () => {
   // @ts-ignore
   if (TextInput.defaultProps) {
     // @ts-ignore
-    TextInput.defaultProps.style = [{ fontFamily: 'Lora-Regular' }, TextInput.defaultProps.style];
+    TextInput.defaultProps.style = [{ fontFamily: 'WorkSans-Regular' }, TextInput.defaultProps.style];
   } else {
     // @ts-ignore
     TextInput.defaultProps = customTextProps;
   }
 };
 applyGlobalFont();
+installDefaultFonts();
+installBrandTextContrast();
+installTextTranslation();
+
+// Large system font sizes are honoured up to 1.5x; beyond that dense screens (tabs, chips, cards) break.
+for (const C of [Text, TextInput] as any[]) {
+  C.defaultProps = { ...C.defaultProps, maxFontSizeMultiplier: 1.5 };
+}
+
+// A pressed button dims to 0.2 by default, which reads as a flash; 0.7 is a clear but calm press (screens that set their own keep it).
+(TouchableOpacity as any).defaultProps = { ...(TouchableOpacity as any).defaultProps, activeOpacity: 0.7 };
 
 // Initialize Mobile Storage Bridge
 setupMobileStorage();
@@ -81,6 +103,7 @@ setupMobileStorage();
 // Initialize Shared Supabase Client
 initializeSupabase(ENV.SUPABASE_URL, ENV.SUPABASE_ANON_KEY, {
   detectSessionInUrl: true,
+  flowType: 'pkce',
 });
 
 const normalizeDeepLink = (url: string | null): string | null => {
@@ -180,17 +203,18 @@ const linking: any = {
       MainTabs: {
         screens: {
           Feed: 'feed',
-          Messages: 'messages',
           Projects: 'projects',
           Discussions: 'discussions',
           Jobs: 'jobs',
           Network: 'network',
         },
       },
+      Messages: 'messages',
       Landing: 'landing',
       Login: 'login',
       Register: 'register',
       Conversation: 'messages/:conversationId',
+      JoinProjectInvite: 'projects/join/:code',
       ProjectSpace: 'projects/:projectId',
       DiscussionRoomDetail: 'discussions/:roomId',
       Search: 'search',
@@ -219,7 +243,7 @@ const linking: any = {
       let initialTab = 'Feed';
       if (topRoute.name === 'DiscussionRoomDetail') initialTab = 'Discussions';
       if (topRoute.name === 'ProjectSpace' || topRoute.name === 'ProjectDetail') initialTab = 'Projects';
-      if (topRoute.name === 'Conversation') initialTab = 'Messages';
+      // chats and Messages are stack routes, not tabs: the tab underneath stays Feed
 
       return {
         routes: [
@@ -244,8 +268,9 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isBanned, setIsBanned] = useState(false);
   const [isOnboardingRequired, setIsOnboardingRequired] = useState(false);
-  const [showE2EEBackup, setShowE2EEBackup] = useState(false);
-  const [e2eeMode, setE2eeMode] = useState<'setup' | 'recovery'>('setup');
+  // 'checking' / 'failed': a signed-in person whose profile (and so onboarding state) is not known yet. The app is never entered
+  // in these states: 'checking' shows the loading skeleton, 'failed' shows a retry / sign-out screen.
+  const [profileGate, setProfileGate] = useState<'ok' | 'checking' | 'failed'>('ok');
   const navigationRef = useNavigationContainerRef();
   const bootstrappedUserRef = useRef<string | null>(null);
   const isBootstrappingRef = useRef(false);
@@ -265,15 +290,21 @@ export default function App() {
     setSession(newSession);
     setIsBanned(false);
     setIsOnboardingRequired(false);
-    setShowE2EEBackup(false);
+    resetE2EEPromptState();
 
-    // Drive navigation to main content as the new user immediately
-    if (navigationRef.isReady()) {
-      navigationRef.reset({
-        index: 0,
-        routes: [{ name: 'MainTabs' }],
+    // Drive navigation as the new user immediately: main content, unless that account never finished onboarding
+    // (the switch pre-warms the profile cache with the account's remembered flag, so this read is instant).
+    const switchedId = newSession?.user?.id;
+    (switchedId ? getCache<any>(`profile_${switchedId}`) : Promise.resolve(null))
+      .catch(() => null)
+      .then((cached) => {
+        const decision = onboardingGateDecision({ hasSession: true, profile: cached, profileLoadFailed: false });
+        const target = decision === 'onboarding' ? 'CompleteProfile' : decision === 'banned' ? 'Suspended' : 'MainTabs';
+        if (target === 'CompleteProfile') setIsOnboardingRequired(true);
+        if (navigationRef.isReady()) {
+          navigationRef.reset({ index: 0, routes: [{ name: target }] });
+        }
       });
-    }
 
     // Run a lightweight background bootstrap (non-blocking — will update profile
     // data from network without blocking the new account's UI from displaying).
@@ -333,15 +364,16 @@ export default function App() {
           return;
         }
         if (!cachedProfile.onboarding_completed) {
+          // Show onboarding right away, but do NOT stop here: the cached copy may be out of date (for example onboarding was
+          // finished on another device), so the code below still checks the server and lets the person in if it is finished.
           setIsOnboardingRequired(true);
           setIsBanned(false);
+          setProfileGate('ok');
           setIsAuthReady(true);
-          bootstrappedUserRef.current = currentSession.user.id;
           if (navigationRef.isReady()) {
             navigationRef.reset({ index: 0, routes: [{ name: 'CompleteProfile' }] });
           }
-          return;
-        }
+        } else {
         setIsBanned(false);
         setIsOnboardingRequired(false);
         setIsAuthReady(true);
@@ -354,6 +386,10 @@ export default function App() {
             navigationRef.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
           }
         }
+        }
+      } else {
+        // Nothing cached: we do not know yet whether onboarding is finished, so the app stays closed until the server says.
+        setProfileGate('checking');
       }
 
       // Preload feed in background (non-blocking)
@@ -368,13 +404,19 @@ export default function App() {
         const secureStore = new NativeSecureKeyStore();
         let localKey = await secureStore.getKey(`e2ee_private_key_${currentSession.user.id}`);
         if (!localKey) localKey = await secureStore.getKey(`priv_${currentSession.user.id}`);
-        if (localKey) return { localKey, backupRes: null as any, profileRes: null as any };
+        const profileQuery = fetchE2EEProfileInfo([currentSession.user.id])
+          .then((m) => ({ data: m.get(currentSession.user.id) ?? null, error: null as any }))
+          .catch((error) => ({ data: null, error }));
+        if (localKey) {
+          const profileRes: any = await withTimeout(profileQuery, 3500).catch(() => null);
+          return { localKey, backupRes: null as any, profileRes };
+        }
         const [backupRes, profileRes]: any[] = await Promise.all([
           withTimeout(
             Promise.resolve((supabase as any).from('key_backups').select('user_id').eq('user_id', currentSession.user.id).maybeSingle()),
             3500
           ),
-          Promise.resolve(supabase.from('profiles').select('public_key').eq('id', currentSession.user.id).maybeSingle()),
+          profileQuery,
         ]);
         return { localKey: null as string | null, backupRes, profileRes };
       })();
@@ -382,17 +424,42 @@ export default function App() {
       // Pull every chat's encrypted group key in one query so opening a project space / room is instant.
       require('./hooks/useGroupEncryption').prefetchGroupKeys(currentSession.user.id);
 
-      // Refresh profile in background with network timeout
+      // Refresh profile with a network timeout. With a cached profile the person is already inside, so 2 seconds is enough;
+      // without one we MUST get an answer (10 seconds, two tries) before deciding anything.
+      const fetchProfileOnce = async () => {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, onboarding_completed, is_banned, account_type, craft, is_verified, full_name, username, avatar_url')
+          .eq('id', currentSession.user.id)
+          .maybeSingle();
+        return !error && data ? data : null;
+      };
       try {
-        const fetchProfilePromise = (async () => {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('id, onboarding_completed, is_banned, account_type, craft, is_verified, full_name, username, avatar_url')
-            .eq('id', currentSession.user.id)
-            .maybeSingle();
-          return !error && data ? data : null;
-        })();
-        const freshProfile = await withTimeout(fetchProfilePromise, 2000);
+        let freshProfile: any = null;
+        if (cachedProfile) {
+          const fetchProfilePromise = fetchProfileOnce();
+          try {
+            freshProfile = await withTimeout(fetchProfilePromise, 2000);
+          } catch (slow) {
+            // Too slow: keep the cached copy for now, but when the answer does arrive refresh the cache and send the person
+            // to onboarding if it turns out to be unfinished.
+            fetchProfilePromise.then(async (late: any) => {
+              if (!late) return;
+              await saveCache(`profile_${currentSession.user.id}`, late).catch(() => {});
+              if (late.is_banned) {
+                setIsBanned(true);
+              } else if (!late.onboarding_completed) {
+                setIsOnboardingRequired(true);
+                if (navigationRef.isReady()) navigationRef.reset({ index: 0, routes: [{ name: 'CompleteProfile' }] });
+              }
+            }).catch(() => {});
+            throw slow;
+          }
+        } else {
+          for (let attempt = 0; attempt < 2 && !freshProfile; attempt++) {
+            try { freshProfile = await withTimeout(fetchProfileOnce(), 10000); } catch { freshProfile = null; }
+          }
+        }
         if (freshProfile) {
           profileData = freshProfile;
           await saveCache(`profile_${currentSession.user.id}`, freshProfile);
@@ -412,23 +479,31 @@ export default function App() {
         console.warn('[App] Profile fetch network timeout/offline. Using cached profile.');
       }
 
-      if (profileData) {
-        if (profileData.is_banned) {
-          setIsBanned(true);
-          setIsOnboardingRequired(false);
-          if (navigationRef.isReady()) {
-            navigationRef.reset({ index: 0, routes: [{ name: 'Suspended' }] });
-          }
-          return;
+      const gate = onboardingGateDecision({ hasSession: true, profile: profileData, profileLoadFailed: true });
+      if (gate === 'retry' || gate === 'wait') {
+        // No cache and the server did not answer: never assume onboarding is finished.
+        setProfileGate('failed');
+        return;
+      }
+      setProfileGate('ok');
+      setIsAuthReady(true);
+      if (gate === 'banned') {
+        setIsBanned(true);
+        setIsOnboardingRequired(false);
+        bootstrappedUserRef.current = currentSession.user.id;
+        if (navigationRef.isReady()) {
+          navigationRef.reset({ index: 0, routes: [{ name: 'Suspended' }] });
         }
-        if (!profileData.onboarding_completed) {
-          setIsOnboardingRequired(true);
-          setIsBanned(false);
-          if (navigationRef.isReady()) {
-            navigationRef.reset({ index: 0, routes: [{ name: 'CompleteProfile' }] });
-          }
-          return;
+        return;
+      }
+      if (gate === 'onboarding') {
+        setIsOnboardingRequired(true);
+        setIsBanned(false);
+        bootstrappedUserRef.current = currentSession.user.id;
+        if (navigationRef.isReady()) {
+          navigationRef.reset({ index: 0, routes: [{ name: 'CompleteProfile' }] });
         }
+        return;
       }
 
       setIsBanned(false);
@@ -438,18 +513,25 @@ export default function App() {
       try {
         const { localKey, backupRes, profileRes } = await e2eePrefetch;
 
+        // Opt-in: only people who turned encrypted messages on get keys created or the PIN dialog.
+        // Unknown (offline) falls back to the last known value.
+        const serverFlag = profileRes?.data ? !!profileRes.data.e2ee_enabled : null;
+        const e2eeEnabled = await loadE2EEEnabled(currentSession.user.id, serverFlag);
+
         if (localKey) {
           // Key already on device — cache synchronously and broadcast to all screens
           setSyncPrivateKey(currentSession.user.id, localKey);
           notifyKeyChanged(currentSession.user.id, localKey);
+        } else if (e2eeEnabled !== true) {
+          // Encrypted messages are off (or unknown while offline): nothing to create, nothing to ask.
+          setPendingE2EEMode(null);
         } else {
           // No local key on device: check if user has a remote backup
           const backup = backupRes?.data;
 
           if (backup) {
-            // Existing user with PIN backup: prompt PIN recovery
-            setE2eeMode('recovery');
-            setShowE2EEBackup(true);
+            // Existing user with PIN backup: prompt PIN recovery (shown when a message screen asks for it)
+            setPendingE2EEMode('recovery');
           } else {
             // Check if user already has an active public_key (e.g. from Web or prior session)
             const profile = profileRes?.data;
@@ -458,8 +540,7 @@ export default function App() {
               // User has an existing public key from another device (e.g. Web).
               // Prompt recovery mode so they can enter PIN or choose explicit reset,
               // rather than silently overwriting their profile.public_key and breaking Web.
-              setE2eeMode('recovery');
-              setShowE2EEBackup(true);
+              setPendingE2EEMode('recovery');
             } else {
               // Truly fresh account with no existing public key:
               // Generate local key pair so chats work immediately, then prompt PIN backup setup
@@ -472,8 +553,7 @@ export default function App() {
               } catch (genErr) {
                 console.warn('[App] Key generation error:', genErr);
               }
-              setE2eeMode('setup');
-              setShowE2EEBackup(true);
+              setPendingE2EEMode('setup');
             }
           }
         }
@@ -494,6 +574,8 @@ export default function App() {
       }
     } catch (e) {
       console.warn('[App] bootstrapSession error:', e);
+      // an unknown profile must never open the app: turn a pending check into the retry screen
+      setProfileGate((g) => (g === 'checking' ? 'failed' : g));
       setIsAuthReady(true);
     } finally {
       isBootstrappingRef.current = false;
@@ -595,6 +677,9 @@ export default function App() {
         if (activeSession?.user?.id && isMounted) {
           setCachedCurrentUserId(activeSession.user.id);
           setSession(activeSession);
+          // Without a cached profile we cannot tell whether onboarding is finished: keep the app closed until bootstrap knows.
+          const bootProfile = await getCache<any>(`profile_${activeSession.user.id}`).catch(() => null);
+          if (!bootProfile) setProfileGate('checking');
           setIsAuthReady(true);
           bootstrapSession(activeSession);
         } else if (isMounted) {
@@ -628,6 +713,8 @@ export default function App() {
           if (!isMounted) return;
 
           if (newSession?.user) {
+            // record this phone for "Where you are logged in" (one row per device, updated in place)
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') registerThisDevice(newSession).catch(() => { });
             setCachedCurrentUserId(newSession.user.id);
             setSession(newSession);
             saveCache('user_session', newSession).catch(() => { });
@@ -645,6 +732,7 @@ export default function App() {
               console.log('[App] SIGNED_OUT received — attempting session recovery before logout...');
 
               try {
+                if (isDeliberateSignOut()) throw new Error('deliberate sign-out');
                 // First try: read the locally persisted session
                 const { data: { session: localSession } } = await supabase.auth.getSession();
                 if (localSession?.user && isMounted) {
@@ -682,7 +770,8 @@ export default function App() {
               clearAllDeviceE2EEKeys().catch(() => { });
               setIsBanned(false);
               setIsOnboardingRequired(false);
-              setShowE2EEBackup(false);
+              setProfileGate('ok');
+              resetE2EEPromptState();
               if (navigationRef.isReady()) {
                 navigationRef.reset({
                   index: 0,
@@ -712,6 +801,11 @@ export default function App() {
                 params.forEach((val, key) => {
                   dataObj[key] = val;
                 });
+                // A link can come from any app or web page, so it may open a screen but must never start, accept
+                // or join a call by itself: those flags are only honoured for notifications we received.
+                for (const flag of ['autoJoinCall', 'autoJoin', 'autoAccept', 'callAction', 'incomingCall']) {
+                  delete dataObj[flag];
+                }
                 handleNotificationNavigation(dataObj, navigationRef);
                 return;
               }
@@ -720,7 +814,7 @@ export default function App() {
             // Check for access_token in hash or query
             if (urlStr.includes('access_token')) {
               // Only accept a token handed to us by an OAuth flow this app started (see oauthGuard).
-              if (!consumeOAuthPending()) {
+              if (!consumeOAuthPending(urlStr)) {
                 console.warn('[DeepLink] Ignoring access_token link: no OAuth sign-in in progress.');
                 return;
               }
@@ -737,29 +831,25 @@ export default function App() {
                   });
                   if (data.session) {
                     setSession(data.session);
-                    if (navigationRef.isReady()) {
-                      navigationRef.reset({
-                        index: 0,
-                        routes: [{ name: 'MainTabs' }],
-                      });
-                    }
+                    // bootstrapSession decides between the app and onboarding once the profile is known
+                    bootstrapSession(data.session);
                   }
                 }
               }
             } else if (urlStr.includes('code=')) {
-              // PKCE code exchange flow
+              // PKCE code exchange flow: only for a sign-in this app started, on its own callback link
+              if (!consumeOAuthPending(urlStr)) {
+                console.warn('[DeepLink] Ignoring code link: no OAuth sign-in in progress.');
+                return;
+              }
               const searchPart = urlStr.includes('?') ? urlStr.split('?')[1] : '';
               const code = new URLSearchParams(searchPart).get('code');
               if (code) {
                 const { data } = await supabase.auth.exchangeCodeForSession(code);
                 if (data.session) {
                   setSession(data.session);
-                  if (navigationRef.isReady()) {
-                    navigationRef.reset({
-                      index: 0,
-                      routes: [{ name: 'MainTabs' }],
-                    });
-                  }
+                  // bootstrapSession decides between the app and onboarding once the profile is known
+                  bootstrapSession(data.session);
                 }
               }
             }
@@ -810,10 +900,42 @@ export default function App() {
     return 'Landing';
   };
 
-  if (!isAuthReady) {
+  if (!isAuthReady || (session && profileGate === 'checking')) {
     return (
       <SettingsProvider>
         <FeedSkeletonScreen />
+      </SettingsProvider>
+    );
+  }
+
+  if (session && profileGate === 'failed') {
+    return (
+      <SettingsProvider>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#0f0f0f' }}>
+          <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', textAlign: 'center' }}>Could not load your profile</Text>
+          <Text style={{ color: '#aaa', fontSize: 14, textAlign: 'center', marginTop: 8, marginBottom: 24 }}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            onPress={() => { setProfileGate('checking'); bootstrapSession(session); }}
+            style={{ backgroundColor: '#f97316', paddingVertical: 12, paddingHorizontal: 32, borderRadius: 24, marginBottom: 12 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Try again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              performMobileSignOut(() => {
+                bootstrappedUserRef.current = null;
+                isBootstrappingRef.current = false;
+                setProfileGate('ok');
+                setSession(null);
+              }).catch(() => {});
+            }}
+            style={{ paddingVertical: 10, paddingHorizontal: 24 }}
+          >
+            <Text style={{ color: '#aaa', fontSize: 14 }}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
       </SettingsProvider>
     );
   }
@@ -828,9 +950,6 @@ export default function App() {
             <AppShell
               navigationRef={navigationRef}
               initialRouteName={initialRouteName}
-              showE2EEBackup={showE2EEBackup}
-              e2eeMode={e2eeMode}
-              setShowE2EEBackup={setShowE2EEBackup}
               onAccountSwitch={handleAccountSwitch}
             />
           </AccountSwitchProvider>
@@ -843,11 +962,9 @@ export default function App() {
 const AppShell = ({
   navigationRef,
   initialRouteName,
-  showE2EEBackup,
-  e2eeMode,
-  setShowE2EEBackup,
   onAccountSwitch,
 }: any) => {
+  const e2ee = useE2EEState();
   const { settings, themeColors, isDark } = useUserSettings();
   const isLight = !isDark;
 
@@ -900,14 +1017,6 @@ const AppShell = ({
           navigationRef.reset({
             index: 0,
             routes: [{ name: 'MainTabs', state: { routes: [{ name: 'Projects' }], index: 0 } }],
-          });
-          return true;
-        }
-
-        if (routeName === 'Conversation' || routeName === 'Messages') {
-          navigationRef.reset({
-            index: 0,
-            routes: [{ name: 'MainTabs', state: { routes: [{ name: 'Messages' }], index: 0 } }],
           });
           return true;
         }
@@ -1008,13 +1117,14 @@ const AppShell = ({
           {/* Global Floating PiP Call Overlay (persists across all navigation) */}
           <GlobalCallPipOverlay navigationRef={navigationRef} />
           <CallLifecycle />
+          <ScreenSharePickerHost />
 
           {/* Cryptographic E2EE PIN Recovery/Setup Modal */}
           <E2EERecoveryPinModal
-            visible={showE2EEBackup}
-            mode={e2eeMode}
-            onClose={() => setShowE2EEBackup(false)}
-            onSuccess={() => setShowE2EEBackup(false)}
+            visible={isE2EEPromptVisible(e2ee)}
+            mode={e2ee.pendingMode || 'setup'}
+            onClose={() => dismissE2EEPrompt()}
+            onSuccess={() => setPendingE2EEMode(null)}
           />
 
           {/* Biometric App Lock Screen Overlay */}

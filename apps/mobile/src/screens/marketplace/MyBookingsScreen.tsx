@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { CachedImage } from '../../components/common/CachedImage';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { OpenDisputeModal } from '../../components/marketplace/OpenDisputeModal';
 import { LeaveReviewModal } from '../../components/modals/LeaveReviewModal';
 import { OrdersTabs } from '../../components/marketplace/OrdersTabs';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { friendlyError } from '@cinecraft/core';
+import { isTabletDevice } from '../../utils/pageType';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
+import { TabletColumn } from '../../components/common/TabletContainer';
 
 const ORANGE = '#FF4B33';
 const STATUS: Record<string, { label: string; color: string; tint: string }> = {
@@ -26,6 +32,25 @@ const ago = (iso: string) => {
   return `${Math.round(h / 24)}d ago`;
 };
 
+// Module-scope so the button keeps its identity across renders (it used to be re-created per render and remounted).
+const ActionBtn = ({ label, onPress, solid, danger, icon, disabled }: any) => {
+  const { themeColors: T } = useUserSettings();
+  return (
+    <TouchableOpacity
+      disabled={disabled}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      hitSlop={{ top: 5, bottom: 5, left: 2, right: 2 }}
+      style={[styles.btn, solid ? { backgroundColor: ORANGE } : { borderWidth: 1, borderColor: danger ? 'rgba(239,68,68,0.4)' : T.border }, disabled && { opacity: 0.5 }]}
+    >
+      {icon ? <Icon name={icon} size={13} color={solid ? '#fff' : danger ? '#EF4444' : ORANGE} /> : null}
+      <Text style={{ color: solid ? '#fff' : danger ? '#EF4444' : ORANGE, fontSize: 12, fontWeight: '700' }}>{label}</Text>
+    </TouchableOpacity>
+  );
+};
+
 export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
   const { themeColors: T } = useUserSettings();
   const [userId, setUserId] = useState<string | null>(null);
@@ -33,8 +58,10 @@ export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reviewFor, setReviewFor] = useState<any | null>(null);
+  const [disputeFor, setDisputeFor] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -60,8 +87,10 @@ export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
         reviewed = new Set((revs || []).map((r: any) => r.booking_id));
       }
       setBookings(rows.map((r) => ({ ...r, reviewed: reviewed.has(r.id) })));
+      setLoadError(false);
     } catch (e) {
       console.warn('[MyBookings] fetch error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -77,7 +106,8 @@ export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
     const supabase = getSupabaseClient();
     const channel = supabase
       .channel(`my_bookings_${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_bookings' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_bookings', filter: `renter_id=eq.${userId}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_bookings', filter: `owner_id=eq.${userId}` }, () => load())
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -95,7 +125,7 @@ export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
       if (error) throw error;
       load();
     } catch (e: any) {
-      Alert.alert('Could not update the booking', e?.message || 'Please try again.');
+      Alert.alert('Could not update the booking', friendlyError(e, 'Please try again.'));
     } finally {
       setBusyId(null);
     }
@@ -104,28 +134,18 @@ export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
   const confirmThen = (title: string, b: any, status: string) =>
     Alert.alert(title, 'The other person will be notified. This cannot be undone.', [
       { text: 'Keep it', style: 'cancel' },
-      { text: 'Yes, continue', style: 'destructive', onPress: () => setStatus(b, status) },
+      { text: status === 'cancelled' && title.startsWith('Decline') ? 'Decline request' : 'Cancel booking', style: 'destructive', onPress: () => setStatus(b, status) },
     ]);
-
-  const Btn = ({ label, onPress, solid, danger, icon, disabled }: any) => (
-    <TouchableOpacity
-      disabled={disabled}
-      onPress={onPress}
-      style={[styles.btn, solid ? { backgroundColor: ORANGE } : { borderWidth: 1, borderColor: danger ? 'rgba(239,68,68,0.4)' : T.border }, disabled && { opacity: 0.5 }]}
-    >
-      {icon ? <Icon name={icon} size={13} color={solid ? '#fff' : danger ? '#EF4444' : ORANGE} /> : null}
-      <Text style={{ color: solid ? '#fff' : danger ? '#EF4444' : ORANGE, fontSize: 12, fontWeight: '800' }}>{label}</Text>
-    </TouchableOpacity>
-  );
 
   return (
     <View style={[styles.container, { backgroundColor: T.bgScreen }]}>
       <Header title="Orders" showLogo={false} onBack={() => navigation.goBack()} />
+      <TabletColumn maxWidth="content">
       <OrdersTabs current="bookings" navigation={navigation} />
       <View style={[styles.tabs, { backgroundColor: T.inputBg }]}>
         {([['renter', 'Renting'], ['owner', 'Hosting']] as const).map(([k, label]) => (
-          <TouchableOpacity key={k} style={[styles.tab, role === k && { backgroundColor: T.bgCard }]} onPress={() => setRole(k)}>
-            <Text style={{ color: role === k ? ORANGE : T.textSecondary, fontSize: 13, fontWeight: '800' }}>
+          <TouchableOpacity key={k} accessibilityRole="tab" accessibilityState={{ selected: role === k }} style={[styles.tab, role === k && { backgroundColor: T.bgCard }]} onPress={() => setRole(k)}>
+            <Text style={{ color: role === k ? ORANGE : T.textSecondary, fontSize: 13, fontWeight: '700' }}>
               {label}{k === 'owner' && pendingForMe > 0 ? `  (${pendingForMe})` : ''}
             </Text>
           </TouchableOpacity>
@@ -133,40 +153,43 @@ export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
+        contentContainerStyle={{ padding: isTabletDevice ? 24 : 14, paddingBottom: 72 }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={ORANGE} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={ORANGE} colors={[ORANGE]} />}
       >
         {loading ? (
-          <ActivityIndicator color={ORANGE} style={{ marginTop: 40 }} />
+          <ScreenSkeleton variant="list" />
+        ) : loadError && bookings.length === 0 ? (
+          <LoadErrorState onRetry={() => { setLoading(true); setLoadError(false); load(); }} />
         ) : mine.length === 0 ? (
           <View style={{ alignItems: 'center', marginTop: 60 }}>
-            <Icon name="calendar" size={36} color={T.textMuted} />
-            <Text style={{ color: T.textPrimary, fontSize: 17, fontWeight: '800', marginTop: 10 }}>{role === 'renter' ? 'No rentals yet' : 'No requests yet'}</Text>
+            <Icon name="calendar" size={36} color={T.iconMuted} />
+            <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700', marginTop: 10 }}>{role === 'renter' ? 'No rentals yet' : 'No requests yet'}</Text>
             <Text style={{ color: T.textMuted, marginTop: 4, textAlign: 'center' }}>
               {role === 'renter' ? 'Find gear or a location and send a booking request.' : 'When someone requests your gear it will show up here.'}
             </Text>
           </View>
         ) : (
-          mine.map((b) => {
+          <View style={isTabletDevice ? { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, alignItems: 'flex-start' } : undefined}>
+          {mine.map((b) => {
             const st = STATUS[b.status] || STATUS.pending;
             const other = role === 'renter' ? b.owner : b.renter;
             const name = other?.full_name || other?.username || 'Member';
             const busy = busyId === b.id;
             const img = b.listing?.images?.[0];
             return (
-              <View key={b.id} style={[styles.card, { backgroundColor: T.bgCard, borderColor: T.border }]}>
+              <View key={b.id} style={[styles.card, isTabletDevice && { width: '49.3%' }, { backgroundColor: T.bgCard, borderColor: T.border }]}>
                 <TouchableOpacity activeOpacity={0.85} style={{ flexDirection: 'row', gap: 12 }} onPress={() => navigation.navigate('MarketplaceDetail', { listingId: b.listing_id, listingTitle: b.listing?.title })}>
-                  {img ? <CachedImage uri={img} style={styles.thumb} /> : <View style={[styles.thumb, { backgroundColor: T.inputBg, alignItems: 'center', justifyContent: 'center' }]}><Icon name="shopping-bag" size={20} color={T.textMuted} /></View>}
+                  {img ? <CachedImage uri={img} style={styles.thumb} /> : <View style={[styles.thumb, { backgroundColor: T.inputBg, alignItems: 'center', justifyContent: 'center' }]}><Icon name="shopping-bag" size={20} color={T.iconMuted} /></View>}
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-                      <Text style={{ color: T.textPrimary, fontSize: 15, fontWeight: '800', flex: 1 }} numberOfLines={2}>{b.listing?.title || 'Listing removed'}</Text>
-                      <View style={[styles.pill, { backgroundColor: st.tint }]}><Text style={{ color: st.color, fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5 }}>{st.label}</Text></View>
+                      <Text style={{ color: T.textPrimary, fontSize: 16, fontWeight: '700', flex: 1 }} numberOfLines={2}>{b.listing?.title || 'Listing removed'}</Text>
+                      <View style={[styles.pill, { backgroundColor: st.tint }]}><Text style={{ color: st.color, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{st.label}</Text></View>
                     </View>
                     <Text style={{ color: T.textPrimary, fontSize: 13, fontWeight: '700', marginTop: 4 }}>
                       {range(b)} · <Text style={{ color: ORANGE }}>₹{Number(b.total_price).toLocaleString()}</Text>
                     </Text>
-                    <Text style={{ color: T.textSecondary, fontSize: 11.5, marginTop: 2 }} numberOfLines={1}>
+                    <Text style={{ color: T.textSecondary, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
                       {role === 'renter' ? 'Owner' : 'Renter'}: {name} · {ago(b.created_at)}
                     </Text>
                   </View>
@@ -176,42 +199,48 @@ export const MyBookingsScreen = ({ navigation }: { navigation: any }) => {
                 <View style={styles.actions}>
                   {role === 'owner' && b.status === 'pending' && (
                     <>
-                      <Btn solid icon="check" label="Accept" disabled={busy} onPress={() => setStatus(b, 'confirmed')} />
-                      <Btn icon="x" label="Decline" disabled={busy} onPress={() => confirmThen('Decline this request?', b, 'cancelled')} />
+                      <ActionBtn solid icon="check" label="Accept" disabled={busy} onPress={() => setStatus(b, 'confirmed')} />
+                      <ActionBtn icon="x" label="Decline" disabled={busy} onPress={() => confirmThen('Decline this request?', b, 'cancelled')} />
                     </>
                   )}
-                  {role === 'owner' && b.status === 'confirmed' && started(b) && <Btn solid icon="check" label="Mark completed" disabled={busy} onPress={() => setStatus(b, 'completed')} />}
+                  {role === 'owner' && b.status === 'confirmed' && started(b) && <ActionBtn solid icon="check" label="Mark completed" disabled={busy} onPress={() => setStatus(b, 'completed')} />}
                   {((role === 'owner' && b.status === 'confirmed') || (role === 'renter' && (b.status === 'pending' || b.status === 'confirmed'))) && (
-                    <Btn danger label="Cancel booking" disabled={busy} onPress={() => confirmThen('Cancel this booking?', b, 'cancelled')} />
+                    <ActionBtn danger label="Cancel booking" disabled={busy} onPress={() => confirmThen('Cancel this booking?', b, 'cancelled')} />
+                  )}
+                  {(b.status === 'completed' || b.status === 'cancelled' || (b.status === 'confirmed' && started(b))) && (
+                    <ActionBtn icon="info" label="Report a problem" onPress={() => setDisputeFor(b)} />
                   )}
                   {role === 'renter' && (b.status === 'completed' || (b.status === 'confirmed' && started(b))) && !b.reviewed && (
-                    <Btn icon="star" label="Leave review" onPress={() => setReviewFor(b)} />
+                    <ActionBtn icon="star" label="Leave review" onPress={() => setReviewFor(b)} />
                   )}
                   {other && (
-                    <Btn icon="message-square" label="Message" onPress={() => navigation.navigate('Conversation', { recipientId: other.id, recipientName: name })} />
+                    <ActionBtn icon="message-square" label="Message" onPress={() => navigation.navigate('Conversation', { recipientId: other.id, recipientName: name })} />
                   )}
                 </View>
               </View>
             );
-          })
+          })}
+          </View>
         )}
       </ScrollView>
 
+      <OpenDisputeModal visible={!!disputeFor} onClose={() => setDisputeFor(null)} kind="booking" refId={disputeFor?.id || ''} title={disputeFor?.listing?.title || 'This booking'} onOpened={() => navigation.navigate('MarketplaceDisputes')} />
       <LeaveReviewModal visible={!!reviewFor} onClose={() => setReviewFor(null)} listingId={reviewFor?.listing_id} onSuccess={load} />
+      </TabletColumn>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  tabs: { flexDirection: 'row', margin: 14, marginBottom: 0, borderRadius: 12, padding: 3 },
+  tabs: { flexDirection: 'row', margin: isTabletDevice ? 24 : 14, marginBottom: 0, borderRadius: 12, padding: 3 },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
   card: { borderWidth: 1, borderRadius: 16, padding: 12, marginBottom: 12 },
-  thumb: { width: 76, height: 76, borderRadius: 12 },
+  thumb: { width: isTabletDevice ? 96 : 76, height: isTabletDevice ? 96 : 76, borderRadius: 12 },
   pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, alignSelf: 'flex-start' },
   note: { fontSize: 12, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 10, fontStyle: 'italic' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  btn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 999 },
+  btn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 40, borderRadius: 999 },
 });
 
 export default MyBookingsScreen;

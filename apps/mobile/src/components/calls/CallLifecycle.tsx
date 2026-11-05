@@ -4,6 +4,7 @@ import { getSupabaseClient } from '@cinecraft/api';
 import { useGlobalCall } from '../../contexts/CallContext';
 import { useLiveCall } from '../../hooks/useLiveCall';
 import { startRingback, stopRingback, playBusyTone } from '../../services/liveCall';
+import { resetCallTrack, updateCallTrack } from '../../services/callService';
 import { announceCallEnded, normalizeCallRoomType } from '../../services/callSession';
 
 /**
@@ -12,8 +13,10 @@ import { announceCallEnded, normalizeCallRoomType } from '../../services/callSes
  * the same behaviour: ringing tone, no-answer timeout, hang-up when the other person leaves a 1-to-1 call, ending
  * the call when it was declined/cancelled elsewhere, and a clear message when the call could not start.
  */
+const RECONNECT_GRACE_MS = 20000;
+
 export const CallLifecycle = () => {
-  const { callState, endCall } = useGlobalCall();
+  const { callState, endCall, updateCallState } = useGlobalCall();
   const live = useLiveCall();
 
   const endedRef = useRef(false);
@@ -26,8 +29,15 @@ export const CallLifecycle = () => {
     if (callState.isActive) {
       endedRef.current = false;
       hadRemoteRef.current = false;
+      resetCallTrack(callState.roomId);
     }
   }, [callState.isActive, callState.roomId]);
+
+  // Caller / answered tracking (web's callerRef / answeredRef) so a call nobody picked up is posted as "Missed call".
+  useEffect(() => {
+    if (!callState.isActive) return;
+    updateCallTrack(callState.roomId, { caller: live.isCaller, answered: live.remoteCount > 0 });
+  }, [callState.isActive, callState.roomId, live.isCaller, live.remoteCount]);
 
   const hangUp = useCallback(() => {
     if (endedRef.current || !callState.isActive || !callState.roomId) return;
@@ -61,11 +71,12 @@ export const CallLifecycle = () => {
       live.mode !== 'audio_space' &&
       live.isCaller &&
       live.remoteCount === 0 &&
+      !callState.partnerReconnecting &&
       (live.phase === 'connecting' || live.phase === 'connected');
     if (ringing) startRingback();
     else stopRingback();
     return () => stopRingback();
-  }, [callState.isActive, live.mode, live.isCaller, live.remoteCount, live.phase]);
+  }, [callState.isActive, callState.partnerReconnecting, live.mode, live.isCaller, live.remoteCount, live.phase]);
 
   // Nobody joined within 45s (same window as the server-side call expiry): hang up like a missed call.
   useEffect(() => {
@@ -87,30 +98,46 @@ export const CallLifecycle = () => {
       hadRemoteRef.current = true;
       return;
     }
-    if (hadRemoteRef.current && normalizeCallRoomType(callState.roomType) === 'direct' && live.phase === 'connected') {
-      const t = setTimeout(hangUp, 800);
-      return () => clearTimeout(t);
+    // The other person may only have dropped (reload, a few seconds without network): wait the 20 s grace before
+    // ending. A real hang-up arrives as the call_ended broadcast below and ends the call at once.
+    if (hadRemoteRef.current && normalizeCallRoomType(callState.roomType) === 'direct' && live.mode !== 'audio_space' && live.phase === 'connected') {
+      updateCallState({ partnerReconnecting: true });
+      const t = setTimeout(hangUp, RECONNECT_GRACE_MS);
+      return () => {
+        clearTimeout(t);
+        updateCallState({ partnerReconnecting: false });
+      };
     }
-  }, [callState.isActive, callState.roomType, live.remoteCount, live.phase, hangUp]);
+  }, [callState.isActive, callState.roomType, live.mode, live.remoteCount, live.phase, hangUp, updateCallState]);
 
   // The web app / other devices tell us when a call was declined or cancelled.
   useEffect(() => {
     if (!callState.isActive || !callState.roomId || live.mode === 'audio_space') return;
     const roomId = callState.roomId;
+    const roomType = callState.roomType;
     const supabase = getSupabaseClient();
     const channel = supabase.channel('global-call-invites-broadcast');
     const matches = (payload: any) => {
       const p = payload?.roomId || '';
-      return !!p && (p === roomId || p === payload?.cleanId || String(roomId).includes(p) || String(p).includes(String(roomId)));
+      // the channel is open to every signed-in person: only a full room id counts, never a short or partial one
+      return typeof p === 'string' && p.length >= 20 && (p === roomId || p === payload?.cleanId || String(roomId).includes(p));
     };
     const onEnd = ({ payload }: any) => {
       if (!endedRef.current && matches(payload) && live.remoteCount === 0) hangUp();
     };
-    channel.on('broadcast', { event: 'call_declined' }, onEnd).on('broadcast', { event: 'call_cancelled' }, onEnd).subscribe();
+    // The other person pressed hang-up in a 1:1 call: end at once (no grace, that is only for a mere disconnect).
+    const onPartnerHangup = ({ payload }: any) => {
+      if (!endedRef.current && hadRemoteRef.current && matches(payload) && normalizeCallRoomType(roomType) === 'direct') hangUp();
+    };
+    channel
+      .on('broadcast', { event: 'call_declined' }, onEnd)
+      .on('broadcast', { event: 'call_cancelled' }, onEnd)
+      .on('broadcast', { event: 'call_ended' }, onPartnerHangup)
+      .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [callState.isActive, callState.roomId, live.mode, live.remoteCount, hangUp]);
+  }, [callState.isActive, callState.roomId, callState.roomType, live.mode, live.remoteCount, hangUp]);
 
   return null;
 };

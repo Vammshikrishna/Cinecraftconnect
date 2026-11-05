@@ -1,3 +1,4 @@
+import { safeHref } from '@/lib/safeUrl';
 import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -277,7 +278,7 @@ const NDAGate = ({ submissionId, onSigned }: { submissionId: string; onSigned: (
                 <div className="h-20 w-20 rounded-3xl bg-amber-500/10 border-2 border-amber-500/20 flex items-center justify-center">
                     <PenLine className="h-10 w-10 text-amber-500" />
                 </div>
-                <div className="absolute inset-0 rounded-3xl bg-amber-500/5 animate-ping" />
+                <div className="absolute inset-0 rounded-3xl bg-amber-500/5" />
             </div>
             <div className="max-w-sm space-y-2">
                 <h3 className="font-black text-xl">NDA Required</h3>
@@ -298,7 +299,7 @@ const NDAGate = ({ submissionId, onSigned }: { submissionId: string; onSigned: (
                         </li>
                     ))}
                 </ul>
-                <p className="text-[10px] text-muted-foreground/60">Legally binding under the Indian IT Act, 2000.</p>
+                <p className="text-[12px] text-muted-foreground/60">Legally binding under the Indian IT Act, 2000.</p>
 
                 <div className="space-y-2">
                     <Label className="text-xs font-black uppercase tracking-widest">Type your full legal name *</Label>
@@ -307,7 +308,7 @@ const NDAGate = ({ submissionId, onSigned }: { submissionId: string; onSigned: (
                         value={signature}
                         onChange={e => setSignature(e.target.value)}
                         className={cn(
-                            'h-12 transition-all',
+                            'h-12 transition',
                             signature.trim().length >= 3
                                 ? 'border-green-500/50 bg-green-500/5'
                                 : 'border-amber-400/40'
@@ -346,8 +347,13 @@ const AttachmentLink = ({ href, label, submissionId }: { href: string; label: st
             action: 'attachment_downloaded',
         }).then(() => {}).catch(() => {});
         try {
-            const target = await toSignedStorageUrl(href);
-            window.open(target, '_blank', 'noopener,noreferrer');
+            // The link is typed by the writer: open it only if it is a normal web link (after signing a stored file).
+            const target = safeHref(await toSignedStorageUrl(href));
+            if (!target) {
+                console.warn('Blocked an attachment link that is not a web link');
+            } else {
+                window.open(target, '_blank', 'noopener,noreferrer');
+            }
         } catch (e) {
             console.error('Could not open attachment:', e);
         }
@@ -358,7 +364,7 @@ const AttachmentLink = ({ href, label, submissionId }: { href: string; label: st
         <>
             <button
                 onClick={() => setShowWarning(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/40 border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all text-sm font-semibold group"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/40 border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition text-sm font-semibold group"
             >
                 <FileText className="h-4 w-4 text-primary" />
                 {label}
@@ -376,7 +382,7 @@ const AttachmentLink = ({ href, label, submissionId }: { href: string; label: st
                                 <p className="font-black">Confidential Attachment</p>
                                 <p className="text-xs text-muted-foreground">This access will be permanently logged</p>
                             </div>
-                            <button onClick={() => setShowWarning(false)} className="ml-auto text-muted-foreground hover:text-foreground">
+                            <button aria-label="Close" onClick={() => setShowWarning(false)} className="ml-auto text-muted-foreground hover:text-foreground">
                                 <X className="h-4 w-4" />
                             </button>
                         </div>
@@ -478,7 +484,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                                 <Button
                                     size="sm"
                                     variant="outline"
-                                    className="h-8 gap-1.5 text-xs rounded-lg border-primary/30 text-primary hover:bg-primary/10"
+                                    className="h-10 md:h-8 gap-1.5 text-xs rounded-lg border-primary/30 text-primary hover:bg-primary/10"
                                     onClick={handleDownload}
                                     disabled={downloading}
                                 >
@@ -538,7 +544,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
 
                             {/* Short Synopsis */}
                             <div className="space-y-2">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Short Synopsis</p>
+                                <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Short Synopsis</p>
                                 <p className="text-sm leading-relaxed text-foreground/90">{submission.short_synopsis}</p>
                             </div>
 
@@ -558,7 +564,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                             {/* Why it Fits */}
                             {submission.why_fits && (
                                 <div className="space-y-2">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Why This Fits You</p>
+                                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Why This Fits You</p>
                                     <p className="text-sm leading-relaxed text-muted-foreground">{submission.why_fits}</p>
                                 </div>
                             )}
@@ -566,7 +572,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                             {/* Character Notes — Watermarked */}
                             {submission.character_notes && (
                                 <WatermarkedContent className="space-y-2">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Character Notes</p>
+                                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Character Notes</p>
                                     <p className="text-sm leading-relaxed">{submission.character_notes}</p>
                                 </WatermarkedContent>
                             )}
@@ -574,7 +580,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                             {/* Attachments */}
                             {(submission.treatment_url || submission.lookbook_url || (submission as any).full_deck_url) && (
                                 <div className="space-y-3">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Attachments</p>
+                                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Attachments</p>
                                     <div className="flex gap-2 flex-wrap">
                                         {(submission as any).full_deck_url && (
                                             <AttachmentLink href={(submission as any).full_deck_url} label="Full Deck (Requested)" ndaSigned={ndaGatePassed} submissionId={submission.id} />
@@ -591,7 +597,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
 
                             {/* IP Declarations */}
                             <div className="p-4 bg-green-500/5 border border-green-500/20 rounded-2xl space-y-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-green-600/80">IP Declarations</p>
+                                <p className="text-[12px] font-black uppercase tracking-widest text-green-600/80">IP Declarations</p>
                                 <div className="flex flex-wrap items-center gap-3">
                                     <span className={cn('flex items-center gap-1.5 text-sm font-bold', submission.rights_owned ? 'text-green-500' : 'text-destructive')}>
                                         {submission.rights_owned ? <CheckCircle2 className="h-4 w-4" /> : <X className="h-4 w-4" />}
@@ -617,7 +623,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-primary" />
                                                 <span className="text-xs font-bold text-muted-foreground">SWA Member ID:</span>
-                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md text-primary font-medium">
                                                     {swaMemberId}
                                                 </code>
                                             </div>
@@ -626,7 +632,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-primary" />
                                                 <span className="text-xs font-bold text-muted-foreground">SWA Script Registration #:</span>
-                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md text-primary font-medium">
                                                     {swaRegNum}
                                                 </code>
                                             </div>
@@ -635,7 +641,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-amber-500" />
                                                 <span className="text-xs font-bold text-muted-foreground">Copyright Office Reg #:</span>
-                                                <code className="text-xs bg-amber-500/15 px-2 py-0.5 rounded-md font-mono text-amber-500 font-bold">
+                                                <code className="text-xs bg-amber-500/15 px-2 py-0.5 rounded-md text-amber-500 font-medium">
                                                     {copyrightRegNum}
                                                 </code>
                                             </div>
@@ -644,7 +650,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                                             <div className="flex items-center gap-2">
                                                 <Award className="h-3.5 w-3.5 text-purple-400" />
                                                 <span className="text-xs font-bold text-muted-foreground">IFTDA Member ID:</span>
-                                                <code className="text-xs bg-purple-500/15 px-2 py-0.5 rounded-md font-mono text-purple-400 font-bold">
+                                                <code className="text-xs bg-purple-500/15 px-2 py-0.5 rounded-md text-purple-400 font-medium">
                                                     {iftdaMemberId}
                                                 </code>
                                             </div>
@@ -662,7 +668,7 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                             <div className="space-y-3 pt-2 border-t border-border/40">
                                 {isSubmitter ? (
                                     <div className="bg-primary/5 border border-primary/10 rounded-2xl p-4 flex flex-col gap-2">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Pitch Status</p>
+                                        <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Pitch Status</p>
                                         <div className="flex items-center gap-2">
                                             <Badge className={cn('text-xs font-bold px-3 py-1', statusInfo?.color || '')}>
                                                 {statusInfo?.label || submission.status}
@@ -681,14 +687,14 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                                     </div>
                                 ) : (
                                     <>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Your Decision</p>
+                                        <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">Your Decision</p>
                                         <div className="grid grid-cols-2 gap-2">
                                             {STATUS_ACTIONS.map(action => (
                                                 <button
                                                     key={action.value}
                                                     onClick={() => onUpdateStatus(submission.id, action.value)}
                                                     className={cn(
-                                                        'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all text-left',
+                                                        'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-bold transition text-left',
                                                         submission.status === action.value
                                                             ? 'bg-primary text-primary-foreground border-primary shadow-md'
                                                             : `bg-card border-border/50 ${action.color} ${action.bg}`

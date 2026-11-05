@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   Image,
   ImageProps,
   StyleSheet,
@@ -10,6 +12,8 @@ import {
   ImageSourcePropType,
 } from 'react-native';
 import FastImage from 'react-native-fast-image';
+import { useUserSettings } from '../../hooks/useUserSettings';
+import { prefersReducedMotion } from '../../utils/motion';
 
 export interface CachedImageProps extends Omit<ImageProps, 'source'> {
   uri?: string | null;
@@ -38,6 +42,9 @@ export const CachedImage: React.FC<CachedImageProps> = React.memo(({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [fastImageFailed, setFastImageFailed] = useState(false);
+  const { themeColors } = useUserSettings();
+  // the picture fades in over a quiet placeholder instead of popping in
+  const fade = useRef(new Animated.Value(0)).current;
 
   // Extract URI either from uri prop or source prop
   const uri = uriProp || (sourceProp && typeof sourceProp === 'object' && 'uri' in sourceProp ? sourceProp.uri : null);
@@ -46,7 +53,8 @@ export const CachedImage: React.FC<CachedImageProps> = React.memo(({
   React.useEffect(() => {
     setError(false);
     setFastImageFailed(false);
-  }, [uri]);
+    fade.setValue(0);
+  }, [uri, fade]);
 
   const isValidUri = typeof uri === 'string' && uri.trim().length > 0 && !error;
 
@@ -68,7 +76,8 @@ export const CachedImage: React.FC<CachedImageProps> = React.memo(({
 
   if (isValidUri && !fastImageFailed) {
     return (
-      <View style={[{ overflow: 'hidden' }, style]}>
+      <View style={[{ overflow: 'hidden', backgroundColor: themeColors.chipBg }, style]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade }]}>
         <FastImage
           {...(props as any)}
           source={{
@@ -81,12 +90,17 @@ export const CachedImage: React.FC<CachedImageProps> = React.memo(({
           onLoadStart={() => {
             if (showLoading) setLoading(true);
           }}
+          onLoad={() => {
+            if (prefersReducedMotion()) fade.setValue(1);
+            else Animated.timing(fade, { toValue: 1, duration: 180, easing: Easing.out(Easing.ease), useNativeDriver: true }).start();
+          }}
           onLoadEnd={() => setLoading(false)}
           onError={() => {
             setFastImageFailed(true);
             setLoading(false);
           }}
         />
+        </Animated.View>
         {loading && showLoading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="small" color="#94A3B8" />

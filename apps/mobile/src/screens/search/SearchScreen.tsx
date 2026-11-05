@@ -1,5 +1,4 @@
-import { orTerm } from '../../utils/postgrest';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,552 +8,475 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  InteractionManager,
+  Keyboard,
+  Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  SEARCH_CRAFTS,
+  suggest,
+  listSavedSearches,
+  saveSearch,
+  deleteSavedSearch,
+  type SavedSearch,
+  type SearchSuggestion,
+  interleaveSections,
+  isSearchable,
+  pushRecentSearch,
+  runSearch,
+  visibleSearchCategories,
+  SEARCH_TYPE_LABEL,
+  type SearchCategoryId,
+  type SearchSort,
+} from '@cinecraft/core';
 import { Header } from '../../components/Header';
-import { useFocusEffect } from '@react-navigation/native';
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { getSupabaseClient } from '@cinecraft/api';
-import { ExploreCard, ExploreItem, ExploreItemType } from '../../components/search/ExploreCard';
+import { ExploreCard, ExploreItem } from '../../components/search/ExploreCard';
 import { useUserSettings } from '../../hooks/useUserSettings';
 import { useResponsive } from '../../hooks/useResponsive';
 import { useAccountType } from '../../hooks/useAccountType';
+import { getCurrentUserIdSync, resolveCurrentUserId } from '../../services/offlineCache';
 import { FlashList } from '@shopify/flash-list';
+import { friendlyError } from '@cinecraft/core';
 const FlashListAny = FlashList as any;
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
+const PAGE_SIZE = 24;
+const DEBOUNCE_MS = 350;
 
-const CATEGORIES: { id: string; label: string; type?: ExploreItemType }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'projects', label: 'Projects', type: 'project' },
-  { id: 'people', label: 'People', type: 'user' },
-  { id: 'discussions', label: 'Discussions', type: 'discussion' },
-  { id: 'posts', label: 'Posts', type: 'post' },
-  { id: 'vendors', label: 'Vendors', type: 'vendor' },
-  { id: 'marketplace', label: 'Marketplace', type: 'marketplace' },
-  { id: 'companies', label: 'Companies', type: 'company' },
-];
+const recentKey = (userId: string | null) => `recent_searches_${userId || 'guest'}`;
 
-export const SearchScreen = ({ navigation }: { navigation: any }) => {
+export const SearchScreen = ({ navigation, route }: { navigation: any; route?: any }) => {
   const { themeColors, isDark } = useUserSettings();
-  const { isFan } = useAccountType();
+  const { isFan, loading: accountLoading } = useAccountType();
   const { width, isTablet, isLandscape } = useResponsive();
-  const [query, setQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string>('all');
-  const [exploreItems, setExploreItems] = useState<ExploreItem[]>([]);
-  const [searchResults, setSearchResults] = useState<ExploreItem[]>([]);
-  const [loading, setLoading] = useState(false);
+
+  const initialQuery: string = route?.params?.query || route?.params?.q || '';
+  const [input, setInput] = useState(initialQuery);
+  const [term, setTerm] = useState(initialQuery); // the debounced input: what is actually searched
+  const [activeCategory, setActiveCategory] = useState<SearchCategoryId>((route?.params?.category as SearchCategoryId) || 'all');
+  const [sort, setSort] = useState<SearchSort>('relevance');
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [craft, setCraft] = useState('');
+  const [listingType, setListingType] = useState<'' | 'equipment' | 'location'>('');
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [saved, setSaved] = useState<SavedSearch[]>([]);
+  const [savedUnavailable, setSavedUnavailable] = useState(false);
+
+  const [items, setItems] = useState<ExploreItem[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [failed, setFailed] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [retry, setRetry] = useState(0);
 
-  const visibleCategories = useMemo(() => {
-    return CATEGORIES.filter((c) => {
-      if (isFan && ['projects', 'vendors', 'marketplace', 'companies'].includes(c.id)) {
-        return false;
-      }
-      return true;
-    });
-  }, [isFan]);
+  const [userId, setUserId] = useState<string | null>(getCurrentUserIdSync());
+  const [recents, setRecents] = useState<string[]>([]);
+  const [focused, setFocused] = useState(false);
+  const requestId = useRef(0);
 
-  const fetchExploreItems = useCallback(async () => {
-    setLoading(true);
-    try {
-      const supabase = getSupabaseClient();
+  const searching = isSearchable(term);
+  const effectiveTerm = searching ? term : '';
+  const tooShort = input.trim().length > 0 && !isSearchable(input);
 
-      const promises = [
-        ((supabase as any).from('projects') as any)
-          .select('id, title, description, status, location, genre, image_url')
-          .limit(12),
-        ((supabase as any).from('profiles') as any)
-          .select('id, username, full_name, avatar_url, is_verified, craft, bio')
-          .limit(12),
-        ((supabase as any).from('discussion_rooms') as any)
-          .select('id, title, description')
-          .limit(12),
-        ((supabase as any).from('posts') as any)
-          .select(
-            'id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)'
-          )
-          .order('created_at', { ascending: false })
-          .limit(20),
-        ((supabase as any).from('vendors') as any)
-          .select('id, business_name, description, logo_url, city, location, category')
-          .limit(12),
-        ((supabase as any).from('marketplace_listings') as any)
-          .select('id, title, description, images, price_per_day, listing_type, location')
-          .limit(12),
-        ((supabase as any).from('company_pages') as any)
-          .select('id, name, description, tagline, headquarters, logo_url, cover_image_url')
-          .limit(12),
-      ];
+  // another screen can open Search with a term (a #tag, a location, an @mention) even while it is already open
+  const paramQuery: string | undefined = route?.params?.query || route?.params?.q;
+  useEffect(() => {
+    if (paramQuery) { setInput(paramQuery); setTerm(paramQuery); }
+  }, [paramQuery]);
 
-      const resList = await Promise.allSettled(promises);
-
-      const items: ExploreItem[] = [];
-
-      const getData = (res: any) => {
-        if (res.status === 'fulfilled' && res.value?.data) return res.value.data;
-        return null;
-      };
-
-      const projects = getData(resList[0]);
-      const users = getData(resList[1]);
-      const discussions = getData(resList[2]);
-      const posts = getData(resList[3]);
-      const vendors = getData(resList[4]);
-      const marketplace = getData(resList[5]);
-      const companies = getData(resList[6]);
-
-      if (projects)
-        items.push(
-          ...projects.map((p: any) => ({
-            id: p.id,
-            type: 'project' as const,
-            title: p.title,
-            name: p.title,
-            description: p.description,
-            location: p.location,
-            status: p.status,
-            image_url: p.image_url,
-          }))
-        );
-
-      if (users)
-        items.push(
-          ...users.map((u: any) => ({
-            id: u.id,
-            type: 'user' as const,
-            username: u.username,
-            full_name: u.full_name,
-            avatar_url: u.avatar_url,
-            is_verified: u.is_verified,
-            craft: u.craft,
-            description: u.bio,
-          }))
-        );
-
-      if (discussions)
-        items.push(
-          ...discussions.map((d: any) => ({
-            id: d.id,
-            type: 'discussion' as const,
-            title: d.title,
-            description: d.description,
-          }))
-        );
-
-      if (posts)
-        items.push(
-          ...posts.map((p: any) => ({
-            id: p.id,
-            type: 'post' as const,
-            content: p.content,
-            image_url: p.media_type === 'image' ? p.media_url : undefined,
-            video_url: p.media_type === 'video' ? p.media_url : undefined,
-            like_count: p.like_count || 0,
-            comment_count: p.comment_count || 0,
-            author: Array.isArray(p.author) ? p.author[0] : p.author,
-          }))
-        );
-
-      if (vendors)
-        items.push(
-          ...vendors.map((v: any) => ({
-            id: v.id,
-            type: 'vendor' as const,
-            business_name: v.business_name,
-            description: v.description,
-            logo_url: v.logo_url,
-            category: v.category,
-            city: v.city || v.location,
-          }))
-        );
-
-      if (marketplace)
-        items.push(
-          ...marketplace.map((m: any) => ({
-            id: m.id,
-            type: 'marketplace' as const,
-            title: m.title,
-            description: m.description,
-            image_url: m.images?.[0],
-            price_per_day: m.price_per_day,
-            listing_type: m.listing_type,
-            location: m.location,
-          }))
-        );
-
-      if (companies)
-        items.push(
-          ...companies.map((c: any) => ({
-            id: c.id,
-            type: 'company' as const,
-            name: c.name,
-            description: c.description || c.tagline,
-            logo_url: c.logo_url,
-            location: c.headquarters,
-          }))
-        );
-
-      setExploreItems(items.sort(() => Math.random() - 0.5));
-    } catch (e) {
-      console.warn('Fetch explore items error:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const performSearch = useCallback(async (searchQuery: string) => {
-    if (searchQuery.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const supabase = getSupabaseClient();
-      const safe = searchQuery.trim();
-
-      const promises = [
-        ((supabase as any).from('projects') as any)
-          .select('id, title, description, status, location, image_url')
-          .or(`title.ilike.%${orTerm(safe)}%,description.ilike.%${orTerm(safe)}%`)
-          .limit(10),
-        ((supabase as any).from('profiles') as any)
-          .select('id, username, full_name, avatar_url, is_verified, craft, bio')
-          .or(`full_name.ilike.%${orTerm(safe)}%,username.ilike.%${orTerm(safe)}%,craft.ilike.%${orTerm(safe)}%`)
-          .limit(10),
-        ((supabase as any).from('discussion_rooms') as any)
-          .select('id, title, description')
-          .or(`title.ilike.%${orTerm(safe)}%,description.ilike.%${orTerm(safe)}%`)
-          .limit(10),
-        ((supabase as any).from('posts') as any)
-          .select(
-            'id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)'
-          )
-          .ilike('content', `%${safe}%`)
-          .limit(10),
-        ((supabase as any).from('vendors') as any)
-          .select('id, business_name, description, logo_url, city, location, category')
-          .or(`business_name.ilike.%${orTerm(safe)}%,description.ilike.%${orTerm(safe)}%`)
-          .limit(10),
-        ((supabase as any).from('marketplace_listings') as any)
-          .select('id, title, description, images, price_per_day, listing_type, location')
-          .or(`title.ilike.%${orTerm(safe)}%,description.ilike.%${orTerm(safe)}%`)
-          .limit(10),
-        ((supabase as any).from('company_pages') as any)
-          .select('id, name, description, tagline, headquarters, logo_url, cover_image_url')
-          .or(`name.ilike.%${orTerm(safe)}%,tagline.ilike.%${orTerm(safe)}%`)
-          .limit(10),
-      ];
-
-      const resList = await Promise.allSettled(promises);
-      const items: ExploreItem[] = [];
-
-      const getData = (res: any) => {
-        if (res.status === 'fulfilled' && res.value?.data) return res.value.data;
-        return null;
-      };
-
-      const projects = getData(resList[0]);
-      const users = getData(resList[1]);
-      const discussions = getData(resList[2]);
-      const posts = getData(resList[3]);
-      const vendors = getData(resList[4]);
-      const marketplace = getData(resList[5]);
-      const companies = getData(resList[6]);
-
-      if (projects)
-        items.push(
-          ...projects.map((p: any) => ({
-            id: p.id,
-            type: 'project' as const,
-            title: p.title,
-            description: p.description,
-            location: p.location,
-            status: p.status,
-            image_url: p.image_url,
-          }))
-        );
-
-      if (users)
-        items.push(
-          ...users.map((u: any) => ({
-            id: u.id,
-            type: 'user' as const,
-            username: u.username,
-            full_name: u.full_name,
-            avatar_url: u.avatar_url,
-            is_verified: u.is_verified,
-            craft: u.craft,
-            description: u.bio,
-          }))
-        );
-
-      if (discussions)
-        items.push(
-          ...discussions.map((d: any) => ({
-            id: d.id,
-            type: 'discussion' as const,
-            title: d.title,
-            description: d.description,
-          }))
-        );
-
-      if (posts)
-        items.push(
-          ...posts.map((p: any) => ({
-            id: p.id,
-            type: 'post' as const,
-            content: p.content,
-            image_url: p.media_type === 'image' ? p.media_url : undefined,
-            video_url: p.media_type === 'video' ? p.media_url : undefined,
-            like_count: p.like_count || 0,
-            comment_count: p.comment_count || 0,
-            author: Array.isArray(p.author) ? p.author[0] : p.author,
-          }))
-        );
-
-      if (vendors)
-        items.push(
-          ...vendors.map((v: any) => ({
-            id: v.id,
-            type: 'vendor' as const,
-            business_name: v.business_name,
-            description: v.description,
-            logo_url: v.logo_url,
-            category: v.category,
-            city: v.city || v.location,
-          }))
-        );
-
-      if (marketplace)
-        items.push(
-          ...marketplace.map((m: any) => ({
-            id: m.id,
-            type: 'marketplace' as const,
-            title: m.title,
-            description: m.description,
-            image_url: m.images?.[0],
-            price_per_day: m.price_per_day,
-            listing_type: m.listing_type,
-            location: m.location,
-          }))
-        );
-
-      if (companies)
-        items.push(
-          ...companies.map((c: any) => ({
-            id: c.id,
-            type: 'company' as const,
-            name: c.name,
-            description: c.description || c.tagline,
-            logo_url: c.logo_url,
-            location: c.headquarters,
-          }))
-        );
-
-      setSearchResults(items);
-    } catch (e) {
-      console.warn('Search error:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      const task = InteractionManager.runAfterInteractions(() => {
-        fetchExploreItems();
-      });
-      return () => {
-        task.cancel();
-      };
-    }, [fetchExploreItems])
-  );
+  const visibleCategories = useMemo(() => visibleSearchCategories(isFan), [isFan]);
 
   useEffect(() => {
-    const delayFn = setTimeout(() => {
-      if (query.trim().length >= 2) {
-        performSearch(query);
-      } else {
-        setSearchResults([]);
-      }
-    }, 400);
+    let alive = true;
+    (async () => {
+      const id = userId || (await resolveCurrentUserId());
+      if (!alive) return;
+      setUserId(id);
+      const raw = await AsyncStorage.getItem(recentKey(id)).catch(() => null);
+      if (alive && raw) { try { setRecents(JSON.parse(raw)); } catch { /* ignore a corrupt value */ } }
+    })();
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    return () => clearTimeout(delayFn);
-  }, [query, performSearch]);
+  // debounce: what is typed becomes what is searched
+  useEffect(() => {
+    const t = setTimeout(() => setTerm(input), DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [input]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    if (query.trim().length >= 2) {
-      await performSearch(query);
-    } else {
-      await fetchExploreItems();
+  // a category a fan cannot see must not stay selected
+  useEffect(() => {
+    if (!visibleCategories.some((c) => c.id === activeCategory)) setActiveCategory('all');
+  }, [visibleCategories, activeCategory]);
+
+  const load = useCallback(async (offset: number, mode: 'initial' | 'more' | 'refresh' = 'initial') => {
+    const id = ++requestId.current;
+    if (mode === 'initial') setLoading(true);
+    if (mode === 'more') setLoadingMore(true);
+    try {
+      const out = await runSearch({
+        client: getSupabaseClient(),
+        query: effectiveTerm,
+        category: activeCategory,
+        isFan,
+        meId: userId,
+        sort,
+        verifiedOnly,
+        craft: craft || undefined,
+        listingType: listingType || undefined,
+        limit: PAGE_SIZE,
+        offset,
+        perTypeLimit: searching ? 6 : 8,
+      });
+      if (id !== requestId.current) return; // a newer search started: ignore this late answer
+      const list = (activeCategory === 'all' && !searching ? interleaveSections(out.sections) : out.items) as ExploreItem[];
+      if (offset === 0) setItems(list);
+      else setItems((prev) => {
+        const seen = new Set(prev.map((p) => `${p.type}-${p.id}`));
+        return [...prev, ...list.filter((i) => !seen.has(`${i.type}-${i.id}`))];
+      });
+      setHasMore(out.hasMore);
+      setFailed(out.failed);
+    } catch (e) {
+      if (id !== requestId.current) return;
+      console.warn('[Search] failed:', e);
+      setFailed(['post']);
+    } finally {
+      if (id === requestId.current) { setLoading(false); setLoadingMore(false); setRefreshing(false); }
     }
-    setRefreshing(false);
+  }, [effectiveTerm, searching, activeCategory, isFan, userId, sort, verifiedOnly, craft, listingType]);
+
+  // wait for the account type so a fan is not briefly treated as a creator (that caused a second load)
+  useEffect(() => {
+    if (accountLoading) return;
+    load(0);
+  }, [load, accountLoading, retry]);
+
+  // remember searches that were actually used
+  useEffect(() => {
+    if (!searching || loading) return;
+    setRecents((prev) => {
+      const next = pushRecentSearch(prev, term);
+      if (next !== prev) AsyncStorage.setItem(recentKey(userId), JSON.stringify(next)).catch(() => { });
+      return next;
+    });
+  }, [searching, loading, term]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // filters that belong to one tab must not stay active (invisibly) when the tab changes
+  useEffect(() => {
+    if (activeCategory !== 'people' && craft) setCraft('');
+    if (activeCategory !== 'marketplace' && listingType) setListingType('');
+  }, [activeCategory]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // a few suggestions while typing (names that start with what was typed)
+  useEffect(() => {
+    if (!focused || !isSearchable(input)) { setSuggestions([]); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const list = await suggest(getSupabaseClient(), input, isFan);
+      if (!cancelled) setSuggestions(list);
+    }, 220);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [input, focused, isFan]);
+
+  const refreshSaved = useCallback(async () => {
+    const out = await listSavedSearches(getSupabaseClient(), userId);
+    setSaved(out.items);
+    setSavedUnavailable(out.unavailable);
+  }, [userId]);
+  useEffect(() => { refreshSaved(); }, [refreshSaved]);
+
+  const alreadySaved = saved.some((x) => x.query.toLowerCase() === term.toLowerCase() && x.category === activeCategory);
+  const saveCurrent = async () => {
+    if (!userId || !searching) return;
+    try {
+      await saveSearch(getSupabaseClient(), userId, { name: term, query: term, category: activeCategory, filters: { sort, verifiedOnly, craft: craft || undefined, listingType: listingType || undefined } });
+      refreshSaved();
+      Alert.alert('Search saved', 'Find it under Saved when you tap the search box.');
+    } catch (e: any) {
+      Alert.alert('Could not save this search', friendlyError(e, 'Please try again.'));
+    }
   };
+  const runSaved = (sv: SavedSearch) => {
+    setActiveCategory(sv.category);
+    setSort(sv.filters.sort || 'relevance');
+    setVerifiedOnly(!!sv.filters.verifiedOnly);
+    setCraft(sv.filters.craft || '');
+    setListingType(sv.filters.listingType || '');
+    setInput(sv.query); setTerm(sv.query); setFocused(false); Keyboard.dismiss();
+  };
+  const removeSaved = async (id: string) => {
+    try { await deleteSavedSearch(getSupabaseClient(), id); setSaved((prev) => prev.filter((x) => x.id !== id)); }
+    catch (e: any) { Alert.alert('Could not remove', friendlyError(e, 'Please try again.')); }
+  };
+  const pickSuggestion = (sg: SearchSuggestion) => { setInput(sg.label); setTerm(sg.label); setFocused(false); Keyboard.dismiss(); };
 
-  const rawList = query.trim().length >= 2 ? searchResults : exploreItems;
+  const onRefresh = () => { setRefreshing(true); load(0, 'refresh'); };
+  const onEndReached = () => { if (hasMore && !loading && !loadingMore && activeCategory !== 'all') load(items.length, 'more'); };
 
-  const targetType = useMemo(() => {
-    return CATEGORIES.find((c) => c.id === activeCategory)?.type;
-  }, [activeCategory]);
-
-  const filteredList = useMemo(() => {
-    return activeCategory === 'all'
-      ? rawList
-      : rawList.filter((item) => item.type === targetType);
-  }, [activeCategory, rawList, targetType]);
+  const clearInput = () => { setInput(''); setTerm(''); };
+  const pickRecent = (q: string) => { setInput(q); setTerm(q); setFocused(false); Keyboard.dismiss(); };
+  const removeRecent = (q: string) => {
+    const next = recents.filter((r) => r !== q);
+    setRecents(next);
+    AsyncStorage.setItem(recentKey(userId), JSON.stringify(next)).catch(() => { });
+  };
+  const clearRecents = () => { setRecents([]); AsyncStorage.removeItem(recentKey(userId)).catch(() => { }); };
 
   const maxContainerWidth = 1280;
-  const effectiveWidth = Math.min(width, maxContainerWidth);
   const numCols = isTablet ? (isLandscape ? 4 : 3) : 2;
   const horizontalPadding = isTablet ? (isLandscape ? 24 : 20) : 16;
   const gridGap = isTablet ? (isLandscape ? 16 : 14) : 12;
   const cardHeight = isTablet ? (isLandscape ? 245 : 235) : 225;
 
-  const renderExploreCard = useCallback(({ item }: { item: ExploreItem }) => {
-    return (
-      <View style={{ flex: 1, padding: gridGap / 2 }}>
-        <ExploreCard
-          item={item}
-          navigation={navigation}
-          cardWidth="100%"
-          cardHeight={cardHeight}
-        />
-      </View>
-    );
-  }, [navigation, gridGap, cardHeight]);
+  const renderExploreCard = useCallback(({ item }: { item: ExploreItem }) => (
+    <View style={{ flex: 1, padding: gridGap / 2 }}>
+      <ExploreCard item={item} navigation={navigation} cardWidth="100%" cardHeight={cardHeight} />
+    </View>
+  ), [navigation, gridGap, cardHeight]);
 
-  const listHeader = useMemo(() => (
+  const showFilters = searching || activeCategory === 'people' || activeCategory === 'vendors' || activeCategory === 'marketplace';
+  const mutedBorder = themeColors.border;
+
+  const listHeader = (
     <View style={[styles.mainWrapper, isTablet && { maxWidth: maxContainerWidth, width: '100%', alignSelf: 'center' }]}>
-      {/* Search Input Bar */}
       <View
         style={[
           styles.searchBarBox,
-          {
-            backgroundColor: themeColors.inputBg,
-            borderColor: themeColors.border,
-            marginHorizontal: horizontalPadding,
-            height: isTablet ? 48 : 44,
-            borderRadius: isTablet ? 14 : 12,
-          },
+          { backgroundColor: themeColors.inputBg, borderColor: mutedBorder, marginHorizontal: horizontalPadding, height: isTablet ? 48 : 46, borderRadius: isTablet ? 14 : 12 },
+          isTablet && { maxWidth: 672, width: '100%', alignSelf: 'center' },
         ]}
       >
-        <Icon name="search" size={isTablet ? 20 : 18} color={themeColors.textMuted} />
+        <Icon name="search" size={isTablet ? 20 : 18} color={themeColors.iconMuted} />
         <TextInput
-          style={[styles.input, { color: themeColors.textPrimary, fontSize: isTablet ? 14.5 : 13.5 }]}
-          placeholder={isFan ? "Search people, posts, discussions..." : "Search creators, films, crew jobs, gear, companies..."}
+          style={[styles.input, { color: themeColors.textPrimary, fontSize: isTablet ? 15 : 14.5 }]}
+          placeholder={isFan ? 'Search people, posts, discussions…' : 'Search creators, projects, gear, companies…'}
           placeholderTextColor={themeColors.textMuted}
-          value={query}
-          onChangeText={setQuery}
-          autoFocus
+          value={input}
+          onChangeText={setInput}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          returnKeyType="search"
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel="Search"
         />
-        {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')}>
-            <Icon name="x" size={16} color={themeColors.textSecondary} />
+        {input.length > 0 && (
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} onPress={clearInput}>
+            <Icon name="x" size={16} color={themeColors.iconSecondary} />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Category Chips Scroll */}
+      {tooShort && (
+        <Text style={[styles.hint, { color: themeColors.textSecondary, marginHorizontal: horizontalPadding }]}>Type at least 2 characters to search.</Text>
+      )}
+
+      {focused && !!input && suggestions.length > 0 && (
+        <View style={[styles.recentBox, { backgroundColor: themeColors.bgCard, borderColor: mutedBorder, marginHorizontal: horizontalPadding }]}>
+          {suggestions.map((sg) => (
+            <TouchableOpacity key={`${sg.type}-${sg.id}`} style={styles.recentMain} onPress={() => pickSuggestion(sg)} accessibilityRole="button" accessibilityLabel={`Search ${sg.label}`}>
+              <Icon name={sg.type === 'user' ? 'user' : sg.type === 'job' || sg.type === 'company' ? 'briefcase' : sg.type === 'project' ? 'film' : 'search'} size={14} color={themeColors.iconMuted} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: themeColors.textPrimary, fontSize: 14, fontWeight: '600' }} numberOfLines={1}>{sg.label}</Text>
+                {!!sg.sublabel && <Text style={{ color: themeColors.textMuted, fontSize: 12 }} numberOfLines={1}>{sg.sublabel}</Text>}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {focused && !input && saved.length > 0 && (
+        <View style={[styles.recentBox, { backgroundColor: themeColors.bgCard, borderColor: mutedBorder, marginHorizontal: horizontalPadding }]}>
+          <View style={styles.recentHeader}><Text style={[styles.recentTitle, { color: themeColors.textSecondary }]}>Saved</Text></View>
+          {saved.map((sv) => (
+            <View key={sv.id} style={styles.recentRow}>
+              <TouchableOpacity style={styles.recentMain} onPress={() => runSaved(sv)} accessibilityRole="button" accessibilityLabel={`Run saved search ${sv.name}`}>
+                <Icon name="bookmark" size={14} color={ORANGE} />
+                <Text style={{ color: themeColors.textPrimary, fontSize: 14, flex: 1 }} numberOfLines={1}>{sv.name}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => removeSaved(sv.id)} accessibilityRole="button" accessibilityLabel={`Remove saved search ${sv.name}`} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.recentRemove}>
+                <Icon name="x" size={14} color={themeColors.iconMuted} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {focused && !input && recents.length > 0 && (
+        <View style={[styles.recentBox, { backgroundColor: themeColors.bgCard, borderColor: mutedBorder, marginHorizontal: horizontalPadding }]}>
+          <View style={styles.recentHeader}>
+            <Text style={[styles.recentTitle, { color: themeColors.textSecondary }]}>Recent</Text>
+            <TouchableOpacity onPress={clearRecents} accessibilityRole="button" accessibilityLabel="Clear all recent searches" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>Clear all</Text>
+            </TouchableOpacity>
+          </View>
+          {recents.map((r) => (
+            <View key={r} style={styles.recentRow}>
+              <TouchableOpacity style={styles.recentMain} onPress={() => pickRecent(r)} accessibilityRole="button" accessibilityLabel={`Search ${r}`}>
+                <Icon name="clock" size={14} color={themeColors.iconMuted} />
+                <Text style={{ color: themeColors.textPrimary, fontSize: 14, flex: 1 }} numberOfLines={1}>{r}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => removeRecent(r)} accessibilityRole="button" accessibilityLabel={`Remove ${r}`} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.recentRemove}>
+                <Icon name="x" size={14} color={themeColors.iconMuted} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
       <View style={styles.chipsContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[styles.chipsScroll, { paddingHorizontal: horizontalPadding }]}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.chipsScroll, { paddingHorizontal: horizontalPadding }, isTablet && { flexGrow: 1, justifyContent: 'center' }]}>
           {visibleCategories.map((cat) => {
             const isActive = activeCategory === cat.id;
             return (
               <TouchableOpacity
                 key={cat.id}
-                style={[
-                  styles.chip,
-                  { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
-                  isTablet && styles.chipTablet,
-                  isActive && styles.chipActive,
-                ]}
-                onPress={() => setActiveCategory(cat.id)}
+                style={[styles.chip, { backgroundColor: themeColors.bgCard, borderColor: mutedBorder }, isTablet && styles.chipTablet, isActive && styles.chipActive]}
+                onPress={() => setActiveCategory(isActive && cat.id !== 'all' ? 'all' : cat.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${cat.label}${isActive ? ', selected' : ''}`}
               >
-                <Text
-                  style={[
-                    styles.chipText,
-                    { color: themeColors.textSecondary },
-                    isTablet && styles.chipTextTablet,
-                    isActive && styles.chipTextActive,
-                  ]}
-                >
-                  {cat.label}
-                </Text>
+                <Text style={[styles.chipText, { color: themeColors.textSecondary }, isTablet && styles.chipTextTablet, isActive && styles.chipTextActive]}>{cat.label}</Text>
               </TouchableOpacity>
             );
           })}
         </ScrollView>
       </View>
-    </View>
-  ), [
-    isTablet,
-    maxContainerWidth,
-    themeColors,
-    horizontalPadding,
-    isFan,
-    query,
-    visibleCategories,
-    activeCategory,
-  ]);
 
-  const listEmpty = useMemo(() => {
-    if (loading && !refreshing) {
-      return (
-        <View style={styles.loadingCenter}>
-          <ActivityIndicator size="large" color={ORANGE} />
-          <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>Searching ecosystem...</Text>
+      {showFilters && (
+        <View style={[styles.filterRow, { paddingHorizontal: horizontalPadding }]}>
+          {searching && (
+            <View style={[styles.segment, { borderColor: mutedBorder, backgroundColor: themeColors.bgCard }]}>
+              {([['relevance', 'Most relevant'], ['recent', 'Newest']] as [SearchSort, string][]).map(([k, label]) => (
+                <TouchableOpacity
+                  key={k}
+                  onPress={() => setSort(k)}
+                  style={[styles.segmentBtn, sort === k && { backgroundColor: isDark ? '#FFFFFF' : INK }]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: sort === k }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: sort === k ? (isDark ? INK : '#FFFFFF') : themeColors.textSecondary }}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {activeCategory === 'marketplace' && (
+            <View style={[styles.segment, { borderColor: mutedBorder, backgroundColor: themeColors.bgCard }]}>
+              {([['', 'All'], ['equipment', 'Gear'], ['location', 'Locations']] as ['' | 'equipment' | 'location', string][]).map(([k, label]) => (
+                <TouchableOpacity key={k || 'all'} onPress={() => setListingType(k)} style={[styles.segmentBtn, listingType === k && { backgroundColor: isDark ? '#FFFFFF' : INK }]} accessibilityRole="button" accessibilityState={{ selected: listingType === k }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: listingType === k ? (isDark ? INK : '#FFFFFF') : themeColors.textSecondary }}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {searching && !savedUnavailable && !!userId && (
+            <TouchableOpacity
+              onPress={saveCurrent}
+              disabled={alreadySaved}
+              style={[styles.toggleChip, { borderColor: mutedBorder, backgroundColor: themeColors.bgCard, opacity: alreadySaved ? 0.6 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel={alreadySaved ? 'Search saved' : 'Save this search'}
+            >
+              <Icon name="bookmark" size={13} color={themeColors.iconSecondary} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: themeColors.textSecondary }}>{alreadySaved ? 'Saved' : 'Save search'}</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => setVerifiedOnly(!verifiedOnly)}
+            style={[styles.toggleChip, { borderColor: verifiedOnly ? ORANGE : mutedBorder, backgroundColor: verifiedOnly ? ORANGE : themeColors.bgCard }]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: verifiedOnly }}
+            accessibilityLabel="Verified only"
+          >
+            <Icon name="check-circle" size={13} color={verifiedOnly ? '#FFFFFF' : themeColors.textSecondary} />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: verifiedOnly ? '#FFFFFF' : themeColors.textSecondary }}>Verified only</Text>
+          </TouchableOpacity>
         </View>
-      );
-    }
-    return (
-      <View style={styles.emptyCenter}>
-        <Icon name="compass" size={44} color={themeColors.textMuted} />
-        <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>
-          {query ? `No results for "${query}"` : 'No Explore Items'}
-        </Text>
-        <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
-          {query
-            ? 'Try a different search query or select another category.'
-            : 'Refresh or explore other content categories.'}
-        </Text>
-      </View>
-    );
-  }, [loading, refreshing, themeColors, query]);
+      )}
+
+      {activeCategory === 'people' && (
+        <View style={styles.chipsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.chipsScroll, { paddingHorizontal: horizontalPadding }, isTablet && { flexGrow: 1, justifyContent: 'center' }]}>
+            {SEARCH_CRAFTS.map((c) => {
+              const on = craft === c;
+              return (
+                <TouchableOpacity
+                  key={c}
+                  onPress={() => setCraft(on ? '' : c)}
+                  style={[styles.toggleChip, { marginRight: 8, borderColor: on ? ORANGE : mutedBorder, backgroundColor: on ? ORANGE : themeColors.bgCard }]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: on ? '#FFFFFF' : themeColors.textSecondary }}>{c}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {!loading && failed.length > 0 && (
+        <View style={[styles.errorBox, { marginHorizontal: horizontalPadding }]} accessibilityRole="alert">
+          <Icon name="info" size={16} color="#D97706" />
+          <Text style={[styles.errorText, { color: themeColors.textPrimary }]}>
+            Some results could not be loaded ({failed.map((t) => SEARCH_TYPE_LABEL[t as keyof typeof SEARCH_TYPE_LABEL] || t).join(', ')}).
+          </Text>
+          <TouchableOpacity onPress={() => setRetry((n) => n + 1)} accessibilityRole="button" accessibilityLabel="Try again" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 13 }}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+
+  const listEmpty = loading && !refreshing ? (
+    <View style={styles.loadingCenter}>
+      <ActivityIndicator size="large" color={ORANGE} />
+      <Text style={[styles.loadingText, { color: themeColors.textSecondary }]}>{searching ? 'Searching…' : 'Loading…'}</Text>
+    </View>
+  ) : (
+    <View style={styles.emptyCenter}>
+      <Icon name="search" size={44} color={themeColors.iconMuted} />
+      <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>{searching ? `No results for "${term}"` : 'Nothing to show yet'}</Text>
+      <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
+        {searching
+          ? 'Check the spelling, try fewer words, or search by a #tag. You can also switch category or turn off Verified only.'
+          : 'Try searching for a name, a project, a skill or a #tag.'}
+      </Text>
+      {(activeCategory !== 'all' || verifiedOnly || !!craft || !!listingType) && (
+        <TouchableOpacity style={[styles.resetBtn, { borderColor: mutedBorder }]} onPress={() => { setActiveCategory('all'); setVerifiedOnly(false); setCraft(''); setListingType(''); }} accessibilityRole="button">
+          <Text style={{ color: themeColors.textPrimary, fontWeight: '700', fontSize: 13 }}>Reset filters</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
   return (
     <TabletContainer
       backgroundColor={themeColors.bgScreen}
-      header={
-        <Header
-          title="Explore & Discover"
-          showLogo={false}
-          showNotifications={false}
-          showMessages={false}
-          onBack={() => navigation.goBack()}
-        />
-      }
+      header={<Header title="Search" showLogo={false} showNotifications={false} showMessages={false} onBack={() => navigation.goBack()} />}
     >
       <FlashListAny
         key={`explore-grid-${numCols}`}
-        data={filteredList}
+        data={loading ? [] : items}
         renderItem={renderExploreCard}
         keyExtractor={(item: ExploreItem) => `${item.type}-${item.id}`}
         numColumns={numCols}
         estimatedItemSize={235}
-        contentContainerStyle={{
-          paddingHorizontal: horizontalPadding - gridGap / 2,
-          paddingBottom: 30,
-        }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: horizontalPadding - gridGap / 2, paddingBottom: 30 }}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={listEmpty}
+        ListFooterComponent={loadingMore ? <ActivityIndicator style={{ marginVertical: 20 }} color={ORANGE} /> : null}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.6}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[ORANGE]} />}
       />
     </TabletContainer>
@@ -562,6 +484,20 @@ export const SearchScreen = ({ navigation }: { navigation: any }) => {
 };
 
 const styles = StyleSheet.create({
+  hint: { fontSize: 12, marginBottom: 6 },
+  recentBox: { borderWidth: 1, borderRadius: 14, padding: 8, marginBottom: 10 },
+  recentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6 },
+  recentTitle: { fontSize: 12, fontWeight: '700' },
+  recentRow: { flexDirection: 'row', alignItems: 'center' },
+  recentMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, minHeight: 44 },
+  recentRemove: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 },
+  segment: { flexDirection: 'row', borderWidth: 1, borderRadius: 18, padding: 2 },
+  segmentBtn: { paddingHorizontal: 12, minHeight: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  toggleChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, minHeight: 44, borderRadius: 18, borderWidth: 1 },
+  errorBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F59E0B1A', borderWidth: 1, borderColor: '#F59E0B55', borderRadius: 14, padding: 12, marginBottom: 10 },
+  errorText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  resetBtn: { marginTop: 10, borderWidth: 1, borderRadius: 18, paddingHorizontal: 18, minHeight: 40, alignItems: 'center', justifyContent: 'center' },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
@@ -586,7 +522,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     color: INK,
-    fontSize: 13.5,
+    fontSize: 14,
     padding: 0,
   },
   chipsContainer: {
@@ -596,9 +532,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -616,7 +553,7 @@ const styles = StyleSheet.create({
   chipText: {
     color: '#64748B',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   chipTextTablet: {
     fontSize: 13,
@@ -644,7 +581,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   emptySub: {

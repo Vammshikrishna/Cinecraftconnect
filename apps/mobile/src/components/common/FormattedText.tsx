@@ -99,7 +99,7 @@ export const FormattedText: React.FC<FormattedTextProps> = ({
 const styles = StyleSheet.create({
   defaultText: {
     color: '#1F2937',
-    fontSize: 13.5,
+    fontSize: 14,
     lineHeight: 20,
     fontFamily: 'Lora-Regular',
     fontWeight: '400',

@@ -1,3 +1,4 @@
+import { safeHref } from '@/lib/safeUrl';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { PortfolioItemData } from "@/types/portfolio";
@@ -23,7 +24,7 @@ export const PortfolioItemDetail = ({ item, isOpen, onOpenChange }: PortfolioIte
     } else if (item.media_type?.startsWith('video')) {
       return <CachedVideo src={item.media_url} controls preload="metadata" className="rounded-lg w-full" />;
     } else {
-      return <a href={item.media_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">View File</a>;
+      return <a href={safeHref(item.media_url)} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">View File</a>;
     }
   };
 

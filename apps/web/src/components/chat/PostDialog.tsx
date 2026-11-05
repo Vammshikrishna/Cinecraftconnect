@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, ChevronLeft, ChevronRight, MoreVertical, X } from 'lucide-react';
+import { Heart, MessageCircle, ChevronLeft, ChevronRight, MoreVertical, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import { VideoViewerPlayer } from '@/components/common/FeedVideo';
 import CommentSection from '@/components/feed/CommentSection';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,6 +17,7 @@ import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import VerificationBadge from '../common/VerificationBadge';
 import { useRealtimePostStats } from '@/hooks/useRealtimePostStats';
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 interface PostDialogProps {
     postId: string;
@@ -101,7 +103,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                 .from('posts')
                 .select(`
                     *,
-                    profiles (
+                    profiles:author_id (
                         id,
                         full_name,
                         username,
@@ -169,10 +171,10 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
                 <DialogContent className="max-w-4xl bg-black border-none h-[80vh] flex flex-col items-center justify-center p-0 overflow-hidden rounded-3xl">
                     <DialogTitle className="sr-only">Loading Post</DialogTitle>
-                    <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black animate-pulse" />
+                    <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black" />
                     <div className="relative z-10 flex flex-col items-center gap-4">
                         <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-                        <div className="text-white/40 font-black tracking-[0.3em] text-[10px] uppercase">CineCraft Premium</div>
+                        <div className="text-white/40 font-black tracking-[0.3em] text-[12px] uppercase">CineCraft Premium</div>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -246,13 +248,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                     }}
                 >
                     {currentItem.type === 'video' ? (
-                        <video 
-                            src={currentItem.url} 
-                            controls 
-                            autoPlay 
-                            className={`block ${hasAspectRatio ? 'w-full h-full object-cover' : 'max-w-full max-h-[85vh] lg:max-h-full object-contain'}`}
-                            style={imageStyles} 
-                        />
+                        <VideoViewerPlayer key={currentItem.url} src={currentItem.url} className="min-h-[50vh] min-w-[min(100%,20rem)]" />
                     ) : (
                         <img loading="lazy" decoding="async" 
                             src={getOptimizedImage(currentItem.url, { width: 1200 })} 
@@ -268,7 +264,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent aria-describedby={undefined} hideClose={true} className="max-w-7xl w-[95vw] sm:w-[95vw] md:w-[95vw] lg:w-full h-[98vh] lg:h-[95vh] p-0 gap-0 bg-black/95 backdrop-blur-xl border-none overflow-hidden rounded-3xl">
+            <DialogContent aria-describedby={undefined} hideClose={true} className="max-w-7xl w-[95vw] sm:w-[95vw] md:w-[95vw] lg:w-full h-[98vh] lg:h-[95vh] p-0 gap-0 bg-black/95 border-none overflow-hidden rounded-3xl">
                 <VisuallyHidden>
                     <DialogTitle>Media Viewer for {authorName}'s Post</DialogTitle>
                     <DialogDescription>Viewing images and interaction panel</DialogDescription>
@@ -283,17 +279,17 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                         </Avatar>
                         <div className="flex flex-col flex-1 min-w-0 font-outfit">
                             <div className="flex items-center gap-1 truncate">
-                                <p className="font-black text-[15px] tracking-tight text-foreground truncate uppercase">{authorName}</p>
+                                <p className="font-black text-base tracking-tight text-foreground truncate uppercase">{authorName}</p>
                                 {author.is_verified && <VerificationBadge size="xs" />}
                             </div>
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-[0.25em] font-black opacity-80 -mt-0.5 truncate">{author.craft || 'Creator'}</p>
+                            <p className="text-[12px] text-muted-foreground uppercase tracking-[0.25em] font-black opacity-80 -mt-0.5 truncate">{author.craft || 'Creator'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-black/5 rounded-full shrink-0">
+                        <Button aria-label="More options" variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-black/5 rounded-full shrink-0">
                             <MoreVertical className="h-5 w-5" />
                         </Button>
-                        <Button
+                        <Button aria-label="Close"
                             variant="ghost"
                             size="icon"
                             onClick={() => onOpenChange(false)}
@@ -331,13 +327,13 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
 
                                                 <div className="relative z-10 w-full flex flex-col items-center gap-4 lg:gap-8">
                                                     {/* Career Label */}
-                                                    <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-1000 scale-75 lg:scale-100">
+                                                    <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 animate-in fade-in slide-in-from-top-4 duration-1000 scale-75 lg:scale-100">
                                                         <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                                                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/70">Official Opportunity</span>
+                                                        <span className="text-[12px] font-black uppercase tracking-[0.3em] text-white/70">Official Opportunity</span>
                                                     </div>
 
                                                     {/* Hard constrain JobCard on mobile so it doesn't push the modal wider than the screen! */}
-                                                    <div className="w-[90vw] max-w-[340px] md:max-w-sm lg:max-w-md transition-all duration-700 animate-in fade-in zoom-in-95 fill-mode-both shadow-[0_0_100px_rgba(0,0,0,0.6)]">
+                                                    <div className="w-[90vw] max-w-[340px] md:max-w-sm lg:max-w-md transition-[opacity,transform] duration-700 animate-in fade-in zoom-in-95 fill-mode-both shadow-[0_0_100px_rgba(0,0,0,0.6)]">
                                                         <JobShareCard {...shareData} className="w-full" />
                                                     </div>
                                                 </div>
@@ -354,7 +350,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
 
                         {items.length > 1 && (
                             <>
-                                <Button
+                                <Button aria-label="Back"
                                     variant="ghost"
                                     size="icon"
                                     className="absolute left-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full"
@@ -362,7 +358,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                                 >
                                     <ChevronLeft className="h-8 w-8" />
                                 </Button>
-                                <Button
+                                <Button aria-label="Next"
                                     variant="ghost"
                                     size="icon"
                                     className="absolute right-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full"
@@ -388,10 +384,10 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                                         <p className="font-bold text-sm tracking-tight">{authorName}</p>
                                         {author.is_verified && <VerificationBadge size="sm" />}
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{author.craft || 'Creator'}</p>
+                                    <p className="text-[12px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{author.craft || 'Creator'}</p>
                                 </div>
                             </div>
-                            <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="rounded-full">
+                            <Button aria-label="Close" variant="ghost" size="icon" onClick={() => onOpenChange(false)} className="rounded-full">
                                 <X className="h-5 w-5" />
                             </Button>
                         </div>
@@ -400,10 +396,10 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                         <div className="p-4 sm:p-5 border-b border-border/10 space-y-4 bg-background">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4 sm:gap-6">
-                                    <Button variant="ghost" size="icon" onClick={handleLike} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                                        <Heart className={`h-6 w-6 sm:h-7 sm:w-7 transition-all duration-300 ${post.user_has_liked ? 'fill-red-500 text-red-500 scale-110' : 'hover:text-red-500'}`} />
+                                    <Button aria-label="Like" variant="ghost" size="icon" onClick={handleLike} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                                        <Heart className={`h-6 w-6 sm:h-7 sm:w-7 transition duration-300 ${post.user_has_liked ? 'fill-red-500 text-red-500 scale-110' : 'hover:text-red-500'}`} />
                                     </Button>
-                                    <Button 
+                                    <Button aria-label="Comments" 
                                         variant="ghost" 
                                         size="icon" 
                                         onClick={scrollToComments}
@@ -411,8 +407,8 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                                     >
                                         <MessageCircle className="h-6 w-6 sm:h-7 sm:w-7" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => setShowShareSheet(true)} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                                        <Share2 className="h-6 w-6 sm:h-7 sm:w-7" />
+                                    <Button aria-label="Share" variant="ghost" size="icon" onClick={() => setShowShareSheet(true)} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                                        <ShareIcon className="h-6 w-6 sm:h-7 sm:w-7" />
                                     </Button>
                                 </div>
                                 <p className="font-black text-sm sm:text-base tracking-tight">{displayLikeCount || 0} Likes</p>
@@ -427,7 +423,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                                     <AvatarFallback>{initials}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-[14px] leading-relaxed">
+                                    <div className="text-sm leading-relaxed">
                                     <div className="inline-flex items-center gap-1 mr-1.5">
                                         <span className="font-bold text-foreground tracking-tight hover:underline cursor-pointer">
                                             {authorName}
@@ -449,10 +445,10 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                                         )}
                                     </div>
                                     <div className="flex items-center gap-3 mt-2.5">
-                                        <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-medium">
+                                        <p className="text-[12px] text-muted-foreground/60 uppercase tracking-widest font-medium">
                                             {formatDistanceToNow(new Date(post.created_at || new Date()), { addSuffix: false }).replace('about ', '')}
                                         </p>
-                                        <button className="text-[10px] font-bold text-foreground/40 hover:text-foreground transition-colors uppercase tracking-widest">
+                                        <button className="text-[12px] font-bold text-foreground/40 hover:text-foreground transition-colors uppercase tracking-widest">
                                             See translation
                                         </button>
                                     </div>
@@ -460,14 +456,14 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                             </div>
 
                             <div className="space-y-4">
-                                <h4 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/40 border-b pb-2">Conversation Thread</h4>
+                                <h4 className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/40 border-b pb-2">Conversation Thread</h4>
                                 <CommentSection postId={postId} />
                             </div>
                         </div>
 
                         {/* Footer */}
                         <div className="p-4 border-t border-border/10 bg-card opacity-80">
-                            <p className="text-[9px] text-muted-foreground uppercase tracking-[0.4em] font-black text-center">
+                            <p className="text-[12px] text-muted-foreground uppercase tracking-[0.4em] font-black text-center">
                                 PUBLISHED {new Date(post.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                             </p>
                         </div>

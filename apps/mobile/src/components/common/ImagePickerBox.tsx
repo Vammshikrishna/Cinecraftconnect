@@ -1,4 +1,5 @@
 import { CachedImage } from './CachedImage';
+import { showToast } from '../../contexts/ToastContext';
 import React, { useState } from 'react';
 import {
   View,
@@ -20,6 +21,8 @@ interface ImagePickerBoxProps {
   placeholder?: string;
   bucket?: string;
   folder?: string;
+  /** Title of the error toast when the upload fails. */
+  errorTitle?: string;
 }
 
 export const ImagePickerBox: React.FC<ImagePickerBoxProps> = ({
@@ -29,6 +32,7 @@ export const ImagePickerBox: React.FC<ImagePickerBoxProps> = ({
   placeholder = 'Or paste image URL (https://...)',
   bucket = 'portfolios',
   folder = 'covers',
+  errorTitle = 'Could not upload the image',
 }) => {
   const { themeColors, isDark } = useUserSettings();
   const [uploading, setUploading] = useState(false);
@@ -42,6 +46,7 @@ export const ImagePickerBox: React.FC<ImagePickerBoxProps> = ({
       }
     } catch (e) {
       console.warn('[ImagePickerBox] Pick error:', e);
+      showToast({ title: errorTitle, message: 'Check your connection and try again.', type: 'error' });
     } finally {
       setUploading(false);
     }
@@ -58,6 +63,8 @@ export const ImagePickerBox: React.FC<ImagePickerBoxProps> = ({
             style={styles.changeBtn}
             onPress={handlePick}
             disabled={uploading}
+            accessibilityRole="button"
+            accessibilityLabel="Change photo"
           >
             {uploading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -68,7 +75,7 @@ export const ImagePickerBox: React.FC<ImagePickerBoxProps> = ({
               </>
             )}
           </TouchableOpacity>
-          <TouchableOpacity
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove image" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={styles.removeBtn}
             onPress={() => onImageSelected('')}
           >
@@ -128,8 +135,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -156,12 +163,12 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   uploadTitle: {
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#FF4B33',
   },
   uploadSubtext: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: '#9CA3AF',
   },
   uploadingText: {
@@ -196,7 +203,7 @@ const styles = StyleSheet.create({
   },
   changeBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   removeBtn: {

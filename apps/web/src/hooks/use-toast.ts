@@ -1,9 +1,11 @@
 import * as React from "react"
 
+import { ToastAction } from "@/components/ui/toast"
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 5
-const TOAST_REMOVE_DELAY = 1000000
+// three at once is plenty; a closed toast is cleared a moment after its exit animation
+const TOAST_LIMIT = 3
+const TOAST_REMOVE_DELAY = 1000
 
 type ToasterToast = ToastProps & {
   id: string
@@ -119,8 +121,45 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">
 
-function toast(props: Toast) {
+const text = (n: React.ReactNode) => (typeof n === "string" ? n : "")
+
+/** "Error" and "Success" on their own say nothing: say what the message is about instead. */
+function normalize(props: Toast): Toast {
+  let { title, description } = props
+  const t = text(title).trim().toLowerCase().replace(/[!.]+$/, "")
+  if (t === "success" && text(description)) {
+    title = description as any
+    description = undefined
+  } else if (t === "error" || t === "operation failed") {
+    title = "Something went wrong"
+  }
+  return { ...props, title, description }
+}
+
+/** Long messages stay longer, errors stay longer still, and a message with a button (Undo) stays longest. */
+function autoDuration(props: Toast): number {
+  const length = text(props.title).length + text(props.description).length
+  let ms = Math.min(10000, Math.max(4000, 3000 + length * 45))
+  if (props.variant === "destructive") ms = Math.max(ms, 7000)
+  if (props.action) ms = Math.max(ms, 8000)
+  return ms
+}
+
+function baseToast(input: Toast) {
+  const props = normalize(input)
   const id = genId()
+
+  // the same message is already on screen: do not stack a copy of it
+  const same = memoryState.toasts.find(
+    (t) => t.open !== false && text(t.title) === text(props.title) && text(t.description) === text(props.description) && t.variant === props.variant
+  )
+  if (same) {
+    return {
+      id: same.id,
+      dismiss: () => dispatch({ type: "DISMISS_TOAST", toastId: same.id }),
+      update: (p: ToasterToast) => dispatch({ type: "UPDATE_TOAST", toast: { ...p, id: same.id } }),
+    }
+  }
 
   const update = (props: ToasterToast) => dispatch({ type: "UPDATE_TOAST", toast: { ...props, id } })
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
@@ -129,6 +168,7 @@ function toast(props: Toast) {
     type: "ADD_TOAST",
     toast: {
       ...props,
+      duration: props.duration ?? autoDuration(props),
       id,
       open: true,
       onOpenChange: (open: boolean) => {
@@ -143,6 +183,29 @@ function toast(props: Toast) {
     update,
   }
 }
+
+type Extra = Partial<Pick<Toast, "duration" | "action">>
+
+/**
+ * toast({ title, description, variant })        the general form
+ * toast.success("Saved")  toast.error("Could not save", reason)  toast.warning(...)  toast.info(...)
+ * toast.undo("Muted @sam", () => unmute())       a message with an Undo button
+ */
+const toast = Object.assign(baseToast, {
+  success: (title: string, description?: React.ReactNode, extra?: Extra) => baseToast({ title, description, variant: "success", ...extra }),
+  error: (title: string, description?: React.ReactNode, extra?: Extra) => baseToast({ title, description, variant: "destructive", ...extra }),
+  warning: (title: string, description?: React.ReactNode, extra?: Extra) => baseToast({ title, description, variant: "warning", ...extra }),
+  info: (title: string, description?: React.ReactNode, extra?: Extra) => baseToast({ title, description, variant: "info", ...extra }),
+  /** A message that stays until it is dismissed (for work in progress). Returns its id. */
+  loading: (title: string) => baseToast({ title, duration: 600000 }).id,
+  dismiss: (id?: string) => dispatch({ type: "DISMISS_TOAST", toastId: id }),
+  undo: (title: string, onUndo: () => void, description?: React.ReactNode) =>
+    baseToast({
+      title,
+      description,
+      action: React.createElement(ToastAction, { altText: "Undo", onClick: onUndo }, "Undo") as unknown as ToastActionElement,
+    }),
+})
 
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState)

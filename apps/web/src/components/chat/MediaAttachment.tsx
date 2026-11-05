@@ -1,6 +1,9 @@
+import { safeHref } from '@/lib/safeUrl';
 import React, { useState } from 'react';
 import { FileText, Download, Play, ImageOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { VideoViewerDialog } from '@/components/common/FeedVideo';
+import { formatClock } from '@/lib/videoPlayback';
 
 export interface MediaAttachmentProps {
   url?: string | null;
@@ -34,6 +37,8 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
   onSelectMedia,
 }) => {
   const [failedIndices, setFailedIndices] = useState<Set<number>>(new Set());
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
   const items = React.useMemo(() => parseMediaUrls(url), [url]);
 
@@ -48,10 +53,13 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
   };
 
   const handleMediaClick = (clickedUrl: string, idx: number) => {
-    if (onSelectMedia) {
+    if ((type || 'image') === 'video' && items.length === 1) {
+      setViewerUrl(clickedUrl);
+    } else if (onSelectMedia) {
       onSelectMedia(clickedUrl, idx, items);
     } else {
-      window.open(clickedUrl, '_blank');
+      const safe = safeHref(clickedUrl);
+      if (safe) window.open(safe, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -74,7 +82,7 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-semibold text-foreground/80 truncate">{alt || 'Attachment'}</span>
-              <span className="text-[10px] text-muted-foreground/70">Image unavailable</span>
+              <span className="text-[12px] text-muted-foreground/70">Image unavailable</span>
             </div>
           </div>
         );
@@ -98,25 +106,45 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
 
     if (mediaType === 'video') {
       return (
+        <>
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Play video"
           className={cn("relative group cursor-pointer rounded-xl overflow-hidden shadow-sm", className)}
           onClick={() => handleMediaClick(singleUrl, 0)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleMediaClick(singleUrl, 0); } }}
         >
-          <video src={singleUrl} className="max-w-full h-auto max-h-[300px] rounded-xl" />
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-all">
+          <video
+            src={singleUrl}
+            muted
+            playsInline
+            preload="metadata"
+            className="max-w-full h-auto max-h-[300px] rounded-xl"
+            onLoadedMetadata={(e) => { if (Number.isFinite(e.currentTarget.duration)) setVideoDuration(e.currentTarget.duration); }}
+          />
+          {videoDuration > 0 && (
+            <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[12px] font-semibold tabular-nums text-white">
+              {formatClock(videoDuration)}
+            </span>
+          )}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition">
             <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center text-primary-foreground shadow-lg">
               <Play className="h-6 w-6 fill-current ml-0.5" />
             </div>
           </div>
         </div>
+        <VideoViewerDialog open={viewerUrl !== null} onOpenChange={(o) => { if (!o) setViewerUrl(null); }} src={viewerUrl || singleUrl} />
+        </>
       );
     }
 
     // Default File / Document
-    const fileName = singleUrl.split('/').pop()?.split('?')[0] || 'Attachment';
+    let fileName = singleUrl.split('/').pop()?.split('?')[0] || 'Attachment';
+    try { const n = new URL(singleUrl).searchParams.get('name'); if (n) fileName = n; } catch { /* keep the stored name */ }
     return (
       <a
-        href={singleUrl}
+        href={safeHref(singleUrl)}
         download={fileName}
         target="_blank"
         rel="noopener noreferrer"
@@ -128,7 +156,7 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
         <FileText className="h-8 w-8 text-primary shrink-0" />
         <div className="flex flex-col min-w-0 flex-1">
           <span className="text-xs font-bold truncate">{fileName}</span>
-          <span className="text-[10px] text-muted-foreground">Document Attachment</span>
+          <span className="text-[12px] text-muted-foreground">Document Attachment</span>
         </div>
         <Download className="h-4 w-4 text-muted-foreground shrink-0" />
       </a>
@@ -148,7 +176,7 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
             {failedIndices.has(idx) ? (
               <div className="flex flex-col items-center justify-center text-muted-foreground gap-1">
                 <ImageOff className="w-5 h-5 opacity-50" />
-                <span className="text-[10px] opacity-70">Unavailable</span>
+                <span className="text-[12px] opacity-70">Unavailable</span>
               </div>
             ) : (
               <img
@@ -177,7 +205,7 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
           {failedIndices.has(0) ? (
             <div className="flex flex-col items-center justify-center text-muted-foreground gap-1">
               <ImageOff className="w-6 h-6 opacity-50" />
-              <span className="text-[10px] opacity-70">Unavailable</span>
+              <span className="text-[12px] opacity-70">Unavailable</span>
             </div>
           ) : (
             <img
@@ -247,7 +275,7 @@ export const MediaAttachment: React.FC<MediaAttachmentProps> = ({
             {failedIndices.has(idx) ? (
               <div className="flex flex-col items-center justify-center text-muted-foreground gap-1">
                 <ImageOff className="w-5 h-5 opacity-50" />
-                <span className="text-[9px] opacity-70">Unavailable</span>
+                <span className="text-[12px] opacity-70">Unavailable</span>
               </div>
             ) : (
               <img

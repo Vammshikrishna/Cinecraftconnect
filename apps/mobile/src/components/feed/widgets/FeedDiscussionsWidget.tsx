@@ -1,3 +1,4 @@
+import { WT } from './widgetScale';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -7,12 +8,13 @@ import {
   ScrollView,
 } from 'react-native';
 import { Icon } from '../../common/Icon';
+import { DropdownTrigger } from '../../common/DropdownMenu';
 import { useUserSettings } from '../../../hooks/useUserSettings';
 import { getSupabaseClient } from '@cinecraft/api';
 import { UniversalShareSheet } from '../../common/UniversalShareSheet';
 
 const ORANGE = '#FF4B33';
-const MUTED = '#6B7280';
+const MUTED = '#64748B';
 const BORDER = '#E5E7EB';
 
 interface DiscussionRoomItem {
@@ -120,7 +122,7 @@ export const FeedDiscussionsWidget: React.FC<FeedDiscussionsWidgetProps> = ({
                       },
                     ]}
                   >
-                    <Text style={styles.roomStatusText}>ROOM // OPEN</Text>
+                    <Text style={styles.roomStatusText}>Open</Text>
                   </View>
                   <View
                     style={[
@@ -131,20 +133,16 @@ export const FeedDiscussionsWidget: React.FC<FeedDiscussionsWidgetProps> = ({
                       },
                     ]}
                   >
-                    <Text style={styles.categoryText}>CAT // {tagStr.toUpperCase()}</Text>
+                    <Text style={styles.categoryText}>{tagStr}</Text>
                   </View>
                 </View>
 
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    setSelectedRoom(room);
-                    setShareSheetVisible(true);
-                  }}
+                <DropdownTrigger accessibilityLabel="More options"
+                  items={[{ label: 'Share room link', icon: 'share', onPress: () => { setSelectedRoom(room); setShareSheetVisible(true); } }]}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Icon name="more-vertical" size={16} color={themeColors.textMuted} />
-                </TouchableOpacity>
+                  <Icon name="more-vertical" size={16} color={themeColors.iconMuted} />
+                </DropdownTrigger>
               </View>
 
               {/* Title & Desc */}
@@ -167,7 +165,7 @@ export const FeedDiscussionsWidget: React.FC<FeedDiscussionsWidgetProps> = ({
                   ]}
                 >
                   <Text style={[styles.memberText, { color: themeColors.textSecondary }]}>
-                    MEMBERS // {memberCount}
+                    {memberCount} members
                   </Text>
                 </View>
                 <View style={styles.enterBtn}>
@@ -201,7 +199,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   titleGroup: {
     flexDirection: 'row',
@@ -210,14 +208,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0D0D0D',
-    fontSize: 16,
+    fontSize: WT.sectionTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   seeAllText: {
     color: '#4B5563',
-    fontSize: 12,
+    fontSize: WT.seeAll,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },
@@ -229,7 +227,7 @@ const styles = StyleSheet.create({
     width: 250,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 16,
+    padding: WT.cardPad,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#000',
@@ -250,41 +248,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#A7F3D0',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   roomStatusText: {
     color: '#059669',
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   categoryBadge: {
     backgroundColor: '#FFF7F5',
     borderWidth: 1,
     borderColor: '#FFE5DF',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   categoryText: {
     color: ORANGE,
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.badge,
+    fontWeight: '700',
+      },
   roomTitle: {
     color: '#0D0D0D',
-    fontSize: 16,
+    fontSize: WT.cardTitle,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
     marginBottom: 6,
   },
   roomDesc: {
     color: '#475569',
-    fontSize: 13,
+    fontSize: WT.body,
     fontFamily: 'WorkSans-Regular',
     fontWeight: '400',
     lineHeight: 18,
@@ -306,17 +300,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   memberText: {
     color: '#64748B',
-    fontSize: 9.5,
-    fontFamily: 'Inconsolata-Bold',
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+    fontSize: WT.meta,
+    fontWeight: '700',
+      },
   enterBtn: {
+    minHeight: WT.touch,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -327,7 +320,7 @@ const styles = StyleSheet.create({
   },
   enterBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: WT.button,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
   },

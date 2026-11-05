@@ -1,6 +1,6 @@
 import { orTerm } from '@/lib/postgrest';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search, MapPin, Clock, Briefcase, Filter, ArrowUpDown, CheckCircle, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,11 +38,16 @@ import SEO from "@/components/common/SEO";
 import { UnifiedSearchBar } from "@/components/ui/unified-search-bar";
 import { cn } from "@/lib/utils";
 
+const JOBS_PAGE = 50;
+
 const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [appliedJobIds, setAppliedJobIds] = useState<string[]>([]);
   const [bookmarkedJobIds, setBookmarkedJobIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [limit, setLimit] = useState(JOBS_PAGE);
+  const [hasMore, setHasMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentSelectedJob, setCurrentSelectedJob] = useState<{ id: string, title: string } | null>(null);
   const [sortBy, setSortBy] = useState<'newest' | 'salary_high' | 'salary_low'>('newest');
@@ -61,8 +66,16 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const anyFilter =
     filterType !== 'all' || filterExperience !== 'all' || filterWorkMode !== 'all' || filterDepartment !== 'all' || closingSoonOnly || savedOnly;
 
+  // Only the very first load swaps the page for skeletons; filters, search and "Load more" keep the list on screen.
+  const hasLoadedRef = useRef(false);
+  const reqIdRef = useRef(0);
+  const [refreshing, setRefreshing] = useState(false);
+
   const fetchJobs = async () => {
-    setLoading(true);
+    const reqId = ++reqIdRef.current;
+    if (!hasLoadedRef.current) setLoading(true);
+    setRefreshing(true);
+    setLoadFailed(false);
     try {
       let query = (supabase as any)
         .from('jobs')
@@ -99,9 +112,9 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
 
       // Apply Sorting
       if (sortBy === 'salary_high') {
-        query = query.order('salary_max', { ascending: false });
+        query = query.order('salary_max', { ascending: false, nullsFirst: false });
       } else if (sortBy === 'salary_low') {
-        query = query.order('salary_min', { ascending: true });
+        query = query.order('salary_min', { ascending: true, nullsFirst: false });
       } else {
         query = query.order('created_at', { ascending: false });
       }
@@ -110,22 +123,28 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
         query = query.or(`title.ilike.%${orTerm(searchQuery)}%,description.ilike.%${orTerm(searchQuery)}%,company.ilike.%${orTerm(searchQuery)}%`);
       }
 
-      const { data, error } = await query;
+      // one extra row tells us whether there is a next page
+      const { data, error } = await query.limit(limit + 1);
+      if (reqId !== reqIdRef.current) return; // an older request must not overwrite a newer one
       if (error) throw error;
+      setHasMore(((data || []) as any[]).length > limit);
       // Postings whose deadline has passed are not open any more, even if the database has not closed them yet.
       const now = Date.now();
-      let list = ((data || []) as any[]).filter((j) => !j.deadline || new Date(j.deadline).getTime() > now);
+      let list = ((data || []) as any[]).slice(0, limit).filter((j) => !j.deadline || new Date(j.deadline).getTime() > now);
       if (closingSoonOnly) list = list.filter((j) => getDeadlineInfo(j.deadline)?.urgent);
       setJobs(list as any);
+      hasLoadedRef.current = true;
     } catch (error: any) {
+      if (reqId !== reqIdRef.current) return;
       console.error('Error fetching jobs:', error);
+      setLoadFailed(true);
       toast({
         title: "Error",
         description: "Failed to load job listings.",
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      if (reqId === reqIdRef.current) { setLoading(false); setRefreshing(false); }
     }
   };
 
@@ -163,8 +182,12 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   };
 
   useEffect(() => {
-    fetchJobs();
-  }, [searchQuery, sortBy, filterType, filterExperience, filterWorkMode, filterDepartment, closingSoonOnly]);
+    // typing waits 250ms so one query is sent per pause, not per keystroke
+    const t = setTimeout(() => { fetchJobs(); }, searchQuery ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [searchQuery, sortBy, filterType, filterExperience, filterWorkMode, filterDepartment, closingSoonOnly, limit]);
+
+  useEffect(() => { setLimit(JOBS_PAGE); }, [searchQuery, sortBy, filterType, filterExperience, filterWorkMode, filterDepartment, closingSoonOnly]);
 
   useEffect(() => {
     fetchUserApplications();
@@ -272,13 +295,11 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           .eq('job_id', jobId)
           .eq('user_id', user.id);
         if (error) throw error;
-        toast({ title: "Removed from saved jobs" });
       } else {
         const { error } = await supabase
           .from('job_bookmarks' as any)
           .upsert({ job_id: jobId, user_id: user.id }, { onConflict: 'user_id,job_id' });
         if (error) throw error;
-        toast({ title: "Job saved successfully" });
       }
     } catch (err) {
       console.error('Bookmark error:', err);
@@ -298,11 +319,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           ts: Date.now()
         }));
       } catch {}
-      toast({
-        title: "Error",
-        description: "Could not update bookmark. Please try again.",
-        variant: "destructive"
-      });
+      toast({ title: "Could not update your saved jobs", description: "Please try again.", variant: "destructive" });
     }
   };
 
@@ -321,7 +338,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 pb-36">
+    <div className="min-h-dvh bg-background text-foreground selection:bg-primary/30 pb-36">
       <SEO 
         title="Jobs" 
         description="Find your next production role or hire top film talent on CineCraft Connect. Browse job listings for directors, actors, editors, and crew." 
@@ -331,7 +348,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
+      <main className="max-w-[1560px] mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
         <PageHeader 
           title="Jobs" 
           subtitle="Find your next production role or hire top film talent" 
@@ -381,9 +398,9 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                       {['all', ...JOB_TYPES].map((type) => (
                         <Button
                           key={type}
-                          variant={filterType === type ? 'default' : 'outline'}
+                          variant={filterType === type ? 'default' : 'outline'} aria-pressed={filterType === type}
                           onClick={() => setFilterType(type)}
-                          className="h-9 px-4 rounded-xl text-xs font-bold"
+                          className="h-10 md:h-9 px-4 rounded-xl text-xs font-bold"
                         >
                           {type === 'all' ? 'Any' : JOB_TYPE_LABELS[type as keyof typeof JOB_TYPE_LABELS]}
                         </Button>
@@ -399,9 +416,9 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                       {['all', ...EXPERIENCE_LEVELS].map((level) => (
                         <Button
                           key={level}
-                          variant={filterExperience === level ? 'default' : 'outline'}
+                          variant={filterExperience === level ? 'default' : 'outline'} aria-pressed={filterExperience === level}
                           onClick={() => setFilterExperience(level)}
-                          className="h-9 px-4 rounded-xl text-xs font-bold"
+                          className="h-10 md:h-9 px-4 rounded-xl text-xs font-bold"
                         >
                           {level === 'all' ? 'Any' : EXPERIENCE_LABELS[level as keyof typeof EXPERIENCE_LABELS]}
                         </Button>
@@ -417,9 +434,9 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                       {['all', ...WORK_MODES].map((mode) => (
                         <Button
                           key={mode}
-                          variant={filterWorkMode === mode ? 'default' : 'outline'}
+                          variant={filterWorkMode === mode ? 'default' : 'outline'} aria-pressed={filterWorkMode === mode}
                           onClick={() => setFilterWorkMode(mode)}
-                          className="h-9 px-4 rounded-xl text-xs font-bold"
+                          className="h-10 md:h-9 px-4 rounded-xl text-xs font-bold"
                         >
                           {mode === 'all' ? 'Any' : WORK_MODE_LABELS[mode as keyof typeof WORK_MODE_LABELS]}
                         </Button>
@@ -435,9 +452,9 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                       {['all', ...DEPARTMENTS].map((d) => (
                         <Button
                           key={d}
-                          variant={filterDepartment === d ? 'default' : 'outline'}
+                          variant={filterDepartment === d ? 'default' : 'outline'} aria-pressed={filterDepartment === d}
                           onClick={() => setFilterDepartment(d)}
-                          className="h-8 px-3 rounded-xl text-[11px] font-bold"
+                          className="h-10 md:h-8 px-3 rounded-xl text-[12px] font-bold"
                         >
                           {d === 'all' ? 'Any' : d}
                         </Button>
@@ -448,11 +465,11 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                   <DropdownMenuSeparator className="bg-border/20" />
 
                   <div className="flex flex-wrap gap-2">
-                    <Button variant={closingSoonOnly ? 'default' : 'outline'} onClick={() => setClosingSoonOnly((v) => !v)} className="h-9 px-4 rounded-xl text-xs font-bold">
+                    <Button variant={closingSoonOnly ? 'default' : 'outline'} aria-pressed={closingSoonOnly} onClick={() => setClosingSoonOnly((v) => !v)} className="h-10 md:h-9 px-4 rounded-xl text-xs font-bold">
                       Closing soon
                     </Button>
                     {user && (
-                      <Button variant={savedOnly ? 'default' : 'outline'} onClick={() => setSavedOnly((v) => !v)} className="h-9 px-4 rounded-xl text-xs font-bold">
+                      <Button variant={savedOnly ? 'default' : 'outline'} aria-pressed={savedOnly} onClick={() => setSavedOnly((v) => !v)} className="h-10 md:h-9 px-4 rounded-xl text-xs font-bold">
                         Saved jobs
                       </Button>
                     )}
@@ -502,7 +519,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className={cn(
-                        "w-full sm:w-auto h-12 px-3 sm:px-5 rounded-xl border font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors shrink-0",
+                        "w-full sm:w-auto h-12 px-3 sm:px-5 rounded-xl border font-bold uppercase tracking-widest text-[12px] md:text-xs transition-colors shrink-0",
                         sortBy !== 'newest' ? 'text-primary border-primary/30 bg-primary/5' : 'border-border/50 hover:bg-muted/50'
                       )}>
                       <ArrowUpDown size={16} /> 
@@ -510,7 +527,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-56 p-2 glass-card border-border/40 rounded-2xl shadow-2xl" align="end">
-                    <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground/50 px-3 py-2">Sort By</DropdownMenuLabel>
+                    <DropdownMenuLabel className="text-[12px] font-black uppercase tracking-tighter text-muted-foreground/50 px-3 py-2">Sort By</DropdownMenuLabel>
                     <DropdownMenuItem onClick={() => setSortBy('newest')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'newest' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
                       Newest First
                     </DropdownMenuItem>
@@ -536,6 +553,12 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
               ))}
             </div>
 
+          ) : loadFailed && jobs.length === 0 ? (
+            <div className="text-center py-20" role="alert">
+              <h3 className="text-2xl font-black mb-2">Could not load jobs</h3>
+              <p className="text-muted-foreground mb-6">Check your connection and try again.</p>
+              <Button onClick={() => fetchJobs()}>Try again</Button>
+            </div>
           ) : visibleJobs.length === 0 ? (
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -544,12 +567,18 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
               <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
                 <Briefcase size={32} className="text-primary" />
               </div>
-              <h3 className="text-2xl font-black mb-2">The set is quiet...</h3>
-              <p className="text-muted-foreground mb-8 max-w-sm mx-auto">No job listings found matching your search. Be the one to start the next production!</p>
-              {!isInternal && <JobCreationModal onJobCreated={fetchJobs} />}
+              <h3 className="text-2xl font-black mb-2">{savedOnly ? 'No saved jobs' : anyFilter || searchQuery ? 'No jobs match' : 'The set is quiet...'}</h3>
+              <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
+                {savedOnly ? 'Tap the bookmark on a job to save it here.' : anyFilter || searchQuery ? 'Try fewer filters or a different search.' : 'No job listings yet. Be the one to start the next production!'}
+              </p>
+              {(anyFilter || searchQuery) ? (
+                <Button variant="outline" onClick={() => {
+                  setSearchQuery(''); setFilterType('all'); setFilterExperience('all'); setFilterWorkMode('all'); setFilterDepartment('all'); setClosingSoonOnly(false); setSavedOnly(false);
+                }}>Clear filters</Button>
+              ) : (!isInternal && !isFan && <JobCreationModal onJobCreated={fetchJobs} />)}
             </motion.div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,380px),1fr))] gap-6">
               <AnimatePresence mode="popLayout">
               {visibleJobs.map((job, index) => {
                 const isApplied = appliedJobIds.includes(job.id);
@@ -557,11 +586,10 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                 
                 return (
                   <motion.div 
-                    layout
                     key={job.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: Math.min(index, 8) * 0.03, duration: 0.2 }}
                     onClick={() => push(`/jobs/${job.id}`)}
                     className="group glass-card-premium p-4 md:p-6 cursor-pointer relative overflow-hidden flex flex-col h-full"
                   >
@@ -571,7 +599,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                     <div className="flex flex-col justify-between gap-6 h-full relative z-10">
                       <div className="flex-grow space-y-4">
                         <div className="flex items-center gap-4">
-                          <motion.div whileHover={{ scale: 1.05 }} className="shrink-0 p-0.5 rounded-xl md:rounded-2xl bg-gradient-to-br from-primary/20 to-transparent">
+                          <motion.div className="shrink-0 p-0.5 rounded-xl md:rounded-2xl bg-gradient-to-br from-primary/20 to-transparent">
                             <Avatar className="h-10 w-10 md:h-12 md:w-12 lg:h-14 lg:w-14 rounded-[0.8rem] md:rounded-[1rem] border-2 border-background">
                               <AvatarImage src={job.company_pages?.logo_url || ""} />
                               <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-base md:text-lg">
@@ -579,18 +607,20 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                               </AvatarFallback>
                             </Avatar>
                           </motion.div>
-                          <div className="space-y-0.5 md:space-y-1">
-                            <h3 className="font-serif text-lg lg:text-xl font-bold tracking-tight group-hover:text-primary transition-colors leading-tight line-clamp-1">
-                              {job.title}
+                          <div className="space-y-0.5 md:space-y-1 min-w-0">
+                            <h3 className="font-serif text-lg lg:text-xl font-bold tracking-tight group-hover:text-primary transition-colors leading-tight line-clamp-2">
+                              <Link to={`/jobs/${job.id}`} onClick={(e) => e.stopPropagation()} className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:underline" title={job.title}>
+                                {job.title}
+                              </Link>
                             </h3>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               {job.company_pages ? (
-                                <span className="font-bold text-muted-foreground/60 text-[10px] md:text-sm">{job.company_pages.name}</span>
+                                <span className="font-bold text-muted-foreground text-xs md:text-sm">{job.company_pages.name}</span>
                               ) : (
-                                <span className="font-bold text-muted-foreground/60 text-[10px] md:text-sm">{job.company}</span>
+                                <span className="font-bold text-muted-foreground text-xs md:text-sm">{job.company}</span>
                               )}
-                              <span className="w-0.5 h-0.5 rounded-full bg-muted-foreground/20 hidden min-[400px]:block" />
-                              <span className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-primary/60">
+                              <span aria-hidden="true" className="text-muted-foreground hidden min-[400px]:inline">·</span>
+                              <span className="text-[12px] md:text-[12px] font-black uppercase tracking-widest text-primary/60">
                                 {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
                               </span>
                             </div>
@@ -605,9 +635,9 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                             { label: "TYPE", text: JOB_TYPE_LABELS[job.type] || job.type },
                             { label: "EXP", text: EXPERIENCE_LABELS[job.experience_level] || job.experience_level },
                             ...(job.department ? [{ label: "DEPT", text: job.department }] : []),
-                          ].map((tag, i) => (
-                            <div key={i} className="font-mono text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-1 rounded">
-                              {tag.label} // {tag.text}
+                          ].filter((tag) => tag.text).map((tag, i) => (
+                            <div key={i} className="text-[12px] md:text-[12px] font-medium text-muted-foreground bg-muted/10 border border-border/40 px-2 py-1 rounded">
+                              {tag.text}
                             </div>
                           ))}
                         </div>
@@ -617,28 +647,28 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                         <div className="text-left w-full mb-4">
                           {formatSalary(job) ? (
                             <div className="space-y-1">
-                              <p className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Pay</p>
-                              <p className="text-base md:text-lg lg:text-xl font-black text-primary tracking-tighter">{formatSalary(job)}</p>
+                              <p className="text-[12px] md:text-[12px] font-medium text-muted-foreground">Pay</p>
+                              <p className="text-base md:text-lg lg:text-xl font-semibold text-primary tabular-nums">{formatSalary(job)}</p>
                             </div>
                           ) : (
-                            <p className="text-sm font-bold text-muted-foreground/40 italic">Pay on discussion</p>
+                            <p className="text-sm font-medium text-muted-foreground italic">Pay on discussion</p>
                           )}
                           {(() => {
                             const dl = getDeadlineInfo(job.deadline);
                             return dl ? (
-                              <p className={cn("mt-2 text-[10px] font-black uppercase tracking-widest", dl.urgent ? "text-amber-500" : "text-muted-foreground/60")}>
+                              <p className={cn("mt-2 text-xs font-semibold", dl.urgent ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground")}>
                                 {dl.label}
                               </p>
                             ) : null;
                           })()}
                         </div>
 
-                        <div className="w-full flex items-center gap-2">
+                        <div className="w-full flex items-center gap-2 relative z-20">
                           {(isOwner || isInternal) ? (
                             <Button 
                               variant="ghost" 
                               onClick={(e) => { e.stopPropagation(); push("/jobs/manage"); }} 
-                              className="flex-1 h-10 rounded-xl border border-border/50 hover:bg-muted/20 font-bold uppercase tracking-widest text-[10px]"
+                              className="flex-1 h-10 rounded-xl border border-border/50 hover:bg-muted/20 font-bold uppercase tracking-widest text-[12px]"
                             >
                               Manage Listing
                             </Button>
@@ -647,9 +677,11 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                               <CheckCircle className="mr-2 h-4 w-4" />
                               Applied
                             </Button>
+                          ) : isFan ? (
+                            <div className="flex-1" />
                           ) : (
                             <Button 
-                              className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground font-black text-sm shadow-xl shadow-primary/10 group-hover:scale-[1.02] transition-all" 
+                              className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground font-black text-sm shadow-xl shadow-primary/10 transition active:scale-[0.98]" 
                               onClick={(e) => { e.stopPropagation(); handleApplyClick(job); }}
                             >
                               Apply Now
@@ -665,6 +697,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                               bookmarkedJobIds.includes(job.id) && "text-primary border-primary/30 bg-primary/5"
                             )}
                             title={bookmarkedJobIds.includes(job.id) ? "Remove bookmark" : "Save job"}
+                            aria-label={bookmarkedJobIds.includes(job.id) ? "Remove bookmark" : "Save job"}
                           >
                             <Bookmark
                               size={18}
@@ -682,6 +715,11 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
             </AnimatePresence>
             </div>
 
+          )}
+          {hasMore && !loading && !savedOnly && (
+            <div className="flex justify-center pt-2">
+              <Button variant="outline" disabled={refreshing} onClick={() => setLimit((l) => l + JOBS_PAGE)}>{refreshing ? 'Loading...' : 'Load more jobs'}</Button>
+            </div>
           )}
         </div>
 

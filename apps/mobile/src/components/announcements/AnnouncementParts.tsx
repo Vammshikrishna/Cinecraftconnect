@@ -1,9 +1,12 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Linking } from 'react-native';
+import { toSafeUrl } from '../../utils/safeUrl';
 import { Icon } from '../common/Icon';
 import { CachedImage } from '../common/CachedImage';
+import { DropdownTrigger, DropdownItem } from '../common/DropdownMenu';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const db = () => getSupabaseClient() as any;
@@ -39,7 +42,7 @@ export const AnnouncementBadges = ({ item }: { item: any }) => {
   if (item.scheduled) bits.push(<Text key="sch" style={[s.badgeText, { color: '#F59E0B' }]}>GOES LIVE {fmtDateTime(item.posted_at).toUpperCase()}</Text>);
   if (item.expired) bits.push(<Text key="exp" style={[s.badgeText, { color: '#EF4444' }]}>EXPIRED</Text>);
   else if (item.expires_at) bits.push(<Text key="until" style={[s.badgeText, { color: T.textMuted }]}>UNTIL {fmtDate(item.expires_at).toUpperCase()}</Text>);
-  if (item.edited_at) bits.push(<Text key="ed" style={{ color: T.textMuted, fontSize: 10 }}>edited</Text>);
+  if (item.edited_at) bits.push(<Text key="ed" style={{ color: T.textMuted, fontSize: 12 }}>edited</Text>);
   if (bits.length === 0) return null;
   return <View style={s.badgesRow}>{bits}</View>;
 };
@@ -54,7 +57,7 @@ export const AnnouncementMenuButton = ({ item, onEdit, onChanged, force = false 
 
   const togglePin = async () => {
     const { error } = await db().from('announcements').update({ is_pinned: !item.is_pinned }).eq('id', item.id);
-    if (error) return Alert.alert(item.is_pinned ? 'Could not unpin' : 'Could not pin', error.message);
+    if (error) return Alert.alert(item.is_pinned ? 'Could not unpin' : 'Could not pin', friendlyError(error));
     onChanged();
   };
 
@@ -72,49 +75,53 @@ export const AnnouncementMenuButton = ({ item, onEdit, onChanged, force = false 
         style: 'destructive',
         onPress: async () => {
           const { error } = await db().from('announcements').delete().eq('id', item.id);
-          if (error) return Alert.alert('Could not delete', error.message);
+          if (error) return Alert.alert('Could not delete', friendlyError(error));
           onChanged();
         },
       },
     ]);
 
-  const open = () => {
-    const buttons: any[] = [];
-    if (onEdit) buttons.push({ text: 'Edit', onPress: () => onEdit(item) });
-    buttons.push({ text: item.is_pinned ? 'Unpin' : 'Pin to top', onPress: togglePin });
-    if (item.edited_at) buttons.push({ text: 'Edit history', onPress: history });
-    buttons.push({ text: 'Delete', style: 'destructive', onPress: remove });
-    buttons.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert(item.title || 'Announcement', undefined, buttons);
-  };
+  const menuItems = (): DropdownItem[] => [
+    { hidden: !onEdit, label: 'Edit', icon: 'edit-2', onPress: () => onEdit?.(item) },
+    { label: item.is_pinned ? 'Unpin' : 'Pin to top', icon: 'pin', onPress: togglePin },
+    { hidden: !item.edited_at, label: 'Edit history', icon: 'clock', onPress: history },
+    { label: 'Delete', icon: 'trash-2', destructive: true, onPress: remove },
+  ];
 
   return (
-    <TouchableOpacity onPress={open} style={{ padding: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Announcement options">
-      <Icon name="more-vertical" size={18} color={T.textSecondary} />
-    </TouchableOpacity>
+    <DropdownTrigger items={menuItems} style={{ padding: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Announcement options">
+      <Icon name="more-vertical" size={18} color={T.iconSecondary} />
+    </DropdownTrigger>
   );
 };
 
 /** A platform broadcast (staff news) in the same list. No reactions or comments. */
 export const PlatformCard = ({ item }: { item: any }) => {
   const { themeColors: T } = useUserSettings();
+  const raw = String(item.action_url || '').trim();
+  const learnMore = /^(https?:\/\/|\/)/.test(raw) ? (raw.startsWith('/') ? (raw.startsWith('//') ? null : `https://cinecraftconnect.com${raw}`) : toSafeUrl(raw)) : null;
   return (
     <View style={[s.platform, { backgroundColor: 'rgba(255,75,51,0.06)', borderColor: 'rgba(255,75,51,0.3)' }]}>
       <View style={s.row}>
         <Icon name="megaphone" size={12} color={ORANGE} />
-        <Text style={{ color: ORANGE, fontSize: 10, fontWeight: '800', letterSpacing: 0.6 }}>PLATFORM NEWS</Text>
+        <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>PLATFORM NEWS</Text>
         {item.unread ? <View style={s.dot} /> : null}
       </View>
       <AnnouncementCover uri={item.image_url} />
-      <Text style={{ color: T.textPrimary, fontSize: 15, fontWeight: '800', marginTop: 6 }}>{item.title}</Text>
+      <Text style={{ color: T.textPrimary, fontSize: 16, fontWeight: '700', marginTop: 6 }}>{item.title}</Text>
       <Text style={{ color: T.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 4 }}>{item.content}</Text>
-      <Text style={{ color: T.textMuted, fontSize: 11, marginTop: 8 }}>{ago(item.posted_at)} ago</Text>
+      {learnMore ? (
+        <TouchableOpacity accessibilityRole="link" accessibilityLabel="Learn more" onPress={() => Linking.openURL(learnMore).catch(() => {})} style={{ marginTop: 8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ color: ORANGE, fontSize: 13, fontWeight: '700' }}>Learn more</Text>
+        </TouchableOpacity>
+      ) : null}
+      <Text style={{ color: T.textMuted, fontSize: 12, marginTop: 8 }}>{ago(item.posted_at)} ago</Text>
     </View>
   );
 };
 
-export const AnnouncementCover = ({ uri }: { uri?: string | null }) =>
-  uri ? <CachedImage uri={uri} style={s.cover} resizeMode="cover" /> : null;
+export const AnnouncementCover = ({ uri, height }: { uri?: string | null; height?: number }) =>
+  uri ? <CachedImage uri={uri} style={height ? [s.cover, { height }] : s.cover} resizeMode="cover" /> : null;
 
 /** Views (owner only) and report (readers). */
 export const AnnouncementActions = ({ item, userId, onReport }: { item: any; userId: string | null; onReport: (item: any) => void }) => {
@@ -126,13 +133,13 @@ export const AnnouncementActions = ({ item, userId, onReport }: { item: any; use
     <View style={s.actions}>
       {showViews ? (
         <View style={s.row}>
-          <Icon name="eye" size={13} color={T.textMuted} />
-          <Text style={{ color: T.textMuted, fontSize: 11.5 }}>{item.view_count || 0} views</Text>
+          <Icon name="eye" size={13} color={T.iconMuted} />
+          <Text style={{ color: T.textMuted, fontSize: 12 }}>{item.view_count || 0} views</Text>
         </View>
       ) : <View />}
       {showReport ? (
-        <TouchableOpacity onPress={() => onReport(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Icon name="flag" size={13} color={T.textMuted} />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Report" onPress={() => onReport(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Icon name="flag" size={13} color={T.iconMuted} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -145,7 +152,7 @@ const s = StyleSheet.create({
   manageBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, height: 26 },
   platform: { borderWidth: 1, borderRadius: 16, padding: 14, marginHorizontal: 16, marginBottom: 14 },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 },
-  badgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  badgeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: ORANGE },
   cover: { width: '100%', height: 170, borderRadius: 14, marginBottom: 10 },

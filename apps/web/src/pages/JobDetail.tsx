@@ -1,16 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAppNavigation } from "@/contexts/NavigationContext";
 import { motion } from "framer-motion";
-import { 
-  MapPin, Briefcase, CheckCircle, 
-  Share2, Bookmark, DollarSign, ExternalLink,
-  Info, Flag,
-  Users, 
-  Globe, 
-  Trash2,
-  Settings,
-} from "lucide-react";
+import { MapPin, Briefcase, CheckCircle, Bookmark, IndianRupee, ExternalLink, Info, Flag, Users, Trash2, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { JobApplicationModal } from "@/components/jobs/JobApplicationModal";
@@ -21,7 +13,6 @@ import { formatSalary, getDeadlineInfo } from "@cinecraft/core";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDistanceToNow } from "date-fns";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import ReportDialog from "@/components/common/ReportDialog";
 import { useAppRole } from "@/hooks/useAppRole";
 import { BackButton } from "@/components/common/BackButton";
@@ -29,6 +20,9 @@ import { useScrollDirection } from "@/hooks/useScrollDirection";
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import { useJobBookmark } from "@/hooks/useJobBookmark";
 import { cn } from "@/lib/utils";
+import { ScreenSkeleton } from '@/components/ui/enhanced-skeleton';
+import { confirmDialog } from '@/lib/confirmDialog';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 const JobDetail = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -49,9 +43,11 @@ const JobDetail = () => {
   const isOwner = user?.id === job?.posted_by;
   const { isBookmarked, toggleBookmark, loading: bookmarkLoading } = useJobBookmark(jobId);
 
+  // only the first load blanks the page; realtime refreshes merge silently so scroll and open dialogs survive
+  const hasLoadedRef = useRef(false);
   const fetchJobDetail = async () => {
     if (!jobId) return;
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       const { data, error } = await (supabase as any)
         .from('jobs')
@@ -79,6 +75,7 @@ const JobDetail = () => {
 
       if (error) throw error;
       setJob(data as any);
+      hasLoadedRef.current = true;
 
       // Count a view (the database de-duplicates per person per day and ignores the poster).
       if (user) (supabase as any).rpc('record_job_view', { p_job_id: jobId }).then(() => {}, () => {});
@@ -108,13 +105,14 @@ const JobDetail = () => {
         description: "Failed to load job details.",
         variant: "destructive",
       });
-      goBack();
+      if (!hasLoadedRef.current) goBack();
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    hasLoadedRef.current = false;
     fetchJobDetail();
 
     // Real-time subscription
@@ -144,7 +142,6 @@ const JobDetail = () => {
       toast({
         title: "Sign in required",
         description: "Redirecting to sign in page...",
-        variant: "destructive"
       });
       push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
       return;
@@ -154,7 +151,7 @@ const JobDetail = () => {
 
   const handleWithdraw = async () => {
     if (!user || !jobId) return;
-    if (!confirm("Are you sure you want to withdraw your application? This action cannot be undone.")) return;
+    if (!await confirmDialog("Are you sure you want to withdraw your application? This action cannot be undone.")) return;
 
     try {
       const { error } = await supabase
@@ -186,13 +183,7 @@ const JobDetail = () => {
     setIsShareSheetOpen(true);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
+  if (loading) return <ScreenSkeleton variant="detail" />;
 
   if (!job) return null;
 
@@ -209,14 +200,14 @@ const JobDetail = () => {
 
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 pb-36">
+    <div className="min-h-dvh bg-background text-foreground selection:bg-primary/30 pb-36">
       {/* Background Elements aligned with global theme */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
 
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-28 relative z-10">
+      <main className="max-w-[1560px] mx-auto px-4 md:px-8 pt-16 md:pt-28 relative z-10">
         <div className="hidden md:block mb-6">
           <BackButton label="BACK TO JOBS" />
         </div>
@@ -224,13 +215,17 @@ const JobDetail = () => {
         <div className="md:hidden flex items-center justify-between mb-2">
           <BackButton label="BACK TO JOBS" />
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={shareJob} className="rounded-full h-10 w-10">
-              <Share2 size={20} />
+            <Button aria-label="Share" variant="ghost" size="icon" onClick={shareJob} className="rounded-full h-10 w-10">
+              <ShareIcon size={20} />
             </Button>
-            <Button variant="ghost" size="icon" onClick={toggleBookmark} disabled={bookmarkLoading} className={cn("rounded-full h-10 w-10", isBookmarked && "text-primary")}>
+            <Button aria-label="Save" variant="ghost" size="icon" onClick={toggleBookmark} disabled={bookmarkLoading} className={cn("rounded-full h-10 w-10", isBookmarked && "text-primary")}>
               <Bookmark size={20} className={cn(isBookmarked && "fill-current")} />
             </Button>
-
+            {user && !isOwner && (
+              <Button aria-label="Report" variant="ghost" size="icon" onClick={() => setIsReportOpen(true)} className="rounded-full h-10 w-10 hover:bg-rose-500/10 hover:text-rose-500">
+                <Flag size={20} />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -242,7 +237,7 @@ const JobDetail = () => {
             <motion.section 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative overflow-hidden rounded-[2.5rem] bg-card/40 backdrop-blur-md border border-border/50 p-8 md:p-10 shadow-2xl"
+              className="relative overflow-hidden rounded-[2.5rem] bg-card/40 border border-border/50 p-8 md:p-10 shadow-2xl"
             >
               {/* Top Header: Logo + High-Level Branding */}
               <div className="flex items-center justify-between mb-8 pb-6 border-b border-border/20">
@@ -256,21 +251,21 @@ const JobDetail = () => {
                     </Avatar>
                   </div>
                   <div className="flex flex-col">
-                    <h3 className="text-xl font-black text-foreground hover:text-primary transition-all cursor-pointer" onClick={() => job.company_pages && push(`/pages/${job.company_pages.slug}`)}>
+                    <h3 className={cn("text-xl font-black text-foreground transition", job.company_pages && "hover:text-primary cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded")} {...(job.company_pages ? { role: 'link', tabIndex: 0, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); push(`/pages/${job.company_pages.slug}`); } } } : {})} onClick={() => job.company_pages && push(`/pages/${job.company_pages.slug}`)}>
                       {job.company_pages?.name || job.company}
                     </h3>
                   </div>
                 </div>
 
                 <div className="hidden md:flex items-center gap-2">
-                  <Button variant="ghost" size="icon" onClick={shareJob} className="rounded-full hover:bg-muted/30">
-                    <Share2 size={20} />
+                  <Button aria-label="Share" variant="ghost" size="icon" onClick={shareJob} className="rounded-full hover:bg-muted/30">
+                    <ShareIcon size={20} />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={toggleBookmark} disabled={bookmarkLoading} className={cn("rounded-full hover:bg-muted/30", isBookmarked && "text-primary")}>
+                  <Button aria-label="Save" variant="ghost" size="icon" onClick={toggleBookmark} disabled={bookmarkLoading} className={cn("rounded-full hover:bg-muted/30", isBookmarked && "text-primary")}>
                     <Bookmark size={20} className={cn(isBookmarked && "fill-current")} />
                   </Button>
                   {user && !isOwner && (
-                    <Button variant="ghost" size="icon" onClick={() => setIsReportOpen(true)} className="rounded-full hover:bg-rose-500/10 hover:text-rose-500">
+                    <Button aria-label="Report" variant="ghost" size="icon" onClick={() => setIsReportOpen(true)} className="rounded-full hover:bg-rose-500/10 hover:text-rose-500">
                       <Flag size={18} />
                     </Button>
                   )}
@@ -282,7 +277,7 @@ const JobDetail = () => {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <span className={cn(
-                      "text-white text-[10px] font-black uppercase tracking-[0.15em] px-3.5 py-1.5 rounded-full shadow-xl ring-4",
+                      "text-white text-[12px] font-black uppercase tracking-[0.15em] px-3.5 py-1.5 rounded-full shadow-xl ring-4",
                       isClosed
                         ? "bg-gradient-to-r from-zinc-500 to-zinc-600 shadow-zinc-500/20 ring-zinc-500/10"
                         : "bg-gradient-to-r from-orange-500 to-red-500 shadow-orange-500/20 ring-orange-500/10"
@@ -290,7 +285,7 @@ const JobDetail = () => {
                       {isClosed ? "Closed" : "Hiring Now"}
                     </span>
                     {!isClosed && deadline && (
-                      <span className={cn("text-[10px] font-black uppercase tracking-widest", deadline.urgent ? "text-amber-500" : "text-muted-foreground/70")}>
+                      <span className={cn("text-[12px] font-black uppercase tracking-widest", deadline.urgent ? "text-amber-500" : "text-muted-foreground/70")}>
                         {deadline.label}
                       </span>
                     )}
@@ -303,7 +298,7 @@ const JobDetail = () => {
                 {/* Desktop-only Action Row: LinkedIn Style */}
                 <div className="hidden md:flex flex-row items-center gap-3 pt-6 border-t border-border/20 mt-6">
                   {isOwner ? (
-                    <Button onClick={() => push('/jobs/manage')} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all text-lg">
+                    <Button onClick={() => push('/jobs/manage')} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition text-lg">
                       <Settings className="mr-2 h-5 w-5" /> Manage Job
                     </Button>
                   ) : isApplied ? (
@@ -315,15 +310,15 @@ const JobDetail = () => {
                         <Button 
                         variant="outline"
                         onClick={handleWithdraw}
-                        className="h-14 px-8 rounded-full border-red-500/30 text-red-500 font-bold hover:bg-red-500/5 hover:border-red-500/50 transition-all text-base"
+                        className="h-14 px-8 rounded-full border-red-500/30 text-red-500 font-bold hover:bg-red-500/5 hover:border-red-500/50 transition text-base"
                         >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Withdraw
                         </Button>
                     </div>
                   ) : (
-                    <Button onClick={handleApplyClick} disabled={isInternal || isClosed} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all text-lg">
-                      {isClosed ? "Applications Closed" : isInternal ? "Staff Cannot Apply" : "Apply Now"} {!isClosed && <ExternalLink size={20} className="ml-2" />}
+                    <Button onClick={handleApplyClick} disabled={isInternal || isClosed} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition text-lg">
+                      {isClosed ? "Applications Closed" : isInternal ? "Staff Cannot Apply" : "Apply Now"}
                     </Button>
                   )}
                   
@@ -333,7 +328,7 @@ const JobDetail = () => {
                     onClick={toggleBookmark}
                     disabled={bookmarkLoading}
                     className={cn(
-                      "h-14 px-10 rounded-full font-black transition-all text-lg",
+                      "h-14 px-10 rounded-full font-black transition text-lg",
                       isBookmarked 
                         ? "bg-primary text-primary-foreground hover:bg-primary/90" 
                         : "border-primary text-primary hover:bg-primary/5"
@@ -370,8 +365,8 @@ const JobDetail = () => {
               {[
                 { label: 'Job Type', value: JOB_TYPE_LABELS[job.type] || job.type, icon: Briefcase, color: 'text-primary' },
                 { label: 'Experience', value: EXPERIENCE_LABELS[job.experience_level] || job.experience_level, icon: Users, color: 'text-primary' },
-                { label: 'Pay', value: pay || 'On discussion', icon: DollarSign, color: 'text-primary' },
-                { label: 'Status', value: isClosed ? 'Closed' : applicationCount > 5 ? 'High demand' : 'New listing', icon: Info, color: 'text-primary' },
+                { label: 'Pay', value: pay || 'On discussion', icon: IndianRupee, color: 'text-primary' },
+                { label: 'Status', value: isClosed ? 'Closed' : 'Open', icon: Info, color: 'text-primary' },
                 ...(job.department ? [{ label: 'Department', value: job.department, icon: Briefcase, color: 'text-primary' }] : []),
                 ...(shootDates ? [{ label: 'Shoot dates', value: shootDates, icon: Info, color: 'text-primary' }] : []),
                 ...(job.openings && job.openings > 1 ? [{ label: 'Openings', value: String(job.openings), icon: Users, color: 'text-primary' }] : []),
@@ -381,7 +376,7 @@ const JobDetail = () => {
                     <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
                       <spec.icon size={16} />
                     </div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">{spec.label}</p>
+                    <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground/60">{spec.label}</p>
                   </div>
                   <p className="text-sm font-bold text-foreground">{spec.value}</p>
                 </div>
@@ -427,7 +422,7 @@ const JobDetail = () => {
                           <div className="shrink-0 w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors duration-300">
                             <CheckCircle size={12} />
                           </div>
-                          <span className="text-muted-foreground text-lg leading-tight group-hover:text-foreground transition-colors capitalize">
+                          <span className="text-muted-foreground text-lg leading-tight group-hover:text-foreground transition-colors">
                             {req.replace(/^[\-\*]\s*/, '')}
                           </span>
                         </li>
@@ -448,7 +443,7 @@ const JobDetail = () => {
               animate={{ opacity: 1, x: 0 }}
               className="sticky top-24 space-y-6"
             >
-              <div className="bg-card/40 backdrop-blur-md border border-border/50 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden group">
+              <div className="bg-card/40 border border-border/50 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden group">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
                 
                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-8 px-1">Organization</h3>
@@ -483,22 +478,16 @@ const JobDetail = () => {
 
                   <div className="space-y-3 pt-4 px-2">
                     <div className="flex items-center justify-between py-3 border-b border-border/30">
-                      <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[10px] uppercase tracking-widest">
+                      <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[12px] uppercase tracking-widest">
                         <MapPin size={14} /> Location
                       </div>
                       <span className="text-sm font-bold text-foreground/80">{job.company_pages?.headquarters || "Not specified"}</span>
                     </div>
                     <div className="flex items-center justify-between py-3 border-b border-border/30">
-                      <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[10px] uppercase tracking-widest">
+                      <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[12px] uppercase tracking-widest">
                         <Users size={14} /> Size
                       </div>
                       <span className="text-sm font-bold text-foreground/80">{job.company_pages?.company_size || "Not specified"}</span>
-                    </div>
-                    <div className="flex items-center justify-between py-3">
-                      <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[10px] uppercase tracking-widest">
-                        <Globe size={14} /> Presence
-                      </div>
-                      <span className="text-sm font-bold text-primary">{job.company_pages?.headquarters ? "Regional" : "Global"}</span>
                     </div>
                   </div>
                   
@@ -527,7 +516,7 @@ const JobDetail = () => {
                   </AvatarFallback>
                 </Avatar>
                 <div className="overflow-hidden">
-                   <p className="text-[10px] font-black uppercase text-primary/60 tracking-[0.2em] mb-1">Posted By</p>
+                   <p className="text-[12px] font-black uppercase text-primary/60 tracking-[0.2em] mb-1">Posted By</p>
                    <h5 className="font-black text-foreground truncate text-base">{job.profiles?.full_name || "@" + job.profiles?.username}</h5>
                 </div>
               </div>
@@ -540,7 +529,7 @@ const JobDetail = () => {
       {/* Sticky Bottom Apply Bar for Mobile */}
       <div 
         className={cn(
-          "md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 shadow-2xl transition-all duration-300",
+          "md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 shadow-2xl transition-[padding] duration-300",
           isNavHidden 
             ? "pb-[calc(env(safe-area-inset-bottom,0px)+16px)]" 
             : "pb-[calc(env(safe-area-inset-bottom,0px)+64px)] md:pb-[calc(env(safe-area-inset-bottom,0px)+74px)]"
@@ -548,14 +537,14 @@ const JobDetail = () => {
       >
         <div className="flex items-center gap-3">
           {isOwner ? (
-            <Button onClick={() => push('/jobs/manage')} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 active:scale-95 transition-all">
+            <Button onClick={() => push('/jobs/manage')} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 active:scale-95 transition">
               <Settings className="mr-1.5 h-3.5 w-3.5" /> Manage Job
             </Button>
           ) : isApplied ? (
             <div className="flex flex-1 items-center gap-2">
-                <Button disabled className="h-12 flex-[2] rounded-2xl bg-primary/10 text-primary border border-primary/20 font-black text-xs">
+                <Button onClick={() => push('/jobs/applications')} className="h-12 flex-[2] rounded-2xl bg-primary/10 text-primary border border-primary/20 font-black text-xs hover:bg-primary/15">
                 <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
-                Applied
+                Applied · Track
                 </Button>
                 <Button 
                 variant="outline"
@@ -570,7 +559,7 @@ const JobDetail = () => {
               {isClosed ? "Closed" : isInternal ? "Staff Only" : "Apply Now"}
             </Button>
           )}
-          <Button 
+          <Button aria-label="Save" 
             variant={isBookmarked ? "default" : "outline"} 
             onClick={toggleBookmark}
             disabled={bookmarkLoading}
@@ -583,8 +572,8 @@ const JobDetail = () => {
           >
             <Bookmark size={20} className={cn(isBookmarked && "fill-current")} />
           </Button>
-          <Button variant="outline" onClick={shareJob} className="h-12 w-12 p-0 rounded-2xl border-primary text-primary">
-            <Share2 size={20} />
+          <Button aria-label="Share" variant="outline" onClick={shareJob} className="h-12 w-12 p-0 rounded-2xl border-primary text-primary">
+            <ShareIcon size={20} />
           </Button>
         </div>
       </div>

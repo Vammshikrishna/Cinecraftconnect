@@ -24,14 +24,16 @@ import { getSupabaseClient } from '@cinecraft/api';
 import { E2EERecoveryPinModal } from '../../components/security/E2EERecoveryPinModal';
 import { performMobileSignOut } from '../../services/authService';
 import { useUserSettings, UserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
+import { useResponsive } from '../../hooks/useResponsive';
+import { SettingsDetailScreen } from './SettingsDetailScreen';
+import { PlansScreen } from '../billing/PlansScreen';
+import { useAppRole } from '../../hooks/useAppRole';
+import { MyPaymentsScreen } from '../billing/MyPaymentsScreen';
 
-const ORANGE = '#FF4B33';
-const EMERALD = '#10B981';
 const INDIGO = '#6366F1';
 const BLUE = '#2563EB';
 const PURPLE = '#9333EA';
-const AMBER = '#D97706';
-const ROSE = '#DC2626';
 const CYAN = '#0891B2';
 
 interface SearchItem {
@@ -47,8 +49,13 @@ interface SearchItem {
 }
 
 export const SettingsScreen = ({ navigation }: { navigation: any }) => {
-  const { settings, updateSetting, triggerHaptic, isDark: ctxIsDark, resolvedTheme: ctxResolvedTheme } = useUserSettings();
+  const { isInternal } = useAppRole();
+  const { settings, updateSetting, triggerHaptic, isDark: ctxIsDark, resolvedTheme: ctxResolvedTheme, themeColors } = useUserSettings();
   const systemScheme = useColorScheme();
+  const { isTablet, isLandscape } = useResponsive();
+  // Tablet landscape: menu on the left, the chosen section on the right (same as the web /settings layout)
+  const split = isTablet && isLandscape;
+  const [selected, setSelected] = useState<{ sectionId: string; sectionTitle?: string; focus?: string } | null>(null);
   const [e2eeModalVisible, setE2eeModalVisible] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
@@ -62,50 +69,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
   const activeTheme = settings.theme || 'system';
   const resolvedTheme = ctxResolvedTheme || (activeTheme === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : activeTheme);
   const isDark = ctxIsDark !== undefined ? ctxIsDark : (resolvedTheme !== 'light');
-  const isOled = resolvedTheme === 'oled';
 
-  const themeColors = useMemo(() => {
-    if (isOled) {
-      return {
-        bgScreen: '#000000',
-        bgCard: '#0A0A0A',
-        bgCardElevated: '#121212',
-        border: 'rgba(255, 255, 255, 0.12)',
-        textPrimary: '#F8FAFC',
-        textSecondary: '#94A3B8',
-        textMuted: '#64748B',
-        inputBg: '#111111',
-        divider: 'rgba(255, 255, 255, 0.08)',
-        headerBg: '#000000',
-      };
-    }
-    if (isDark) {
-      return {
-        bgScreen: '#0B0F15',
-        bgCard: '#151C26',
-        bgCardElevated: '#1B2432',
-        border: 'rgba(255, 255, 255, 0.08)',
-        textPrimary: '#F1F5F9',
-        textSecondary: '#94A3B8',
-        textMuted: '#64748B',
-        inputBg: '#111722',
-        divider: 'rgba(255, 255, 255, 0.06)',
-        headerBg: '#0B0F15',
-      };
-    }
-    return {
-      bgScreen: '#F8FAFC',
-      bgCard: '#FFFFFF',
-      bgCardElevated: '#FFFFFF',
-      border: '#E2E8F0',
-      textPrimary: '#0F172A',
-      textSecondary: '#64748B',
-      textMuted: '#94A3B8',
-      inputBg: '#FFFFFF',
-      divider: '#E2E8F0',
-      headerBg: '#FFFFFF',
-    };
-  }, [isDark, isOled]);
 
   // Current User Profile State
   const [userProfile, setUserProfile] = useState<{
@@ -181,7 +145,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         setCacheSizeText(`${kb} KB cached`);
       }
     } catch {
-      setCacheSizeText('~2.4 MB cached');
+      setCacheSizeText('');
     }
   };
 
@@ -211,7 +175,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
               await calculateCacheSize();
               Alert.alert('Storage Freed! ✨', 'Offline cache purged successfully.');
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Could not clear cache.');
+              Alert.alert('Error', friendlyError(e, 'Could not clear cache.'));
             } finally {
               setClearingCache(false);
             }
@@ -281,7 +245,28 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
   const VIS: Record<string, string> = { public: 'Public', connections: 'Connections', private: 'Private' };
   const WHO: Record<string, string> = { everyone: 'Everyone', connections: 'Connections', mutuals: 'Mutuals', nobody: 'Nobody' };
   const THEME_NAME: Record<string, string> = { system: 'System', light: 'Light', dark: 'Dark', oled: 'Black' };
-  const open = (sectionId: string, sectionTitle: string, focus?: string) => () => navigation.navigate('SettingsDetail', { sectionId, sectionTitle, focus: focus || sectionId });
+  const open = (sectionId: string, sectionTitle: string, focus?: string) => {
+    const fn = () => {
+      if (split) setSelected({ sectionId, sectionTitle, focus: focus || sectionId });
+      else navigation.navigate('SettingsDetail', { sectionId, sectionTitle, focus: focus || sectionId });
+    };
+    (fn as any).sectionKey = `${sectionId}:${focus || sectionId}`;
+    return fn;
+  };
+  const selectedKey = selected ? `${selected.sectionId}:${selected.focus || selected.sectionId}` : '';
+  const embeddedNav = useMemo(
+    () => ({
+      ...navigation,
+      goBack: () => setSelected(null),
+      navigate: (name: string, params?: any) => {
+        if (name === 'SettingsDetail') setSelected({ sectionId: params?.sectionId, sectionTitle: params?.sectionTitle, focus: params?.focus });
+        else if (name === 'Plans') setSelected({ sectionId: 'plans', sectionTitle: 'Plans' });
+        else if (name === 'MyPayments') setSelected({ sectionId: 'payments', sectionTitle: 'My payments' });
+        else navigation.navigate(name, params);
+      },
+    }),
+    [navigation]
+  );
   const st: any = settings || {};
   const menuGroups: { title: string; items: { id: string; title: string; icon: string; value?: string; keywords?: string; external?: boolean; onPress: () => void }[] }[] = [
     {
@@ -296,6 +281,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
       title: 'Who can see your content',
       items: [
         { id: 'privacy', title: 'Account privacy', icon: 'lock', value: VIS[st.profile_visibility || 'public'], keywords: 'visibility private public', onPress: open('privacy', 'Account privacy') },
+        { id: 'standing', title: 'Account standing', icon: 'shield', keywords: 'warning strike suspended appeal restriction mute', onPress: open('standing', 'Account standing') },
         { id: 'blocked', title: 'Blocked', icon: 'user-x', value: blockedCount === null ? undefined : String(blockedCount), keywords: 'block unblock', onPress: open('blocked', 'Blocked accounts') },
         { id: 'activity', title: 'Activity status', icon: 'eye', value: st.show_online_status === false ? 'Off' : 'On', keywords: 'online read receipts seen', onPress: open('privacy', 'Activity status', 'activity') },
       ],
@@ -318,6 +304,13 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         { id: 'sound', title: 'Sound and haptics', icon: 'volume-2', keywords: 'effects chimes vibration', onPress: open('sound', 'Sound and haptics') },
       ],
     },
+    ...(isInternal ? [] : [{
+      title: 'Plans and payments',
+      items: [
+        { id: 'plans', title: 'Plans', icon: 'sparkles', keywords: 'upgrade subscription pro', onPress: () => (split ? setSelected({ sectionId: 'plans', sectionTitle: 'Plans' }) : navigation.navigate('Plans')) },
+        { id: 'my-payments', title: 'My payments', icon: 'dollar-sign', keywords: 'billing receipts gifts invoices', onPress: () => (split ? setSelected({ sectionId: 'payments', sectionTitle: 'My payments' }) : navigation.navigate('MyPayments')) },
+      ],
+    }]),
     {
       title: 'Security',
       items: [
@@ -352,8 +345,8 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Manage your personal schedule and sync with Google/iCal apps',
         section: 'Profile & Schedule',
         icon: 'calendar',
-        iconColor: ORANGE,
-        iconBg: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1EE',
+        iconColor: themeColors.primary,
+        iconBg: themeColors.primarySoft,
         route: 'AvailabilityCalendar',
       },
       {
@@ -362,7 +355,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Allow incoming voice and video calls',
         section: 'Calls & LiveKit',
         icon: 'phone-call',
-        iconColor: '#10B981',
+        iconColor: themeColors.success,
         iconBg: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
         route: 'SettingsDetail',
         routeParams: { sectionId: 'calls', sectionTitle: 'Calling & LiveKit' },
@@ -384,8 +377,8 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Full-screen call ringing, vibration, join defaults',
         section: 'Calls & LiveKit',
         icon: 'phone',
-        iconColor: ORANGE,
-        iconBg: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1EE',
+        iconColor: themeColors.primary,
+        iconBg: themeColors.primarySoft,
         route: 'SettingsDetail',
         routeParams: { sectionId: 'calls', sectionTitle: 'Calling & LiveKit' },
       },
@@ -407,7 +400,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Change password, 2FA, biometric app lock',
         section: 'Account & Security',
         icon: 'shield',
-        iconColor: ROSE,
+        iconColor: themeColors.danger,
         iconBg: isDark ? 'rgba(220, 38, 38, 0.15)' : '#FEE2E2',
         route: 'SettingsDetail',
         routeParams: { sectionId: 'security', sectionTitle: 'Security & Passwords' },
@@ -430,7 +423,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Public, Network Connections, or Private incognito mode',
         section: 'Privacy & Safety',
         icon: 'eye',
-        iconColor: EMERALD,
+        iconColor: themeColors.success,
         iconBg: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
         route: 'SettingsDetail',
         routeParams: { sectionId: 'privacy', sectionTitle: 'Privacy & Visibility' },
@@ -441,7 +434,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Statutory export of your personal profile, posts & activity records',
         section: 'Privacy & Safety',
         icon: 'download',
-        iconColor: EMERALD,
+        iconColor: themeColors.success,
         iconBg: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7',
         route: 'SettingsDetail',
         routeParams: { sectionId: 'privacy', sectionTitle: 'Privacy & Data Rights' },
@@ -498,8 +491,8 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Wi-Fi download rules and adaptive 4K/1080p quality',
         section: 'Media & Storage',
         icon: 'wifi',
-        iconColor: ORANGE,
-        iconBg: isDark ? 'rgba(255, 75, 51, 0.15)' : '#FFF1EE',
+        iconColor: themeColors.primary,
+        iconBg: themeColors.primarySoft,
         route: 'SettingsDetail',
         routeParams: { sectionId: 'storage', sectionTitle: 'Media & Storage' },
       },
@@ -532,13 +525,13 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
         subtitle: 'Enhanced contrast, reduce motion, text scaling',
         section: 'Accessibility',
         icon: 'sliders',
-        iconColor: AMBER,
+        iconColor: themeColors.warning,
         iconBg: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7',
         route: 'SettingsDetail',
         routeParams: { sectionId: 'accessibility', sectionTitle: 'Accessibility' },
       },
     ],
-    [isDark]
+    [isDark, themeColors]
   );
 
   // Filtered search items
@@ -553,30 +546,12 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
     );
   }, [searchQuery, allSearchableItems]);
 
-  return (
-    <TabletContainer
-      backgroundColor={themeColors.bgScreen}
-      feedMode={false}
-      header={
-        <Header
-          title="Settings and activity"
-          showLogo={false}
-          onBack={() => navigation.goBack()}
-          theme={isDark ? 'dark' : 'light'}
-        />
-      }
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* ── Responsive Centered Inner Container (Max Width 680px for APK feel) ── */}
-        <View style={styles.responsiveContent}>
+  const listBody = (
+        <View style={[styles.responsiveContent, isTablet && !split && { maxWidth: 760 }]}>
           {/* ── 1. Search Bar ────────────────────────────────────────────── */}
           <View style={[styles.searchBarContainer, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
             <Icon name="search" size={18} color={themeColors.textMuted} />
-            <TextInput
+            <TextInput returnKeyType="search" accessibilityLabel="Search"
               style={[styles.searchInput, { color: themeColors.textPrimary }]}
               placeholder="Search"
               placeholderTextColor={themeColors.textMuted}
@@ -586,8 +561,18 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
               autoCorrect={false}
               clearButtonMode="while-editing"
             />
-            {searchQuery.length > 0 && (
+            {searchQuery ? (
               <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Icon name="x" size={16} color={themeColors.textMuted} />
+              </TouchableOpacity>
+            ) : null}
+            {searchQuery.length > 0 && (
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
                 onPress={() => setSearchQuery('')}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
@@ -609,18 +594,18 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
                     <TouchableOpacity
                       style={[styles.igAccountCard, { borderColor: themeColors.border, backgroundColor: themeColors.bgCard }]}
                       activeOpacity={0.75}
-                      onPress={() => navigation.navigate('SettingsDetail', { sectionId: 'account', sectionTitle: 'Accounts Center' })}
+                      onPress={() => (split ? setSelected({ sectionId: 'account', sectionTitle: 'Accounts Center', focus: 'account' }) : navigation.navigate('SettingsDetail', { sectionId: 'account', sectionTitle: 'Accounts Center' }))}
                     >
                       {userProfile?.avatarUrl ? (
                         <CachedImage uri={userProfile.avatarUrl} style={styles.igAccountAvatar} />
                       ) : (
                         <View style={[styles.igAccountAvatar, { backgroundColor: themeColors.inputBg, alignItems: 'center', justifyContent: 'center' }]}>
-                          <Text style={{ color: ORANGE, fontWeight: '800', fontSize: 18 }}>{(userProfile?.fullName || 'C').charAt(0).toUpperCase()}</Text>
+                          <Text style={{ color: themeColors.primary, fontWeight: '700', fontSize: 18 }}>{(userProfile?.fullName || 'C').charAt(0).toUpperCase()}</Text>
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.igRowTitle, { color: themeColors.textPrimary, fontWeight: '700' }]}>Accounts Center</Text>
-                        <Text style={{ color: themeColors.textSecondary, fontSize: 12.5 }} numberOfLines={1}>Password, security, personal details, verification</Text>
+                        <Text style={{ color: themeColors.textSecondary, fontSize: 12 }} numberOfLines={1}>Password, security, personal details, verification</Text>
                       </View>
                       <Icon name="chevron-right" size={16} color={themeColors.textMuted} />
                     </TouchableOpacity>
@@ -631,7 +616,7 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
                   <View key={g.title} style={{ marginBottom: 18 }}>
                     <Text style={[styles.igGroupTitle, { color: themeColors.textSecondary }]}>{g.title}</Text>
                     {g.items.map((item) => (
-                      <TouchableOpacity key={item.id} style={styles.igRow} activeOpacity={0.6} onPress={item.onPress}>
+                      <TouchableOpacity key={item.id} style={[styles.igRow, split && (item.onPress as any).sectionKey === selectedKey && { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : themeColors.primarySoft, borderRadius: 10, paddingHorizontal: 8 }]} activeOpacity={0.6} onPress={item.onPress}>
                         <Icon name={item.icon} size={22} color={themeColors.textPrimary} strokeWidth={1.6} />
                         <Text style={[styles.igRowTitle, { color: themeColors.textPrimary }]} numberOfLines={1}>{item.title}</Text>
                         {!!item.value && <Text style={[styles.igRowValue, { color: themeColors.textMuted }]} numberOfLines={1}>{item.value}</Text>}
@@ -642,15 +627,24 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
                 ))}
 
                 {!!q && groups.length === 0 && (
-                  <Text style={{ color: themeColors.textMuted, textAlign: 'center', paddingVertical: 32 }}>No settings found for "{searchQuery}"</Text>
+                  <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                    <Text style={{ color: themeColors.textMuted, textAlign: 'center' }}>No settings found for "{searchQuery}"</Text>
+                    <TouchableOpacity
+                      accessibilityRole="link"
+                      onPress={() => navigation.navigate('Support', { query: searchQuery.trim() })}
+                      style={{ minHeight: 44, justifyContent: 'center', marginTop: 4 }}
+                    >
+                      <Text style={{ color: '#FF4B33', fontWeight: '700', fontSize: 14 }}>Search the Help Center</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
 
                 {!q && (
                   <View style={{ marginBottom: 18 }}>
                     <Text style={[styles.igGroupTitle, { color: themeColors.textSecondary }]}>Login</Text>
                     <TouchableOpacity style={styles.igRow} activeOpacity={0.6} onPress={handleSignOut} disabled={isSigningOut}>
-                      <Text style={[styles.igRowTitle, { color: '#E11D48', marginLeft: 0 }]}>{isSigningOut ? 'Logging out…' : 'Log out'}</Text>
-                      {isSigningOut && <ActivityIndicator size="small" color="#E11D48" />}
+                      <Text style={[styles.igRowTitle, { color: themeColors.danger, marginLeft: 0 }]}>{isSigningOut ? 'Logging out…' : 'Log out'}</Text>
+                      {isSigningOut && <ActivityIndicator size="small" color={themeColors.danger} />}
                     </TouchableOpacity>
                     <Text style={{ color: themeColors.textMuted, fontSize: 12, marginTop: 14 }}>CineCraft Connect</Text>
                   </View>
@@ -659,7 +653,80 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
             );
           })()}
         </View>
+  );
+
+  return (
+    <TabletContainer
+      backgroundColor={themeColors.bgScreen}
+      feedMode={false}
+      header={
+        <Header
+          title="Settings and activity"
+          showLogo={false}
+          onBack={() => navigation.goBack()}
+          theme={isDark ? 'dark' : 'light'}
+        />
+      }
+    >
+      {split ? (
+        <View style={{ flex: 1, flexDirection: 'row' }}>
+          <ScrollView
+            style={{ width: 380, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: themeColors.border }}
+            contentContainerStyle={styles.scrollContainer}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {listBody}
+          </ScrollView>
+          <View style={{ flex: 1 }}>
+            {selected?.sectionId === 'plans' ? (
+              <PlansScreen embedded navigation={embeddedNav} />
+            ) : selected?.sectionId === 'payments' ? (
+              <MyPaymentsScreen embedded navigation={embeddedNav} />
+            ) : selected?.sectionId ? (
+              <SettingsDetailScreen
+                key={`${selected.sectionId}:${selected.focus || ''}`}
+                embedded
+                route={{ params: selected }}
+                navigation={embeddedNav}
+              />
+            ) : (
+              <ScrollView contentContainerStyle={styles.overviewPane} showsVerticalScrollIndicator={false}>
+                <Text style={[styles.overviewTitle, { color: themeColors.textPrimary }]}>Settings</Text>
+                <TouchableOpacity
+                  style={[styles.overviewCard, { borderColor: themeColors.border, backgroundColor: themeColors.bgCard }]}
+                  activeOpacity={0.75}
+                  onPress={() => setSelected({ sectionId: 'account', sectionTitle: 'Accounts Center', focus: 'account' })}
+                >
+                  {userProfile?.avatarUrl ? (
+                    <CachedImage uri={userProfile.avatarUrl} style={styles.overviewAvatar} />
+                  ) : (
+                    <View style={[styles.overviewAvatar, { backgroundColor: themeColors.inputBg, alignItems: 'center', justifyContent: 'center' }]}>
+                      <Text style={{ color: themeColors.primary, fontWeight: '700', fontSize: 24 }}>{(userProfile?.fullName || 'C').charAt(0).toUpperCase()}</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: themeColors.textPrimary, fontSize: 18, fontWeight: '700' }} numberOfLines={1}>{userProfile?.fullName || userProfile?.username}</Text>
+                    <Text style={{ color: themeColors.textSecondary, fontSize: 14, marginTop: 2 }} numberOfLines={1}>@{userProfile?.username} · Accounts Center</Text>
+                  </View>
+                  <Icon name="chevron-right" size={18} color={themeColors.textMuted} />
+                </TouchableOpacity>
+                <Text style={{ color: themeColors.textSecondary, fontSize: 14, marginTop: 24 }}>
+                  Choose a setting from the list. Changes are saved as soon as you make them.
+                </Text>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      ) : (
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {listBody}
       </ScrollView>
+      )}
 
       {/* Cryptographic E2EE Recovery PIN Modal */}
       <E2EERecoveryPinModal
@@ -676,11 +743,15 @@ export const SettingsScreen = ({ navigation }: { navigation: any }) => {
 };
 
 const styles = StyleSheet.create({
-  igGroupTitle: { fontSize: 13.5, fontWeight: '600', marginBottom: 4, marginLeft: 2 },
+  igGroupTitle: { fontSize: 14, fontWeight: '600', marginBottom: 4, marginLeft: 2 },
   igRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, paddingHorizontal: 2 },
-  igRowTitle: { flex: 1, fontSize: 15.5, fontFamily: 'WorkSans-Regular' },
+  igRowTitle: { flex: 1, fontSize: 16, fontFamily: 'WorkSans-Regular' },
   igRowValue: { fontSize: 14, maxWidth: 140 },
   igAccountCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 12 },
+  overviewPane: { padding: 32, maxWidth: 760, width: '100%' },
+  overviewTitle: { fontSize: 24, fontWeight: '700', marginBottom: 24, fontFamily: 'Lora-Bold' },
+  overviewCard: { flexDirection: 'row', alignItems: 'center', gap: 16, borderWidth: 1, borderRadius: 18, padding: 20 },
+  overviewAvatar: { width: 64, height: 64, borderRadius: 32 },
   igAccountAvatar: { width: 46, height: 46, borderRadius: 23 },
   scrollContainer: {
     paddingVertical: 16,
@@ -690,7 +761,7 @@ const styles = StyleSheet.create({
   // Responsive Centered Container: Crucial for tablets/foldables/web previews
   responsiveContent: {
     width: '100%',
-    maxWidth: 680,
+    maxWidth: 1200,
     alignSelf: 'center',
   },
 
@@ -763,7 +834,6 @@ const styles = StyleSheet.create({
   },
   profileAvatarInitial: {
     fontSize: 24,
-    color: ORANGE,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
   },
@@ -771,7 +841,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: EMERALD,
     width: 20,
     height: 20,
     borderRadius: 10,
@@ -815,10 +884,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   tierPillText: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '700',
-    color: ORANGE,
     letterSpacing: 0.5,
   },
   healthPill: {
@@ -833,13 +901,11 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: EMERALD,
   },
   healthPillText: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: 'WorkSans-Medium',
     fontWeight: '600',
-    color: EMERALD,
   },
   profileActionRow: {
     flexDirection: 'row',
@@ -866,13 +932,12 @@ const styles = StyleSheet.create({
 
   // 3. Card Group System
   groupHeader: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     fontFamily: 'WorkSans-Bold',
-    letterSpacing: 1.2,
+    letterSpacing: 0.3,
     marginBottom: 8,
     marginLeft: 6,
-    textTransform: 'uppercase',
   },
   cardGroup: {
     borderRadius: 20,
@@ -907,7 +972,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rowTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '600',
   },
@@ -968,7 +1033,7 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
   legendText: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: 'WorkSans-Regular',
   },
   clearCacheBtn: {
@@ -1011,7 +1076,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   accordionOptionSub: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: 'WorkSans-Regular',
     marginTop: 1,
     lineHeight: 15,
@@ -1039,10 +1104,9 @@ const styles = StyleSheet.create({
   },
   signOutRowText: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'WorkSans-Bold',
     fontWeight: '600',
-    color: ROSE,
   },
 
   // Footer

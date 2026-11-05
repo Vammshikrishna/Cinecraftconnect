@@ -1,14 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { decideDmEncryption } from '@cinecraft/core';
+import { useE2EEState } from '../services/e2eeState';
 import { getSupabaseClient } from '@cinecraft/api';
 import { NativeSecureKeyStore } from '../services/mobileStorage';
 import { getCurrentUserIdSync, resolveCurrentUserId, getCache, saveCache } from '../services/offlineCache';
 import { subscribeToKeyChanges, getSyncPrivateKey, setSyncPrivateKey } from '../services/e2eeKeyEvents';
+import { fetchE2EEProfileInfo } from '../services/e2eeProfiles';
 
 export const useE2EEChatKeys = (partnerId?: string | null) => {
   const [privateKey, setPrivateKey] = useState<string | null>(null);
   const [userPublicKey, setUserPublicKey] = useState<string | null>(null);
   const [partnerPublicKey, setPartnerPublicKey] = useState<string | null>(null);
+  const [partnerE2EEEnabled, setPartnerE2EEEnabled] = useState(false);
   const [keysLoaded, setKeysLoaded] = useState(false);
+  const { enabled: selfEnabled } = useE2EEState();
   const loadingRef = useRef(false);
   const currentUserIdRef = useRef<string | null>(null);
 
@@ -65,9 +70,14 @@ export const useE2EEChatKeys = (partnerId?: string | null) => {
       }
 
       if (partnerId) {
-        const cachedPartnerPub = await getCache<string>(`pub_key_${partnerId}`);
-        if (cachedPartnerPub) {
+        const [cachedPartnerPub, cachedPartnerEnabled] = await Promise.all([
+          getCache<string>(`pub_key_${partnerId}`),
+          getCache<boolean>(`e2ee_en_${partnerId}`),
+        ]);
+        // only trust a cached key of someone who is known to have encrypted messages on
+        if (cachedPartnerPub && cachedPartnerEnabled) {
           setPartnerPublicKey(cachedPartnerPub);
+          setPartnerE2EEEnabled(true);
         }
       }
 
@@ -77,17 +87,20 @@ export const useE2EEChatKeys = (partnerId?: string | null) => {
       try {
         const targetIds = [userId, partnerId].filter(Boolean) as string[];
         if (targetIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, public_key')
-            .in('id', targetIds);
+          const infoMap = await fetchE2EEProfileInfo(targetIds);
+          const profiles = Array.from(infoMap.values());
 
-          if (profiles && profiles.length > 0) {
-            profiles.forEach((p: any) => {
+          if (profiles.length > 0) {
+            profiles.forEach((p) => {
               if (p?.public_key) {
                 saveCache(`pub_key_${p.id}`, p.public_key).catch(() => { });
                 if (p.id === userId) setUserPublicKey(p.public_key);
-                if (p.id === partnerId) setPartnerPublicKey(p.public_key);
+              }
+              saveCache(`e2ee_en_${p.id}`, !!p.e2ee_enabled).catch(() => { });
+              if (p.id === partnerId) {
+                // never encrypt to someone who has encrypted messages turned off
+                setPartnerE2EEEnabled(!!p.e2ee_enabled);
+                setPartnerPublicKey(p.e2ee_enabled && p.public_key ? p.public_key : null);
               }
             });
           }
@@ -129,7 +142,15 @@ export const useE2EEChatKeys = (partnerId?: string | null) => {
     };
   }, [fetchKeys]);
 
-  return { privateKey, userPublicKey, partnerPublicKey, keysLoaded, reloadKeys: fetchKeys };
+  /** How the next message in this chat must be sent (see docs/E2EE_OPT_IN_DESIGN.md) */
+  const dmPolicy = useMemo(() => decideDmEncryption({
+    selfEnabled: selfEnabled === true,
+    selfHasKeys: !!privateKey && !!userPublicKey,
+    partnerEnabled: partnerE2EEEnabled,
+    partnerHasPublicKey: !!partnerPublicKey,
+  }), [selfEnabled, privateKey, userPublicKey, partnerE2EEEnabled, partnerPublicKey]);
+
+  return { privateKey, userPublicKey, partnerPublicKey, keysLoaded, partnerE2EEEnabled, dmPolicy, reloadKeys: fetchKeys };
 };
 
 export default useE2EEChatKeys;

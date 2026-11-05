@@ -12,9 +12,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { useSheetMetrics } from '../common/useSheetMetrics';
 import { ImagePickerBox } from '../common/ImagePickerBox';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 
@@ -52,6 +54,7 @@ export const RegisterVendorModal: React.FC<RegisterVendorModalProps> = ({
   onRegistered,
 }) => {
   const { themeColors, isDark } = useUserSettings();
+  const sheet = useSheetMetrics();
 
   const [businessName, setBusinessName] = useState('');
   const [description, setDescription] = useState('');
@@ -59,7 +62,7 @@ export const RegisterVendorModal: React.FC<RegisterVendorModalProps> = ({
   const [servicesOffered, setServicesOffered] = useState('');
   const [location, setLocation] = useState('Hyderabad, India');
   const [address, setAddress] = useState('');
-  const [phone, setPhone] = useState('+91 98490 12345');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [website, setWebsite] = useState('');
   const [logoUrlInput, setLogoUrlInput] = useState('');
@@ -79,7 +82,7 @@ export const RegisterVendorModal: React.FC<RegisterVendorModalProps> = ({
     setServicesOffered('');
     setLocation('Hyderabad, India');
     setAddress('');
-    setPhone('+91 98490 12345');
+    setPhone('');
     setEmail('');
     setWebsite('');
     setLogoUrlInput('');
@@ -88,6 +91,15 @@ export const RegisterVendorModal: React.FC<RegisterVendorModalProps> = ({
   const handleRegister = async () => {
     if (!businessName.trim() || !description.trim() || !location.trim() || !phone.trim() || !email.trim()) {
       Alert.alert('Missing Required Information', 'Please fill in business name, description, location, phone, and email.');
+      return;
+    }
+
+    const detailsProblem = !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim()) ? 'Enter a valid email address.'
+      : phone.replace(/\D/g, '').length < 7 ? 'Enter a valid phone number.'
+      : website.trim() && !/^https?:\/\/[^\s.]+\.[^\s]{2,}$/i.test(website.trim()) ? 'The website must start with http:// or https://.'
+      : '';
+    if (detailsProblem) {
+      Alert.alert('Check your details', detailsProblem);
       return;
     }
 
@@ -143,7 +155,7 @@ export const RegisterVendorModal: React.FC<RegisterVendorModalProps> = ({
         `"${businessName.trim()}" has been registered. Verification review is in progress.`
       );
     } catch (e: any) {
-      Alert.alert('Registration Failed', e.message || 'Could not register vendor profile. Please try again.');
+      Alert.alert('Registration Failed', friendlyError(e, 'Could not register vendor profile. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -154,7 +166,7 @@ export const RegisterVendorModal: React.FC<RegisterVendorModalProps> = ({
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
-            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.bgCard, maxHeight: sheet.maxHeight }]}>
               <View style={[styles.handleBar, { backgroundColor: themeColors.border }]} />
 
               <View style={styles.headerRow}>
@@ -162,12 +174,12 @@ export const RegisterVendorModal: React.FC<RegisterVendorModalProps> = ({
                   <Text style={[styles.title, { color: themeColors.textPrimary }]}>Register Rental / Vendor Business</Text>
                   <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>Showcase equipment, studio spaces & crew services</Text>
                 </View>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Icon name="x" size={20} color={themeColors.textSecondary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="x" size={20} color={themeColors.iconSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: sheet.bottomPad + 8 }}>
                 <Text style={[styles.label, { color: themeColors.textSecondary }]}>BUSINESS / VENDOR NAME *</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
@@ -319,6 +331,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     maxHeight: '90%',
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handleBar: {
     width: 36,
@@ -334,16 +349,16 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
   },
   subtitle: {
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
   },
   label: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 4,
@@ -373,7 +388,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   rowTwoCol: {
@@ -390,8 +405,8 @@ const styles = StyleSheet.create({
   },
   postBtnText: {
     color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   btnDisabled: {
     opacity: 0.6,

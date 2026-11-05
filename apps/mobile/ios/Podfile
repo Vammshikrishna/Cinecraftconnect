@@ -1,22 +1,61 @@
-require_relative '../../node_modules/react-native/scripts/react_native_pods'
-require_relative '../../node_modules/@react-native-community/cli-platform-ios/native_modules'
+# This is a monorepo: react-native, expo and most native libraries are hoisted to the repo root, so every script is resolved
+# with node instead of a relative path.
+require Pod::Executable.execute_command('node', ['-p',
+  'require.resolve(
+    "react-native/scripts/react_native_pods.rb",
+    {paths: [process.argv[1]]},
+  )', __dir__]).strip
+require Pod::Executable.execute_command('node', ['-p',
+  'require.resolve(
+    "expo/scripts/autolinking.rb",
+    {paths: [process.argv[1]]},
+  )', __dir__]).strip
 
-platform :ios, '14.0'
+# Same as android/gradle.properties (newArchEnabled=false): not every library this app uses is ready for the new architecture.
+ENV['RCT_NEW_ARCH_ENABLED'] = '0'
+
+platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# react-native-firebase needs static frameworks on iOS (Firebase ships Swift pods), plus its own flag so it is built the same way.
+$RNFirebaseAsStaticFramework = true
+linkage = ENV['USE_FRAMEWORKS'] || 'static'
+Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+use_frameworks! :linkage => linkage.to_sym
+
 target 'CineCraftConnect' do
+  # Expo modules (expo-gl for the landing animation). Everything else is linked by React Native's own autolinking, as on Android.
+  use_expo_modules!
   config = use_native_modules!
 
   use_react_native!(
     :path => config[:reactNativePath],
-    :hermes_enabled => true
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  target 'CineCraftConnectTests' do
+    inherit! :complete
+    # Pods for testing
+  end
+
   post_install do |installer|
+    # https://github.com/facebook/react-native/blob/main/packages/react-native/scripts/react_native_pods.rb#L197-L202
     react_native_post_install(
       installer,
       config[:reactNativePath],
       :mac_catalyst_enabled => false
     )
+
+    installer.pods_project.targets.each do |pod_target|
+      pod_target.build_configurations.each do |build_config|
+        # react-native-firebase + static frameworks: a framework module includes headers of a non-modular pod.
+        build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        # Some pods still declare an old minimum iOS version; Xcode 15+ warns (or fails) on that.
+        if build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 15.1
+          build_config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+        end
+      end
+    end
   end
 end

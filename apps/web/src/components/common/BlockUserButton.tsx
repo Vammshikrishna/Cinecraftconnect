@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBlockedUsers } from '@/hooks/useBlockedUsers';
+import { confirmDialog } from '@/lib/confirmDialog';
 
 /** Icon button that blocks / unblocks a user (blocked users cannot send you direct messages). */
 const BlockUserButton = ({ targetId, targetName }: { targetId: string; targetName?: string }) => {
@@ -14,7 +15,7 @@ const BlockUserButton = ({ targetId, targetName }: { targetId: string; targetNam
   const blocked = isBlocked(targetId);
 
   const handleClick = async () => {
-    if (!blocked && !window.confirm(`Block ${targetName || 'this user'}? They will no longer be able to message you.`)) {
+    if (!blocked && !await confirmDialog(`Block ${targetName || 'this user'}? They will no longer be able to message you.`)) {
       return;
     }
     const { error } = blocked ? await unblock(targetId) : await block(targetId);

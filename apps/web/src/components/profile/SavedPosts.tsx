@@ -1,4 +1,5 @@
 import { usePostBookmarks } from "@/hooks/usePostBookmarks";
+import { useLikedPostIds } from "@/hooks/useLikedPostIds";
 import PostCard from "@/components/feed/PostCard";
 import { formatDistanceToNow } from "date-fns";
 import { Bookmark, Loader2 } from "lucide-react";
@@ -6,6 +7,7 @@ import { useState } from "react";
 
 export function SavedPosts() {
   const { bookmarkedPosts } = usePostBookmarks();
+  const { ids: liked, setLiked } = useLikedPostIds((bookmarkedPosts.data || []).map((p: any) => p.id));
   const [postRatings, setPostRatings] = useState<{ [key: string]: number }>({});
 
   const handleRate = (postId: string, rating: number) => {
@@ -50,6 +52,14 @@ export function SavedPosts() {
           <PostCard
             key={post.id}
             id={post.id}
+            currentUserLiked={liked.has(post.id)}
+            onLikeToggle={setLiked}
+            has_poll={!!(post as any).has_poll}
+            scheduled_at={(post as any).scheduled_at}
+            has_collabs={!!(post as any).has_collabs}
+            link_preview={(post as any).link_preview}
+            audience={(post as any).audience}
+            edited_at={(post as any).edited_at}
             author={{
               id: author?.id,
               name: author?.full_name || "Unknown",

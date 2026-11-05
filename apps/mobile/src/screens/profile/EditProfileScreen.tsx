@@ -1,6 +1,6 @@
 import { CachedImage } from '../../components/common/CachedImage';
 import { fetchProfileExtras, mergeProfileExtras, saveOwnProfileExtras } from '../../utils/profileExtras';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,11 +14,17 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  DeviceEventEmitter,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { saveCache } from '../../services/offlineCache';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError, sanitizeUsername, usernameIssue, USERNAME_MAX, USERNAME_STATUS_TEXT } from '@cinecraft/core';
+import { ImagePickerBox } from '../../components/common/ImagePickerBox';
+import { TabletColumn } from '../../components/common/TabletContainer';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -30,7 +36,15 @@ const CRAFT_OPTIONS = [
   'VFX Supervisor', 'Writer'
 ];
 
-export const EditProfileScreen = ({ route, navigation }: { route: any; navigation: any }) => {
+// same lenient check as web: http(s):// or a plain domain
+const isValidUrl = (v: string) => {
+  const s = v.trim();
+  return !s || /^(https?:\/\/)/.test(s) || /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}/.test(s);
+};
+
+const MAX_CUSTOM_LINKS = 10;
+
+export const EditProfileScreen =({ route, navigation }: { route: any; navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
   const { profile: initialProfile } = route.params || {};
 
@@ -53,10 +67,34 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
   const [twitterUrl, setTwitterUrl] = useState('');
   const [facebookUrl, setFacebookUrl] = useState('');
   const [acceptDirectPitches, setAcceptDirectPitches] = useState(true);
+  const [customLinks, setCustomLinks] = useState<{ title: string; url: string }[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Avatar & Cover
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [coverUrl, setCoverUrl] = useState('');
+
+  // discard-changes prompt: remember the loaded values and compare
+  const [loaded, setLoaded] = useState(false);
+  const baselineRef = useRef<string | null>(null);
+  const savedRef = useRef(false);
+  const snapshot = JSON.stringify([fullName, username, bio, selectedCrafts, location, website, youtubeUrl, instagramUrl, linkedinUrl, twitterUrl, facebookUrl, acceptDirectPitches, avatarUrl, customLinks]);
+  useEffect(() => {
+    if (loaded && baselineRef.current === null) baselineRef.current = snapshot;
+  }, [loaded, snapshot]);
+  const isDirty = baselineRef.current !== null && baselineRef.current !== snapshot;
+  const dirtyRef = useRef(false);
+  dirtyRef.current = isDirty && !savedRef.current;
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', (e: any) => {
+      if (!dirtyRef.current || savedRef.current) return; // savedRef is set just before goBack(), before dirtyRef re-renders
+      e.preventDefault();
+      Alert.alert('Discard changes?', 'You have unsaved changes to your profile.', [
+        { text: 'Keep editing', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => navigation.dispatch(e.data.action) },
+      ]);
+    });
+    return unsub;
+  }, [navigation]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -80,7 +118,6 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
           setWebsite(data.website || '');
           setYoutubeUrl(data.youtube_url || '');
           setAvatarUrl(data.avatar_url || '');
-          setCoverUrl(data.cover_image_url || '');
 
           const craftStr = data.craft || '';
           if (craftStr) {
@@ -93,11 +130,15 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
           setTwitterUrl(socials.twitter || '');
           setFacebookUrl(socials.facebook || '');
           setAcceptDirectPitches(socials.accept_direct_pitches ?? true);
+          if (Array.isArray(socials.custom_links)) {
+            setCustomLinks(socials.custom_links.map((l: any) => ({ title: String(l?.title || ''), url: String(l?.url || '') })));
+          }
         }
       } catch (e) {
         console.warn('[EditProfile] Fetch error:', e);
       } finally {
         setLoading(false);
+        setLoaded(true);
       }
     };
 
@@ -111,12 +152,37 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
   };
 
   const handleSave = async () => {
-    if (!username.trim()) {
-      Alert.alert('Validation Error', 'Username cannot be empty.');
+    const issue = usernameIssue(username.trim().toLowerCase());
+    if (issue) {
+      Alert.alert('Check your username', USERNAME_STATUS_TEXT[issue === 'empty' ? 'idle' : issue]);
       return;
     }
     if (bio.length > 300) {
       Alert.alert('Validation Error', 'Bio must be 300 characters or less.');
+      return;
+    }
+    // same rules as web EditProfileForm
+    const errs: Record<string, string> = {};
+    const nm = fullName.trim();
+    if (nm && nm.length < 2) errs.fullName = 'Name is too short';
+    if (nm.length > 50) errs.fullName = 'Name is too long';
+    if (location.trim().length > 100) errs.location = 'Location must be 100 characters or less';
+    const urlFields: [string, string][] = [
+      ['website', website], ['youtube', youtubeUrl], ['instagram', instagramUrl],
+      ['linkedin', linkedinUrl], ['twitter', twitterUrl], ['facebook', facebookUrl],
+    ];
+    urlFields.forEach(([k, v]) => { if (v.trim() && !isValidUrl(v)) errs[k] = 'Please enter a valid URL'; });
+    customLinks.forEach((l, i) => {
+      const t = l.title.trim();
+      const u = l.url.trim();
+      if (!t && !u) return;
+      if (!t) errs[`custom_title_${i}`] = 'Add a title for this link';
+      if (!u) errs[`custom_url_${i}`] = 'Please enter a valid URL';
+      else if (!isValidUrl(u)) errs[`custom_url_${i}`] = 'Please enter a valid URL';
+    });
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      Alert.alert('Check your details', Object.values(errs)[0]);
       return;
     }
 
@@ -129,6 +195,16 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
         return;
       }
 
+      // the username must still be free (the database enforces it too)
+      const wanted = username.trim().toLowerCase();
+      if (wanted !== String(profile?.username || '').toLowerCase()) {
+        const { data: clash } = await (supabase.from('profiles') as any).select('id').eq('username', wanted).neq('id', user.id).limit(1);
+        if (clash && clash.length > 0) {
+          Alert.alert('Check your username', USERNAME_STATUS_TEXT.taken);
+          return;
+        }
+      }
+
       const updatedCraft = selectedCrafts.join(', ');
       const payload: any = {
         full_name: fullName.trim() || null,
@@ -138,16 +214,19 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
         location: location.trim() || null,
         website: website.trim() || null,
         avatar_url: avatarUrl || null,
-        cover_image_url: coverUrl || null,
         accept_direct_pitches: acceptDirectPitches,
         updated_at: new Date().toISOString(),
       };
 
-      const { error } = await (supabase.from('profiles') as any)
+      // .select() returns the saved row: an update that matched nothing (blocked by a policy) gives no error, only no row
+      const { data: savedRows, error } = await (supabase.from('profiles') as any)
         .update(payload)
-        .eq('id', user.id);
+        .eq('id', user.id)
+        .select('id, avatar_url');
 
       if (error) throw error;
+      if (!savedRows || savedRows.length === 0) throw new Error('Your profile could not be saved. Please try again.');
+      const savedAvatar: string | null = savedRows[0].avatar_url || null;
 
       const { error: extrasError } = await saveOwnProfileExtras(user.id, {
         youtube_url: youtubeUrl.trim() || null,
@@ -157,18 +236,25 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
           linkedin: linkedinUrl.trim() || null,
           twitter: twitterUrl.trim() || null,
           facebook: facebookUrl.trim() || null,
+          custom_links: customLinks
+            .map((l) => ({ title: l.title.trim(), url: l.url.trim() }))
+            .filter((l) => l.title && l.url),
         },
       });
       if (extrasError) throw extrasError;
 
-      Alert.alert('Success', 'Profile updated successfully!', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      // refresh what shows the photo: header avatar caches, then tell the profile screen and header to reload
+      if (savedAvatar) {
+        saveCache('user_avatar_url', savedAvatar);
+        AsyncStorage.setItem('@cinecraft_current_user_avatar', savedAvatar).catch(() => {});
+      }
+      DeviceEventEmitter.emit('cinecraft:profile-updated', { avatar_url: savedAvatar, full_name: fullName.trim(), username: username.trim().toLowerCase() });
+
+      savedRef.current = true;
+      navigation.goBack();
+      Alert.alert('Profile saved', 'Your profile was updated.');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to update profile.');
+      Alert.alert('Error', friendlyError(err, 'Failed to update profile.'));
     } finally {
       setSaving(false);
     }
@@ -190,6 +276,8 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
         onBack={() => navigation.goBack()}
         rightAction={
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Save profile"
             style={styles.headerSaveBtn}
             onPress={handleSave}
             disabled={saving}
@@ -202,6 +290,7 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
           </TouchableOpacity>
         }
       />
+      <TabletColumn maxWidth={840}>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -210,12 +299,6 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {/* Banner & Avatar Preview Card */}
           <View style={styles.bannerContainer}>
-            <CachedImage uri={coverUrl || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800'} style={styles.bannerImg} />
-            <TouchableOpacity style={styles.changeBannerBtn}>
-              <Icon name="camera" size={12} color="#FFFFFF" />
-              <Text style={styles.changeBannerText}>Change Banner</Text>
-            </TouchableOpacity>
-
             <View style={[styles.avatarWrapper, { borderColor: themeColors.bgScreen }]}>
               {avatarUrl ? (
                 <CachedImage uri={avatarUrl} style={styles.avatarImg} />
@@ -231,6 +314,15 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
 
           {/* Form Content Body */}
           <View style={styles.formSection}>
+            <ImagePickerBox
+              imageUrl={avatarUrl}
+              onImageSelected={setAvatarUrl}
+              label="PROFILE PHOTO"
+              bucket="portfolios"
+              folder="avatars"
+              errorTitle="Avatar Upload Failed"
+            />
+
             {/* Full Name & Username */}
             <Text style={[styles.label, { color: themeColors.textSecondary }]}>FULL NAME</Text>
             <TextInput
@@ -238,8 +330,15 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
               placeholder="Your full legal name"
               placeholderTextColor={themeColors.textMuted}
               value={fullName}
-              onChangeText={setFullName}
+              onChangeText={(v) => {
+                setFullName(v);
+                const t = v.trim();
+                if (fieldErrors.fullName && (!t || (t.length >= 2 && t.length <= 50))) {
+                  setFieldErrors((prev) => { const n = { ...prev }; delete n.fullName; return n; });
+                }
+              }}
             />
+            {fieldErrors.fullName ? <Text style={styles.fieldError}>{fieldErrors.fullName}</Text> : null}
             <Text style={[styles.fieldNote, { color: themeColors.textMuted }]}>
               Enter your individual name. To represent a studio, create a Studio Page instead.
             </Text>
@@ -251,8 +350,12 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
               placeholderTextColor={themeColors.textMuted}
               autoCapitalize="none"
               value={username}
-              onChangeText={setUsername}
+              onChangeText={(v) => setUsername(sanitizeUsername(v))}
+              maxLength={USERNAME_MAX}
             />
+            <Text style={[styles.fieldNote, { color: themeColors.textMuted }]}>
+              {USERNAME_STATUS_TEXT.idle}
+            </Text>
 
             {/* Bio with Counter */}
             <View style={styles.labelRow}>
@@ -268,6 +371,7 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
               multiline
               numberOfLines={4}
               value={bio}
+              maxLength={300}
               onChangeText={setBio}
             />
 
@@ -305,6 +409,7 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
               value={location}
               onChangeText={setLocation}
             />
+            {fieldErrors.location ? <Text style={styles.fieldError}>{fieldErrors.location}</Text> : null}
 
             <Text style={[styles.label, { color: themeColors.textSecondary }]}>WEBSITE</Text>
             <TextInput
@@ -315,6 +420,7 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
               value={website}
               onChangeText={setWebsite}
             />
+            {fieldErrors.website ? <Text style={styles.fieldError}>{fieldErrors.website}</Text> : null}
 
             {/* Direct Pitch Toggle */}
             <View style={[styles.switchBox, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
@@ -326,6 +432,7 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
               </View>
               <Switch
                 value={acceptDirectPitches}
+                accessibilityLabel="Accept Direct Pitches"
                 onValueChange={setAcceptDirectPitches}
                 trackColor={{ true: ORANGE }}
               />
@@ -383,6 +490,58 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
               value={youtubeUrl}
               onChangeText={setYoutubeUrl}
             />
+            {fieldErrors.youtube ? <Text style={styles.fieldError}>{fieldErrors.youtube}</Text> : null}
+            {(['instagram', 'linkedin', 'twitter', 'facebook'] as const).map((k) =>
+              fieldErrors[k] ? <Text key={k} style={styles.fieldError}>{k.charAt(0).toUpperCase() + k.slice(1)}: {fieldErrors[k]}</Text> : null
+            )}
+
+            {/* Custom links */}
+            <Text style={[styles.label, { color: themeColors.textSecondary }]}>OTHER LINKS</Text>
+            {customLinks.map((l, i) => (
+              <View key={i} style={{ marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginBottom: 0, backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
+                    placeholder="Title (e.g. Showreel)"
+                    placeholderTextColor={themeColors.textMuted}
+                    accessibilityLabel={`Link ${i + 1} title`}
+                    value={l.title}
+                    maxLength={40}
+                    onChangeText={(v) => setCustomLinks((prev) => prev.map((x, j) => (j === i ? { ...x, title: v } : x)))}
+                  />
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove link ${i + 1}`}
+                    onPress={() => setCustomLinks((prev) => prev.filter((_, j) => j !== i))}
+                    style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ color: '#EF4444', fontWeight: '700' }}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+                {fieldErrors[`custom_title_${i}`] ? <Text style={styles.fieldError}>{fieldErrors[`custom_title_${i}`]}</Text> : null}
+                <TextInput
+                  style={[styles.input, { marginTop: 8, marginBottom: 0, backgroundColor: themeColors.inputBg, borderColor: themeColors.border, color: themeColors.textPrimary }]}
+                  placeholder="https://..."
+                  placeholderTextColor={themeColors.textMuted}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                  accessibilityLabel={`Link ${i + 1} address`}
+                  value={l.url}
+                  onChangeText={(v) => setCustomLinks((prev) => prev.map((x, j) => (j === i ? { ...x, url: v } : x)))}
+                />
+                {fieldErrors[`custom_url_${i}`] ? <Text style={styles.fieldError}>{fieldErrors[`custom_url_${i}`]}</Text> : null}
+              </View>
+            ))}
+            {customLinks.length < MAX_CUSTOM_LINKS && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Add a link"
+                onPress={() => setCustomLinks((prev) => [...prev, { title: '', url: '' }])}
+                style={{ minHeight: 44, justifyContent: 'center', marginBottom: 8 }}
+              >
+                <Text style={{ color: ORANGE, fontWeight: '700', fontSize: 13 }}>+ Add a link</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Submit Action Row */}
             <View style={styles.actionRow}>
@@ -408,11 +567,13 @@ export const EditProfileScreen = ({ route, navigation }: { route: any; navigatio
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      </TabletColumn>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  fieldError: { color: '#EF4444', fontSize: 12, marginTop: 4, marginBottom: 6 },
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
@@ -431,16 +592,16 @@ const styles = StyleSheet.create({
   headerSaveBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   content: {
     paddingBottom: 40,
   },
   bannerContainer: {
-    height: 140,
+    height: 90,
     width: '100%',
     position: 'relative',
-    backgroundColor: '#CBD5E1',
+    backgroundColor: 'transparent',
     alignItems: 'center',
   },
   bannerImg: {
@@ -462,7 +623,7 @@ const styles = StyleSheet.create({
   },
   changeBannerText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   avatarWrapper: {
@@ -489,7 +650,7 @@ const styles = StyleSheet.create({
   avatarFallbackText: {
     color: '#FF4B33',
     fontSize: 32,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   formSection: {
     marginTop: 55,
@@ -503,21 +664,21 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   label: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginTop: 12,
     marginBottom: 6,
   },
   fieldNote: {
-    fontSize: 10.5,
+    fontSize: 12,
     color: '#94A3B8',
     marginBottom: 10,
     lineHeight: 14,
   },
   counterText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
     fontWeight: '700',
   },
@@ -528,7 +689,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 13.5,
+    fontSize: 14,
     color: INK,
   },
   textarea: {
@@ -553,13 +714,13 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   chipText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
     color: '#64748B',
   },
   chipTextActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   switchBox: {
     flexDirection: 'row',
@@ -572,18 +733,18 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   switchTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: INK,
   },
   switchSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
   sectionHeader: {
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
     marginTop: 20,
     marginBottom: 4,
@@ -604,7 +765,7 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     color: '#64748B',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   saveBtn: {
     flex: 1,
@@ -617,7 +778,7 @@ const styles = StyleSheet.create({
   saveBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

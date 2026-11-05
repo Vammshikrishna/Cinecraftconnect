@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -7,24 +7,64 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  TouchableWithoutFeedback,
-  Keyboard,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../common/Icon';
+import { useUserSettings } from '../../hooks/useUserSettings';
 import { getSupabaseClient } from '@cinecraft/api';
 import {
   generateUserKeyPair,
   exportPublicKey,
   exportPrivateKey,
-  encryptPrivateKeyWithPin,
   decryptPrivateKeyWithPin,
+  encryptPrivateKeyWithPinVault,
+  decryptPrivateKeyWithPinVault,
+  isVaultBackup,
+  createPinVault,
+  describePinVaultError,
   importPrivateKey
 } from '@cinecraft/e2ee';
 import { NativeSecureKeyStore } from '../../services/mobileStorage';
 import { notifyKeyChanged } from '../../services/e2eeKeyEvents';
 
 const TextInputCast = TextInput as any;
+const PIN_INDEXES = [0, 1, 2, 3, 4, 5];
+
+interface PinBoxProps {
+  index: number;
+  char: string;
+  active: boolean;
+  reveal: boolean;
+  confirm: boolean;
+  borderColor: string;
+  bgColor: string;
+  textColor: string;
+  filledBorder: string;
+  filledBg: string;
+}
+
+// One display-only digit box. Memoised on primitives: typing a digit re-renders only the box that changed.
+const PinBox = memo(function PinBox({ index, char, active, reveal, confirm, borderColor, bgColor, textColor, filledBorder, filledBg }: PinBoxProps) {
+  return (
+    <View
+      pointerEvents="none"
+      accessible
+      accessibilityLabel={confirm ? `Confirm PIN digit ${index + 1} of 6` : `PIN digit ${index + 1} of 6`}
+      accessibilityValue={{ text: char ? 'filled' : 'empty' }}
+      style={[
+        styles.otpBox,
+        { borderColor: char || active ? filledBorder : borderColor, backgroundColor: char ? filledBg : bgColor },
+      ]}
+    >
+      <Text style={[styles.otpChar, { color: textColor, fontFamily: 'WorkSans-Regular' }]}>{char ? (reveal ? char : '•') : ''}</Text>
+    </View>
+  );
+});
 
 interface E2EERecoveryPinModalProps {
   visible: boolean;
@@ -39,8 +79,10 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [pin, setPin] = useState(['', '', '', '', '', '']);
-  const [confirmPin, setConfirmPin] = useState(['', '', '', '', '', '']);
+  const { themeColors, isDark } = useUserSettings();
+  // The digits live here as two plain strings (never lifted to a parent). One hidden input types into them.
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [setupStep, setSetupStep] = useState<'enter' | 'confirm'>('enter');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -49,11 +91,12 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetInput, setResetInput] = useState('');
 
-  const inputRefs = useRef<Array<TextInput | null>>([]);
+  const inputRef = useRef<TextInput | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
 
   useEffect(() => {
-    setPin(['', '', '', '', '', '']);
-    setConfirmPin(['', '', '', '', '', '']);
+    setPin('');
+    setConfirmPin('');
     setSetupStep('enter');
     setErrorMsg(null);
     setShowResetConfirm(false);
@@ -70,32 +113,15 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
     return () => clearInterval(interval);
   }, [lockoutTimer]);
 
-  const handleDigitChange = (val: string, index: number, isConfirm = false) => {
-    const current = isConfirm ? [...confirmPin] : [...pin];
-    current[index] = val;
+  // Typing, backspace, paste and autofill all arrive here as one string: just keep the digits, nothing else runs.
+  const isConfirmStep = setupStep === 'confirm';
+  const handlePinText = useCallback((val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 6);
+    if (isConfirmStep) setConfirmPin(digits);
+    else setPin(digits);
+  }, [isConfirmStep]);
 
-    if (isConfirm) {
-      setConfirmPin(current);
-    } else {
-      setPin(current);
-    }
-
-    if (val && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyPress = (e: any, index: number, isConfirm = false) => {
-    if (e.nativeEvent.key === 'Backspace' && index > 0) {
-      const current = isConfirm ? confirmPin : pin;
-      if (!current[index]) {
-        inputRefs.current[index - 1]?.focus();
-      }
-    }
-  };
-
-  const currentDigits = setupStep === 'confirm' ? confirmPin : pin;
-  const pinString = currentDigits.join('');
+  const pinString = isConfirmStep ? confirmPin : pin;
 
   const handleSubmit = async () => {
     if (lockoutTimer > 0) {
@@ -112,18 +138,19 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
       if (setupStep === 'enter') {
         setSetupStep('confirm');
         setErrorMsg(null);
-        setTimeout(() => inputRefs.current[0]?.focus(), 100);
+        setTimeout(() => inputRef.current?.focus(), 100);
         return;
       }
 
       // Confirm step
-      const enteredPin = pin.join('');
-      const confirmedPin = confirmPin.join('');
+      const enteredPin = pin;
+      const confirmedPin = confirmPin;
       if (enteredPin !== confirmedPin) {
         setErrorMsg('PINs do not match. Please re-enter.');
-        setConfirmPin(['', '', '', '', '', '']);
+        setConfirmPin('');
         setSetupStep('enter');
-        setPin(['', '', '', '', '', '']);
+        setPin('');
+        setTimeout(() => inputRef.current?.focus(), 100);
         return;
       }
 
@@ -152,7 +179,9 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
         }
 
         // 2. Encrypt private key with PIN
-        const { encryptedKey, salt } = await encryptPrivateKeyWithPin(privateKeyStr, enteredPin);
+        // The backup key needs the PIN and a secret held by the server (key-vault): a copy of the database alone cannot be
+        // used to guess PINs.
+        const { encryptedKey, salt } = await encryptPrivateKeyWithPinVault(privateKeyStr, enteredPin, createPinVault(supabase as any));
 
         // 3. Ensure local keys and broadcast to all mounted screens
         notifyKeyChanged(user.id, privateKeyStr);
@@ -179,7 +208,7 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
         if (onSuccess) onSuccess();
         onClose();
       } catch (err: any) {
-        setErrorMsg(err?.message || 'Could not save recovery PIN.');
+        setErrorMsg(describePinVaultError(err) || err?.message || 'Could not save recovery PIN.');
       } finally {
         setLoading(false);
       }
@@ -206,11 +235,33 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
         }
 
         // 2. Decrypt private key using PIN
-        const decryptedKeyStr = await decryptPrivateKeyWithPin(
-          backupData.encrypted_private_key,
-          pinString,
-          backupData.salt
-        );
+        let decryptedKeyStr: string;
+        if (isVaultBackup(backupData.salt)) {
+          decryptedKeyStr = await decryptPrivateKeyWithPinVault(
+            backupData.encrypted_private_key,
+            pinString,
+            backupData.salt,
+            createPinVault(supabase as any)
+          );
+        } else {
+          decryptedKeyStr = await decryptPrivateKeyWithPin(
+            backupData.encrypted_private_key,
+            pinString,
+            backupData.salt
+          );
+          // An older backup (PIN only). It opened, so upgrade it to the key-vault version right away.
+          try {
+            const upgraded = await encryptPrivateKeyWithPinVault(decryptedKeyStr, pinString, createPinVault(supabase as any));
+            await (supabase.from as any)('key_backups').upsert({
+              user_id: user.id,
+              encrypted_private_key: upgraded.encryptedKey,
+              salt: upgraded.salt,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'user_id' });
+          } catch (upgradeErr) {
+            console.warn('[E2EE Modal] could not upgrade the PIN backup yet:', upgradeErr);
+          }
+        }
 
         // 3. Import key check (non-fatal on Hermes if subtle has minor quirks)
         try {
@@ -231,6 +282,12 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
         onClose();
       } catch (err: any) {
         console.error('Recovery error:', err);
+        const vaultMsg = describePinVaultError(err);
+        if (vaultMsg) {
+          // The server counts the tries (10 wrong = 1 hour pause), so show its message instead of a local counter.
+          setErrorMsg(vaultMsg);
+          return;
+        }
         const next = failedAttempts + 1;
         setFailedAttempts(next);
         const errMsg = (err?.message || '').toString();
@@ -292,302 +349,236 @@ export const E2EERecoveryPinModal: React.FC<E2EERecoveryPinModalProps> = ({
     }
   };
 
+
+  const [showDigits, setShowDigits] = useState(false);
+  const insets = useSafeAreaInsets();
+  const fontBold = { fontFamily: 'Lora-Bold' } as const;
+  const fontBody = { fontFamily: 'WorkSans-Regular' } as const;
+
+  const focusFirst = () => setTimeout(() => inputRef.current?.focus(), 350);
+  // error / "Forgot PIN" red that stays >= 4.5:1 on both the light and dark screen
+  const errorColor = isDark ? themeColors.danger : '#B91C1C';
+
+  const title = showResetConfirm
+    ? 'Reset E2EE Keystore'
+    : mode === 'setup'
+    ? setupStep === 'enter'
+      ? 'Set 6-Digit Recovery PIN'
+      : 'Confirm Recovery PIN'
+    : 'E2EE Keystore Recovery';
+
+  const subtitle = showResetConfirm
+    ? 'This permanently wipes your remote key backup and creates a new identity. Older encrypted messages will not be readable. Type "RESET" below to confirm.'
+    : mode === 'setup'
+    ? setupStep === 'enter'
+      ? 'Protect your end-to-end encrypted direct messages and projectspaces across devices.'
+      : 'Re-enter the 6 digits to verify your security PIN.'
+    : 'Enter your 6-digit recovery PIN to unlock your end-to-end encrypted chats and call history.';
+
+  const handleBack = () => {
+    if (showResetConfirm) {
+      setShowResetConfirm(false);
+      setErrorMsg(null);
+      focusFirst();
+    } else {
+      onClose();
+    }
+  };
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.overlay}>
-          <View style={styles.modalCard}>
-            {/* Top Shield Header */}
-            <View style={styles.iconCircle}>
-              <Icon name="lock" size={24} color="#FF4B33" />
+    <Modal
+      visible={visible}
+      transparent={false}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      statusBarTranslucent
+      onRequestClose={handleBack}
+      onShow={focusFirst}
+    >
+      <View
+        style={[styles.screen, { backgroundColor: themeColors.bgScreen, paddingTop: insets.top, paddingBottom: insets.bottom }]}
+        accessibilityViewIsModal
+      >
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
+        {/* same bar as the other stack screens (components/Header.tsx): 52 high, card colour, line under it, back arrow + left title */}
+        <View style={[styles.headerRow, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
+          <TouchableOpacity
+            onPress={handleBack}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel={showResetConfirm ? 'Back to PIN' : 'Close'}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Icon name="arrow-left" size={20} color={themeColors.textPrimary} strokeWidth={2.5} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, fontBold, { color: themeColors.textPrimary }]} numberOfLines={1} accessibilityRole="header">
+            {title}
+          </Text>
+        </View>
+
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: themeColors.primarySoft }]}>
+              <Icon name={showResetConfirm ? 'shield' : 'lock'} size={36} color={showResetConfirm ? themeColors.danger : themeColors.primary} />
             </View>
 
-            <Text style={styles.modalTitle}>
-              {showResetConfirm
-                ? 'Reset E2EE Keystore'
-                : mode === 'setup'
-                ? setupStep === 'enter'
-                  ? 'Set 6-Digit Recovery PIN'
-                  : 'Confirm Recovery PIN'
-                : 'E2EE Keystore Recovery'}
-            </Text>
-
-            <Text style={styles.modalSubtitle}>
-              {showResetConfirm
-                ? 'This will wipe your current remote backup. Type "RESET" below to confirm.'
-                : mode === 'setup'
-                ? setupStep === 'enter'
-                  ? 'Protect your end-to-end encrypted direct messages and projectspaces across devices.'
-                  : 'Re-enter the 6 digits to verify your security PIN.'
-                : 'Enter your 6-digit recovery PIN to unlock your end-to-end encrypted chats and call history.'}
-            </Text>
-
-            {errorMsg && (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{errorMsg}</Text>
-              </View>
-            )}
+            <Text style={[styles.subtitle, fontBody, { color: themeColors.textSecondary }]}>{subtitle}</Text>
 
             {!showResetConfirm ? (
               <>
-                {/* 6 Digit Inputs */}
-                <View style={styles.otpRow}>
-                  {currentDigits.map((digit, i) => (
-                    <TextInputCast
+                <View style={[styles.otpRow, lockoutTimer > 0 ? styles.otpBoxDisabled : undefined]}>
+                  {PIN_INDEXES.map((i) => (
+                    <PinBox
                       key={i}
-                      ref={(el: any) => (inputRefs.current[i] = el)}
-                      style={[
-                        styles.otpBox,
-                        digit ? styles.otpBoxFilled : undefined,
-                        lockoutTimer > 0 ? styles.otpBoxDisabled : undefined,
-                      ] as any}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                      value={digit}
-                      onChangeText={(val: string) =>
-                        handleDigitChange(val, i, setupStep === 'confirm')
-                      }
-                      onKeyPress={(e: any) => handleKeyPress(e, i, setupStep === 'confirm')}
-                      editable={lockoutTimer === 0 && !loading}
-                      secureTextEntry
+                      index={i}
+                      char={pinString[i] || ''}
+                      active={inputFocused && i === Math.min(pinString.length, 5)}
+                      reveal={showDigits}
+                      confirm={isConfirmStep}
+                      borderColor={themeColors.border}
+                      bgColor={themeColors.inputBg}
+                      textColor={themeColors.textPrimary}
+                      filledBorder={themeColors.primary}
+                      filledBg={themeColors.primarySoft}
                     />
                   ))}
+                  {/* One real input sits invisibly over the six boxes: tap, type, delete, paste and autofill all go through it */}
+                  <TextInputCast
+                    ref={inputRef}
+                    style={styles.hiddenInput}
+                    value={pinString}
+                    onChangeText={handlePinText}
+                    onFocus={() => setInputFocused(true)}
+                    onBlur={() => setInputFocused(false)}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    editable={lockoutTimer === 0 && !loading}
+                    caretHidden
+                    contextMenuHidden
+                    autoCorrect={false}
+                    autoComplete="off"
+                    importantForAutofill="no"
+                    blurOnSubmit={false}
+                    textContentType="oneTimeCode"
+                    underlineColorAndroid="transparent"
+                    accessibilityLabel={isConfirmStep ? 'Confirm recovery PIN, 6 digits' : 'Recovery PIN, 6 digits'}
+                  />
                 </View>
 
-                {/* Submit Action */}
                 <TouchableOpacity
-                  style={[styles.submitBtn, (pinString.length < 6 || loading) && styles.submitBtnDisabled]}
-                  onPress={handleSubmit}
-                  disabled={pinString.length < 6 || loading || lockoutTimer > 0}
+                  onPress={() => setShowDigits((v) => !v)}
+                  style={styles.showToggle}
+                  accessibilityRole="button"
+                  accessibilityLabel={showDigits ? 'Hide PIN digits' : 'Show PIN digits'}
                 >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.submitBtnText}>
-                      {mode === 'setup'
-                        ? setupStep === 'enter'
-                          ? 'Next →'
-                          : 'Save Keystore PIN'
-                        : 'Unlock E2EE Messages'}
-                    </Text>
-                  )}
+                  <Icon name={showDigits ? 'eye-off' : 'eye'} size={16} color={themeColors.textMuted} />
+                  <Text style={[styles.linkText, fontBody, { color: themeColors.textMuted }]}>{showDigits ? 'Hide' : 'Show'}</Text>
                 </TouchableOpacity>
-
-                {/* Reset or Dismiss */}
-                <View style={styles.actionRow}>
-                  {mode === 'recovery' && (
-                    <TouchableOpacity
-                      onPress={() => setShowResetConfirm(true)}
-                      style={styles.forgotBtn}
-                    >
-                      <Text style={styles.forgotBtnText}>Forgot PIN? Reset Keystore</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  <TouchableOpacity onPress={onClose} style={styles.dismissBtn}>
-                    <Text style={styles.dismissBtnText}>Maybe Later</Text>
-                  </TouchableOpacity>
-                </View>
               </>
             ) : (
-              /* Reset Confirmation View */
-              <View style={styles.resetContainer}>
-                <TextInput
-                  style={styles.resetInput}
-                  placeholder="Type RESET"
-                  placeholderTextColor="#9CA3AF"
-                  value={resetInput}
-                  onChangeText={setResetInput}
-                  autoCapitalize="characters"
-                />
-
-                <TouchableOpacity
-                  style={[styles.dangerBtn, resetInput.trim() !== 'RESET' && styles.dangerBtnDisabled]}
-                  onPress={handleResetKeystore}
-                  disabled={resetInput.trim() !== 'RESET' || loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.dangerBtnText}>Permanently Reset Keys</Text>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() => setShowResetConfirm(false)}
-                  style={styles.dismissBtn}
-                >
-                  <Text style={styles.dismissBtnText}>← Back to PIN</Text>
-                </TouchableOpacity>
-              </View>
+              <TextInput
+                style={[styles.resetInput, { borderColor: errorColor, color: themeColors.textPrimary, backgroundColor: themeColors.inputBg }]}
+                placeholder="Type RESET"
+                accessibilityLabel="Type RESET to confirm"
+                placeholderTextColor={themeColors.textMuted}
+                value={resetInput}
+                onChangeText={setResetInput}
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
             )}
-          </View>
-        </View>
-      </TouchableWithoutFeedback>
+
+            {errorMsg ? (
+              <View style={[styles.errorBanner, { backgroundColor: themeColors.danger + '1A', borderColor: themeColors.danger + '66' }]}>
+                <Text style={[styles.errorText, fontBody, { color: errorColor }]} accessibilityLiveRegion="polite">{errorMsg}</Text>
+              </View>
+            ) : null}
+
+            {!showResetConfirm ? (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: themeColors.primary }, (pinString.length < 6 || loading || lockoutTimer > 0) && styles.btnDisabled]}
+                onPress={handleSubmit}
+                disabled={pinString.length < 6 || loading || lockoutTimer > 0}
+                accessibilityRole="button"
+              >
+                {loading ? (
+                  <ActivityIndicator color={themeColors.onPrimary} />
+                ) : (
+                  <Text style={[styles.primaryBtnText, { color: themeColors.onPrimary }]}>
+                    {mode === 'setup' ? (setupStep === 'enter' ? 'Next' : 'Save PIN') : 'Unlock'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: themeColors.danger }, (resetInput.trim().toUpperCase() !== 'RESET' || loading) && styles.btnDisabled]}
+                onPress={handleResetKeystore}
+                disabled={resetInput.trim().toUpperCase() !== 'RESET' || loading}
+                accessibilityRole="button"
+              >
+                {loading ? (
+                  <ActivityIndicator color={themeColors.onPrimary} />
+                ) : (
+                  <Text style={[styles.primaryBtnText, { color: themeColors.onPrimary }]}>Permanently Reset Keys</Text>
+                )}
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.linksRow}>
+              {!showResetConfirm && mode === 'recovery' && (
+                <TouchableOpacity onPress={() => { setShowResetConfirm(true); setErrorMsg(null); }} style={styles.linkBtn} accessibilityRole="button">
+                  <Text style={[styles.linkText, fontBody, { color: errorColor }]}>Forgot PIN?</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={handleBack} style={styles.linkBtn} accessibilityRole="button">
+                <Text style={[styles.linkText, fontBody, { color: themeColors.textMuted }]}>
+                  {showResetConfirm ? 'Back to PIN' : 'Maybe later'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255, 75, 51, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  modalTitle: {
-    color: '#0D0D0D',
-    fontSize: 18,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  modalSubtitle: {
-    color: '#6B7280',
-    fontSize: 12.5,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
-  },
-  errorBanner: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginBottom: 16,
-    width: '100%',
-  },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 11.5,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  otpRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 24,
-    gap: 6,
-  },
+  screen: { flex: 1 },
+  headerRow: { height: 52, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
+  closeBtn: { width: 30, height: 30, marginRight: 8, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', letterSpacing: -0.3 },
+  hiddenInput: { ...StyleSheet.absoluteFillObject, color: 'transparent', backgroundColor: 'transparent', opacity: 0.02, fontSize: 1 },
+  otpChar: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
+  content: { flexGrow: 1, alignItems: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 32 },
+  iconCircle: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  title: { fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 10 },
+  subtitle: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginBottom: 28, maxWidth: 360 },
+  otpRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, width: '100%', maxWidth: 380 },
   otpBox: {
     flex: 1,
-    height: 48,
+    maxWidth: 52,
+    height: 52,
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    textAlign: 'center',
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0D0D0D',
-    backgroundColor: '#FAFAFA',
-  },
-  otpBoxFilled: {
-    borderColor: '#FF4B33',
-    backgroundColor: '#FFF1F0',
-  },
-  otpBoxDisabled: {
-    opacity: 0.4,
-  },
-  submitBtn: {
-    backgroundColor: '#FF4B33',
-    width: '100%',
-    paddingVertical: 13,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 14,
+    justifyContent: 'center',
   },
-  submitBtnDisabled: {
-    opacity: 0.5,
-  },
-  submitBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  actionRow: {
-    alignItems: 'center',
-    gap: 10,
-  },
-  forgotBtn: {
-    paddingVertical: 4,
-  },
-  forgotBtnText: {
-    color: '#EF4444',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  dismissBtn: {
-    paddingVertical: 6,
-  },
-  dismissBtnText: {
-    color: '#9CA3AF',
-    fontSize: 11.5,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  resetContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  resetInput: {
-    width: '100%',
-    height: 44,
-    borderWidth: 1,
-    borderColor: '#EF4444',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0D0D0D',
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  dangerBtn: {
-    backgroundColor: '#EF4444',
-    width: '100%',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  dangerBtnDisabled: {
-    opacity: 0.4,
-  },
-  dangerBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
+  otpBoxDisabled: { opacity: 0.4 },
+  showToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12 },
+  errorBanner: { borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginTop: 8, marginBottom: 8, width: '100%', maxWidth: 380 },
+  errorText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  primaryBtn: { width: '100%', maxWidth: 380, minHeight: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  btnDisabled: { opacity: 0.5 },
+  primaryBtnText: { fontSize: 16, fontWeight: '700' },
+  linksRow: { alignItems: 'center', marginTop: 12, gap: 4 },
+  linkBtn: { paddingVertical: 10, paddingHorizontal: 16 },
+  linkText: { fontSize: 14, fontWeight: '600' },
+  resetInput: { width: '100%', maxWidth: 380, height: 52, borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, fontSize: 18, fontWeight: '700', textAlign: 'center' },
 });
 
 export default E2EERecoveryPinModal;

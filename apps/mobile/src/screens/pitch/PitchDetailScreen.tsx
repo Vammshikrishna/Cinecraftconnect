@@ -17,11 +17,18 @@ import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useResponsive } from '../../hooks/useResponsive';
+import { isTabletDevice } from '../../utils/pageType';
 import { CachedImage } from '../../components/common/CachedImage';
 import { getSupabaseClient } from '@cinecraft/api';
 import { CreatePitchModal } from '../../components/pitch/CreatePitchModal';
 import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
 import { resolveCurrentUserId, getCacheSync, saveCache } from '../../services/offlineCache';
+import { hasGuildClaim, pitchCallIsClosed, logPitchCallView, friendlyError, canSubmitPitch } from '@cinecraft/core';
+import { useAccountType } from '../../hooks/useAccountType';
+import { useAppRole } from '../../hooks/useAppRole';
+import { closePitchCall, reopenPitchCall, duplicatePitchCall, fetchPitchStats, type PitchStats } from '@cinecraft/core';
+import { ReportModal } from '../../components/modals/ReportModal';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -52,13 +59,36 @@ const COMP_COLORS: Record<string, { bg: string; text: string; border: string }> 
 
 export const PitchDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isTablet, isLandscape } = useResponsive();
+  const twoCol = isTablet && isLandscape;
   const { pitchId, pitchTitle } = route.params || {};
   const [pitchCall, setPitchCall] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadTick, setReloadTick] = useState(0);
   const [user, setUser] = useState<any>(null);
+  const { isFan, accountType } = useAccountType();
+  const { isInternal } = useAppRole();
+  const [myCraft, setMyCraft] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const uid = await resolveCurrentUserId();
+        if (!uid) return;
+        const { data } = await (getSupabaseClient().from('profiles') as any).select('craft').eq('id', uid).maybeSingle();
+        if (alive) setMyCraft(data?.craft ?? null);
+      } catch { /* the button just stays hidden for studios without a known craft */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  // Same rule as the web and PitchScreen (canSubmitPitch in @cinecraft/core); never for fans or staff.
+  const userCanSubmit = !isFan && !isInternal && canSubmitPitch(myCraft, accountType);
   const [isSaved, setIsSaved] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [stats, setStats] = useState<PitchStats | null>(null);
+  const [ownerBusy, setOwnerBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
 
   useEffect(() => {
@@ -68,7 +98,8 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
         setLoading(false);
         return;
       }
-      setLoading(true);
+      // Spinner only on the first load; an edit refetch updates the page in place.
+      if (reloadTick === 0) setLoading(true);
       try {
         const supabase = getSupabaseClient();
         let currentUser: any = null;
@@ -98,6 +129,7 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
 
         // The pitch, saved flag and submitted flag only need the pitch id and the user id: fetch together.
         const uid = currentUser?.id;
+        if (uid) logPitchCallView(supabase, pitchId); // counts once per person per 12 hours; the owner is ignored
         const [pitchRes, savedRes, subRes]: any[] = await Promise.all([
           (supabase.from('pitch_calls') as any)
             .select(`
@@ -110,13 +142,14 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
             ? (supabase.from('saved_pitch_calls') as any).select('id').eq('pitch_call_id', pitchId).eq('user_id', uid).maybeSingle()
             : Promise.resolve(null),
           uid
-            ? (supabase.from('pitch_submissions') as any).select('id').eq('pitch_call_id', pitchId).eq('submitter_id', uid).maybeSingle()
+            ? (supabase.from('pitch_submissions') as any).select('id').eq('pitch_call_id', pitchId).eq('submitter_id', uid).neq('status', 'withdrawn').maybeSingle()
             : Promise.resolve(null),
         ]);
 
         if (isCancelled) return;
         if (!pitchRes.error && pitchRes.data) {
           setPitchCall(pitchRes.data);
+          if (uid && pitchRes.data.creator_id === uid) fetchPitchStats(supabase, pitchId).then((s) => { if (!isCancelled) setStats(s); }).catch(() => { });
           if (uid) {
             setIsSaved(!!savedRes?.data);
             if (subRes?.data) setAlreadySubmitted(true);
@@ -133,7 +166,7 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
       isCancelled = true;
       task.cancel();
     };
-  }, [pitchId]);
+  }, [pitchId, reloadTick]);
 
   // Real-time listener across screens
   useEffect(() => {
@@ -235,34 +268,82 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
     setShowShareSheet(true);
   };
 
+  const toggleClosed = () => {
+    if (!pitchCall) return;
+    const closing = pitchCall.status === 'open' && !pitchCallIsClosed(pitchCall);
+    const run = async () => {
+      setOwnerBusy(true);
+      try {
+        const supabase = getSupabaseClient();
+        if (closing) {
+          await closePitchCall(supabase, pitchCall.id);
+          setPitchCall((p: any) => ({ ...p, status: 'closed' }));
+        } else {
+          const deadline = await reopenPitchCall(supabase, pitchCall);
+          setPitchCall((p: any) => ({ ...p, status: 'open', deadline }));
+        }
+      } catch (e: any) {
+        Alert.alert('Could not update the call', friendlyError(e, 'Please try again.'));
+      } finally {
+        setOwnerBusy(false);
+      }
+    };
+    if (closing) {
+      Alert.alert('Close this call?', 'Writers will not be able to send new pitches. Pitches already sent stay with you.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Close call', style: 'destructive', onPress: run },
+      ]);
+    } else {
+      run();
+    }
+  };
+
+  const duplicateCall = async () => {
+    if (!pitchCall || !user) return;
+    setOwnerBusy(true);
+    try {
+      const id = await duplicatePitchCall(getSupabaseClient(), pitchCall, user.id);
+      Alert.alert('Copy created', 'Set a deadline and adjust it as you like.', [
+        { text: 'Open', onPress: () => navigation.push ? navigation.push('PitchDetail', { pitchId: id }) : navigation.navigate('PitchDetail', { pitchId: id }) },
+      ]);
+    } catch (e: any) {
+      Alert.alert('Could not copy the call', friendlyError(e, 'Please try again.'));
+    } finally {
+      setOwnerBusy(false);
+    }
+  };
+
   if (loading) {
     return (
-      <View style={styles.centerLoading}>
-        <ActivityIndicator size="large" color={ORANGE} />
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+        <Header title="Pitch Call" showLogo={false} onBack={() => navigation.goBack()} />
+        <View style={styles.centerLoading}>
+          <ActivityIndicator size="large" color={ORANGE} />
+        </View>
       </View>
     );
   }
 
   if (!pitchCall) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
         <Header title="Pitch Call" showLogo={false} onBack={() => navigation.goBack()} />
         <View style={styles.emptyState}>
-          <Icon name="lightbulb" size={40} color="#9CA3AF" />
-          <Text style={styles.emptyTitle}>Pitch Call Not Found</Text>
+          <Icon name="lightbulb" size={40} color={themeColors.iconMuted} />
+          <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>Pitch Call Not Found</Text>
         </View>
       </View>
     );
   }
 
   const isOwner = user?.id === pitchCall.creator_id;
-  const isExpired = pitchCall.deadline && new Date(pitchCall.deadline) < new Date();
+  const isExpired = pitchCallIsClosed(pitchCall);
   const creatorName = pitchCall.profiles?.full_name || 'Call Creator';
   const creatorAvatar = pitchCall.profiles?.avatar_url;
   const creatorCraft = pitchCall.profiles?.craft || 'Call Creator';
   const creatorLocation = pitchCall.profiles?.location;
   const isVerified = pitchCall.profiles?.is_verified;
-  const isGuildMember = !!pitchCall.attachments?.producers_guild_member_id;
+  const isGuildMember = hasGuildClaim(pitchCall.attachments);
 
   const languages: string[] = Array.isArray(pitchCall.language)
     ? pitchCall.language
@@ -290,7 +371,16 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
         onBack={() => navigation.goBack()}
         rightAction={
           <View style={styles.headerRightActions}>
-            <TouchableOpacity
+            {!isOwner && (
+              <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={[styles.headerActionBtn, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
+                onPress={() => setReportOpen(true)}
+                accessibilityLabel="Report this pitch call"
+              >
+                <Icon name="flag" size={17} color={themeColors.textPrimary} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={[
                 styles.headerActionBtn,
                 { backgroundColor: themeColors.chipBg, borderColor: themeColors.border },
@@ -321,8 +411,10 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
         }
       />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <TabletContainer maxWidth={720}>
+      <ScrollView contentContainerStyle={[styles.content, isTablet && { padding: 24, paddingBottom: 72 }]} showsVerticalScrollIndicator={false}>
+        <TabletContainer maxWidth="content">
+          <View style={twoCol ? { flexDirection: 'row', alignItems: 'flex-start', gap: 20 } : undefined}>
+          <View style={twoCol ? { width: '40%' } : undefined}>
           {/* Hero Card */}
           <View
             style={[
@@ -349,16 +441,16 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
               {genres.length > 0 && (
                 <View style={[styles.genreBadge, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
                   <Text style={[styles.genreBadgeText, { color: themeColors.textSecondary }]}>
-                    GENRE // {genres.join(', ').toUpperCase()}
+                    {genres.join(', ')}
                   </Text>
                 </View>
               )}
 
               {languages.length > 0 && (
                 <View style={[styles.langBadge, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}>
-                  <Icon name="globe" size={10} color={themeColors.textSecondary} />
+                  <Icon name="globe" size={10} color={themeColors.iconSecondary} />
                   <Text style={[styles.langBadgeText, { color: themeColors.textSecondary }]}>
-                    LANGUAGE // {languages.join(', ').toUpperCase()}
+                    {languages.join(', ')}
                   </Text>
                 </View>
               )}
@@ -366,7 +458,7 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
               {isGuildMember && (
                 <View style={styles.guildTagBadge}>
                   <Icon name="award" size={10} color="#D97706" />
-                  <Text style={styles.guildTagBadgeText}>GUILD VERIFIED</Text>
+                  <Text style={styles.guildTagBadgeText}>GUILD (CLAIMED)</Text>
                 </View>
               )}
 
@@ -392,7 +484,7 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
             {/* Posted Date (at last) */}
             {pitchCall.created_at && (
               <View style={styles.heroPostedRow}>
-                <Icon name="clock" size={12} color={themeColors.textSecondary} />
+                <Icon name="clock" size={12} color={themeColors.iconSecondary} />
                 <Text style={[styles.heroPostedText, { color: themeColors.textSecondary }]}>
                   Posted {new Date(pitchCall.created_at).toLocaleDateString()}
                 </Text>
@@ -496,6 +588,8 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
             </View>
           </View>
 
+          </View>
+          <View style={twoCol ? { flex: 1 } : undefined}>
           {/* What They're Looking For (Creative Brief) */}
           <View
             style={[
@@ -597,9 +691,9 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
                       { backgroundColor: themeColors.chipBg, borderColor: themeColors.border },
                     ]}
                   >
-                    <Icon name="globe" size={11} color={themeColors.textSecondary} />
+                    <Icon name="globe" size={11} color={themeColors.iconSecondary} />
                     <Text style={[styles.langBadgeText, { color: themeColors.textSecondary }]}>
-                      LANGUAGE // {languages.join(', ').toUpperCase()}
+                      {languages.join(', ')}
                     </Text>
                   </View>
                 </View>
@@ -632,16 +726,46 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
           {/* Bottom CTA Action Bar */}
           <View style={styles.bottomCtaSection}>
             {isOwner ? (
-              <TouchableOpacity
-                style={[
-                  styles.editCallBtn,
-                  { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
-                ]}
-                onPress={() => setShowEditModal(true)}
-              >
-                <Icon name="edit" size={16} color={themeColors.textPrimary} />
-                <Text style={[styles.editCallBtnText, { color: themeColors.textPrimary }]}>Edit This Call</Text>
-              </TouchableOpacity>
+              <View style={{ gap: 10 }}>
+                {stats && (
+                  <View style={{ flexDirection: 'row', gap: 8 }} accessibilityLabel={`${stats.views} views, ${stats.saves} saves, ${stats.submissions} pitches`}>
+                    {([['VIEWS', stats.views], ['SAVES', stats.saves], ['PITCHES', stats.submissions]] as const).map(([label, n]) => (
+                      <View key={label} style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.bgCard }}>
+                        <Text style={{ fontSize: 20, fontWeight: '700', color: themeColors.textPrimary }}>{n}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: themeColors.textMuted }}>{label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[
+                    styles.editCallBtn,
+                    { backgroundColor: themeColors.bgCard, borderColor: themeColors.border },
+                  ]}
+                  onPress={() => setShowEditModal(true)}
+                >
+                  <Icon name="edit" size={16} color={themeColors.textPrimary} />
+                  <Text style={[styles.editCallBtnText, { color: themeColors.textPrimary }]}>Edit This Call</Text>
+                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity
+                    disabled={ownerBusy}
+                    accessibilityRole="button"
+                    style={[styles.editCallBtn, { flex: 1, backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
+                    onPress={toggleClosed}
+                  >
+                    <Text style={[styles.editCallBtnText, { color: themeColors.textPrimary }]}>{isExpired ? 'Re-open call' : 'Close call'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    disabled={ownerBusy}
+                    accessibilityRole="button"
+                    style={[styles.editCallBtn, { flex: 1, backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}
+                    onPress={duplicateCall}
+                  >
+                    <Text style={[styles.editCallBtnText, { color: themeColors.textPrimary }]}>Duplicate</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             ) : alreadySubmitted ? (
               <View style={styles.submittedBanner}>
                 <Icon name="check-circle" size={18} color="#16A34A" />
@@ -658,7 +782,7 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
               >
                 <Text style={[styles.closedBannerText, { color: themeColors.textMuted }]}>This Pitch Call is Closed</Text>
               </View>
-            ) : (
+            ) : !userCanSubmit ? null : (
               <TouchableOpacity
                 style={styles.submitPitchBtn}
                 onPress={() =>
@@ -673,6 +797,8 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
               </TouchableOpacity>
             )}
           </View>
+          </View>
+          </View>
         </TabletContainer>
       </ScrollView>
 
@@ -684,9 +810,10 @@ export const PitchDetailScreen = ({ route, navigation }: { route: any; navigatio
         pitchCallId={pitchCall.id}
         onCreated={() => {
           setShowEditModal(false);
-          // Refetch
+          setReloadTick((n) => n + 1); // refetch so the screen shows the edited call
         }}
       />
+      <ReportModal visible={reportOpen} onClose={() => setReportOpen(false)} targetTitle="this pitch call" targetType="pitch_call" targetId={pitchCall?.id} />
       <UniversalShareSheet
         visible={showShareSheet}
         onClose={() => setShowShareSheet(false)}
@@ -720,7 +847,7 @@ const styles = StyleSheet.create({
   },
   headerActionBtn: {
     width: 34,
-    height: 34,
+    height: 44,
     borderRadius: 17,
     borderWidth: 1,
     alignItems: 'center',
@@ -745,7 +872,7 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 18,
+    padding: isTabletDevice ? 24 : 18,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -776,8 +903,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   formatTagBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   genreBadge: {
     backgroundColor: '#F8FAFC',
@@ -789,7 +916,7 @@ const styles = StyleSheet.create({
   },
   genreBadgeText: {
     color: '#64748B',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   langBadge: {
@@ -805,7 +932,7 @@ const styles = StyleSheet.create({
   },
   langBadgeText: {
     color: '#475569',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   guildTagBadge: {
@@ -820,8 +947,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   guildTagBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
   },
   openTagBadge: {
@@ -842,8 +969,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#16A34A',
   },
   openTagBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#16A34A',
   },
   closedTagBadge: {
@@ -855,8 +982,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   closedTagBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#DC2626',
   },
   ndaTagBadge: {
@@ -869,16 +996,16 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   ndaTagBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
   },
   heroTitle: {
     color: INK,
-    fontSize: 21,
+    fontSize: isTabletDevice ? 26 : 20,
     fontFamily: 'Lora-Bold',
     fontWeight: '700',
-    lineHeight: 28,
+    lineHeight: isTabletDevice ? 34 : 28,
     marginTop: 2,
     marginBottom: 10,
   },
@@ -903,14 +1030,14 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   metaItemText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#64748B',
     fontWeight: '600',
   },
   creatorCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 14,
+    padding: isTabletDevice ? 20 : 14,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -922,13 +1049,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   creatorAvatar: {
-    width: 44,
-    height: 44,
+    width: isTabletDevice ? 56 : 44,
+    height: isTabletDevice ? 56 : 44,
     borderRadius: 14,
   },
   creatorAvatarFallback: {
-    width: 44,
-    height: 44,
+    width: isTabletDevice ? 56 : 44,
+    height: isTabletDevice ? 56 : 44,
     borderRadius: 14,
     backgroundColor: '#FFF7F5',
     borderWidth: 1,
@@ -939,7 +1066,7 @@ const styles = StyleSheet.create({
   creatorAvatarText: {
     color: ORANGE,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   creatorNameRow: {
     flexDirection: 'row',
@@ -947,8 +1074,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   creatorName: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
   },
   creatorCraftText: {
@@ -958,7 +1085,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   creatorLocationText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
@@ -972,13 +1099,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F1F5F9',
-    height: 38,
+    height: 44,
     borderRadius: 10,
     gap: 6,
   },
   msgBtnText: {
-    fontSize: 12.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: INK,
   },
   profileBtn: {
@@ -987,11 +1114,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    height: 38,
+    height: 44,
     borderRadius: 10,
   },
   profileBtnText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
@@ -1006,24 +1133,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
-    padding: 10,
+    padding: isTabletDevice ? 14 : 10,
   },
   specCardLabel: {
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   specCardVal: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 14 : 12,
+    fontWeight: '700',
     color: INK,
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
+    padding: isTabletDevice ? 22 : 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1048,13 +1175,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: INK,
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: isTabletDevice ? 18 : 16,
+    fontWeight: '700',
   },
   bodyText: {
     color: '#475569',
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: isTabletDevice ? 15 : 14,
+    lineHeight: isTabletDevice ? 24 : 21,
   },
   detailItemBox: {
     backgroundColor: '#F9FAFB',
@@ -1063,16 +1190,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   detailItemLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   detailItemVal: {
-    fontSize: 13,
+    fontSize: isTabletDevice ? 14 : 13,
     color: INK,
-    lineHeight: 18,
+    lineHeight: isTabletDevice ? 20 : 18,
   },
   eligibilityPills: {
     flexDirection: 'row',
@@ -1092,8 +1219,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   debutBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#16A34A',
   },
   regionalBadge: {
@@ -1108,13 +1235,13 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   regionalBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#2563EB',
   },
   langListLabel: {
-    fontSize: 9.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#94A3B8',
     letterSpacing: 0.5,
     marginBottom: 6,
@@ -1134,7 +1261,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   langPillText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#475569',
     fontWeight: '700',
   },
@@ -1148,8 +1275,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   trustTitle: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#64748B',
     letterSpacing: 0.6,
     marginBottom: 2,
@@ -1173,15 +1300,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: ORANGE,
-    height: 50,
+    height: isTabletDevice ? 56 : 50,
     borderRadius: 14,
     gap: 8,
     elevation: 3,
   },
   submitPitchBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
   },
   submittedBanner: {
     flexDirection: 'row',
@@ -1196,8 +1323,8 @@ const styles = StyleSheet.create({
   },
   submittedBannerText: {
     color: '#16A34A',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   closedBanner: {
     alignItems: 'center',
@@ -1208,8 +1335,8 @@ const styles = StyleSheet.create({
   },
   closedBannerText: {
     color: '#64748B',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
   },
   editCallBtn: {
     flexDirection: 'row',
@@ -1225,7 +1352,7 @@ const styles = StyleSheet.create({
   editCallBtnText: {
     color: INK,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',
@@ -1234,7 +1361,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
 });

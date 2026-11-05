@@ -8,6 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useCreatePitchCall } from '@/hooks/usePitch';
 import { Megaphone, Loader2, Trash2, Calendar, DollarSign, Award } from 'lucide-react';
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
+import { useToast } from '@/hooks/use-toast';
+
+// today as yyyy-mm-dd in the person's own time zone (what a date input holds)
+const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 interface PitchCallCreationModalProps {
     isOpen: boolean;
@@ -41,6 +46,7 @@ const GENRES = ['Action', 'Thriller', 'Drama', 'Comedy', 'Horror', 'Romance', 'S
 const LANGUAGES = ['Hindi', 'Telugu', 'Tamil', 'Malayalam', 'Kannada', 'Bengali', 'Marathi', 'English', 'Punjabi', 'Other'];
 
 export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData, pitchCallId }: PitchCallCreationModalProps) => {
+    const guardDiscard = useDiscardGuard(isOpen, onClose as (open: boolean) => void);
     const { createPitchCall, updatePitchCall, loading } = useCreatePitchCall();
 
     const [form, setForm] = useState<PitchCallForm>(initialData || {
@@ -86,9 +92,17 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
         }
     }, [initialData]);
 
+    const { toast } = useToast();
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+
+        // a call that is already closed on the day it is published helps nobody (an existing past deadline can stay when editing)
+        if (form.deadline && form.deadline < todayLocal() && form.deadline !== (initialData?.deadline || '')) {
+            toast({ title: 'Pick a deadline from today on', description: 'The submission deadline cannot be in the past.', variant: 'destructive' });
+            return;
+        }
+
         const submissionPayload = {
             ...form,
             attachments: {
@@ -129,7 +143,7 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={onClose}>
+        <Dialog open={isOpen} onOpenChange={guardDiscard}>
             <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-black flex items-center gap-3">
@@ -256,6 +270,7 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
                             <Label className="flex items-center gap-2"><Calendar className="h-4 w-4" /> Submission Deadline</Label>
                             <Input
                                 type="date"
+                                min={todayLocal()}
                                 value={form.deadline}
                                 onChange={e => setForm((f: PitchCallForm) => ({ ...f, deadline: e.target.value }))}
                             />
@@ -293,21 +308,21 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
                                 <p className="text-sm font-bold">Open to Debut Writers</p>
                                 <p className="text-xs text-muted-foreground">Accept pitches from first-time writers</p>
                             </div>
-                            <Switch checked={form.is_open_to_debut} onCheckedChange={(v: boolean) => setForm((f: PitchCallForm) => ({ ...f, is_open_to_debut: v }))} />
+                            <Switch aria-label="Open to debut writers" checked={form.is_open_to_debut} onCheckedChange={(v: boolean) => setForm((f: PitchCallForm) => ({ ...f, is_open_to_debut: v }))} />
                         </div>
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm font-bold">Regional Stories Welcome</p>
                                 <p className="text-xs text-muted-foreground">Open to regional language and cultural stories</p>
                             </div>
-                            <Switch checked={form.is_regional_welcome} onCheckedChange={(v: boolean) => setForm((f: PitchCallForm) => ({ ...f, is_regional_welcome: v }))} />
+                            <Switch aria-label="Regional Stories Welcome" checked={form.is_regional_welcome} onCheckedChange={(v: boolean) => setForm((f: PitchCallForm) => ({ ...f, is_regional_welcome: v }))} />
                         </div>
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm font-bold">NDA Required</p>
                                 <p className="text-xs text-muted-foreground">Require submitters to agree to an NDA</p>
                             </div>
-                            <Switch checked={form.nda_required} onCheckedChange={(v: boolean) => setForm((f: PitchCallForm) => ({ ...f, nda_required: v }))} />
+                            <Switch aria-label="Require submitters to agree to an NDA" checked={form.nda_required} onCheckedChange={(v: boolean) => setForm((f: PitchCallForm) => ({ ...f, nda_required: v }))} />
                         </div>
                     </div>
 
@@ -340,7 +355,7 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
                                 />
                             </div>
                         </div>
-                        <p className="text-[10px] text-muted-foreground">Adding credentials displays a "Guild Verified" trust badge to writers, encouraging high-quality pitches.</p>
+                        <p className="text-[12px] text-muted-foreground">Adding credentials displays a "Guild Verified" trust badge to writers, encouraging high-quality pitches.</p>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4 border-t">

@@ -32,16 +32,16 @@ export const ProfileContextStrip = ({ userId, showContext }: { userId: string; s
   if (!hasContext && chips.length === 0) return null;
 
   return (
-    <div className="mt-6 rounded-2xl border bg-card/40 backdrop-blur-md p-4 space-y-3">
+    <div className="mt-6 rounded-2xl border bg-card/40 p-4 space-y-3">
       {hasContext && (
         <div className="space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">How you're connected</p>
+          <p className="text-[12px] font-black uppercase tracking-widest text-muted-foreground">How you're connected</p>
           {mutuals.length > 0 && (
             <div className="flex items-center gap-2.5">
               <div className="flex -space-x-2">
                 {mutuals.map(m => (
                   <Link key={m.id} to={`/profile/${m.id}`} title={m.full_name}>
-                    <Avatar className="h-7 w-7 border-2 border-background"><AvatarImage src={m.avatar_url || undefined} /><AvatarFallback className="text-[10px]">{(m.full_name || '?')[0]}</AvatarFallback></Avatar>
+                    <Avatar className="h-7 w-7 border-2 border-background"><AvatarImage src={m.avatar_url || undefined} /><AvatarFallback className="text-[12px]">{(m.full_name || '?')[0]}</AvatarFallback></Avatar>
                   </Link>
                 ))}
               </div>

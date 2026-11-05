@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { MoreVertical, Reply, Trash2, X, Smile, Flag, Info, CheckCheck, ChevronDown, Copy, Share2, Check, Star, Phone } from 'lucide-react';
+import { MoreVertical, Reply, Trash2, X, Smile, Flag, Info, CheckCheck, ChevronDown, Copy, Check, Star, Phone, Pencil } from 'lucide-react';
 import { CallDetailsDialog } from '@/components/calls/CallDetailsDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { ForwardMessageDialog } from '@/components/chat/ForwardMessageDialog';
+import { canEditMessage, checkEditedText, editMinutesLeft } from '@/lib/messageEdit';
 import { StarredMessagesDialog } from '@/components/chat/StarredMessagesDialog';
 import { MessageComposer } from './MessageComposer';
 import { TypingIndicator } from './TypingIndicator';
@@ -25,6 +26,7 @@ import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
 import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
+import { LinkifiedText } from '@/components/chat/LinkifiedText';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { ProfileShareCard } from '@/components/chat/ProfileShareCard';
 import { PitchShareCard } from '@/components/chat/PitchShareCard';
@@ -42,6 +44,9 @@ import { useGroupEncryption } from '@/hooks/useGroupEncryption';
 import { MediaAttachment } from '@/components/chat/MediaAttachment';
 import { ImageLightboxModal } from '@/components/chat/ImageLightboxModal';
 import { getReplyThumbnail, getReplySnippet } from '@/components/chat/chatUtils';
+import { useE2EEPrompt } from '@/hooks/useE2EEPrompt';
+import { E2EEGroupBanner } from '@/components/chat/E2EEGroupBanner';
+import { ShareIcon } from '@/components/icons/ShareIcon';
 
 export interface MessageReaction {
   id: string;
@@ -139,9 +144,9 @@ const scrollToMessage = (messageId: string) => {
   const element = document.querySelector(`[data-message-id="${messageId}"]`);
   if (element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const bubble = element.querySelector('.relative.transition-all.duration-300') || element.querySelector('.rounded-xl') || element.querySelector('[class*="bg-primary"]');
+    const bubble = element.querySelector('.relative.transition.duration-300') || element.querySelector('.rounded-xl') || element.querySelector('[class*="bg-primary"]');
     if (bubble) {
-      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition-all');
+      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition');
       setTimeout(() => {
         bubble.classList.remove('ring-4', 'ring-primary/40', 'scale-105');
       }, 1200);
@@ -154,6 +159,9 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
   const { isInternal } = useAppRole();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
+  // inline editing of your own recent text message
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const messagesRef = useRef(messages);
   const reactionLocksRef = useRef<Set<string>>(new Set());
   const channelRef = useRef<any>(null);
@@ -169,11 +177,25 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
   const isInitialLoad = useRef(true);
   const [spaceId, setSpaceId] = useState<string | null>(propSpaceId || null);
 
+  // WhatsApp-style open: place the list before paint, optionally at the first unread message.
+  const [chatVisible, setChatVisible] = useState(false);
+  const [placed, setPlaced] = useState(false);
+  const [lastReadLoaded, setLastReadLoaded] = useState(false);
+  const [anchorDropped, setAnchorDropped] = useState(false);
+  const openLastReadAtRef = useRef<string | null>(null);
+  const positionedRef = useRef(false);
+  const userScrolledRef = useRef(false);
+  const nearBottomRef = useRef(true);
+  const lockedAnchorRef = useRef<{ id: string; count: number } | null>(null);
+
   useEffect(() => {
     if (propSpaceId) setSpaceId(propSpaceId);
   }, [propSpaceId]);
 
   const { encryptGroupMessage, decryptGroupMessage, isReady: isGroupE2EEReady } = useGroupEncryption('project_space', spaceId || propSpaceId || '');
+  const decryptGroupMessageRef = useRef(decryptGroupMessage);
+  decryptGroupMessageRef.current = decryptGroupMessage;
+  useE2EEPrompt();
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(spaceId || '');
 
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -466,6 +488,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
         content,
         user_id,
         created_at,
+          edited_at,
         is_deleted,
         reply_to_id,
         deleted_for_users,
@@ -651,8 +674,15 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
       }
 
       if (!existing) {
-        // If not a member, check if they are the owner or an applicant to grant access
-        // (For now, keeping it simple: anyone who can access the space UI gets added as a member)
+        // Only the owner is added automatically. Everyone else joins through an invitation or an approved request;
+        // adding "anyone who opens the space" put removed members straight back in.
+        const { data: spaceRow } = await supabase
+          .from('project_spaces')
+          .select('creator_id, projects(creator_id)')
+          .eq('id', spaceId)
+          .maybeSingle();
+        const isOwner = !!spaceRow && ((spaceRow as any).creator_id === user.id || (spaceRow as any).projects?.creator_id === user.id);
+        if (!isOwner) return;
         const { error: insertError } = await supabase
           .from('project_space_members')
           .insert({
@@ -833,10 +863,32 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
           }
         }
       } else if (payload.eventType === 'UPDATE') {
-        const updatedMsg = payload.new;
+        const updatedMsg = { ...payload.new };
+        // the encrypted text as stored: kept next to the shown text, because the "re-decrypt when the key is ready" pass
+        // and the older-messages loader start from raw_content and would otherwise bring the old text back
+        const rawUpdated: string | undefined = typeof updatedMsg.content === 'string' ? updatedMsg.content : undefined;
+        let needsRefetch = rawUpdated === undefined;
+        if (rawUpdated !== undefined) {
+          // an edited message arrives as ciphertext. This handler is set up once per space, so it must not rely on
+          // the "key ready" flag from that moment; decrypt with the newest decrypt function (a ref), not the one from
+          // when the subscription was made, and wait for the key if it is still loading.
+          try {
+            updatedMsg.content = await decryptGroupMessageRef.current(rawUpdated);
+          } catch {
+            needsRefetch = true;
+          }
+          if (typeof updatedMsg.content === 'string' && updatedMsg.content.startsWith('🔒')) needsRefetch = true;
+        }
+        if (needsRefetch) {
+          // could not read the new text from the event: load the messages again instead of showing the old text
+          fetchMessagesRef.current(false);
+          if (rawUpdated === undefined) return;
+        }
         setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
           ...m,
+          raw_content: rawUpdated ?? (m as any).raw_content,
           content: updatedMsg.content,
+          edited_at: updatedMsg.edited_at ?? m.edited_at,
           is_deleted: updatedMsg.is_deleted,
           attachment_url: updatedMsg.attachment_url,
           attachment_type: updatedMsg.attachment_type,
@@ -885,6 +937,10 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
       .on('broadcast', { event: 'new_message' }, (payload) => {
         const newMsg = payload.payload;
         handleProjectMessageChange({ eventType: 'INSERT', new: newMsg });
+      })
+      .on('broadcast', { event: 'message_edited' }, () => {
+        // the database change event for an edit is not always delivered (project chats are end-to-end encrypted, so the text is read again from the database, never taken from the broadcast)
+        fetchMessagesRef.current(false);
       })
       .on('broadcast', { event: 'reaction_update' }, (payload) => {
         handleReactionChange(payload.payload);
@@ -963,15 +1019,122 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
   useEffect(() => {
     if (isActive && spaceId) {
       fetchMessages(false);
-      scrollToBottom('auto');
+      if (positionedRef.current) scrollToBottom('auto');
     }
   }, [isActive, spaceId, isGroupE2EEReady]);
 
+  // Capture the previous last-read time BEFORE the chat is marked read.
+  useEffect(() => {
+    positionedRef.current = false;
+    userScrolledRef.current = false;
+    nearBottomRef.current = true;
+    lockedAnchorRef.current = null;
+    openLastReadAtRef.current = null;
+    setChatVisible(false);
+    setPlaced(false);
+    setAnchorDropped(false);
+    setLastReadLoaded(false);
+    if (!user?.id || !spaceId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await (supabase.from('project_message_read_status') as any)
+          .select('last_read_at')
+          .eq('project_space_id', spaceId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (!cancelled) openLastReadAtRef.current = data?.last_read_at || null;
+      } catch {
+        if (!cancelled) openLastReadAtRef.current = null;
+      }
+      if (!cancelled) setLastReadLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [spaceId, user?.id]);
+
+  // Drop the divider/anchor after the first visit (when the tab is left).
+  useEffect(() => {
+    if (!isActive && positionedRef.current) setAnchorDropped(true);
+  }, [isActive]);
+
+  // Freeze the unread anchor the first time the list is rendered for this open.
+  if (!positionedRef.current && lastReadLoaded && !lockedAnchorRef.current && openLastReadAtRef.current) {
+    const lastReadMs = new Date(openLastReadAtRef.current).getTime();
+    if (!isNaN(lastReadMs)) {
+      const unread = messages.filter(m =>
+        m.user_id !== user?.id &&
+        !m.is_deleted &&
+        !m.deleted_for_users?.includes(user?.id || '') &&
+        new Date(m.created_at).getTime() > lastReadMs
+      );
+      if (unread.length > 0) lockedAnchorRef.current = { id: unread[0].id, count: unread.length };
+    }
+  }
+  const unreadAnchor = anchorDropped ? null : lockedAnchorRef.current;
+
+  const placeList = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return false;
+    if (el.clientHeight === 0) return false;
+    const anchor = !anchorDropped ? lockedAnchorRef.current : null;
+    const divider = anchor ? el.querySelector('[data-unread-divider="true"]') as HTMLElement | null : null;
+    if (divider) {
+      const top = divider.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+      el.scrollTop = Math.max(0, top - el.clientHeight * 0.15);
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    return true;
+  }, [anchorDropped]);
+
+  useLayoutEffect(() => {
+    if (!isActive || !lastReadLoaded || positionedRef.current || messages.length === 0) return;
+    if (placeList()) {
+      positionedRef.current = true;
+      setPlaced(true);
+    }
+  }, [isActive, lastReadLoaded, messages, placeList]);
+
+  // Safety: never leave the list hidden.
+  useEffect(() => {
+    if (!isActive || chatVisible) return;
+    const t = setTimeout(() => setChatVisible(true), 1800);
+    return () => clearTimeout(t);
+  }, [isActive, chatVisible, spaceId]);
+
+
+  // Reveal only once the height has stopped changing and the pictures have loaded, so the list never visibly shifts after it appears.
+  useEffect(() => {
+    if (!placed || chatVisible) return;
+    let last = -1;
+    let stable = 0;
+    const t0 = performance.now();
+    const id = window.setInterval(() => {
+      const c = scrollContainerRef.current;
+      if (!c) return;
+      const pictures = Array.from(c.querySelectorAll('img')).some((img) => !img.complete);
+      stable = c.scrollHeight === last && !pictures ? stable + 1 : 0;
+      last = c.scrollHeight;
+      if (stable >= 2 || userScrolledRef.current || performance.now() - t0 > 1100) setChatVisible(true);
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [placed, chatVisible]);
+
+  // Re-apply while images / late content change the height, until the person scrolls.
+  const handleContentLoad = useCallback(() => {
+    if (positionedRef.current && !userScrolledRef.current) placeList();
+  }, [placeList]);
+  const markUserScrolled = useCallback(() => { userScrolledRef.current = true; }, []);
+
   // Handle scroll to top for pagination
   const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current || loadingMessages || !hasMore) return;
+    const c = scrollContainerRef.current;
+    if (c) nearBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight < 150;
+    if (!c || loadingMessages || !hasMore) return;
+    if (!positionedRef.current || !userScrolledRef.current) return;
 
-    const { scrollTop } = scrollContainerRef.current;
+    const { scrollTop } = c;
     if (scrollTop < 100) {
       loadMoreMessages();
     }
@@ -994,8 +1157,10 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
   useEffect(() => {
     if (messages.length > 0) {
       if (isInitialLoad.current) {
-        scrollToBottom('auto');
+        // Initial placement is handled before paint by the layout effect.
         isInitialLoad.current = false;
+      } else if (!positionedRef.current) {
+        // not placed yet; the layout effect will do it
       } else {
         // If we just loaded more messages at the top, preserve scroll position
         if (scrollContainerRef.current && lastScrollHeight.current > 0) {
@@ -1004,18 +1169,21 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
           scrollContainerRef.current.scrollTop += heightDiff;
           lastScrollHeight.current = 0;
         } else {
-          // If a new message arrived at the bottom
-          scrollToBottom('smooth');
+          // New message: follow only if already near the bottom or it is our own
+          const last = messages[messages.length - 1];
+          if (nearBottomRef.current || last?.user_id === user?.id) {
+            scrollToBottom('smooth');
+          }
         }
       }
     }
   }, [messages]);
 
   useEffect(() => {
-    if (user && spaceId && messages.length > 0) {
+    if (user && spaceId && messages.length > 0 && lastReadLoaded) {
       markAsRead('project', spaceId);
     }
-  }, [spaceId, messages.length, markAsRead, user]);
+  }, [spaceId, messages.length, markAsRead, user, lastReadLoaded]);
 
 
 
@@ -1034,6 +1202,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
         content,
         user_id,
         created_at,
+          edited_at,
         is_deleted,
         reply_to_id,
         deleted_for_users,
@@ -1197,6 +1366,44 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
     }
   };
 
+  const startEdit = (message: Message) => {
+    setEditing({ id: message.id, text: message.content || '' });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editing || !user || savingEdit) return;
+    const original = messages.find(m => m.id === editing.id);
+    if (!original) { setEditing(null); return; }
+    const check = checkEditedText(original.content || '', editing.text);
+    if (!check.ok) {
+      if (check.reason === 'unchanged') { setEditing(null); return; }
+      toast({ title: 'Cannot save', description: check.message, variant: 'destructive' });
+      return;
+    }
+    if (!canEditMessage(original, user.id)) {
+      toast({ title: 'Too late to edit', description: 'Messages can be edited for 15 minutes after they are sent.', variant: 'destructive' });
+      setEditing(null);
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      // project space messages are always end-to-end encrypted: the new text is encrypted the same way as a new message
+      const encrypted = await encryptGroupMessage(check.text);
+      // the database sets edited_at and refuses edits after the window (part FQ); only the text is sent from here
+      const { error } = await (supabase as any).from('project_space_messages').update({ content: encrypted }).eq('id', editing.id).eq('user_id', user.id);
+      if (error) throw error;
+      setMessages(prev => prev.map(m => m.id === editing.id ? { ...m, content: check.text, edited_at: new Date().toISOString() } : m));
+      channelRef.current?.send({ type: 'broadcast', event: 'message_edited', payload: { id: editing.id } });
+      setEditing(null);
+    } catch (e: any) {
+      console.error('Error editing message:', e);
+      const late = /edit window|15 minutes|too late/i.test(e?.message || '');
+      toast({ title: late ? 'Too late to edit' : 'Could not save your edit', description: late ? 'Messages can be edited for 15 minutes after they are sent.' : 'Please try again.', variant: 'destructive' });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
     const { error } = await supabase
@@ -1339,8 +1546,34 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
               );
             } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
           })()
+        ) : (editing && editing.id === message.id) ? (
+          <div className="min-w-[200px] space-y-1.5" onClick={(e) => e.stopPropagation()}>
+            <textarea
+              autoFocus
+              aria-label="Edit message"
+              value={editing.text}
+              onChange={(e) => setEditing({ id: editing.id, text: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.preventDefault(); setEditing(null); }
+                else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSaveEdit(); }
+              }}
+              rows={Math.min(6, Math.max(2, editing.text.split(String.fromCharCode(10)).length))}
+              maxLength={2100}
+              className="w-full resize-none rounded-lg border bg-background text-foreground text-sm p-2 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="opacity-80">{editMinutesLeft(message.created_at)} min left to edit</span>
+              <span className="flex gap-1.5">
+                <button type="button" onClick={() => setEditing(null)} className="h-8 px-3 rounded-full border bg-background text-foreground font-medium">Cancel</button>
+                <button type="button" disabled={savingEdit} onClick={() => void handleSaveEdit()} className="h-8 px-3 rounded-full bg-primary text-primary-foreground font-semibold disabled:opacity-60">{savingEdit ? 'Saving…' : 'Save'}</button>
+              </span>
+            </div>
+          </div>
         ) : (content && !isDefaultMediaContent(content)) ? (
-          <span className="text-[13px] sm:text-sm font-medium leading-relaxed break-words whitespace-pre-wrap">{content}</span>
+          <>
+            <span className="text-sm sm:text-sm font-medium leading-relaxed break-words whitespace-pre-wrap"><LinkifiedText text={content} /></span>
+            {message.edited_at ? <span className="ml-1.5 text-[11px] italic opacity-70" title={`Edited ${new Date(message.edited_at).toLocaleString()}`}>(edited)</span> : null}
+          </>
         ) : null}
       </>
     );
@@ -1374,7 +1607,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
       {selectedMessageIds.length > 0 && (
         <div className="absolute top-0 left-0 right-0 z-50 bg-primary text-primary-foreground p-2 sm:p-3 flex items-center justify-between shadow-lg animate-in slide-in-from-top-full duration-200">
           <div className="flex items-center gap-2 sm:gap-3">
-            <Button variant="ghost" size="icon" onClick={() => setSelectedMessageIds([])} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full">
+            <Button aria-label="Close" variant="ghost" size="icon" onClick={() => setSelectedMessageIds([])} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full">
               <X className="h-4 w-4 sm:h-5 sm:w-5" />
             </Button>
             <span className="font-semibold text-sm sm:text-base">{selectedMessageIds.length}</span>
@@ -1384,16 +1617,22 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
               <Star className="h-4 w-4 sm:h-5 sm:w-5" />
             </Button>
             <Button variant="ghost" size="icon" onClick={() => setShowForwardDialog(true)} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full" title="Forward">
-              <Share2 className="h-4 w-4 sm:h-5 sm:w-5" />
+              <ShareIcon className="h-4 w-4 sm:h-5 sm:w-5" />
             </Button>
           </div>
         </div>
       )}
 
+      <E2EEGroupBanner label="space" />
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 custom-scrollbar"
+        onWheel={markUserScrolled}
+        onTouchMove={markUserScrolled}
+        onKeyDown={markUserScrolled}
+        onPointerDown={markUserScrolled}
+        onLoadCapture={handleContentLoad}
+        className={cn("flex-1 overflow-y-auto p-4 custom-scrollbar", !chatVisible && "invisible")}
       >
         {loadingMessages && hasMore && (
           <div className="flex justify-center py-2">
@@ -1447,6 +1686,16 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
 
               const isCallEvent = (message as any).media_type === 'call_event' || (message as any).attachment_type === 'call_event' || (typeof message.content === 'string' && (message.content.includes('Video call started') || message.content.includes('Call ended') || message.content.includes('call started') || message.content.includes('📞')));
 
+              const unreadDivider = unreadAnchor && unreadAnchor.id === message.id ? (
+                <div data-unread-divider="true" className="flex items-center gap-3 my-4">
+                  <div className="flex-1 h-px bg-primary/60" />
+                  <span className="text-[12px] font-semibold text-primary whitespace-nowrap">
+                    {unreadAnchor.count === 1 ? '1 new message' : `${unreadAnchor.count} new messages`}
+                  </span>
+                  <div className="flex-1 h-px bg-primary/60" />
+                </div>
+              ) : null;
+
               if (isCallEvent) {
                 const isStarted = message.content?.includes('started');
                 const cleanContent = message.content ? message.content.replace(/^📞\s*/, '') : '';
@@ -1455,18 +1704,19 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                     {showDateSeparator && (
                       <div className="flex justify-center my-6">
                         <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/20">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                             {getDateLabel(messageDate)}
                           </span>
                         </div>
                       </div>
                     )}
-                    <div 
+                    {unreadDivider}
+                    <div
                       onClick={() => setSelectedCallMessage(message)}
-                      className="flex justify-center my-3 cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition-all"
+                      className="flex justify-center my-3 cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition"
                       title="Click to view call details"
                     >
-                      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 hover:bg-secondary/80 border border-border/40 backdrop-blur-md shadow-sm transition-all">
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 hover:bg-secondary/80 border border-border/40 shadow-sm transition">
                         <div className={cn(
                           "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
                           isStarted ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-400"
@@ -1476,7 +1726,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                         <span className="text-xs font-medium text-foreground">
                           {cleanContent}
                         </span>
-                        <span className="text-[10px] text-muted-foreground ml-1">
+                        <span className="text-[12px] text-muted-foreground ml-1">
                           {format(messageDate, 'h:mm a')}
                         </span>
                       </div>
@@ -1490,12 +1740,13 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                   {showDateSeparator && (
                     <div className="flex justify-center my-8">
                       <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/50 shadow-sm">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        <span className="text-[12px] font-bold uppercase tracking-widest text-muted-foreground">
                           {getDateLabel(messageDate)}
                         </span>
                       </div>
                     </div>
                   )}
+                  {unreadDivider}
                   <div
                     ref={observeMessage}
                     data-message-id={message.id}
@@ -1522,7 +1773,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                         {/* Swipe to reply indicator icon behind message */}
                         {swipeMessageId === message.id && swipeOffset > 0 && (
                           <div
-                            className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition-all flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in duration-100"
+                            className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in-95 duration-100"
                             style={{
                               opacity: Math.min(swipeOffset / 55, 1),
                               transform: `translateY(-50%) scale(${Math.min(0.5 + (swipeOffset / 110), 1)})`
@@ -1552,7 +1803,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                           onTouchEnd={handleTouchEnd(message)}
                         >
                           <div className={cn(
-                            "relative transition-all duration-300",
+                            "relative transition duration-300",
                             selectedMessageIds.includes(message.id) && "ring-2 ring-primary ring-offset-2 ring-offset-background scale-[0.98]",
                             message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
                               isShare ? "p-0 bg-transparent rounded-2xl border border-border/10" :
@@ -1564,11 +1815,11 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                               showSenderName ? (
                                 <div className="flex items-start justify-between gap-4 mb-1">
                                   <div className="flex flex-col">
-                                    <p className={`text-[11px] font-bold ${getUserColor(message.user_id)} leading-none`}>
+                                    <p className={`text-[12px] font-bold ${getUserColor(message.user_id)} leading-none`}>
                                       {message.profiles?.username || message.profiles?.full_name || 'User'}
                                     </p>
                                     {memberRoles[message.user_id] && (
-                                      <p className="text-[9px] text-muted-foreground mt-0.5">{memberRoles[message.user_id]}</p>
+                                      <p className="text-[12px] text-muted-foreground mt-0.5">{memberRoles[message.user_id]}</p>
                                     )}
                                   </div>
                                   <DropdownMenu>
@@ -1606,12 +1857,17 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                                         toggleMessageSelection(message.id);
                                         setShowForwardDialog(true);
                                       }}>
-                                        <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                        <ShareIcon className="h-3.5 w-3.5 mr-2" /> Forward
                                       </DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
                                         <Check className="h-3.5 w-3.5 mr-2" /> Select
                                       </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                      {canEditMessage(message, user?.id) && (
+                                      <DropdownMenuItem onClick={() => startEdit(message)}>
+                                        <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
                                         <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
                                       </DropdownMenuItem>
                                     </DropdownMenuContent>
@@ -1629,10 +1885,10 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                               return (
                                 <div
                                   onClick={() => scrollToMessage(message.reply_to_id!)}
-                                  className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all flex items-center justify-between gap-2.5 ${isOwn ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
+                                  className={`mb-2 p-2 rounded-xl text-[12px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition flex items-center justify-between gap-2.5 ${isOwn ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
                                 >
                                   <div className="flex-1 min-w-0">
-                                    <div className={`font-semibold text-[10px] mb-0.5 truncate ${isOwn ? 'text-white font-bold' : getUserColor(repliedMsg.user_id)}`}>
+                                    <div className={`font-semibold text-[12px] mb-0.5 truncate ${isOwn ? 'text-white font-bold' : getUserColor(repliedMsg.user_id)}`}>
                                       {repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
                                     </div>
                                     <div className={`opacity-80 line-clamp-1 truncate ${isOwn ? 'text-white/80' : 'text-muted-foreground'}`}>
@@ -1658,7 +1914,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                             )}
                             {/* WhatsApp style inline timestamp for normal text messages */}
                             {!message.is_deleted && !isShare && (
-                              <span className="inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80">
+                              <span className="inline-flex items-center gap-1 float-right text-[12px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80">
                                 {starredMessageIds.has(message.id) && (
                                   <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
                                 )}
@@ -1712,12 +1968,17 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                                         toggleMessageSelection(message.id);
                                         setShowForwardDialog(true);
                                       }}>
-                                        <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                        <ShareIcon className="h-3.5 w-3.5 mr-2" /> Forward
                                       </DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
                                         <Check className="h-3.5 w-3.5 mr-2" /> Select
                                       </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                      {canEditMessage(message, user?.id) && (
+                                      <DropdownMenuItem onClick={() => startEdit(message)}>
+                                        <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
                                         <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
                                       </DropdownMenuItem>
                                     </DropdownMenuContent>
@@ -1743,7 +2004,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                                       )}
                                     >
                                       <span className="text-sm leading-none">{emoji}</span>
-                                      {count > 1 && <span className="text-[10px] font-extrabold pr-0.5">{count}</span>}
+                                      {count > 1 && <span className="text-[12px] font-extrabold pr-0.5">{count}</span>}
                                     </button>
                                   );
                                 })}
@@ -1758,7 +2019,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                                   setActiveMobileReactionMessageId(prev => prev === message.id ? null : message.id);
                                 }}
                                 className={cn(
-                                  "absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all opacity-0 group-hover:opacity-100 shrink-0",
+                                  "absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition opacity-0 group-hover:opacity-100 shrink-0",
                                   isOwn ? "-left-8" : "-right-8",
                                   activeMobileReactionMessageId === message.id && "opacity-100"
                                 )}
@@ -1791,7 +2052,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                                     {emoji}
                                   </button>
                                 ))}
-                                <button
+                                <button aria-label="Close"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setActiveMobileReactionMessageId(null);
@@ -1806,7 +2067,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
 
                           {/* Dedicated timestamp row for share cards below card */}
                           {isShare && !message.is_deleted && (
-                            <div className="w-full flex items-center justify-end gap-1 mt-1 px-1 text-[10px] text-chat-text-muted/80 dark:text-muted-foreground/80 select-none">
+                            <div className="w-full flex items-center justify-end gap-1 mt-1 px-1 text-[12px] text-chat-text-muted/80 dark:text-muted-foreground/80 select-none">
                               {starredMessageIds.has(message.id) && (
                                 <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
                               )}
@@ -1860,11 +2121,16 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                                       toggleMessageSelection(message.id);
                                       setShowForwardDialog(true);
                                     }}>
-                                      <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                      <ShareIcon className="h-3.5 w-3.5 mr-2" /> Forward
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
                                       <Check className="h-3.5 w-3.5 mr-2" /> Select
                                     </DropdownMenuItem>
+                                    {canEditMessage(message, user?.id) && (
+                                      <DropdownMenuItem onClick={() => startEdit(message)}>
+                                        <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
                                       <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
                                     </DropdownMenuItem>
@@ -1879,7 +2145,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                             <div className="w-full text-right mt-0.5 mb-1 px-1 select-none">
                               {uniqueSeenBy.length > 0 ? (
                                 <span
-                                  className="text-[9px] font-bold text-primary/70 tracking-tight cursor-pointer hover:underline inline-block text-right"
+                                  className="text-[12px] font-bold text-primary/70 tracking-tight cursor-pointer hover:underline inline-block text-right"
                                   onClick={() => {
                                     setInfoMessage(message);
                                     setShowInfoDialog(true);
@@ -1888,7 +2154,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                                   Seen by {uniqueSeenBy.join(', ')}
                                 </span>
                               ) : (
-                                <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight inline-block text-right">
+                                <span className="text-[12px] font-medium text-muted-foreground/60 tracking-tight inline-block text-right">
                                   {message.status === 'pending' ? 'Sending...' : 'Sent'}
                                 </span>
                               )}
@@ -1931,7 +2197,7 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                   className="w-8 h-8 rounded-md object-cover shrink-0 border border-border"
                 />
               )}
-              <button
+              <button aria-label="Close"
                 onClick={() => setReplyingTo(null)}
                 className="p-1.5 rounded-full hover:bg-background text-muted-foreground transition-colors shrink-0"
               >
@@ -2007,12 +2273,12 @@ export const ProjectChatInterface = ({ projectId, spaceId: propSpaceId, isActive
                       <p className="text-sm font-semibold leading-none mb-1">
                         {rs.profiles?.full_name || 'User'}
                       </p>
-                      <p className="text-[10px] text-muted-foreground leading-none">
+                      <p className="text-[12px] text-muted-foreground leading-none">
                         Read
                       </p>
                     </div>
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-medium">
+                  <span className="text-[12px] text-muted-foreground font-medium">
                     {format(new Date(rs.last_read_at), 'p')}
                   </span>
                 </div>

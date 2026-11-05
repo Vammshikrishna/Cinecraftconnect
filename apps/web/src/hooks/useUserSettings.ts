@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from './use-toast';
+import { friendlyError } from '@cinecraft/core';
 
 export interface UserSettings {
     id?: string;
@@ -80,16 +81,18 @@ export const useUserSettings = () => {
 
     const updateSettings = async (updates: Partial<UserSettings>) => {
         if (!user) return false;
+        await queryClient.cancelQueries({ queryKey: key });
         const previous = queryClient.getQueryData<UserSettings | null>(key);
         queryClient.setQueryData<UserSettings | null>(key, (old) => ({ ...(old || {}), ...updates }));
         const { data, error } = await (supabase as any).from('user_settings').update(updates).eq('user_id', user.id).select().single();
         if (error) {
             console.error('Error updating settings:', error);
             queryClient.setQueryData(key, previous ?? null);
-            toast({ title: 'Could not save', description: error.message || 'Please try again.', variant: 'destructive' });
+            toast({ title: 'Could not save', description: friendlyError(error, 'Please try again.'), variant: 'destructive' });
             return false;
         }
-        queryClient.setQueryData(key, data as UserSettings);
+        // merge only what this call changed: a slower earlier response must not flip a newer toggle back
+        queryClient.setQueryData<UserSettings | null>(key, (old) => ({ ...((old || data) as UserSettings), ...updates }));
         return true;
     };
 

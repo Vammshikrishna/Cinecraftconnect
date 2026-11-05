@@ -73,14 +73,13 @@ export const SystemStatusBanner = () => {
 
   const fetchActiveIncidents = async () => {
     try {
-      const { data, error } = await (supabase as any)
-        .from('system_incidents')
-        .select('*')
-        .is('resolved_at', null)
-        .order('started_at', { ascending: false });
-
-      if (!error && Array.isArray(data)) {
-        setIncidents(data);
+      // system_incidents is not readable by anonymous visitors; the public_status() function returns the public view of it
+      const { data, error } = await (supabase as any).rpc('public_status');
+      const list = !error && Array.isArray(data?.incidents) ? data.incidents : null;
+      if (list) {
+        setIncidents(list
+          .filter((i: any) => !i.resolved_at)
+          .map((i: any) => ({ ...i, impact_description: i.updates?.[0]?.message ?? '' })));
       }
     } catch (e) {
       setIncidents([]);
@@ -117,7 +116,7 @@ export const SystemStatusBanner = () => {
 
   const getIcon = () => {
     if (incident) {
-      return incident.status === 'investigating' ? <AlertCircle className="w-4 h-4 animate-pulse" /> : <Info className="w-4 h-4" />;
+      return incident.status === 'investigating' ? <AlertCircle className="w-4 h-4" /> : <Info className="w-4 h-4" />;
     }
     return <Info className="w-4 h-4" />;
   };
@@ -125,25 +124,26 @@ export const SystemStatusBanner = () => {
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ height: 0, opacity: 0 }}
-        animate={{ height: 'auto', opacity: 1 }}
-        exit={{ height: 0, opacity: 0 }}
-        className={`${getStyles()} overflow-hidden relative z-[60]`}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 12 }}
+        role="status"
+        className={`${getStyles()} fixed z-[60] left-3 right-3 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] lg:left-auto lg:right-6 lg:bottom-6 lg:w-[460px] rounded-2xl shadow-xl`}
       >
-        <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between text-xs md:text-sm font-medium">
-          <div className="flex items-center gap-3">
-            <div className="flex-shrink-0">{getIcon()}</div>
-            <div className="flex flex-col md:flex-row md:items-center md:gap-3">
+        <div className="px-4 py-3 flex items-start justify-between text-sm font-medium">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 mt-0.5">{getIcon()}</div>
+            <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="border-white/20 text-white py-0 h-4 text-[8px] font-black">{activeMessage.type}</Badge>
-                <span className="font-bold uppercase tracking-tight">{activeMessage.title}</span>
+                <Badge variant="outline" className="border-white/20 text-white py-0 h-4 text-xs font-black">{activeMessage.type}</Badge>
+                <span className="font-semibold">{activeMessage.title}</span>
               </div>
-              <span className="opacity-90 font-normal line-clamp-1">{activeMessage.content}</span>
+              <span className="opacity-90 font-normal line-clamp-2">{activeMessage.content}</span>
             </div>
           </div>
-          <button 
+          <button aria-label="Close" 
             onClick={() => setIsVisible(false)}
-            className="p-1 hover:bg-white/10 rounded-full transition-colors ml-4"
+            className="p-1 hover:bg-foreground/10 rounded-full transition-colors ml-4"
           >
             <X className="w-4 h-4" />
           </button>

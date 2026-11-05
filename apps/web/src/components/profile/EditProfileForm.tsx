@@ -19,6 +19,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from "@/components/ui/badge";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AvailabilityFields, useAvailability } from '@/components/network/AvailabilityFields';
+import { friendlyError } from '@cinecraft/core';
 
 const CRAFT_OPTIONS = [
   "Actor",
@@ -197,10 +199,11 @@ interface EditProfileFormProps {
 const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditing }) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  // availability is part of the profile for crew (not for fans); it is saved together with the rest
+  const showAvailability = (profile as any).account_type !== 'fan';
+  const availability = useAvailability(showAvailability);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url);
-  const [coverFile, setCoverFile] = useState<File | null>(null);
-  const [coverPreview, setCoverPreview] = useState<string | null>(profile.cover_image_url);
   const [customLinks, setCustomLinks] = useState<{ title: string; url: string }[]>(
     (profile.social_links as any)?.custom_links || []
   );
@@ -234,14 +237,6 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
     }
   };
 
-  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setCoverFile(file);
-      setCoverPreview(URL.createObjectURL(file));
-    }
-  };
-
   const onSubmit = async (values: z.infer<typeof profileFormSchema>) => {
     if (!user) return;
 
@@ -269,7 +264,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
 
         if (uploadError) {
           loadingToast.dismiss();
-          toast({ title: "Avatar Upload Failed", description: uploadError.message, variant: "destructive" });
+          toast({ title: "Avatar Upload Failed", description: friendlyError(uploadError), variant: "destructive" });
           return;
         }
 
@@ -277,31 +272,11 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
         avatar_url = urlData.publicUrl;
       }
 
-      let cover_image_url = profile.cover_image_url;
-      if (coverFile) {
-        const { compressImage } = await import('@/utils/imageCompression');
-        const compressedCover = await compressImage(coverFile, 1200, 400, 0.75); // cover can be wider but lower height/quality
-        const fileExt = compressedCover.name.split('.').pop();
-        const fileName = `cover-${user.id}-${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from(STORAGE_BUCKETS.AVATARS) // Using avatars bucket for both; consider a dedicated 'covers' bucket
-          .upload(fileName, compressedCover, {
-            cacheControl: '31536000',
-            upsert: false,
-          });
-
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage.from(STORAGE_BUCKETS.AVATARS).getPublicUrl(fileName);
-          cover_image_url = urlData.publicUrl;
-        }
-      }
-
       // Optimized: No need to select() after update, we already have the data
       const updatedData = {
         ...profile,
         ...values,
         avatar_url,
-        cover_image_url,
         updated_at: new Date().toISOString(),
       };
 
@@ -314,7 +289,6 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
           ...publicValues,
           accept_direct_pitches: accept_direct_pitches ?? true,
           avatar_url,
-          cover_image_url,
           updated_at: updatedData.updated_at,
         } as any)
         .eq('id', user.id);
@@ -331,13 +305,21 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
       loadingToast.dismiss();
 
       if (error || extrasError) {
+        const failure: any = error || extrasError;
+        // someone else already has this username: say so in plain words instead of showing the database constraint name
+        const taken = failure?.code === '23505' || /profiles_username_key|duplicate key/i.test(failure?.message || '');
         toast({
-          title: "Error updating profile",
-          description: (error || extrasError).message,
+          title: taken ? "That username is taken" : "Error updating profile",
+          description: taken ? "Someone else already uses it. Please choose another username." : failure.message,
           variant: "destructive",
         });
       } else {
-        toast({ title: "Profile updated successfully!", duration: 3000 });
+        const availabilityError = showAvailability ? await availability.save() : null;
+        if (availabilityError) {
+          toast({ title: "Profile saved, but availability was not", description: availabilityError.message, variant: "destructive" });
+        } else {
+          toast({ title: "Profile updated successfully!", duration: 3000 });
+        }
         onUpdate(updatedData as Profile);
         setEditing(false);
       }
@@ -345,7 +327,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
       loadingToast.dismiss();
       toast({
         title: "Unexpected error",
-        description: error?.message || "Failed to update profile",
+        description: friendlyError(error, "Failed to update profile"),
         variant: "destructive",
       });
     }
@@ -354,26 +336,14 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
   return (
     <Form {...form}>
       <div className="space-y-6 mb-8">
-        <div className="relative group w-full h-40 rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
-          {coverPreview ? (
-            <img loading="lazy" decoding="async" src={coverPreview} alt="Cover Preview" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-600 italic">No banner set</div>
-          )}
-          <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-            <span className="font-semibold px-4 py-2 bg-black/60 rounded-lg">Change Banner</span>
-            <input type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
-          </label>
-        </div>
-
-        <div className="flex flex-col items-center gap-4 -mt-20 relative z-10">
+        <div className="flex flex-col items-center gap-4 relative z-10">
           <Avatar className="w-36 h-36 border-4 border-gray-800 shadow-xl">
             <AvatarImage src={avatarPreview || ''} alt="Avatar Preview" />
             <AvatarFallback className="bg-gray-700 text-5xl">
               {profile.username?.charAt(0).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <div className="bg-black/60 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
+          <div className="bg-black/60 px-3 py-1 rounded-full border border-white/10">
             <FormLabel htmlFor="avatar-upload" className="cursor-pointer text-blue-400 hover:text-blue-300 font-semibold text-sm">Change Photo</FormLabel>
             <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
           </div>
@@ -391,7 +361,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
                 <FormControl>
                   <Input {...field} placeholder="Your full name" />
                 </FormControl>
-                <p className="text-[11px] text-muted-foreground/70 mt-1 leading-normal">
+                <p className="text-[12px] text-muted-foreground/70 mt-1 leading-normal">
                   Note: Enter your individual name. To represent a studio or company, please create a <a href="/pages" className="text-primary underline">Company Page</a> instead of naming your personal profile after a business.
                 </p>
                 <FormMessage />
@@ -577,6 +547,15 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
           </div>
         )}
 
+        {showAvailability && (
+          <div className="space-y-4 pt-6 border-t border-gray-800">
+            <div>
+              <h3 className="text-lg font-semibold">Availability</h3>
+              <p className="text-sm text-muted-foreground">Let producers and crew know when you can take work. Saved with the rest of your profile.</p>
+            </div>
+            {availability.loaded ? <AvailabilityFields a={availability} /> : <p className="text-sm text-muted-foreground">Loading your availability…</p>}
+          </div>
+        )}
         <div className="flex justify-end gap-2 pt-6 border-t border-gray-800">
           <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
             Cancel

@@ -3,6 +3,7 @@ import { View, Text, Modal, TextInput, TouchableOpacity, StyleSheet, Alert, Acti
 import { Icon } from '../common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 
@@ -66,7 +67,7 @@ export const BookingRequestModal = ({ visible, onClose, listing, onRequested }: 
       onClose();
       Alert.alert('Booking requested', `Your ${n}-day request was sent. We'll notify you when the owner replies.`, [{ text: 'OK', onPress: onRequested }]);
     } catch (e: any) {
-      Alert.alert('Could not request booking', e?.message || 'Please try again.');
+      Alert.alert('Could not request booking', friendlyError(e, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -75,7 +76,7 @@ export const BookingRequestModal = ({ visible, onClose, listing, onRequested }: 
   const input = [styles.input, { backgroundColor: T.inputBg, borderColor: T.border, color: T.textPrimary }];
   const chip = (label: string, onPress: () => void, on: boolean) => (
     <TouchableOpacity key={label} onPress={onPress} style={[styles.chip, { backgroundColor: on ? ORANGE : T.inputBg, borderColor: on ? ORANGE : T.border }]}>
-      <Text style={{ color: on ? '#fff' : T.textSecondary, fontSize: 11.5, fontWeight: '700' }}>{label}</Text>
+      <Text style={{ color: on ? '#fff' : T.textSecondary, fontSize: 12, fontWeight: '700' }}>{label}</Text>
     </TouchableOpacity>
   );
 
@@ -87,13 +88,13 @@ export const BookingRequestModal = ({ visible, onClose, listing, onRequested }: 
           <View style={[styles.sheet, { backgroundColor: T.bgCard, borderColor: T.border }]}>
             <View style={styles.head}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '800' }}>Request booking</Text>
+                <Text style={{ color: T.textPrimary, fontSize: 18, fontWeight: '700' }}>Request booking</Text>
                 <Text style={{ color: T.textSecondary, fontSize: 12 }} numberOfLines={1}>
                   {listing?.title}{listing?.is_bundle ? ' · bundle' : ''}
                 </Text>
               </View>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Icon name="x" size={20} color={T.textSecondary} />
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon name="x" size={20} color={T.iconSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -124,7 +125,7 @@ export const BookingRequestModal = ({ visible, onClose, listing, onRequested }: 
                 <View style={[styles.booked, { borderColor: T.border }]}>
                   <Text style={[styles.label, { color: T.textMuted, marginBottom: 4 }]}>ALREADY BOOKED</Text>
                   {booked.slice(0, 6).map((b, i) => (
-                    <Text key={i} style={{ color: clash === b ? '#EF4444' : T.textSecondary, fontSize: 12.5, fontWeight: clash === b ? '800' : '500' }}>
+                    <Text key={i} style={{ color: clash === b ? '#EF4444' : T.textSecondary, fontSize: 12, fontWeight: clash === b ? '800' : '500' }}>
                       {fmt(b.start_date)}{b.end_date !== b.start_date ? ` – ${fmt(b.end_date)}` : ''}
                     </Text>
                   ))}
@@ -144,10 +145,10 @@ export const BookingRequestModal = ({ visible, onClose, listing, onRequested }: 
 
               <View style={[styles.priceBox]}>
                 <View>
-                  <Text style={{ color: T.textMuted, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 }}>{n} DAY{n === 1 ? '' : 'S'}</Text>
-                  <Text style={{ color: ORANGE, fontSize: 24, fontWeight: '800' }}>₹{total.toLocaleString()}</Text>
+                  <Text style={{ color: T.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 0.6 }}>{n} DAY{n === 1 ? '' : 'S'}</Text>
+                  <Text style={{ color: ORANGE, fontSize: 24, fontWeight: '700' }}>₹{total.toLocaleString()}</Text>
                 </View>
-                <Text style={{ color: T.textSecondary, fontSize: 11, maxWidth: 150, textAlign: 'right' }}>Estimate. The owner confirms the request; you pay them directly.</Text>
+                <Text style={{ color: T.textSecondary, fontSize: 12, maxWidth: 150, textAlign: 'right' }}>Estimate. The owner confirms the request; you pay them directly.</Text>
               </View>
 
               <TouchableOpacity style={[styles.submit, (busy || !ok || !!clash) && { opacity: 0.5 }]} disabled={busy || !ok || !!clash} onPress={submit}>
@@ -163,13 +164,13 @@ export const BookingRequestModal = ({ visible, onClose, listing, onRequested }: 
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { maxHeight: '88%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
+  sheet: { width: '100%', maxWidth: 640, alignSelf: 'center', maxHeight: '88%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderBottomWidth: 0 },
   head: { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 8, gap: 10 },
-  label: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.7, marginBottom: 6 },
+  label: { fontSize: 12, fontWeight: '700', letterSpacing: 0.7, marginBottom: 6 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, height: 44, fontSize: 14, marginBottom: 10 },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
   booked: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 12 },
   priceBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,75,51,0.08)', borderWidth: 1, borderColor: 'rgba(255,75,51,0.25)', borderRadius: 16, padding: 14, marginVertical: 10 },
   submit: { backgroundColor: ORANGE, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  submitText: { color: '#fff', fontWeight: '800', fontSize: 14.5 },
+  submitText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

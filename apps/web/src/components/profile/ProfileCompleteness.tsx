@@ -13,7 +13,12 @@ export const ProfileCompleteness = ({ refreshKey = 0, onAction }: { refreshKey?:
 
   useEffect(() => {
     if (!user) return;
-    (supabase as any).rpc('my_profile_completeness').then(({ data }: any) => setData(data || null));
+    (supabase as any).rpc('my_profile_completeness').then(({ data }: any) => {
+      if (!data || typeof data.score !== 'number') { setData(null); return; }
+      // the database (my_profile_completeness, part DI) already returns a score out of 100: use it as it is
+      const score = Math.max(0, Math.min(100, Math.round(data.score)));
+      setData({ score, missing: data.missing || [] });
+    });
     (supabase as any).rpc('profile_hint').then(({ data }: any) => setHint(data || null));
   }, [user, refreshKey]);
 
@@ -21,7 +26,7 @@ export const ProfileCompleteness = ({ refreshKey = 0, onAction }: { refreshKey?:
   const color = data.score >= 70 ? 'bg-emerald-500' : data.score >= 40 ? 'bg-amber-500' : 'bg-rose-500';
 
   return (
-    <div className="rounded-2xl border bg-card/40 backdrop-blur-md p-4">
+    <div className="rounded-2xl border bg-card/40 p-4">
       <button className="w-full flex items-center justify-between gap-3 text-left" onClick={() => setOpen(o => !o)}>
         <div className="min-w-0">
           <p className="text-sm font-bold">Your profile is {data.score}% complete</p>
@@ -29,7 +34,7 @@ export const ProfileCompleteness = ({ refreshKey = 0, onAction }: { refreshKey?:
         </div>
         <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
-      <div className="mt-3 h-2 rounded-full bg-muted overflow-hidden"><div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${data.score}%` }} /></div>
+      <div className="mt-3 h-2 rounded-full bg-muted overflow-hidden"><div className={cn('h-full rounded-full transition-[width]', color)} style={{ width: `${data.score}%` }} /></div>
       {open && hint && <p className="mt-3 text-xs rounded-lg bg-primary/10 text-primary px-3 py-2">{hint}</p>}
       {open && (
         <ul className="mt-3 space-y-1.5">

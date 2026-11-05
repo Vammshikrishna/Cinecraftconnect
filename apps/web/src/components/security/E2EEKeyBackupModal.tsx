@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useE2EEBackup } from '@/contexts/E2EEBackupContext';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/components/ui/input-otp';
 import { Button } from '@/components/ui/button';
-import { Shield, Lock, AlertTriangle, KeyRound, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Shield, Lock, AlertTriangle, KeyRound, RefreshCw, CheckCircle2, XCircle, ArrowLeft, Smartphone, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const E2EEKeyBackupModal: React.FC = () => {
@@ -12,6 +11,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
     isSetupRequired,
     isRecoveryRequired,
     isDismissed,
+    promptRequested,
     dismissModal,
     setupBackup,
     recoverBackup,
@@ -151,31 +151,46 @@ export const E2EEKeyBackupModal: React.FC = () => {
     }
   }, [pin, confirmPin, setupStep, isSetupRequired, isRecoveryRequired]);
 
-  if (isChecking || isDismissed) return null;
+  // shown only on message screens (or when the person turns encrypted messages on), never on unrelated pages
+  if (isChecking || isDismissed || !promptRequested) return null;
   const isOpen = isSetupRequired || isRecoveryRequired;
+  if (!isOpen) return null;
+
+  // "Not now": step away from the locked messages instead of staring at the PIN screen
+  const leave = () => {
+    dismissModal();
+    if (window.history.length > 1) window.history.back();
+  };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) dismissModal(); }}>
-      <DialogContent className="max-w-md border border-border/40 bg-background/95 shadow-2xl backdrop-blur-lg sm:rounded-2xl z-[999] overflow-hidden">
-        <DialogHeader className="flex flex-col items-center text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-2">
+    <main className="fixed inset-0 z-[999] bg-background overflow-y-auto" aria-labelledby="e2ee-title">
+      <div className="min-h-full flex flex-col">
+        <div className="px-4 sm:px-6 pt-4">
+          <button type="button" onClick={leave} className="inline-flex items-center gap-2 h-10 px-3 -ml-2 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <ArrowLeft className="h-4 w-4" /> Not now
+          </button>
+        </div>
+        <div className="flex-1 grid place-items-center px-4 py-8">
+        <div className="w-full max-w-md">
+        <div className="flex flex-col items-center text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-4">
             {isSetupRequired ? (
-              <Shield className="h-6 w-6 animate-pulse" />
+              <Shield className="h-8 w-8" />
             ) : (
-              <Lock className="h-6 w-6" />
+              <Lock className="h-8 w-8" />
             )}
           </div>
-          <DialogTitle className="text-xl font-bold tracking-tight">
-            {isSetupRequired ? "Secure E2EE Chat Backup" : "Restore Encrypted Chats"}
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground max-w-sm mt-1">
+          <h1 id="e2ee-title" className="text-2xl font-bold tracking-tight">
+            {isSetupRequired ? "Create a recovery PIN" : "Unlock your encrypted chats"}
+          </h1>
+          <p className="text-base text-muted-foreground max-w-sm mt-2">
             {isSetupRequired
-              ? "Create a recovery PIN to back up your secure conversations. This allows you to restore your chats on other devices."
-              : "This device is not yet verified. Please enter your 6-digit recovery PIN to restore your end-to-end encrypted chats."}
-          </DialogDescription>
-        </DialogHeader>
+              ? "Choose a 6-digit PIN to back up your private conversations, so you can read them again on a new phone or computer."
+              : "This device is new to your account. Enter your 6-digit recovery PIN to read your private chats here."}
+          </p>
+        </div>
 
-        <div className="flex flex-col items-center justify-center py-4 space-y-4">
+        <div className="flex flex-col items-center justify-center py-8 space-y-4">
           <AnimatePresence mode="wait">
             {!showResetConfirm ? (
               <motion.div
@@ -199,20 +214,20 @@ export const E2EEKeyBackupModal: React.FC = () => {
                   autoFocus
                 >
                   <InputOTPGroup>
-                    <InputOTPSlot index={0} className="w-12 h-12 text-lg" />
-                    <InputOTPSlot index={1} className="w-12 h-12 text-lg" />
-                    <InputOTPSlot index={2} className="w-12 h-12 text-lg" />
+                    <InputOTPSlot index={0} className="w-12 h-14 text-xl" />
+                    <InputOTPSlot index={1} className="w-12 h-14 text-xl" />
+                    <InputOTPSlot index={2} className="w-12 h-14 text-xl" />
                   </InputOTPGroup>
                   <InputOTPSeparator />
                   <InputOTPGroup>
-                    <InputOTPSlot index={3} className="w-12 h-12 text-lg" />
-                    <InputOTPSlot index={4} className="w-12 h-12 text-lg" />
-                    <InputOTPSlot index={5} className="w-12 h-12 text-lg" />
+                    <InputOTPSlot index={3} className="w-12 h-14 text-xl" />
+                    <InputOTPSlot index={4} className="w-12 h-14 text-xl" />
+                    <InputOTPSlot index={5} className="w-12 h-14 text-xl" />
                   </InputOTPGroup>
                 </InputOTP>
 
                 {errorMsg && (
-                  <div className="flex items-center gap-1.5 text-xs text-destructive font-medium animate-bounce mt-1">
+                  <div className="flex items-center gap-1.5 text-xs text-destructive font-medium mt-1">
                     <XCircle className="h-4 w-4" />
                     <span>{errorMsg}</span>
                   </div>
@@ -271,7 +286,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
           </AnimatePresence>
         </div>
 
-        <DialogFooter className="flex flex-col sm:flex-row w-full gap-2 sm:gap-0 border-t border-border/20 pt-4 mt-2">
+        <div className="flex flex-col sm:flex-row w-full gap-2 sm:gap-0 pt-2">
           {!showResetConfirm ? (
             <>
               {isSetupRequired ? (
@@ -339,8 +354,17 @@ export const E2EEKeyBackupModal: React.FC = () => {
               </Button>
             </div>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+
+        {!showResetConfirm && (
+          <ul className="mt-8 space-y-3 text-sm text-muted-foreground border-t border-border pt-6">
+            <li className="flex gap-3"><EyeOff className="h-4 w-4 mt-0.5 shrink-0 text-primary" /><span>Only you can read these chats. The PIN is never sent to us in a form we can use.</span></li>
+            <li className="flex gap-3"><Smartphone className="h-4 w-4 mt-0.5 shrink-0 text-primary" /><span>You only need it on a new device or after signing in again.</span></li>
+          </ul>
+        )}
+        </div>
+        </div>
+      </div>
+    </main>
   );
 };

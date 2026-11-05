@@ -47,6 +47,9 @@ export default defineConfig(({ mode }) => ({
       "@cinecraft/ui": path.resolve(__dirname, "../../packages/ui/src"),
     },
   },
+  optimizeDeps: {
+    exclude: ['react-native', 'react-native-quick-base64', 'react-native-quick-crypto'],
+  },
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],

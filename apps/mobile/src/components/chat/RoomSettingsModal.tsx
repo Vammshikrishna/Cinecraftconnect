@@ -15,9 +15,12 @@ import {
   Image,
 } from 'react-native';
 import { Icon } from '../common/Icon';
+import { UniversalShareSheet } from '../common/UniversalShareSheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSupabaseClient } from '@cinecraft/api';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { friendlyError } from '@cinecraft/core';
+import { loadRoomPrefs, saveRoomPrefs } from '../../services/roomPrefs';
 
 const ORANGE = '#FF5733';
 
@@ -52,6 +55,10 @@ export const RoomSettingsModal = ({
   const [title, setTitle] = useState(initialTitle || '');
   const [description, setDescription] = useState(initialDescription || '');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [discoverability, setDiscoverability] = useState<'hidden' | 'listed' | null>(null);
+  const [discoverabilityLoaded, setDiscoverabilityLoaded] = useState<'hidden' | 'listed' | null>(null);
+  const [roomRow, setRoomRow] = useState<any | null>(null);
+  const [shareVisible, setShareVisible] = useState(false);
   const [creatorId, setCreatorId] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
@@ -102,7 +109,8 @@ export const RoomSettingsModal = ({
         const supabase = getSupabaseClient();
 
         // 1. Fetch categories
-        const { data: catData } = await supabase.from('room_categories').select('id, name');
+        // same query as the create-room form (all categories, ordered by name) so both lists match
+        const { data: catData } = await (supabase as any).from('room_categories').select('id, name').order('name');
         if (catData) setCategories(catData);
 
         // 2. Fetch room details
@@ -117,6 +125,7 @@ export const RoomSettingsModal = ({
           setDescription(roomData.description || '');
           setIsPrivate(roomData.room_type === 'private');
           setCreatorId(roomData.creator_id);
+          setRoomRow(roomData);
           setSelectedCategoryId(roomData.category_id || '');
           setTags(roomData.tags || []);
           if (roomData.member_count) setMemberLimit(roomData.member_count);
@@ -138,18 +147,31 @@ export const RoomSettingsModal = ({
           // Load personal per-user notification preferences
           const userKey = currentUserId || 'anonymous';
           try {
-            const localNotif = await AsyncStorage.getItem(`@room_notif_${roomId}_${userKey}`);
-            if (localNotif) {
-              const parsed = JSON.parse(localNotif);
-              if (parsed.muteRoom !== undefined) setMuteRoom(parsed.muteRoom);
-              if (parsed.mentionsOnly !== undefined) setMentionsOnly(parsed.mentionsOnly);
-              if (parsed.soundAlerts !== undefined) setSoundAlerts(parsed.soundAlerts);
-            } else if (roomData.settings) {
-              if (roomData.settings.muteRoom !== undefined) setMuteRoom(roomData.settings.muteRoom);
-              if (roomData.settings.mentionsOnly !== undefined) setMentionsOnly(roomData.settings.mentionsOnly);
-              if (roomData.settings.soundAlerts !== undefined) setSoundAlerts(roomData.settings.soundAlerts);
-            }
+            const prefs = await loadRoomPrefs(roomId, currentUserId);
+            setMuteRoom(prefs.muteRoom);
+            setMentionsOnly(prefs.mentionsOnly);
+            setSoundAlerts(prefs.soundAlerts);
           } catch {}
+        }
+
+        // Who can find this room: its own query, so a database without the column just hides the setting
+        try {
+          const { data: discRow, error: discErr } = (await supabase
+            .from('discussion_rooms' as any)
+            .select('discoverability')
+            .eq('id', roomId)
+            .maybeSingle()) as any;
+          if (discErr || !discRow) {
+            setDiscoverability(null);
+            setDiscoverabilityLoaded(null);
+          } else {
+            const v = discRow.discoverability === 'listed' ? 'listed' : 'hidden';
+            setDiscoverability(v);
+            setDiscoverabilityLoaded(v);
+          }
+        } catch {
+          setDiscoverability(null);
+          setDiscoverabilityLoaded(null);
         }
 
         // 3. Fetch Members
@@ -271,25 +293,24 @@ export const RoomSettingsModal = ({
     setTags(tags.filter((x) => x !== t));
   };
 
+  // Personal notification preferences are saved on this phone AND on the server (so they follow you to your other
+  // devices), through the same service the room screen uses.
   const saveLocalNotifPrefs = async (newMute: boolean, newMentions: boolean, newSound: boolean) => {
-    const userKey = currentUserId || 'anonymous';
-    if (roomId) {
-      try {
-        const payload = JSON.stringify({
-          muteRoom: newMute,
-          mentionsOnly: newMentions,
-          soundAlerts: newSound,
-        });
-        await AsyncStorage.setItem(`@room_notif_${roomId}_${userKey}`, payload);
-        await AsyncStorage.setItem(`@room_notif_${roomId}`, payload);
-      } catch (err) {
-        console.warn('Error saving local notification preferences:', err);
-      }
+    if (!roomId) return;
+    try {
+      await saveRoomPrefs(roomId, currentUserId, { muteRoom: newMute, mentionsOnly: newMentions, soundAlerts: newSound });
+    } catch (err) {
+      console.warn('Error saving notification preferences:', err);
     }
   };
 
   const handleSaveSettings = async () => {
     if (!roomId) return;
+    const cleanTitle = (title || '').trim().replace(/\s+/g, ' ');
+    if (!cleanTitle) {
+      Alert.alert('Room name needed', 'Please enter a room name.');
+      return;
+    }
     setSaving(true);
     try {
       const supabase = getSupabaseClient();
@@ -313,8 +334,8 @@ export const RoomSettingsModal = ({
       const { error } = await supabase
         .from('discussion_rooms' as any)
         .update({
-          title,
-          description,
+          title: cleanTitle,
+          description: (description || '').trim(),
           category_id: selectedCategoryId || null,
           room_type: isPrivate ? 'private' : 'public',
           tags,
@@ -323,6 +344,19 @@ export const RoomSettingsModal = ({
         .eq('id', roomId);
 
       if (error) throw error;
+
+      // Who can find the room: only written when the column exists and the value changed; a public room is always 'hidden'
+      if (discoverability !== null) {
+        const next = isPrivate ? discoverability : 'hidden';
+        if (next !== discoverabilityLoaded) {
+          const { error: discErr } = await supabase
+            .from('discussion_rooms' as any)
+            .update({ discoverability: next })
+            .eq('id', roomId);
+          if (discErr) throw discErr;
+          setDiscoverabilityLoaded(next);
+        }
+      }
 
       // Broadcast settings update in real-time
       try {
@@ -345,7 +379,7 @@ export const RoomSettingsModal = ({
       Alert.alert('Success', 'Room settings updated successfully!');
       onClose();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to save settings.');
+      Alert.alert('Error', friendlyError(e, 'Failed to save settings.'));
     } finally {
       setSaving(false);
     }
@@ -365,32 +399,47 @@ export const RoomSettingsModal = ({
       setSearchResults([]);
       fetchMembers();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not invite user.');
+      Alert.alert('Error', friendlyError(e, 'Could not invite user.'));
     }
   };
 
   const handleMemberRoleAction = async (userId: string, action: 'promote' | 'demote' | 'remove') => {
+    if (action === 'remove') {
+      const m: any = members.find((x: any) => x.user_id === userId);
+      const name = m?.profiles?.full_name || m?.profiles?.username || 'this member';
+      Alert.alert(`Remove ${name} from this room?`, 'They will stop receiving its messages.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => { void performMemberRoleAction(userId, action); } },
+      ]);
+      return;
+    }
+    await performMemberRoleAction(userId, action);
+  };
+
+  const performMemberRoleAction = async (userId: string, action: 'promote' | 'demote' | 'remove') => {
     try {
       const supabase = getSupabaseClient();
       if (action === 'remove') {
-        await supabase
+        const { error } = await supabase
           .from('room_members' as any)
           .delete()
           .eq('room_id', roomId)
           .eq('user_id', userId);
+        if (error) throw error;
         Alert.alert('Removed', 'User removed from room.');
       } else {
         const newRole = action === 'promote' ? 'admin' : 'member';
-        await supabase
+        const { error } = await supabase
           .from('room_members' as any)
           .update({ role: newRole })
           .eq('room_id', roomId)
           .eq('user_id', userId);
+        if (error) throw error;
         Alert.alert('Updated', `User role changed to ${newRole}.`);
       }
       fetchMembers();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to update member.');
+      Alert.alert('Error', friendlyError(e, 'Failed to update member.'));
     }
   };
 
@@ -411,7 +460,7 @@ export const RoomSettingsModal = ({
       fetchJoinRequests();
       fetchMembers();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not approve request.');
+      Alert.alert('Error', friendlyError(e, 'Could not approve request.'));
     }
   };
 
@@ -426,7 +475,7 @@ export const RoomSettingsModal = ({
       Alert.alert('Denied', 'Join request denied.');
       fetchJoinRequests();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Could not deny request.');
+      Alert.alert('Error', friendlyError(e, 'Could not deny request.'));
     }
   };
 
@@ -457,7 +506,7 @@ export const RoomSettingsModal = ({
               }
               Alert.alert('Cleared', 'Chat history cleared successfully.');
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to clear history.');
+              Alert.alert('Error', friendlyError(e, 'Failed to clear history.'));
             }
           },
         },
@@ -482,7 +531,7 @@ export const RoomSettingsModal = ({
               onClose();
               if (onRoomDeleted) onRoomDeleted();
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to delete room.');
+              Alert.alert('Error', friendlyError(e, 'Failed to delete room.'));
             }
           },
         },
@@ -491,7 +540,7 @@ export const RoomSettingsModal = ({
   };
 
   const handleLeaveRoom = () => {
-    Alert.alert('Leave Room', 'Are you sure you want to leave this room?', [
+    Alert.alert('Leave this room?', 'You will stop receiving its messages. A public room can be joined again; a private room needs a new invite or an approved request.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Leave',
@@ -499,16 +548,17 @@ export const RoomSettingsModal = ({
         onPress: async () => {
           try {
             const supabase = getSupabaseClient();
-            await supabase
+            const { error: leaveErr } = await supabase
               .from('room_members' as any)
               .delete()
               .eq('room_id', roomId)
               .eq('user_id', currentUserId);
+            if (leaveErr) throw leaveErr;
             Alert.alert('Left Room', 'You have left the room.');
             onClose();
             if (onRoomDeleted) onRoomDeleted();
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to leave room.');
+            Alert.alert('Error', friendlyError(e, 'Failed to leave room.'));
           }
         },
       },
@@ -520,7 +570,7 @@ export const RoomSettingsModal = ({
       <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
         {/* Top Navigation Header */}
         <View style={[styles.header, { backgroundColor: themeColors.bgCard, borderBottomColor: themeColors.border }]}>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.closeBtn} onPress={onClose}>
             <Icon name="x" size={22} color={themeColors.textPrimary} />
           </TouchableOpacity>
           <View style={styles.headerTitleArea}>
@@ -744,7 +794,7 @@ export const RoomSettingsModal = ({
                         onChangeText={setNewTagInput}
                         editable={isAdmin}
                       />
-                      <TouchableOpacity style={styles.addTagBtn} onPress={handleAddTag}>
+                      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Add" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.addTagBtn} onPress={handleAddTag}>
                         <Icon name="plus" size={16} color="#FFFFFF" />
                       </TouchableOpacity>
                     </View>
@@ -755,7 +805,7 @@ export const RoomSettingsModal = ({
                       <View key={t} style={[styles.tagBadge, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF' }]}>
                         <Text style={styles.tagBadgeText}>#{t}</Text>
                         {isAdmin && (
-                          <TouchableOpacity onPress={() => handleRemoveTag(t)}>
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove tag" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={() => handleRemoveTag(t)}>
                             <Icon name="x" size={12} color="#64748B" />
                           </TouchableOpacity>
                         )}
@@ -768,6 +818,25 @@ export const RoomSettingsModal = ({
                     )}
                   </View>
                 </View>
+              </View>
+            )}
+
+            {activeTab === 'general' && (!isPrivate || discoverability === 'listed' || isAdmin) && (
+              <View style={[styles.sectionCard, { backgroundColor: themeColors.bgCard, borderColor: themeColors.border }]}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Share this room"
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                  onPress={() => setShareVisible(true)}
+                >
+                  <Icon name="share-2" size={18} color={ORANGE} />
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: themeColors.textPrimary }}>Share this room</Text>
+                </TouchableOpacity>
+                {isPrivate && (
+                  <Text style={{ fontSize: 12, color: themeColors.textSecondary, marginTop: 8 }}>
+                    This room is private, so the person you share it with will need to request to join.
+                  </Text>
+                )}
               </View>
             )}
 
@@ -785,11 +854,36 @@ export const RoomSettingsModal = ({
                   </View>
                   <Switch
                     value={isPrivate}
-                    onValueChange={setIsPrivate}
+                    onValueChange={setIsPrivate} accessibilityLabel="Private Room"
                     disabled={!isAdmin}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                   />
                 </View>
+
+                {isPrivate && isAdmin && discoverability !== null && (
+                  <View accessibilityRole="radiogroup" accessibilityLabel="Who can find this room" style={{ marginTop: 12 }}>
+                    <Text style={[styles.switchTitle, { color: themeColors.textPrimary, marginBottom: 8 }]}>Who can find this room</Text>
+                    {([
+                      ['hidden', 'Hidden', 'Only members and invited people can see it.'],
+                      ['listed', 'Listed', 'Everyone can see the room card and request to join.'],
+                    ] as const).map(([value, name, help]) => {
+                      const selected = discoverability === value;
+                      return (
+                        <TouchableOpacity
+                          key={value}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected, checked: selected }}
+                          accessibilityLabel={`${name}. ${help}`}
+                          onPress={() => setDiscoverability(value)}
+                          style={{ borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 8, borderColor: selected ? ORANGE : themeColors.border, backgroundColor: selected ? (isDark ? 'rgba(255,87,51,0.12)' : '#FFF7F5') : 'transparent' }}
+                        >
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: themeColors.textPrimary }}>{name}</Text>
+                          <Text style={{ fontSize: 12, color: themeColors.textSecondary, marginTop: 2 }}>{help}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
 
                 <View style={[styles.divider, { backgroundColor: themeColors.border }]} />
 
@@ -802,7 +896,7 @@ export const RoomSettingsModal = ({
                   </View>
                   <Switch
                     value={onlyAdminsSend}
-                    onValueChange={setOnlyAdminsSend}
+                    onValueChange={setOnlyAdminsSend} accessibilityLabel="Only Admins Can Send Messages"
                     disabled={!isAdmin}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                   />
@@ -817,7 +911,7 @@ export const RoomSettingsModal = ({
                   </View>
                   <Switch
                     value={onlyAdminsEdit}
-                    onValueChange={setOnlyAdminsEdit}
+                    onValueChange={setOnlyAdminsEdit} accessibilityLabel="Only Admins Can Edit Room Info"
                     disabled={!isAdmin}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                   />
@@ -836,7 +930,7 @@ export const RoomSettingsModal = ({
                     <Text style={[styles.switchSubtitle, { color: themeColors.textSecondary }]}>Silence all push notifications from this room.</Text>
                   </View>
                   <Switch
-                    value={muteRoom}
+                    value={muteRoom} accessibilityLabel="Mute Room"
                     onValueChange={(val) => {
                       setMuteRoom(val);
                       saveLocalNotifPrefs(val, mentionsOnly, soundAlerts);
@@ -853,7 +947,7 @@ export const RoomSettingsModal = ({
                     <Text style={[styles.switchSubtitle, { color: themeColors.textSecondary }]}>Only notify when someone mentions @you.</Text>
                   </View>
                   <Switch
-                    value={mentionsOnly}
+                    value={mentionsOnly} accessibilityLabel="Mentions Only"
                     onValueChange={(val) => {
                       setMentionsOnly(val);
                       saveLocalNotifPrefs(muteRoom, val, soundAlerts);
@@ -870,7 +964,7 @@ export const RoomSettingsModal = ({
                     <Text style={[styles.switchSubtitle, { color: themeColors.textSecondary }]}>Play sound effect on incoming messages.</Text>
                   </View>
                   <Switch
-                    value={soundAlerts}
+                    value={soundAlerts} accessibilityLabel="Sound Alerts"
                     onValueChange={(val) => {
                       setSoundAlerts(val);
                       saveLocalNotifPrefs(muteRoom, mentionsOnly, val);
@@ -893,7 +987,7 @@ export const RoomSettingsModal = ({
                   </View>
                   <Switch
                     value={slowMode}
-                    onValueChange={setSlowMode}
+                    onValueChange={setSlowMode} accessibilityLabel="Slow Mode"
                     disabled={!isAdmin}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                   />
@@ -937,7 +1031,7 @@ export const RoomSettingsModal = ({
                   </View>
                   <Switch
                     value={allowMediaSharing}
-                    onValueChange={setAllowMediaSharing}
+                    onValueChange={setAllowMediaSharing} accessibilityLabel="Allow Media Sharing"
                     disabled={!isAdmin}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                   />
@@ -952,7 +1046,7 @@ export const RoomSettingsModal = ({
                   </View>
                   <Switch
                     value={allowLinks}
-                    onValueChange={setAllowLinks}
+                    onValueChange={setAllowLinks} accessibilityLabel="Allow Links"
                     disabled={!isAdmin}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                   />
@@ -967,7 +1061,7 @@ export const RoomSettingsModal = ({
                   </View>
                   <Switch
                     value={profanityFilter}
-                    onValueChange={setProfanityFilter}
+                    onValueChange={setProfanityFilter} accessibilityLabel="Profanity Filter"
                     disabled={!isAdmin}
                     trackColor={{ false: '#CBD5E1', true: ORANGE }}
                   />
@@ -993,7 +1087,7 @@ export const RoomSettingsModal = ({
                         ]}
                         onPress={() => isAdmin && setRoomEmoji(em)}
                       >
-                        <Text style={{ fontSize: 22 }}>{em}</Text>
+                        <Text style={{ fontSize: 24 }}>{em}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1037,14 +1131,24 @@ export const RoomSettingsModal = ({
                   <View style={[styles.inviteBox, { backgroundColor: themeColors.chipBg }]}>
                     <Text style={[styles.fieldLabel, { color: themeColors.textSecondary }]}>ADD PARTICIPANT</Text>
                     <View style={[styles.searchUserRow, { backgroundColor: themeColors.inputBg, borderColor: themeColors.border }]}>
-                      <Icon name="search" size={16} color={themeColors.textSecondary} />
-                      <TextInput
+                      <Icon name="search" size={16} color={themeColors.iconSecondary} />
+                      <TextInput returnKeyType="search" accessibilityLabel="Search by username or name"
                         style={[styles.searchUserInput, { color: themeColors.textPrimary }]}
                         placeholder="Search by username or name..."
                         placeholderTextColor={themeColors.textMuted}
                         value={searchUserQuery}
                         onChangeText={setSearchUserQuery}
                       />
+                      {searchUserQuery ? (
+                        <TouchableOpacity
+                          onPress={() => setSearchUserQuery('')}
+                          accessibilityRole="button"
+                          accessibilityLabel="Clear search"
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Icon name="x" size={16} color={themeColors.iconMuted} />
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
 
                     {searching && <ActivityIndicator style={{ marginVertical: 8 }} size="small" color={ORANGE} />}
@@ -1120,7 +1224,7 @@ export const RoomSettingsModal = ({
                               <Text style={[styles.roleActionText, { color: themeColors.textPrimary }]}>{isMemAdmin ? 'Demote' : 'Promote'}</Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity
+                            <TouchableOpacity hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                               style={[styles.roleActionBtn, { backgroundColor: '#FEE2E2' }]}
                               onPress={() => handleMemberRoleAction(m.user_id, 'remove')}
                             >
@@ -1167,7 +1271,7 @@ export const RoomSettingsModal = ({
                             <Text style={styles.approveBtnText}>Approve</Text>
                           </TouchableOpacity>
 
-                          <TouchableOpacity style={styles.denyBtn} onPress={() => handleDenyRequest(req.id)}>
+                          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Deny request" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.denyBtn} onPress={() => handleDenyRequest(req.id)}>
                             <Icon name="x" size={14} color="#EF4444" />
                           </TouchableOpacity>
                         </View>
@@ -1245,6 +1349,14 @@ export const RoomSettingsModal = ({
             )}
           </ScrollView>
         )}
+        <UniversalShareSheet
+          visible={shareVisible}
+          onClose={() => setShareVisible(false)}
+          title={roomRow?.title || title || 'Discussion Room'}
+          shareUrl={`https://cinecraftconnect.com/rooms/${roomId}`}
+          itemType="room"
+          itemData={roomRow || { id: roomId, title, description }}
+        />
       </View>
     </Modal>
   );
@@ -1270,10 +1382,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   headerSubtitle: {
-    fontSize: 11.5,
+    fontSize: 12,
   },
   saveHeaderBtn: {
     backgroundColor: ORANGE,
@@ -1284,7 +1396,7 @@ const styles = StyleSheet.create({
   saveHeaderBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   tabsBarWrapper: {
     borderBottomWidth: 1,
@@ -1311,16 +1423,16 @@ const styles = StyleSheet.create({
     borderColor: '#FEE2E2',
   },
   tabChipText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '600',
   },
   tabChipTextActive: {
     color: ORANGE,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   tabChipTextDangerActive: {
     color: '#EF4444',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   loadingBox: {
     flex: 1,
@@ -1342,16 +1454,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     marginBottom: 14,
   },
   fieldGroup: {
     marginBottom: 14,
   },
   fieldLabel: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -1360,7 +1472,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 13.5,
+    fontSize: 14,
   },
   textArea: {
     minHeight: 80,
@@ -1381,7 +1493,7 @@ const styles = StyleSheet.create({
   },
   catChipTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   tagInputRow: {
     flexDirection: 'row',
@@ -1411,7 +1523,7 @@ const styles = StyleSheet.create({
   },
   tagBadgeText: {
     color: '#3B82F6',
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
   },
   switchRow: {
@@ -1421,11 +1533,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   switchTitle: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   switchSubtitle: {
-    fontSize: 11.5,
+    fontSize: 12,
     marginTop: 2,
   },
   divider: {
@@ -1478,7 +1590,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 10,
-    height: 40,
+    height: 44,
     marginTop: 4,
     gap: 8,
   },
@@ -1504,8 +1616,8 @@ const styles = StyleSheet.create({
   },
   inviteBtnText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   memberRowItem: {
     flexDirection: 'row',
@@ -1528,14 +1640,14 @@ const styles = StyleSheet.create({
   memberAvatarText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   memberName: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   memberSub: {
-    fontSize: 11,
+    fontSize: 12,
   },
   adminBadge: {
     backgroundColor: '#FEF3C7',
@@ -1545,12 +1657,12 @@ const styles = StyleSheet.create({
   },
   adminBadgeText: {
     color: '#D97706',
-    fontSize: 9,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   youText: {
     color: ORANGE,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   roleActionBtn: {
@@ -1559,7 +1671,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   roleActionText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
   leaveRoomBtn: {
@@ -1575,7 +1687,7 @@ const styles = StyleSheet.create({
   leaveRoomText: {
     color: '#EF4444',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   requestRowItem: {
     flexDirection: 'row',
@@ -1599,8 +1711,8 @@ const styles = StyleSheet.create({
   },
   approveBtnText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   denyBtn: {
     backgroundColor: '#FEE2E2',
@@ -1617,11 +1729,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   dangerTitle: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   dangerSubtitle: {
-    fontSize: 11.5,
+    fontSize: 12,
     marginTop: 2,
   },
   dangerBtn: {
@@ -1633,7 +1745,7 @@ const styles = StyleSheet.create({
   dangerBtnText: {
     color: '#EF4444',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

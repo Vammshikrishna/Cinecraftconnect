@@ -6,14 +6,15 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  ActivityIndicator,
   Alert,
   Share,
   InteractionManager,
+  Linking,
 } from 'react-native';
 import { Header } from '../../components/Header';
 import { Icon } from '../../components/common/Icon';
 import { getSupabaseClient } from '@cinecraft/api';
+import { friendlyError } from '@cinecraft/core';
 import { ServicePackageModal } from '../../components/modals/ServicePackageModal';
 import { TabletContainer } from '../../components/common/TabletContainer';
 import { CachedImage } from '../../components/common/CachedImage';
@@ -21,7 +22,11 @@ import { useUserSettings } from '../../hooks/useUserSettings';
 import { UniversalShareSheet } from '../../components/common/UniversalShareSheet';
 import { QuoteRequestModal, VendorVerificationModal } from '../../components/marketplace/MarketplaceModals';
 import { LeaveReviewModal } from '../../components/modals/LeaveReviewModal';
+import { useAppRole } from '../../hooks/useAppRole';
 import { ReportModal } from '../../components/modals/ReportModal';
+import { ScreenSkeleton } from '../../components/common/Skeleton';
+import { LoadErrorState } from '../../components/common/LoadErrorState';
+import { isTabletDevice } from '../../utils/pageType';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -29,13 +34,30 @@ const INK = '#0D0D0D';
 export const VendorDetailScreen = ({ route, navigation }: { route: any; navigation: any }) => {
   const { vendorId, vendorName, category, location, imageUrl } = route.params || {};
   const { themeColors, isDark } = useUserSettings();
+  const { isInternal } = useAppRole(); // staff: view + report only
 
   const [vendor, setVendor] = useState<any>(null);
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [serviceModalVisible, setServiceModalVisible] = useState(false);
+  const [editingService, setEditingService] = useState<any | null>(null);
+  const confirmDeleteService = (srv: any) => {
+    Alert.alert('Delete this package?', `Delete the package "${srv.title}"? People will no longer see it.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete package',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await (getSupabaseClient() as any).from('vendor_services').delete().eq('id', srv.id);
+          if (error) { Alert.alert('Could not delete the package', friendlyError(error)); return; }
+          setServices((prev) => prev.filter((x) => x.id !== srv.id));
+        },
+      },
+    ]);
+  };
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
@@ -49,6 +71,7 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
     }
     try {
       setLoading(true);
+      setLoadError(false);
       const supabase = getSupabaseClient();
       const user = (await supabase.auth.getSession()).data.session?.user ?? null; // local session: getUser() is a network call
       if (user) setCurrentUserId(user.id);
@@ -85,6 +108,7 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
       if (servicesData) setServices(servicesData);
     } catch (e) {
       console.warn('[VendorDetail] Fetch error:', e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -96,6 +120,27 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
     });
     return () => task.cancel();
   }, [fetchVendorDetails]);
+
+  // the owner's latest verification request decides between "Get verified", "being reviewed" and "Fix and resubmit"
+  const [verifStatus, setVerifStatus] = useState<string | null>(null);
+  const [verifNote, setVerifNote] = useState<string | null>(null);
+  const ownerCheckId = vendor && currentUserId && currentUserId === vendor.owner_id ? vendor.id : null;
+  const loadVerifStatus = useCallback(async () => {
+    if (!ownerCheckId) return;
+    try {
+      const { data } = await ((getSupabaseClient() as any).from('vendor_verification_requests') as any)
+        .select('status, review_note')
+        .eq('vendor_id', ownerCheckId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setVerifStatus(data?.status ?? null);
+      setVerifNote(data?.review_note ?? null);
+    } catch {}
+  }, [ownerCheckId]);
+  useEffect(() => {
+    loadVerifStatus();
+  }, [loadVerifStatus]);
 
   const handleShare = () => {
     setShowShareSheet(true);
@@ -142,9 +187,16 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
     return (
       <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
         <Header title="Vendor Profile" showLogo={false} onBack={() => navigation.goBack()} />
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={ORANGE} />
-        </View>
+        <ScreenSkeleton variant="detail" />
+      </View>
+    );
+  }
+
+  if (loadError && !vendor) {
+    return (
+      <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
+        <Header title="Vendor Profile" showLogo={false} onBack={() => navigation.goBack()} />
+        <LoadErrorState onRetry={fetchVendorDetails} />
       </View>
     );
   }
@@ -156,13 +208,13 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
         showLogo={false}
         onBack={() => navigation.goBack()}
         rightAction={
-          <TouchableOpacity onPress={handleShare} style={styles.headerIconBtn}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Share" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={handleShare} style={styles.headerIconBtn}>
             <Icon name="share" size={18} color={themeColors.textPrimary} />
           </TouchableOpacity>
         }
       />
 
-      <TabletContainer maxWidth={720} backgroundColor={themeColors.bgScreen}>
+      <TabletContainer maxWidth="content" backgroundColor={themeColors.bgScreen}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Banner Gallery Image Container */}
           <View style={styles.mainImageContainer}>
@@ -218,7 +270,7 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
               <View style={{ flex: 1 }}>
                 <Text style={[styles.titleText, { color: themeColors.textPrimary }]}>{name}</Text>
                 <View style={styles.locationRow}>
-                  <Icon name="map-pin" size={13} color={themeColors.textSecondary} />
+                  <Icon name="map-pin" size={13} color={themeColors.iconSecondary} />
                   <Text style={[styles.locationText, { color: themeColors.textSecondary }]}>{loc}</Text>
                 </View>
               </View>
@@ -248,16 +300,28 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
             {(vendor?.phone || vendor?.email || vendor?.website) && (
               <View style={styles.contactInfoRow}>
                 {vendor?.phone && (
-                  <View style={styles.contactItem}>
+                  <TouchableOpacity
+                    style={styles.contactItem}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Call ${vendor.phone}`}
+                    hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                    onPress={() => Linking.openURL(`tel:${String(vendor.phone).replace(/[^\d+]/g, '')}`).catch(() => {})}
+                  >
                     <Icon name="phone" size={12} color={ORANGE} />
                     <Text style={[styles.contactItemText, { color: themeColors.textPrimary }]}>{vendor.phone}</Text>
-                  </View>
+                  </TouchableOpacity>
                 )}
                 {vendor?.email && (
-                  <View style={styles.contactItem}>
+                  <TouchableOpacity
+                    style={styles.contactItem}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Email ${vendor.email}`}
+                    hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                    onPress={() => Linking.openURL(`mailto:${vendor.email}`).catch(() => {})}
+                  >
                     <Icon name="mail" size={12} color={ORANGE} />
                     <Text style={[styles.contactItemText, { color: themeColors.textPrimary }]}>{vendor.email}</Text>
-                  </View>
+                  </TouchableOpacity>
                 )}
               </View>
             )}
@@ -306,10 +370,11 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
             </View>
 
             {services.length > 0 ? (
-              services.map((srv: any) => (
+              <View style={isTabletDevice ? { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 } : undefined}>
+              {services.map((srv: any) => (
                 <TouchableOpacity
                   key={srv.id}
-                  style={[styles.packageCardItem, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
+                  style={[styles.packageCardItem, isTabletDevice && { width: '48.8%' }, { backgroundColor: themeColors.chipBg, borderColor: themeColors.border }]}
                   onPress={() =>
                     navigation.navigate('VendorServiceDetail', {
                       serviceId: srv.id,
@@ -330,8 +395,29 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
                   <View style={styles.packageArrowRow}>
                     <Text style={styles.packageArrowText}>View Package Details →</Text>
                   </View>
+                  {isOwner && (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit package ${srv.title}`}
+                        style={{ flex: 1, height: 34, borderRadius: 999, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center', justifyContent: 'center' }}
+                        onPress={() => setEditingService(srv)}
+                      >
+                        <Text style={{ color: '#FF4B33', fontSize: 12, fontWeight: '700' }}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete package ${srv.title}`}
+                        style={{ flex: 1, height: 34, borderRadius: 999, borderWidth: 1, borderColor: themeColors.border, alignItems: 'center', justifyContent: 'center' }}
+                        onPress={() => confirmDeleteService(srv)}
+                      >
+                        <Text style={{ color: '#DC2626', fontSize: 12, fontWeight: '700' }}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </TouchableOpacity>
-              ))
+              ))}
+              </View>
             ) : (
               <Text style={[styles.noPackagesText, { color: themeColors.textMuted }]}>
                 No service packages published yet. {isOwner ? 'Tap "+ Add Package" to list your first package!' : ''}
@@ -340,8 +426,10 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
 
             <View style={[styles.divider, { backgroundColor: themeColors.divider }]} />
 
+            <View style={isTabletDevice ? { width: '100%', maxWidth: 560, alignSelf: 'center' } : undefined}>
             {vendor && !isOwner && (
               <>
+                {!isInternal && (
                 <TouchableOpacity
                   style={[styles.contactBtn, { marginBottom: 10 }]}
                   onPress={() => (currentUserId ? setQuoteOpen(true) : Alert.alert('Sign In Required', 'Please sign in to request a quote.'))}
@@ -349,50 +437,71 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
                   <Icon name="file-text" size={16} color="#FFFFFF" />
                   <Text style={styles.contactBtnText}>Request a quote</Text>
                 </TouchableOpacity>
+                )}
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                  {!isInternal && (
                   <TouchableOpacity
                     style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}
                     onPress={() => (currentUserId ? setReviewOpen(true) : Alert.alert('Sign In Required', 'Please sign in to review.'))}
                   >
                     <Icon name="star" size={14} color="#F59E0B" fill="#F59E0B" />
-                    <Text style={{ color: themeColors.textPrimary, fontSize: 12.5, fontWeight: '800' }}>Leave a review</Text>
+                    <Text style={{ color: themeColors.textPrimary, fontSize: 12, fontWeight: '700' }}>Leave a review</Text>
                   </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}
                     onPress={() => (currentUserId ? setReportOpen(true) : Alert.alert('Sign In Required', 'Please sign in to report.'))}
                   >
-                    <Icon name="flag" size={14} color={themeColors.textSecondary} />
-                    <Text style={{ color: themeColors.textSecondary, fontSize: 12.5, fontWeight: '800' }}>Report</Text>
+                    <Icon name="flag" size={14} color={themeColors.iconSecondary} />
+                    <Text style={{ color: themeColors.textSecondary, fontSize: 12, fontWeight: '700' }}>Report</Text>
                   </TouchableOpacity>
                 </View>
               </>
             )}
             {isOwner && vendor && (
               <View style={{ gap: 10, marginBottom: 10 }}>
-                {!vendor.is_verified && (
-                  <TouchableOpacity
-                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}
-                    onPress={() => setVerifyOpen(true)}
-                  >
+                {!vendor.is_verified && (verifStatus === 'pending' ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 42, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}>
                     <Icon name="badge-check" size={14} color={ORANGE} />
-                    <Text style={{ color: themeColors.textPrimary, fontSize: 12.5, fontWeight: '800' }}>Get verified</Text>
-                  </TouchableOpacity>
-                )}
+                    <Text style={{ color: themeColors.textPrimary, fontSize: 12, fontWeight: '700' }}>Verification is being reviewed</Text>
+                  </View>
+                ) : (
+                  <>
+                    {verifStatus === 'rejected' && (
+                      <View style={{ borderRadius: 12, borderWidth: 1, borderColor: ORANGE, backgroundColor: 'rgba(255,75,51,0.08)', padding: 12 }}>
+                        <Text style={{ color: ORANGE, fontSize: 13, fontWeight: '700' }}>Verification was not approved</Text>
+                        {verifNote ? <Text style={{ color: themeColors.textPrimary, fontSize: 13, marginTop: 4 }}>Reason: {verifNote}</Text> : null}
+                        <Text style={{ color: themeColors.textSecondary, fontSize: 12, marginTop: 4 }}>Fix the issue and submit again.</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}
+                      onPress={() => setVerifyOpen(true)}
+                      accessibilityRole="button"
+                    >
+                      <Icon name="badge-check" size={14} color={ORANGE} />
+                      <Text style={{ color: themeColors.textPrimary, fontSize: 12, fontWeight: '700' }}>{verifStatus === 'rejected' ? 'Fix and resubmit' : 'Get verified'}</Text>
+                    </TouchableOpacity>
+                  </>
+                ))}
                 <TouchableOpacity
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12, borderWidth: 1, borderColor: themeColors.border, backgroundColor: themeColors.chipBg }}
                   onPress={() => navigation.navigate('MyQuotes')}
                 >
                   <Icon name="file-text" size={14} color={ORANGE} />
-                  <Text style={{ color: themeColors.textPrimary, fontSize: 12.5, fontWeight: '800' }}>View quote requests</Text>
+                  <Text style={{ color: themeColors.textPrimary, fontSize: 12, fontWeight: '700' }}>View quote requests</Text>
                 </TouchableOpacity>
               </View>
             )}
 
             {/* Contact Vendor */}
+            {!isInternal && (
             <TouchableOpacity style={styles.contactBtn} onPress={handleContactVendor}>
               <Icon name="message-square" size={16} color="#FFFFFF" />
               <Text style={styles.contactBtnText}>Message Vendor Booking Desk 💬</Text>
             </TouchableOpacity>
+            )}
+            </View>
           </View>
         </ScrollView>
       </TabletContainer>
@@ -406,14 +515,15 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
         </>
       )}
       {isOwner && vendor && (
-        <VendorVerificationModal visible={verifyOpen} onClose={() => setVerifyOpen(false)} vendorId={vendor.id} vendorName={vendor.business_name} onSubmitted={fetchVendorDetails} />
+        <VendorVerificationModal visible={verifyOpen} onClose={() => setVerifyOpen(false)} vendorId={vendor.id} vendorName={vendor.business_name} onSubmitted={() => { fetchVendorDetails(); loadVerifStatus(); }} />
       )}
 
       {/* Add Service Package Modal */}
       {vendorId && (
         <ServicePackageModal
-          visible={serviceModalVisible}
-          onClose={() => setServiceModalVisible(false)}
+          visible={serviceModalVisible || !!editingService}
+          service={editingService}
+          onClose={() => { setServiceModalVisible(false); setEditingService(null); }}
           vendorId={vendorId}
           onSuccess={fetchVendorDetails}
         />
@@ -441,14 +551,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 56,
   },
   headerIconBtn: {
     padding: 4,
   },
   mainImageContainer: {
     width: '100%',
-    height: 250,
+    height: isTabletDevice ? 400 : 250,
     backgroundColor: INK,
     position: 'relative',
   },
@@ -467,7 +577,7 @@ const styles = StyleSheet.create({
   bannerFallbackText: {
     color: INK,
     fontSize: 16,
-    fontWeight: '900',
+    fontWeight: '700',
     fontFamily: 'Lora-Bold',
   },
   verifiedBadgeBanner: {
@@ -484,8 +594,8 @@ const styles = StyleSheet.create({
   },
   verifiedBadgeBannerText: {
     color: '#FFFFFF',
-    fontSize: 9.5,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   thumbRow: {
     paddingHorizontal: 16,
@@ -493,8 +603,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   thumbBox: {
-    width: 60,
-    height: 60,
+    width: isTabletDevice ? 80 : 60,
+    height: isTabletDevice ? 80 : 60,
     borderRadius: 8,
     borderWidth: 2,
     borderColor: 'transparent',
@@ -510,9 +620,9 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#FFFFFF',
-    margin: 16,
+    margin: isTabletDevice ? 24 : 16,
     borderRadius: 20,
-    padding: 16,
+    padding: isTabletDevice ? 28 : 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
@@ -523,8 +633,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   logoWrapper: {
-    width: 52,
-    height: 52,
+    width: isTabletDevice ? 72 : 52,
+    height: isTabletDevice ? 72 : 52,
     borderRadius: 14,
     backgroundColor: '#FFF7F5',
     overflow: 'hidden',
@@ -543,13 +653,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF7F5',
   },
   logoFallbackText: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '700',
     color: ORANGE,
   },
   titleText: {
-    fontSize: 20,
-    fontWeight: '900',
+    fontSize: isTabletDevice ? 26 : 20,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
@@ -580,8 +690,8 @@ const styles = StyleSheet.create({
   },
   categoryPillText: {
     color: ORANGE,
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   ratingBox: {
     flexDirection: 'row',
@@ -591,10 +701,10 @@ const styles = StyleSheet.create({
   ratingNum: {
     color: '#D97706',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   ratingSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
   },
   verifiedTagPill: {
@@ -610,8 +720,8 @@ const styles = StyleSheet.create({
   },
   verifiedTagPillText: {
     color: '#059669',
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
   },
   contactInfoRow: {
     flexDirection: 'row',
@@ -625,7 +735,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   contactItemText: {
-    fontSize: 11.5,
+    fontSize: 12,
     color: INK,
     fontWeight: '700',
   },
@@ -635,15 +745,15 @@ const styles = StyleSheet.create({
     marginVertical: 14,
   },
   sectionHeading: {
-    fontSize: 15,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '700',
     color: INK,
     fontFamily: 'Lora-Bold',
   },
   descriptionParagraph: {
-    fontSize: 13.5,
+    fontSize: isTabletDevice ? 15 : 14,
     color: '#475569',
-    lineHeight: 20,
+    lineHeight: isTabletDevice ? 23 : 20,
     marginTop: 6,
   },
   servicesPillsRow: {
@@ -685,15 +795,15 @@ const styles = StyleSheet.create({
   },
   addPackageBtnText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   packageCardItem: {
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 14,
-    padding: 12,
+    padding: isTabletDevice ? 16 : 12,
     marginBottom: 10,
   },
   packageCardHeader: {
@@ -703,13 +813,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   packageTitle: {
-    fontSize: 14.5,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: INK,
   },
   packageDayRate: {
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
     color: ORANGE,
   },
   packageDesc: {
@@ -721,12 +831,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   packageArrowText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: ORANGE,
   },
   noPackagesText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#64748B',
     fontStyle: 'italic',
     marginVertical: 4,
@@ -743,8 +853,9 @@ const styles = StyleSheet.create({
   contactBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
+
 
 export default VendorDetailScreen;

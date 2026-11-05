@@ -47,6 +47,7 @@ supabase/.temp/
 *.aab
 
 # Google Services & Firebase Config
+.firebase/
 *google-services*.json
 *GoogleService-Info*.plist
 service_account*.json
@@ -90,3 +91,17 @@ apps/web/src/tests/performance/
 apps/mobile/android/build/
 apps/mobile/android/app/build/
 apps/mobile/android/.idea/
+
+# iOS build output (CocoaPods / Xcode). Podfile.lock IS committed.
+apps/mobile/ios/Pods/
+apps/mobile/ios/build/
+apps/mobile/ios/*.xcworkspace/xcuserdata/
+apps/mobile/ios/*.xcodeproj/xcuserdata/
+apps/mobile/ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+apps/mobile/ios/.xcode.env.local
+apps/mobile/ios/CineCraftConnect/main.jsbundle
+apps/mobile/ios/CineCraftConnect/main.jsbundle.map
+*.ipa
+*.xcarchive
+*.mobileprovision
+.xcode.env.local

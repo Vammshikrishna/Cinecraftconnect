@@ -72,7 +72,7 @@ export const ProjectShareCard = ({
     return (
         <Link
             to={`/projects/${targetProjectId}/space`}
-            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-black/10 dark:border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition duration-500 hover:-translate-y-1 active:scale-[0.98] no-underline group shadow-xl border border-black/10 dark:border-white/10"
         >
             <CornerBrackets />
             {/* Visual Header */}
@@ -96,54 +96,54 @@ export const ProjectShareCard = ({
                 )}
 
                 {status && (
-                    <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-black/10 dark:border-white/10 text-[8px] font-black uppercase tracking-widest text-white shadow-lg z-10">
+                    <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-black/10 dark:border-white/10 text-[12px] font-black uppercase tracking-widest text-white shadow-lg z-10">
                         {status}
                     </div>
                 )}
 
                 {genre && (
-                    <div className="absolute top-3 left-3 px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-md border border-black/10 dark:border-white/10 text-[8px] font-black uppercase tracking-widest text-white/90 z-10">
+                    <div className="absolute top-3 left-3 px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-md border border-black/10 dark:border-white/10 text-[12px] font-black uppercase tracking-widest text-white/90 z-10">
                         {genre}
                     </div>
                 )}
 
-                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary text-black text-[8px] font-black uppercase tracking-widest shadow-lg z-10">
+                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary text-black text-[12px] font-black uppercase tracking-widest shadow-lg z-10">
                     <Box size={10} fill="currentColor" />
                     Project Space
                 </div>
             </div>
 
             {/* Content Section */}
-            <div className="p-4 space-y-4 bg-white dark:bg-black/60 backdrop-blur-xl">
+            <div className="p-4 space-y-4 bg-white dark:bg-black/60">
                 <div className="space-y-1.5">
-                    <h4 className="text-[16px] font-black text-foreground leading-tight group-hover:text-primary transition-colors tracking-tighter uppercase truncate">
+                    <h4 className="text-base font-black text-foreground leading-tight group-hover:text-primary transition-colors tracking-tighter uppercase truncate">
                         {title || 'Loading Space...'}
                     </h4>
-                    <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground font-bold uppercase tracking-widest truncate">
+                    <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground font-bold uppercase tracking-widest truncate">
                         <MapPin size={10} className="text-primary/60 shrink-0" />
                         <span className="truncate">{location || 'Production Hub'}</span>
                     </div>
                 </div>
 
                 {description && (
-                    <p className="text-[10px] text-foreground/60 font-medium leading-relaxed line-clamp-2 italic border-y border-white/5 py-2 animate-in fade-in duration-700">
+                    <p className="text-[12px] text-foreground/60 font-medium leading-relaxed line-clamp-2 italic border-y border-foreground/5 py-2 animate-in fade-in duration-700">
                         {description}
                     </p>
                 )}
 
                 {/* Status Bar */}
                 <div className="flex items-center gap-3 justify-between px-1">
-                    <div className="flex items-center gap-1.5 text-[8px] font-black text-primary uppercase tracking-widest">
+                    <div className="flex items-center gap-1.5 text-[12px] font-black text-primary uppercase tracking-widest">
                         <Zap size={10} />
                         Active Space
                     </div>
-                    <div className="flex items-center gap-1.5 text-[8px] font-black text-muted-foreground uppercase tracking-widest">
+                    <div className="flex items-center gap-1.5 text-[12px] font-black text-muted-foreground uppercase tracking-widest">
                         <Clock size={10} />
                         Real-time
                     </div>
                 </div>
 
-                <div className="w-full py-2.5 bg-primary text-black text-center rounded-xl group-hover:bg-primary/90 transition-all text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
+                <div className="w-full py-2.5 bg-primary text-black text-center rounded-xl group-hover:bg-primary/90 transition text-[12px] font-black uppercase tracking-[0.15em] shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
                     <Box size={14} className="fill-black" />
                     Enter Project Space
                 </div>

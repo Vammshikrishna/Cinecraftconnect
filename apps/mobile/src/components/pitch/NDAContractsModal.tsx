@@ -77,12 +77,12 @@ export const NDAContractsModal: React.FC<NDAContractsModalProps> = ({
                 </Text>
               </View>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Icon name="x" size={20} color={themeColors.textSecondary} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon name="x" size={20} color={themeColors.iconSecondary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* Agreement Box */}
             <View
               style={[
@@ -190,6 +190,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     maxHeight: '88%',
     paddingBottom: 20,
+    maxWidth: 640,
+    width: '100%',
+    alignSelf: 'center',
   },
   handle: {
     width: 36,
@@ -225,7 +228,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   subtitle: {
@@ -246,14 +249,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   contractHeading: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
     letterSpacing: 0.6,
     marginBottom: 8,
   },
   contractText: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#334155',
     lineHeight: 19,
     marginBottom: 10,
@@ -265,7 +268,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   bold: {
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   sigSection: {
@@ -273,8 +276,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   sigLabel: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
     letterSpacing: 0.6,
     marginBottom: 6,
@@ -305,7 +308,7 @@ const styles = StyleSheet.create({
   signBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   signedReceipt: {
     backgroundColor: '#F0FDF4',
@@ -323,7 +326,7 @@ const styles = StyleSheet.create({
   },
   signedTitle: {
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#15803D',
   },
   receiptMeta: {
@@ -344,7 +347,7 @@ const styles = StyleSheet.create({
   closeDoneText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });
 

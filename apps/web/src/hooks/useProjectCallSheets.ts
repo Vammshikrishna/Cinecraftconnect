@@ -174,6 +174,31 @@ export const useProjectCallSheets = (projectId: string) => {
     onSuccess: () => toast({ title: 'Success', description: 'Call sheet deleted' }),
   });
 
+  // ── Update call sheet ─────────────────────────────────────────────
+  const updateCallSheet = useMutation({
+    mutationFn: async ({ id, ...changes }: NewCallSheet & { id: string }) => {
+      const { error } = await supabase.from('call_sheets' as any).update(changes).eq('id', id);
+      if (error) throw error;
+      return id;
+    },
+    onMutate: async ({ id, ...changes }) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<CallSheetEntry[]>(queryKey);
+      queryClient.setQueryData<CallSheetEntry[]>(queryKey, (prev = []) =>
+        prev.map((s) => (s.id === id ? { ...s, ...changes } : s))
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) queryClient.setQueryData(queryKey, context.previous);
+      toast({ title: 'Error', description: 'Could not save the changes', variant: 'destructive' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
+      toast({ title: 'Saved', description: 'Call sheet updated' });
+    },
+  });
+
   return {
     callSheets: query.data ?? [],
     isLoading: query.isLoading,
@@ -181,5 +206,6 @@ export const useProjectCallSheets = (projectId: string) => {
     error: query.error,
     createCallSheet,
     deleteCallSheet,
+    updateCallSheet,
   };
 };

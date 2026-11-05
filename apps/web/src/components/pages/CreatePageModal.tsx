@@ -12,6 +12,9 @@ import { PAGE_INDUSTRIES, COMPANY_SIZES } from '@/types/companyPages';
 import { supabase } from '@/integrations/supabase/client';
 import { STORAGE_BUCKETS, buildUserFilePath } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDiscardGuard } from '@/hooks/useUnsavedChanges';
+import { useToast } from '@/hooks/use-toast';
+import { pageDetailsProblem } from '@/lib/pageDetails';
 
 interface CreatePageModalProps {
   open: boolean;
@@ -20,6 +23,7 @@ interface CreatePageModalProps {
 }
 
 export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageModalProps) {
+  const guardDiscard = useDiscardGuard(open, onOpenChange);
   const { user } = useAuth();
   const createPage = useCreateCompanyPage();
 
@@ -103,8 +107,14 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
     }
   };
 
+  const { toast } = useToast();
   const handleSubmit = async () => {
     if (!name.trim()) return;
+    const problem = pageDetailsProblem({ foundedYear, website, email, phone });
+    if (problem) {
+      toast({ title: 'Check the page details', description: problem, variant: 'destructive' });
+      return;
+    }
     const logoUrl = await uploadLogo();
     await createPage.mutateAsync({
       name: name.trim(),
@@ -126,7 +136,7 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={guardDiscard}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card text-card-foreground border-border">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
@@ -143,7 +153,7 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
                 {logoPreview ? (
                   <div className="relative w-24 h-24">
                     <img loading="lazy" decoding="async" src={logoPreview} alt="Logo" className="w-full h-full object-cover rounded-xl border-2 border-border" />
-                    <button
+                    <button aria-label="Close"
                       onClick={() => { setLogo(null); setLogoPreview(''); }}
                       className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5 hover:bg-destructive/90 transition-colors"
                     >
@@ -151,9 +161,9 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
                     </button>
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all">
+                  <label className="flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition">
                     <Building2 size={28} className="text-muted-foreground mb-1" />
-                    <span className="text-[10px] text-muted-foreground">Add Logo</span>
+                    <span className="text-[12px] text-muted-foreground">Add Logo</span>
                     <input type="file" className="hidden" accept="image/*" onChange={handleLogoSelect} />
                   </label>
                 )}
@@ -204,7 +214,7 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
                     key={ind}
                     type="button"
                     onClick={() => toggleIndustry(ind)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
                       selectedIndustries.includes(ind)
                         ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'bg-muted text-muted-foreground hover:bg-muted/80'
@@ -328,7 +338,7 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
                   placeholder="e.g., Feature Films (press Enter)"
                   className="bg-muted/50 border-border"
                 />
-                <Button type="button" variant="outline" size="icon" onClick={addSpecialty}>
+                <Button aria-label="Add" type="button" variant="outline" size="icon" onClick={addSpecialty}>
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
@@ -337,7 +347,7 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
                   {specialties.map((s, i) => (
                     <Badge key={i} variant="secondary" className="gap-1 pr-1">
                       {s}
-                      <button onClick={() => setSpecialties(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-destructive">
+                      <button aria-label="Close" onClick={() => setSpecialties(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-destructive">
                         <X size={12} />
                       </button>
                     </Badge>

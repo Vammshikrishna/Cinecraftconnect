@@ -1,6 +1,7 @@
 import { mutationQueue } from './mutationQueue';
 import { supabase } from '@/integrations/supabase/client';
 import { queryClient } from '@/lib/queryClient';
+import { mediaColumns } from '@cinecraft/core';
 
 /**
  * Global Registry for all Offline Mutation execution logic.
@@ -105,16 +106,19 @@ export const registerAllMutationHandlers = () => {
   // ==========================================
   // POST CREATION
   // ==========================================
-  mutationQueue.registerHandler('CREATE_POST', async (payload: { userId: string, content: string, tempId: string, mediaItems?: any[], tags?: string[], pageId?: string | null }) => {
+  mutationQueue.registerHandler('CREATE_POST', async (payload: { userId: string, content: string, tempId: string, mediaItems?: any[], tags?: string[], pageId?: string | null, category?: string | null, audience?: string | null }) => {
+    // the media columns come only from real media (a details-only item has no url)
+    const cols = mediaColumns((payload.mediaItems || []) as any[]);
     const { error } = await supabase.from('posts').insert({
       author_id: payload.userId,
       content: payload.content,
       page_id: payload.pageId || null,
-      media_url: payload.mediaItems && payload.mediaItems.length > 0 ? payload.mediaItems[0].url : null,
-      media_type: payload.mediaItems && payload.mediaItems.length > 0 ? payload.mediaItems[0].type : null,
-      media_items: (payload.mediaItems as any) || null,
-      tags: payload.tags || []
-    });
+      ...cols,
+      media_items: ((payload.mediaItems as any) || []),
+      tags: payload.tags || [],
+      category: payload.category || null,
+      audience: payload.audience || 'public',
+    } as any);
     if (error) throw error;
   });
   mutationQueue.registerHandler('MARK_NOTIFICATION_READ', async (payload: { notificationId: string }) => {

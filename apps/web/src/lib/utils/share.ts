@@ -33,6 +33,18 @@ export function getAppOrigin(): string {
   return window.location.origin;
 }
 
+/**
+ * Returns the link only when it is a web address (http/https), otherwise an empty string.
+ * Control characters are removed first, so "java<TAB>script:" tricks do not slip through.
+ */
 export function sanitizeUrl(url: string): string {
-  return url;
+  if (typeof url !== 'string') return '';
+  const cleaned = url.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if (!cleaned) return '';
+  try {
+    const u = new URL(cleaned);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? cleaned : '';
+  } catch {
+    return '';
+  }
 }

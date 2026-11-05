@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { AlertCircle, WifiOff, ArrowRight, Eye, EyeOff } from 'lucide-react';
@@ -8,11 +8,19 @@ import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useT, setLanguage } from '@/hooks/useT';
+import { LANGUAGES } from '@cinecraft/core';
+import { pathFromLocationState } from '@/components/routeGuardHelpers';
+import { SAVED_SESSION_EXPIRED_PARAM, savedSessionExpiredMessage } from '@/lib/auth/savedSessionExpired';
+import { safeRedirectPath } from '@/lib/auth/safeRedirect';
 
 /* ─── Design Tokens ─────────────────────────── */
 const CREAM  = '#F8F5F0';
 const INK    = '#0D0D0D';
-const ORANGE = '#f97316';
+const ORANGE = '#FF4B33';
+const ORANGE_INK = '#C4301B';
+const MUTED = '#555555';
+const FAINT = '#6B6B6B';
 const SERIF  = "'Lora', Georgia, serif";
 const MONO   = "'Inconsolata', 'Courier New', monospace";
 const SANS   = "'Work Sans', system-ui, sans-serif";
@@ -22,59 +30,65 @@ const loginSchema = z.object({
   email: z.string().trim().email('Please enter a valid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
+// AUTH-F-01: sign-up uses the same minimum (8) as change-password. Sign-in keeps 6 so accounts created
+// earlier with a 6-character password can still log in.
 const signUpSchema = z.object({
   email: z.string().trim().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
-/* ─── Slug eyebrow ──────────────────────────── */
-const Slug = ({ text }: { text: string }) => (
-  <div style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.35)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-    <span style={{ width: 6, height: 6, borderRadius: '50%', background: ORANGE, display: 'inline-block' }} />
-    {text}
-  </div>
-);
-
 /* ─── Input field ───────────────────────────── */
+const FIELD_BORDER = '#919190';
 const Field = ({
-  type, placeholder, value, onChange, disabled, error,
-}: { type: string; placeholder: string; value: string; onChange: (v: string) => void; disabled?: boolean; error?: string }) => {
+  type, placeholder, value, onChange, disabled, error, newPassword,
+}: { type: string; placeholder: string; value: string; onChange: (v: string) => void; disabled?: boolean; error?: string; newPassword?: boolean }) => {
   const [showPassword, setShowPassword] = useState(false);
+  const id = useId();
   const isPassword = type === 'password';
   const inputType = isPassword ? (showPassword ? 'text' : 'password') : type;
 
   return (
-    <div style={{ marginBottom: 4, position: 'relative' }}>
+    <div style={{ position: 'relative' }}>
+      <label htmlFor={id} style={{ display: 'block', fontSize: 14, fontWeight: 600, color: INK, marginBottom: 6 }}>{placeholder}</label>
+      <div style={{ position: 'relative' }}>
       <input
+        id={id}
         type={inputType}
-        placeholder={placeholder}
+        placeholder={isPassword ? '' : 'name@example.com'}
         value={value}
         onChange={e => onChange(e.target.value)}
         disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? id + '-error' : undefined}
+        autoCapitalize={type === 'email' || isPassword ? 'none' : undefined}
+        autoCorrect="off"
+        spellCheck={false}
+        autoComplete={type === 'email' ? 'email' : isPassword ? (newPassword ? 'new-password' : 'current-password') : undefined}
+        inputMode={type === 'email' ? 'email' : undefined}
         style={{
-          fontFamily: MONO, width: '100%', background: 'transparent', border: 'none',
-          borderBottom: `1px solid ${error ? '#ef4444' : 'rgba(13,13,13,0.18)'}`,
-          padding: '12px 0', fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase',
-          color: INK, outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box',
-          paddingRight: isPassword ? '40px' : '0'
+          fontFamily: SANS, width: '100%', background: '#FFFFFF', border: `1px solid ${error ? '#B42318' : FIELD_BORDER}`, borderRadius: 10,
+          padding: '12px 14px', fontSize: 16, color: INK, outline: 'none', transition: 'border-color 0.2s, box-shadow 0.2s', boxSizing: 'border-box',
+          paddingRight: isPassword ? '44px' : '14px',
         }}
-        onFocus={e => { if (!error) e.currentTarget.style.borderBottomColor = ORANGE; }}
-        onBlur={e => { if (!error) e.currentTarget.style.borderBottomColor = 'rgba(13,13,13,0.18)'; }}
+        onFocus={e => { if (!error) { e.currentTarget.style.borderColor = ORANGE_INK; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255,75,51,0.18)'; } }}
+        onBlur={e => { if (!error) { e.currentTarget.style.borderColor = FIELD_BORDER; e.currentTarget.style.boxShadow = 'none'; } }}
       />
       {isPassword && (
         <button
           type="button"
           onClick={() => setShowPassword(!showPassword)}
+          aria-label={showPassword ? 'Hide password' : 'Show password'}
           style={{
-            position: 'absolute', right: 0, top: '10px',
-            background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(13,13,13,0.4)',
-            padding: '4px'
+            position: 'absolute', right: 0, top: 0, width: 44, height: '100%', minHeight: 44, display: 'grid', placeItems: 'center',
+            background: 'none', border: 'none', cursor: 'pointer', color: MUTED,
+            padding: 0
           }}
         >
           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       )}
-      {error && <p style={{ fontFamily: MONO, fontSize: 10, color: '#ef4444', marginTop: 6, fontWeight: 700, letterSpacing: '0.1em' }}>{error}</p>}
+      </div>
+      {error && <p id={id + '-error'} role="alert" style={{ fontSize: 13, color: '#B42318', marginTop: 6 }}>{error}</p>}
     </div>
   );
 };
@@ -100,9 +114,9 @@ const AppleIcon = () => (
 /* ─── Divider ───────────────────────────────── */
 const Divider = ({ label }: { label: string }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0' }}>
-    <div style={{ flex: 1, height: 1, background: 'rgba(13,13,13,0.1)' }} />
-    <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.35)' }}>{label}</span>
-    <div style={{ flex: 1, height: 1, background: 'rgba(13,13,13,0.1)' }} />
+    <div style={{ flex: 1, height: 1, background: '#E5E5E3' }} />
+    <span style={{ fontSize: 13, color: FAINT }}>{label}</span>
+    <div style={{ flex: 1, height: 1, background: '#E5E5E3' }} />
   </div>
 );
 
@@ -118,6 +132,7 @@ const Auth = () => {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const { signIn, signUp, signInWithProvider, user } = useAuth();
+  const { t, lang } = useT();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -127,8 +142,10 @@ const Auth = () => {
   useEffect(() => {
     if (user) {
       const queryParams = new URLSearchParams(location.search);
-      const redirectUrl = queryParams.get('redirect') || (location.state as any)?.from?.pathname;
-      push(redirectUrl ? decodeURIComponent(redirectUrl) : '/feed', { noScroll: true });
+      // a failed account switch lands here on purpose: stay and show the message instead of bouncing to the feed
+      if (queryParams.get('error') === SAVED_SESSION_EXPIRED_PARAM) return;
+      const redirectUrl = safeRedirectPath(queryParams.get('redirect')) || pathFromLocationState((location.state as any)?.from);
+      push(redirectUrl || '/feed', { noScroll: true });
     }
   }, [user]);
 
@@ -147,8 +164,9 @@ const Auth = () => {
     const prevUserId = queryParams.get('previous_user_id');
     if (emailParam) setFormData(prev => ({ ...prev, email: decodeURIComponent(emailParam) }));
     if (errorParam === 'session_expired') setErrors(prev => ({ ...prev, form: 'Your session has expired. Please sign in again.' }));
+    if (errorParam === SAVED_SESSION_EXPIRED_PARAM) setErrors(prev => ({ ...prev, form: savedSessionExpiredMessage(emailParam ? decodeURIComponent(emailParam) : null) }));
     try {
-      const saved = localStorage.getItem('cinecraft_saved_accounts');
+      const saved = localStorage.getItem('cc_saved_accounts');
       if (saved) {
         const accounts = JSON.parse(saved);
         const targetAcc = accounts.find((a: any) => a.userId === prevUserId) || accounts[0];
@@ -175,8 +193,8 @@ const Auth = () => {
     setErrors({});
     try {
       const { error } = action === 'signIn'
-        ? await signIn(formData.email, formData.password)
-        : await signUp(formData.email, formData.password);
+        ? await signIn(formData.email.trim(), formData.password)
+        : await signUp(formData.email.trim(), formData.password);
       if (error) {
         if (action === 'signIn') {
           const newAttempts = failedAttempts + 1;
@@ -197,8 +215,8 @@ const Auth = () => {
         if (action === 'signIn') {
           toast({ title: 'Welcome back!', description: 'You have successfully signed in.' });
           const queryParams = new URLSearchParams(location.search);
-          const redirectUrl = queryParams.get('redirect') || (location.state as any)?.from?.pathname;
-          if (redirectUrl) { push(decodeURIComponent(redirectUrl), { noScroll: true }); return; }
+      const redirectUrl = safeRedirectPath(queryParams.get('redirect')) || pathFromLocationState((location.state as any)?.from);
+          if (redirectUrl) { push(redirectUrl, { noScroll: true }); return; }
           try {
             const { data: userData } = await supabase.auth.getUser();
             if (userData.user) {
@@ -207,6 +225,7 @@ const Auth = () => {
               if (roleStr === 'super_admin') { push('/super-admin', { noScroll: true }); return; }
               else if (roleStr === 'admin') { push('/admin', { noScroll: true }); return; }
               else if (roleStr === 'moderator') { push('/moderation', { noScroll: true }); return; }
+              else if (roleStr === 'finance') { push('/finance', { noScroll: true }); return; }
             }
           } catch (e) { console.error('Error checking role after sign in', e); }
           push('/feed', { noScroll: true });
@@ -242,28 +261,20 @@ const Auth = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 min-h-screen" style={{ background: CREAM, color: INK, fontFamily: SANS }}>
+    <div className="grid grid-cols-1 lg:grid-cols-2 min-h-dvh" style={{ background: '#FFFFFF', color: INK, fontFamily: SANS }}>
 
       {/* ── LEFT BRAND PANEL ────────────────── */}
       <div
-        className="hidden md:flex flex-col justify-between p-16 relative overflow-hidden"
+        className="hidden lg:flex flex-col justify-between p-16 relative overflow-hidden"
         style={{ background: INK, color: CREAM }}
       >
-        {/* Dot grid texture */}
-        <div style={{ position: 'absolute', inset: 0, opacity: 0.03, pointerEvents: 'none', backgroundImage: `radial-gradient(#F8F5F0 1px, transparent 0)`, backgroundSize: '28px 28px' }} />
-        {/* Orange corner accent */}
-        <div style={{ position: 'absolute', top: 0, left: 0, width: 4, height: '40%', background: ORANGE }} />
-
         <div style={{ position: 'relative', zIndex: 1 }}>
           <AppLogo size="lg" to="/" textColor="cream" />
         </div>
 
         <div style={{ position: 'relative', zIndex: 1, maxWidth: 340 }}>
-          <div style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.25em', textTransform: 'uppercase', color: ORANGE, marginBottom: 20 }}>
-            [ The Entertainment Industry Network ]
-          </div>
-          <h2 style={{ fontFamily: SERIF, fontSize: 32, fontWeight: 300, lineHeight: 1.35, color: CREAM }}>
-            One platform for every creator in the industry — films, TV, YouTube, ads, music, and more.
+          <h2 style={{ fontFamily: SERIF, fontSize: 34, fontWeight: 500, lineHeight: 1.3, color: '#FFFFFF' }}>
+            One platform for every creator in the industry: films, TV, YouTube, ads, music and more.
           </h2>
           <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 12 }}>
             {[
@@ -272,7 +283,7 @@ const Auth = () => {
               'Job board spanning every entertainment format',
               'Verified equipment marketplace',
             ].map((item, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'rgba(248,245,240,0.6)' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, color: 'rgba(255,255,255,0.78)' }}>
                 <span style={{ width: 4, height: 4, borderRadius: '50%', background: ORANGE, flexShrink: 0 }} />
                 {item}
               </div>
@@ -280,54 +291,79 @@ const Auth = () => {
           </div>
         </div>
 
-        <div style={{ position: 'relative', zIndex: 1, fontFamily: MONO, fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(248,245,240,0.2)' }}>
-          © CineCraft Connect 2026 — All Pipelines Secured
+        <div style={{ position: 'relative', zIndex: 1, fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+          © 2026 CineCraft Connect
         </div>
       </div>
 
       {/* ── RIGHT FORM PANEL ────────────────── */}
-      <div className="flex flex-col justify-center p-6 md:p-16 overflow-y-auto" style={{ background: CREAM }}>
+      <style>{`
+        .auth-btn { transition: border-color 160ms, background-color 160ms, transform 160ms cubic-bezier(.23,1,.32,1); }
+        .auth-btn:active:not(:disabled) { transform: scale(.98); }
+        @media (hover: hover) and (pointer: fine) {
+          .auth-google:hover:not(:disabled) { border-color: #111111 !important; }
+          .auth-apple:hover:not(:disabled) { background-color: #1a1a1a !important; }
+          .auth-submit:hover:not(:disabled) { background-color: ${ORANGE_INK} !important; }
+          .auth-home:hover { color: ${INK} !important; }
+        }
+        @media (pointer: coarse) { .auth-lang { font-size: 16px !important; min-height: 44px !important; } }
+        .auth-link { display: inline-block; padding: 10px 6px; }
+      `}</style>
+      <div className="flex flex-col justify-center p-6 md:p-10 lg:p-16 overflow-y-auto" style={{ background: '#FFFFFF' }}>
         <div style={{ maxWidth: 400, width: '100%', margin: '0 auto' }}>
 
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <label style={{ fontSize: 13, color: MUTED, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="sr-only">Language</span>
+              <select
+                value={lang}
+                onChange={(e) => setLanguage(e.target.value)}
+                style={{ fontSize: 13, color: INK, background: 'transparent', border: '1px solid rgba(13,13,13,0.15)', borderRadius: 8, padding: '6px 8px', minHeight: 36 }}
+                className="auth-lang"
+              >
+                {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+              </select>
+            </label>
+          </div>
+
           {/* Mobile logo */}
-          <div className="md:hidden" style={{ marginBottom: 40 }}>
+          <div className="lg:hidden" style={{ marginBottom: 40 }}>
             <AppLogo size="sm" to="/" textColor="ink" />
           </div>
 
-          <Slug text={isLogin ? 'INT. Stage Gate — Sign In' : 'INT. Crew Entry — Create Account'} />
-          <h1 style={{ fontFamily: SERIF, fontSize: 36, fontWeight: 300, color: INK, marginBottom: 8 }}>
-            {isLogin ? 'Welcome back.' : 'Join the network.'}
+          <h1 style={{ fontFamily: SERIF, fontSize: 40, fontWeight: 500, color: INK, marginBottom: 8, letterSpacing: '-0.01em' }}>
+            {isLogin ? 'Welcome back' : 'Join the network'}
           </h1>
-          <p style={{ fontFamily: MONO, fontSize: 11, color: 'rgba(13,13,13,0.45)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 32 }}>
+          <p style={{ fontSize: 16, color: MUTED, marginBottom: 32 }}>
             {isLogin ? 'Sign in to your account' : 'Create your free account'}
           </p>
 
           {/* Offline warning */}
           {!isOnline && (
-            <div style={{ border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.05)', padding: '12px 16px', marginBottom: 24, display: 'flex', gap: 10, alignItems: 'center', borderRadius: 2 }}>
+            <div style={{ border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.05)', padding: '12px 16px', marginBottom: 24, display: 'flex', gap: 10, alignItems: 'center', borderRadius: 10 }}>
               <WifiOff size={14} style={{ color: '#b45309', flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: '#b45309' }}>Offline — authentication is disabled until network is restored.</span>
+              <span style={{ fontSize: 14, color: '#92400E' }}>You are offline. Sign-in is paused until your connection is back.</span>
             </div>
           )}
 
           {/* Form error */}
           {errors.form && (
-            <div style={{ border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.04)', padding: '12px 16px', marginBottom: 24, display: 'flex', gap: 10, alignItems: 'flex-start', borderRadius: 2 }}>
-              <AlertCircle size={14} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
-              <span style={{ fontSize: 12, color: '#ef4444' }}>{errors.form}</span>
+            <div style={{ border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.04)', padding: '12px 16px', marginBottom: 24, display: 'flex', gap: 10, alignItems: 'flex-start', borderRadius: 10 }} role="alert">
+              <AlertCircle size={14} style={{ color: '#B42318', flexShrink: 0, marginTop: 3 }} />
+              <span style={{ fontSize: 14, color: '#B42318' }}>{errors.form}</span>
             </div>
           )}
 
           {/* Returning user */}
           {previousEmail && (
-            <div style={{ border: '1px solid rgba(13,13,13,0.1)', background: 'rgba(13,13,13,0.03)', padding: '12px 16px', marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: 2 }}>
+            <div style={{ border: '1px solid rgba(13,13,13,0.1)', background: 'rgba(13,13,13,0.03)', padding: '12px 16px', marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: 10 }}>
               <div>
-                <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.4)', marginBottom: 2 }}>Returning User</div>
+                <div style={{ fontSize: 12, color: FAINT, marginBottom: 2 }}>Returning user</div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: INK }}>{previousUsername || previousEmail}</div>
               </div>
               <button type="button" onClick={() => handleInputChange('email', previousEmail)}
-                style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase', color: ORANGE, background: 'none', border: 'none', cursor: 'pointer' }}>
-                Auto Fill
+                style={{ fontSize: 14, fontWeight: 600, color: ORANGE_INK, background: 'none', border: 'none', cursor: 'pointer', padding: '10px 8px' }}>
+                Use this email
               </button>
             </div>
           )}
@@ -337,17 +373,16 @@ const Auth = () => {
             {/* Google */}
             <button
               type="button"
+              className="auth-btn auth-google"
               disabled={!isOnline || oauthLoading !== null}
               onClick={() => handleOAuth('google')}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-                padding: '13px 20px', border: '1px solid rgba(13,13,13,0.18)', background: '#fff',
+                padding: '14px 20px', border: '1px solid #919190', background: '#fff',
                 cursor: !isOnline || oauthLoading !== null ? 'not-allowed' : 'pointer',
-                fontFamily: SANS, fontSize: 13, fontWeight: 600, color: '#3c4043', borderRadius: 2,
-                transition: 'all 0.2s', opacity: !isOnline ? 0.5 : 1,
+                fontFamily: SANS, fontSize: 15, fontWeight: 600, color: '#3c4043', borderRadius: 10,
+                opacity: !isOnline ? 0.5 : 1,
               }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(13,13,13,0.35)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(13,13,13,0.18)'; }}
             >
               <GoogleIcon />
               {oauthLoading === 'google' ? 'Connecting...' : `Continue with Google`}
@@ -356,17 +391,16 @@ const Auth = () => {
             {/* Apple */}
             <button
               type="button"
+              className="auth-btn auth-apple"
               disabled={!isOnline || oauthLoading !== null}
               onClick={() => handleOAuth('apple')}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-                padding: '13px 20px', border: '1px solid rgba(13,13,13,0.18)', background: INK,
+                padding: '14px 20px', border: '1px solid #111111', background: INK,
                 cursor: !isOnline || oauthLoading !== null ? 'not-allowed' : 'pointer',
-                fontFamily: SANS, fontSize: 13, fontWeight: 600, color: '#ffffff', borderRadius: 2,
-                transition: 'all 0.2s', opacity: !isOnline ? 0.5 : 1,
+                fontFamily: SANS, fontSize: 15, fontWeight: 600, color: '#ffffff', borderRadius: 10,
+                opacity: !isOnline ? 0.5 : 1,
               }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#1a1a1a'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = INK; }}
             >
               <AppleIcon />
               {oauthLoading === 'apple' ? 'Connecting...' : `Continue with Apple`}
@@ -378,30 +412,30 @@ const Auth = () => {
           {/* ── Email/Password Form ────────────── */}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <Field
-              type="email" placeholder="Email address"
+              type="email" placeholder={t('auth.email')}
               value={formData.email} onChange={v => handleInputChange('email', v)}
               disabled={isLoading || !isOnline} error={errors.email}
             />
             <Field
-              type="password" placeholder="Password"
+              type="password" placeholder={t('auth.password')}
               value={formData.password} onChange={v => handleInputChange('password', v)}
-              disabled={isLoading || !isOnline} error={errors.password}
+              disabled={isLoading || !isOnline} error={errors.password} newPassword={!isLogin}
             />
 
             <button
               type="submit"
+              className="auth-btn auth-submit"
               disabled={isLoading || !isOnline}
               style={{
                 width: '100%', padding: '14px 20px', background: isLoading ? 'rgba(13,13,13,0.5)' : INK,
-                color: CREAM, border: 'none', fontFamily: SANS, fontSize: 13, fontWeight: 700,
-                letterSpacing: '0.08em', textTransform: 'uppercase', cursor: isLoading || !isOnline ? 'not-allowed' : 'pointer',
+                color: '#FFFFFF', border: 'none', fontFamily: SANS, fontSize: 15, fontWeight: 600,
+                cursor: isLoading || !isOnline ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                transition: 'background 0.25s', borderRadius: 2,
+                borderRadius: 10, opacity: !isOnline && !isLoading ? 0.5 : 1,
               }}
-              onMouseEnter={e => { if (!isLoading && isOnline) (e.currentTarget as HTMLButtonElement).style.background = ORANGE; }}
-              onMouseLeave={e => { if (!isLoading && isOnline) (e.currentTarget as HTMLButtonElement).style.background = INK; }}
             >
-              {isLoading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
+              {isLoading && <span aria-hidden="true" className="animate-spin" style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', display: 'inline-block' }} />}
+              {isLoading ? t('common.loading') + '…' : isLogin ? t('auth.signIn') : t('auth.signUp')}
               {!isLoading && <ArrowRight size={14} />}
             </button>
           </form>
@@ -412,29 +446,24 @@ const Auth = () => {
               type="button"
               onClick={() => { setIsLogin(!isLogin); setErrors({}); }}
               disabled={isLoading}
-              style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.45)', background: 'none', border: 'none', cursor: 'pointer', transition: 'color 0.2s' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = ORANGE; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'rgba(13,13,13,0.45)'; }}
+              style={{ fontSize: 15, fontWeight: 600, color: INK, textDecoration: 'underline', textUnderlineOffset: 4, textDecorationColor: '#CFCFCB', background: 'none', border: 'none', cursor: 'pointer', padding: '12px 8px' }}
             >
-              {isLogin ? '→ Create a new account' : '← Back to sign in'}
+              {isLogin ? 'Create a new account' : 'Back to sign in'}
             </button>
           </div>
 
           {/* Terms note */}
-          <p style={{ marginTop: 28, fontSize: 11, color: 'rgba(13,13,13,0.35)', lineHeight: 1.6, textAlign: 'center' }}>
+          <p style={{ marginTop: 28, fontSize: 13, color: FAINT, lineHeight: 1.6, textAlign: 'center' }}>
             By continuing, you agree to CineCraft Connect's{' '}
-            <Link to="/terms" style={{ color: 'rgba(13,13,13,0.6)', textDecoration: 'underline' }}>Terms of Service</Link>
+            <Link to="/terms" className="auth-link" style={{ color: INK, textDecoration: 'underline', padding: '10px 2px' }}>Terms of Service</Link>
             {' '}and{' '}
-            <Link to="/privacy" style={{ color: 'rgba(13,13,13,0.6)', textDecoration: 'underline' }}>Privacy Policy</Link>.
+            <Link to="/privacy" className="auth-link" style={{ color: INK, textDecoration: 'underline', padding: '10px 2px' }}>Privacy Policy</Link>.
           </p>
 
           {/* Back to landing */}
-          <div style={{ marginTop: 32, textAlign: 'center', paddingTop: 24, borderTop: '1px solid rgba(13,13,13,0.08)' }}>
-            <Link to="/" style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.35)', textDecoration: 'none', transition: 'color 0.2s' }}
-              onMouseEnter={e => (e.currentTarget.style.color = ORANGE)}
-              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(13,13,13,0.35)')}
-            >
-              ← Return to Home
+          <div style={{ marginTop: 32, textAlign: 'center', paddingTop: 24, borderTop: '1px solid #E5E5E3' }}>
+            <Link to="/" className="auth-home" style={{ fontSize: 14, color: MUTED, textDecoration: 'none', transition: 'color 160ms', display: 'inline-block', padding: '10px 8px' }}>
+              Back to home
             </Link>
           </div>
         </div>

@@ -6,10 +6,15 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
+  Share,
 } from 'react-native';
 import { Icon } from '../common/Icon';
 import { useUserSettings } from '../../hooks/useUserSettings';
+import { useResponsive } from '../../hooks/useResponsive';
 import { getSupabaseClient } from '@cinecraft/api';
+import { canEditPitch, canWithdrawPitch, withdrawPitchSubmission, friendlyError } from '@cinecraft/core';
+import { fetchNdaRecord, buildNdaRecordText } from '@cinecraft/core';
 
 const ORANGE = '#FF4B33';
 const INK = '#0D0D0D';
@@ -24,10 +29,13 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
   invite_to_discuss: { bg: '#E0F2FE', text: '#0284C7', label: 'Invited to Discuss' },
   passed: { bg: '#F1F5F9', text: '#64748B', label: 'Passed' },
   collaborating: { bg: '#DCFCE7', text: '#15803D', label: 'Collaborating' },
+  withdrawn: { bg: '#F1F5F9', text: '#64748B', label: 'Withdrawn' },
 };
 
 export const WriterPitchTracker: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { themeColors, isDark } = useUserSettings();
+  const { isTablet, isLandscape } = useResponsive();
+  const gridCols = isTablet ? (isLandscape ? 3 : 2) : 1;
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +85,39 @@ export const WriterPitchTracker: React.FC<{ navigation: any }> = ({ navigation }
     };
   }, [fetchMySubmissions]);
 
-  const renderItem = ({ item }: { item: any }) => {
+  const confirmWithdraw = (id: string) => {
+    Alert.alert('Withdraw this pitch?', 'The producer will no longer be able to open it. You can pitch to the call again later if it is still open.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Withdraw',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await withdrawPitchSubmission(getSupabaseClient(), id);
+            fetchMySubmissions();
+          } catch (e: any) {
+            Alert.alert('Could not withdraw', friendlyError(e, 'Please try again.'));
+          }
+        },
+      },
+    ]);
+  };
+
+  const shareNdaRecord = async (id: string) => {
+    try {
+      const rec = await fetchNdaRecord(getSupabaseClient(), id);
+      if (!rec) { Alert.alert('No NDA record available'); return; }
+      await Share.share({ title: 'NDA record', message: buildNdaRecordText(rec) });
+    } catch { Alert.alert('Could not build the NDA record'); }
+  };
+
+  const renderItem = (info: { item: any }) => {
+    const card = renderItemInner(info);
+    if (gridCols === 1) return card;
+    return <View style={{ flex: 1, maxWidth: `${100 / gridCols}%`, paddingHorizontal: 6 }}>{card}</View>;
+  };
+
+  const renderItemInner = ({ item }: { item: any }) => {
     const status = STATUS_COLORS[item.status || 'submitted'] || {
       bg: '#F1F5F9',
       text: '#64748B',
@@ -114,6 +154,44 @@ export const WriterPitchTracker: React.FC<{ navigation: any }> = ({ navigation }
           "{item.logline}"
         </Text>
 
+        {!!item.feedback && (
+          <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: '#FFF1EE', borderWidth: 1, borderColor: '#FFD9D1' }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: ORANGE, marginBottom: 3 }}>MESSAGE FROM THE PRODUCER</Text>
+            <Text style={{ fontSize: 13, color: INK }}>{item.feedback}</Text>
+          </View>
+        )}
+
+        {(canEditPitch(item.status) || canWithdrawPitch(item.status) || !!item.nda_signature) && (
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+            {!!item.nda_signature && (
+              <TouchableOpacity accessibilityRole="button" style={{ minHeight: 40, paddingHorizontal: 14, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }} onPress={() => shareNdaRecord(item.id)}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: themeColors.textSecondary }}>NDA record</Text>
+              </TouchableOpacity>
+            )}
+            {canEditPitch(item.status) && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Edit this pitch"
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: themeColors.border }}
+                onPress={() => navigation.navigate('SubmitPitch', { pitchId: item.pitch_call_id, pitchTitle: item.pitch_calls?.title, editSubmissionId: item.id })}
+              >
+                <Icon name="edit" size={14} color={themeColors.textPrimary} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: themeColors.textPrimary }}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            {canWithdrawPitch(item.status) && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Withdraw this pitch"
+                style={{ minHeight: 40, paddingHorizontal: 14, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }}
+                onPress={() => confirmWithdraw(item.id)}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: themeColors.textSecondary }}>Withdraw</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         <View style={[styles.footer, { borderTopColor: themeColors.divider }]}>
           <Text style={[styles.dateText, { color: themeColors.textMuted }]}>
             Submitted {new Date(item.submitted_at || item.created_at).toLocaleDateString()}
@@ -140,13 +218,16 @@ export const WriterPitchTracker: React.FC<{ navigation: any }> = ({ navigation }
   return (
     <View style={[styles.container, { backgroundColor: themeColors.bgScreen }]}>
       <FlatList
+        key={`pitch-list-${gridCols}`}
+        numColumns={gridCols}
+        showsVerticalScrollIndicator={false}
         data={submissions}
         renderItem={renderItem}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Icon name="file-text" size={40} color={themeColors.textMuted} />
+            <Icon name="file-text" size={40} color={themeColors.iconMuted} />
             <Text style={[styles.emptyTitle, { color: themeColors.textPrimary }]}>No Pitch Submissions Yet</Text>
             <Text style={[styles.emptySub, { color: themeColors.textSecondary }]}>
               Discover open pitch calls and submit your screenplays & Treatments directly to studio executives.
@@ -168,7 +249,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 14,
-    paddingBottom: 24,
+    paddingBottom: 40,
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -188,7 +269,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   statusBadge: {
@@ -197,8 +278,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   statusBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   callTitle: {
     fontSize: 12,
@@ -220,8 +301,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   directPitchText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#D97706',
   },
   logline: {
@@ -240,7 +321,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   dateText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
   },
   actionPill: {
@@ -254,8 +335,8 @@ const styles = StyleSheet.create({
   },
   actionPillText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '700',
   },
   emptyState: {
     alignItems: 'center',
@@ -264,7 +345,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: INK,
   },
   emptySub: {

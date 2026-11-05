@@ -1,9 +1,10 @@
+import { PreviewVideo } from "@/components/common/FeedVideo";
 import { Link } from 'react-router-dom';
 
-import { Heart, MessageCircle, Play, Layers, User, Users, Building2, ShoppingBag, Megaphone, MessageSquare, MapPin, Film, Zap } from 'lucide-react';
+import { Heart, MessageCircle, Play, Layers, User, Users, Building2, ShoppingBag, Megaphone, MessageSquare, MapPin, Film, Zap, Briefcase, Clapperboard } from 'lucide-react';
 import VerificationBadge from '../common/VerificationBadge';
 
-export type ExploreItemType = 'project' | 'user' | 'discussion' | 'post' | 'announcement' | 'vendor' | 'marketplace' | 'company';
+export type ExploreItemType = 'project' | 'user' | 'discussion' | 'post' | 'announcement' | 'vendor' | 'marketplace' | 'company' | 'job' | 'pitch';
 
 export interface ExploreItem {
     id: string;
@@ -37,6 +38,15 @@ export interface ExploreItem {
     review_count?: number;
     like_count?: number;
     comment_count?: number;
+    company?: string;
+    job_type?: string;
+    experience_level?: string;
+    salary_min?: number;
+    salary_max?: number;
+    genre?: string;
+    project_type?: string;
+    budget_range?: string;
+    deadline?: string;
 }
 
 interface ExploreCardProps {
@@ -51,7 +61,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
             'bg-gradient-to-br from-pink-500 to-rose-500',
             'bg-gradient-to-br from-purple-500 to-indigo-500',
             'bg-gradient-to-br from-blue-500 to-cyan-500',
-            'bg-gradient-to-br from-primary to-accent',
+            'bg-gradient-to-br from-primary to-[hsl(var(--accent-strong))]',
             'bg-gradient-to-br from-orange-500 to-amber-500',
         ];
         const index = id.charCodeAt(0) % gradients.length;
@@ -59,14 +69,14 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
     };
 
     const Overlay = ({ actionText, author }: { actionText?: string, likes?: number, comments?: number, author?: { username: string, full_name: string, is_verified?: boolean } | null }) => (
-        <div className="absolute inset-0 bg-black/60 opacity-0 pointer-events-none [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto transition-all duration-300 flex flex-col p-3 z-20 cursor-pointer">
+        <div className="absolute inset-0 bg-black/60 opacity-0 pointer-events-none [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto transition duration-300 flex flex-col p-3 z-20 cursor-pointer">
             <div className="flex justify-start">
                 {author && (
                     <div className="flex items-center gap-2">
                         <div className="w-5 h-5 rounded-full bg-primary/20 border border-white/20 flex items-center justify-center overflow-hidden">
                             <User size={12} className="text-white" />
                         </div>
-                        <span className="text-[10px] font-black text-white/90 uppercase tracking-widest truncate max-w-[120px]">
+                        <span className="text-[12px] font-black text-white/90 uppercase tracking-widest truncate max-w-[120px]">
                             {author.full_name || author.username}
                         </span>
                         {(author.is_verified || author.username?.toLowerCase().includes('vamshi')) && (
@@ -78,7 +88,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             <div className="flex-1 flex flex-col items-center justify-center translate-y-4 [@media(hover:hover)]:group-hover:translate-y-0 transition-transform duration-300">
                 {actionText && (
-                    <div className="px-4 py-2 rounded-full bg-primary text-primary-foreground font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-xl flex items-center gap-2 border border-white/10">
+                    <div className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-[12px] md:text-xs font-medium shadow-xl flex items-center gap-2 border border-white/10">
                         {actionText}
                     </div>
                 )}
@@ -89,17 +99,17 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
     const CornerBrackets = () => (
         <>
-            <div className="absolute top-2 left-2 w-3 h-3 border-t-[1.5px] border-l-[1.5px] border-primary z-20 pointer-events-none transition-all duration-300 opacity-80" />
-            <div className="absolute top-2 right-2 w-3 h-3 border-t-[1.5px] border-r-[1.5px] border-primary z-20 pointer-events-none transition-all duration-300 opacity-80" />
-            <div className="absolute bottom-2 left-2 w-3 h-3 border-b-[1.5px] border-l-[1.5px] border-primary z-20 pointer-events-none transition-all duration-300 opacity-80" />
-            <div className="absolute bottom-2 right-2 w-3 h-3 border-b-[1.5px] border-r-[1.5px] border-primary z-20 pointer-events-none transition-all duration-300 opacity-80" />
+            <div className="absolute top-2 left-2 w-3 h-3 border-t-[1.5px] border-l-[1.5px] border-primary z-20 pointer-events-none transition-opacity duration-300 opacity-80" />
+            <div className="absolute top-2 right-2 w-3 h-3 border-t-[1.5px] border-r-[1.5px] border-primary z-20 pointer-events-none transition-opacity duration-300 opacity-80" />
+            <div className="absolute bottom-2 left-2 w-3 h-3 border-b-[1.5px] border-l-[1.5px] border-primary z-20 pointer-events-none transition-opacity duration-300 opacity-80" />
+            <div className="absolute bottom-2 right-2 w-3 h-3 border-b-[1.5px] border-r-[1.5px] border-primary z-20 pointer-events-none transition-opacity duration-300 opacity-80" />
         </>
     );
 
     const TypeBadge = ({ icon: Icon, label }: { icon: any, label: string }) => (
         <div className="absolute top-2 left-2 z-30 px-2 py-0.5 rounded-full bg-black/90 backdrop-blur-md border border-white/10 flex items-center gap-1.5 pointer-events-none [@media(hover:hover)]:group-hover:opacity-0 transition-opacity duration-300">
             <Icon size={10} className="text-white/80" />
-            <span className="text-[7px] font-black text-white uppercase tracking-widest leading-none">{label?.toUpperCase()}</span>
+            <span className="text-xs font-black text-white uppercase tracking-widest leading-none">{label?.toUpperCase()}</span>
         </div>
     );
 
@@ -108,8 +118,8 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
             case 'post':
                 if (item.video_url) {
                     return (
-                        <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-black transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
-                            <video src={item.video_url} className="w-full h-full object-cover" muted loop playsInline />
+                        <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-black transition hover:brightness-110 active:scale-95 shadow-none rounded-none">
+                            <PreviewVideo src={item.video_url} className="w-full h-full object-cover" />
                             <div className="absolute top-2 right-2 text-white drop-shadow-md z-10 pointer-events-none">
                                 <Play size={16} fill="currentColor" />
                             </div>
@@ -120,7 +130,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                 }
                 if (item.image_url) {
                     return (
-                        <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-muted transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
+                        <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-muted transition hover:brightness-110 active:scale-95 shadow-none rounded-none">
                             <img loading="lazy" decoding="async" src={item.image_url} alt="Post" className="w-full h-full object-cover" />
                             <TypeBadge icon={Layers} label="POST" />
                             <Overlay actionText="VIEW POST" likes={item.like_count} comments={item.comment_count} author={item.author} />
@@ -135,7 +145,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                         const shareData = JSON.parse(jsonStr);
 
                         return (
-                            <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-card to-muted/5 transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none border-[0.5px] border-white/5">
+                            <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-card to-muted/5 transition hover:brightness-110 active:scale-95 shadow-none rounded-none border-[0.5px] border-white/5">
                                 <TypeBadge icon={Megaphone} label="HIRING" />
                                 <div className="w-full h-full p-3 flex flex-col justify-between items-center text-center">
                                     <div className="w-14 h-14 md:w-20 md:h-20 rounded-2xl border-4 border-background shadow-2xl ring-1 ring-white/10 bg-muted overflow-hidden shrink-0 mt-6 flex items-center justify-center">
@@ -149,7 +159,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                         <h4 className="font-serif text-sm md:text-lg font-bold text-foreground leading-tight tracking-tighter uppercase line-clamp-2 w-full">
                                             {shareData.title || 'Opening'}
                                         </h4>
-                                        <div className="px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-[6px] md:text-[10px] font-black text-primary uppercase tracking-widest shrink-0">
+                                        <div className="px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-xs md:text-[12px] font-black text-primary uppercase tracking-widest shrink-0">
                                             Apply Now
                                         </div>
                                     </div>
@@ -163,7 +173,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                 }
 
                 return (
-                    <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className={`block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden ${getGradient(item.id)} p-4 md:p-8 flex items-center justify-center text-center transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none w-full max-w-full`}>
+                    <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className={`block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden ${getGradient(item.id)} p-4 md:p-8 flex items-center justify-center text-center transition-[transform,filter] hover:brightness-110 active:scale-95 shadow-none rounded-none w-full max-w-full`}>
                         <TypeBadge icon={MessageCircle} label="INSIGHT" />
                         <p className="font-serif text-white font-bold text-[clamp(12px,3vw,16px)] leading-relaxed uppercase tracking-tight line-clamp-6 drop-shadow-lg break-words">
                             {item.content?.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim() || item.content}
@@ -175,20 +185,20 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
             case 'project':
                 const projectImage = (item as any).image_url || (item as any).thumbnail_url;
                 return (
-                    <Link to={`/projects/${item.id}/space`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none w-full max-w-full">
+                    <Link to={`/projects/${item.id}/space`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none w-full max-w-full">
                         <TypeBadge icon={Layers} label="PROJECT SPACE" />
                         <div className="relative aspect-[1.8/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/10">
                             {projectImage ? (
                                 <img loading="lazy" decoding="async" src={projectImage} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                             ) : (
                                 <div className="w-full h-full bg-muted/20 flex items-center justify-center p-4 border-b border-white/5" style={{ background: getGradient(item.id) }}>
-                                    <Layers size={24} className="text-white/30 animate-pulse" />
+                                    <Layers size={24} className="text-white/30" />
                                 </div>
                             )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60" />
                             <div className="absolute bottom-1.5 left-1.5">
-                                <span className="font-mono px-1.5 py-0.5 rounded-sm bg-primary text-[clamp(6px,1vw,7px)] font-bold text-primary-foreground uppercase tracking-widest leading-none shadow-lg">
-                                    STATUS // {(item as any).status || 'ACTIVE'}
+                                <span className="px-1.5 py-0.5 rounded-sm bg-primary text-[clamp(6px,1vw,7px)] font-medium text-primary-foreground leading-none shadow-lg">
+                                    {(item as any).status || 'Active'}
                                 </span>
                             </div>
                         </div>
@@ -207,13 +217,13 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                     {((item as any).genre?.[0]) && (
                                         <div className="flex items-center gap-1.5 shrink-0 overflow-hidden">
                                             <Film size={9} className="text-primary shrink-0" />
-                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-full">GENRE // {(item as any).genre[0]}</span>
+                                            <span className="text-[clamp(6px,1vw,7px)] font-medium truncate max-w-full">{(item as any).genre[0]}</span>
                                         </div>
                                     )}
                                     {(item as any).location && (
                                         <div className="flex items-center gap-1.5 shrink-0 overflow-hidden">
                                             <MapPin size={9} className="text-primary shrink-0" />
-                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-full opacity-70">LOC // {(item as any).location}</span>
+                                            <span className="text-[clamp(6px,1vw,7px)] font-medium truncate max-w-full opacity-70">{(item as any).location}</span>
                                         </div>
                                     )}
                                 </div>
@@ -228,11 +238,11 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
             case 'user':
                 const craftsStr = (item as any).craft ?
                     (Array.isArray((item as any).craft) ? (item as any).craft.join(', ') : String((item as any).craft))
-                    : 'CREATOR';
+                    : ((item as any).account_type === 'studio' ? 'STUDIO' : (item as any).account_type === 'fan' ? 'FAN' : 'CREATOR');
                 return (
-                    <Link to={`/profile/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border/50 transition-all hover:scale-[1.02] active:scale-95 flex flex-col items-center justify-center rounded-[1.25rem] shadow-sm w-full max-w-full">
+                    <Link to={`/profile/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border/50 transition hover:scale-[1.02] active:scale-95 flex flex-col items-center justify-center rounded-[1.25rem] shadow-sm w-full max-w-full">
                         <CornerBrackets />
-                        <div className="w-[54%] md:w-[56%] aspect-square rounded-full overflow-hidden shadow-xl border-[2.5px] border-background -mt-3 md:-mt-4 mb-1.5 group-hover:shadow-2xl transition-all duration-500 relative z-10">
+                        <div className="w-[54%] md:w-[56%] aspect-square rounded-full overflow-hidden shadow-xl border-[2.5px] border-background -mt-3 md:-mt-4 mb-1.5 group-hover:shadow-2xl transition duration-500 relative z-10">
                             {item.avatar_url ? (
                                 <img loading="lazy" decoding="async" src={item.avatar_url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.full_name || item.username} />
                             ) : (
@@ -254,12 +264,12 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                     )}
                             </div>
 
-                            <div className="bg-primary/10 border border-primary/20 text-primary font-bold text-[5.5px] md:text-[7px] uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center justify-center gap-1 shadow-sm max-w-[95%] overflow-hidden">
+                            <div className="bg-primary/10 border border-primary/20 text-primary font-bold text-xs md:text-xs uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center justify-center gap-1 shadow-sm max-w-[95%] overflow-hidden">
                                 <Zap size={7} className="shrink-0" fill="currentColor" />
                                 <span className="line-clamp-2 leading-tight whitespace-normal text-center break-words">{craftsStr}</span>
                             </div>
 
-                            <p className="mt-1.5 text-[7.5px] md:text-[8.5px] text-muted-foreground italic font-medium line-clamp-2 px-1 leading-normal opacity-80 w-full text-center break-words">
+                            <p className="mt-1.5 text-xs md:text-xs text-muted-foreground italic font-medium line-clamp-2 px-1 leading-normal opacity-80 w-full text-center break-words">
                                 "{item.description || 'Passionate cinematic creator connecting through storytelling.'}"
                             </p>
                         </div>
@@ -270,37 +280,37 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'discussion':
                 return (
-                    <Link to={`/discussion-rooms/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border flex flex-col transition-all hover:scale-[1.02] active:scale-95 shadow-sm rounded-[1.25rem] w-full max-w-full">
+                    <Link to={`/discussion-rooms/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border flex flex-col transition hover:scale-[1.02] active:scale-95 shadow-sm rounded-[1.25rem] w-full max-w-full">
                         <CornerBrackets />
 
                         <div className="flex flex-col flex-1 p-3 md:p-4 relative z-10 h-full">
                             {/* Top Header */}
                             <div className="flex items-center gap-1.5 md:gap-2 mb-2 md:mb-3 pt-0.5">
-                                <div className="w-6 h-6 md:w-8 md:h-8 rounded-lg md:rounded-xl bg-[#FF3300]/10 border border-[#FF3300]/30 flex items-center justify-center shrink-0 shadow-sm">
-                                    <MessageSquare className="w-3 h-3 md:w-4 md:h-4 text-[#FF3300]" />
+                                <div className="w-6 h-6 md:w-8 md:h-8 rounded-lg md:rounded-xl bg-[#FF4B33]/10 border border-[#FF4B33]/30 flex items-center justify-center shrink-0 shadow-sm">
+                                    <MessageSquare className="w-3 h-3 md:w-4 md:h-4 text-[#FF4B33]" />
                                 </div>
                                 <div className="flex flex-col justify-center overflow-hidden min-w-0">
                                     <span className="text-foreground font-black text-[clamp(7.5px,1.8vw,11px)] uppercase tracking-wider leading-none truncate max-w-full">DISCUSSION</span>
-                                    <span className="text-[#FF3300] font-black text-[6px] md:text-[7.5px] uppercase tracking-widest leading-none mt-0.5">ROOM</span>
+                                    <span className="text-[#FF4B33] font-black text-xs md:text-xs uppercase tracking-widest leading-none mt-0.5">ROOM</span>
                                 </div>
                             </div>
 
                             {/* Title */}
-                            <h3 className="font-serif text-[clamp(11px,2.4vw,15px)] font-black text-[#FF3300] uppercase tracking-tight leading-tight line-clamp-2 mb-2 pr-1 break-words">
+                            <h3 className="font-serif text-[clamp(11px,2.4vw,15px)] font-black text-[#FF4B33] uppercase tracking-tight leading-tight line-clamp-2 mb-2 pr-1 break-words">
                                 {item.title}
                             </h3>
 
                             {/* Description with left border */}
-                            <div className="pl-2 border-l-[2px] border-[#FF3300]/30 mb-auto">
-                                <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-semibold line-clamp-3 leading-relaxed italic opacity-90 break-words">
+                            <div className="pl-2 border-l-[2px] border-[#FF4B33]/30 mb-auto">
+                                <p className="text-muted-foreground text-xs md:text-[12px] font-semibold line-clamp-3 leading-relaxed italic opacity-90 break-words">
                                     {item.description || 'Verified cinematic craft discussion room.'}
                                 </p>
                             </div>
 
                             {/* Bottom Footer */}
                             <div className="flex items-center gap-1.5 mt-2 text-muted-foreground/80 truncate max-w-full">
-                                <Users className="w-3 h-3 text-[#FF3300] shrink-0" />
-                                <span className="font-black text-[7.5px] md:text-[9px] uppercase tracking-widest truncate">{(item as any).member_count || 0} MEMBERS</span>
+                                <Users className="w-3 h-3 text-[#FF4B33] shrink-0" />
+                                <span className="font-black text-xs md:text-[12px] uppercase tracking-widest truncate">{(item as any).member_count || 0} MEMBERS</span>
                             </div>
                         </div>
 
@@ -310,7 +320,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'announcement':
                 return (
-                    <Link to="/announcements" className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-orange-500/20 to-orange-600/5 p-4 md:p-6 flex flex-col items-center justify-center text-center transition-all hover:brightness-105 active:scale-95 shadow-2xl rounded-none w-full max-w-full`}>
+                    <Link to="/announcements" className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-orange-500/20 to-orange-600/5 p-4 md:p-6 flex flex-col items-center justify-center text-center transition-[transform,filter] hover:brightness-105 active:scale-95 shadow-2xl rounded-none w-full max-w-full`}>
                         <TypeBadge icon={Megaphone} label="NEWS" />
                         <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center mb-4 text-orange-500 border border-orange-500/20 shadow-2xl ring-1 ring-orange-500/30">
                             <Megaphone size={24} className="group-hover:rotate-12 transition-transform duration-500" />
@@ -325,11 +335,11 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'company':
                 return (
-                    <Link to={`/company/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card transition-all hover:scale-[1.02] active:scale-95 flex flex-col rounded-[1.25rem] shadow-md border border-border/50 w-full max-w-full`}>
+                    <Link to={`/company/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card transition-transform hover:scale-[1.02] active:scale-95 flex flex-col rounded-[1.25rem] shadow-md border border-border/50 w-full max-w-full`}>
                         <CornerBrackets />
                         <div className="absolute top-2 right-2 md:top-3 md:right-3 z-30 bg-[#0A0A0A] rounded-full px-2 py-0.5 md:px-2.5 md:py-1 flex items-center gap-1 md:gap-1.5 shadow-lg">
                             <Users size={10} className="text-[#FF1A1A]" />
-                            <span className="text-[8px] md:text-[10px] font-bold text-white">{item.like_count || 0}</span>
+                            <span className="text-[12px] md:text-[12px] font-bold text-white">{item.like_count || 0}</span>
                         </div>
 
                         <div className="relative h-[32%] md:h-[36%] w-full overflow-hidden shrink-0 bg-gradient-to-br from-neutral-900 via-zinc-800 to-black">
@@ -358,7 +368,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                         <Building2 className="w-4 h-4 md:w-6 md:h-6 text-white" />
                                     )}
                                 </div>
-                                <div className="bg-[#FF1A1A] text-black font-black text-[6px] md:text-[8px] uppercase tracking-widest px-2 py-0.5 rounded-full -mt-1.5 relative z-20 truncate max-w-full">
+                                <div className="bg-[#FF1A1A] text-black font-black text-xs md:text-[12px] uppercase tracking-widest px-2 py-0.5 rounded-full -mt-1.5 relative z-20 truncate max-w-full">
                                     {Array.isArray((item as any).industry) ? (item as any).industry[0] : ((item as any).industry || 'PRODUCTION HOUSE')}
                                 </div>
                             </div>
@@ -369,10 +379,10 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
                             <div className="flex items-center gap-1 mt-1 text-muted-foreground mb-1.5 md:mb-2 w-full justify-center">
                                 <MapPin size={9} className="text-[#FF1A1A] shrink-0" />
-                                <span className="text-[7.5px] md:text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">{item.location || 'GLOBAL'}</span>
+                                <span className="text-xs md:text-[12px] font-bold text-muted-foreground uppercase tracking-widest truncate">{item.location || 'GLOBAL'}</span>
                             </div>
 
-                            <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-medium italic line-clamp-2 px-1 mt-auto pb-1 leading-relaxed opacity-80 break-words">
+                            <p className="text-muted-foreground text-xs md:text-[12px] font-medium italic line-clamp-2 px-1 mt-auto pb-1 leading-relaxed opacity-80 break-words">
                                 "{item.description || 'movie is a soulful entertainment'}"
                             </p>
                         </div>
@@ -382,7 +392,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'vendor':
                 return (
-                    <Link to={`/vendors/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col rounded-none shadow-2xl w-full max-w-full`}>
+                    <Link to={`/vendors/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-[transform,filter] hover:brightness-105 active:scale-95 flex flex-col rounded-none shadow-2xl w-full max-w-full`}>
                         <TypeBadge icon={Building2} label="VENDOR" />
                         <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/5">
                             {item.logo_url ? (
@@ -399,10 +409,10 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                         <div className="flex-1 p-3 flex flex-col justify-between overflow-hidden min-h-0">
                             <div className="space-y-2">
                                 <div className="space-y-1">
-                                    <div className="font-mono px-1.5 py-0.5 rounded-sm bg-primary/10 border border-primary/20 text-[clamp(6px,1.2vw,7px)] font-bold text-primary uppercase tracking-widest leading-none w-fit shrink-0">
-                                        CAT // {String((item as any).category || 'VENDOR').toUpperCase()}
+                                    <div className="px-1.5 py-0.5 rounded-sm bg-primary/10 border border-primary/20 text-[clamp(6px,1.2vw,7px)] font-medium text-primary leading-none w-fit shrink-0">
+                                        {String((item as any).category || 'VENDOR')}
                                     </div>
-                                    <span className="font-mono block text-[clamp(6.5px,1.5vw,8px)] font-bold text-muted-foreground uppercase tracking-widest truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-fit max-w-full">LOC // {item.city || 'GLOBAL'}</span>
+                                    <span className="block text-[clamp(6.5px,1.5vw,8px)] font-medium text-muted-foreground truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-fit max-w-full">{item.city || 'GLOBAL'}</span>
                                 </div>
 
                                 <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter leading-tight line-clamp-2 break-words">{item.business_name}</h3>
@@ -418,14 +428,14 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'marketplace':
                 return (
-                    <Link to={`/marketplace/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none w-full max-w-full">
-                        <TypeBadge icon={ShoppingBag} label={`${String(item.listing_type || 'EQUIPMENT').toUpperCase()}`} />
+                    <Link to={`/marketplace/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none w-full max-w-full">
+                        <TypeBadge icon={ShoppingBag} label={String(item.listing_type || 'equipment').replace(/^./, (c: string) => c.toUpperCase())} />
                         <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/5">
                             {item.image_url ? (
                                 <img loading="lazy" decoding="async" src={item.image_url} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                             ) : (
                                 <div className="w-full h-full bg-muted/20 flex items-center justify-center">
-                                    <ShoppingBag size={24} className="text-muted-foreground/20 animate-pulse" />
+                                    <ShoppingBag size={24} className="text-muted-foreground/20" />
                                 </div>
                             )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60" />
@@ -435,14 +445,14 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                             <div className="space-y-2">
                                 <div className="space-y-1">
                                     <div className="flex items-center gap-2">
-                                        <div className="font-mono px-1.5 py-0.5 rounded-sm bg-blue-500/10 border border-blue-500/20 text-[clamp(6px,1.2vw,7px)] font-bold text-blue-600 uppercase tracking-widest leading-none w-fit shrink-0">
-                                            CAT // {String((item as any).category || 'GEAR').toUpperCase()}
+                                        <div className="px-1.5 py-0.5 rounded-sm bg-blue-500/10 border border-blue-500/20 text-[clamp(6px,1.2vw,7px)] font-medium text-blue-600 leading-none w-fit shrink-0">
+                                            {String((item as any).category || 'GEAR')}
                                         </div>
                                         <span className="text-primary font-black text-[clamp(8px,2vw,10px)] tracking-tighter shrink-0">
                                             ₹{item.price_per_day}
                                         </span>
                                     </div>
-                                    <span className="font-mono block text-[clamp(6.5px,1.5vw,8px)] font-bold text-muted-foreground uppercase tracking-widest truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-fit max-w-full">LOC // {item.location || 'GLOBAL'}</span>
+                                    <span className="block text-[clamp(6.5px,1.5vw,8px)] font-medium text-muted-foreground truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-fit max-w-full">{item.location || 'GLOBAL'}</span>
                                 </div>
 
                                 <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter leading-tight line-clamp-2 break-words">{item.title}</h3>
@@ -458,6 +468,45 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
 
 
+
+            case 'job': {
+                const pay = item.salary_min || item.salary_max
+                    ? `₹${(item.salary_min || 0).toLocaleString()}${item.salary_max ? ` – ₹${item.salary_max.toLocaleString()}` : '+'}`
+                    : null;
+                return (
+                    <Link to={`/jobs/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border/50 rounded-[1.25rem] shadow-md p-4 flex flex-col transition hover:scale-[1.02] active:scale-95 w-full max-w-full">
+                        <TypeBadge icon={Briefcase} label="JOB" />
+                        <div className="mt-7 flex items-center gap-2 min-w-0">
+                            <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center overflow-hidden">
+                                {item.logo_url ? <img loading="lazy" decoding="async" src={item.logo_url} alt="" className="h-full w-full object-cover" /> : <Briefcase size={18} />}
+                            </div>
+                            <p className="text-xs text-muted-foreground font-medium truncate">{item.company || 'Hiring'}</p>
+                        </div>
+                        <h3 className="mt-3 font-serif text-[clamp(14px,3vw,17px)] font-bold text-foreground leading-tight line-clamp-3 break-words">{item.title}</h3>
+                        <p className="mt-2 text-xs text-muted-foreground line-clamp-3 leading-relaxed">{item.description}</p>
+                        <div className="mt-auto pt-3 flex flex-wrap gap-1.5">
+                            {item.job_type && <span className="px-2 py-1 rounded-full bg-muted text-[12px] font-semibold capitalize">{String(item.job_type).replace(/_/g, ' ')}</span>}
+                            {item.location && <span className="px-2 py-1 rounded-full bg-muted text-[12px] font-semibold inline-flex items-center gap-1 max-w-full truncate"><MapPin size={10} />{item.location}</span>}
+                            {pay && <span className="px-2 py-1 rounded-full bg-primary/10 text-primary text-[12px] font-bold">{pay}</span>}
+                        </div>
+                    </Link>
+                );
+            }
+
+            case 'pitch':
+                return (
+                    <Link to={`/pitch/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-primary/10 via-card to-card border border-border/50 rounded-[1.25rem] shadow-md p-4 flex flex-col transition hover:scale-[1.02] active:scale-95 w-full max-w-full">
+                        <TypeBadge icon={Clapperboard} label="PITCH" />
+                        <div className="mt-7 h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><Clapperboard size={18} /></div>
+                        <h3 className="mt-3 font-serif text-[clamp(14px,3vw,17px)] font-bold text-foreground leading-tight line-clamp-3 break-words">{item.title}</h3>
+                        <p className="mt-2 text-xs text-muted-foreground line-clamp-4 leading-relaxed">{item.description}</p>
+                        <div className="mt-auto pt-3 flex flex-wrap gap-1.5">
+                            {item.genre && <span className="px-2 py-1 rounded-full bg-muted text-[12px] font-semibold capitalize">{item.genre}</span>}
+                            {item.project_type && <span className="px-2 py-1 rounded-full bg-muted text-[12px] font-semibold capitalize">{item.project_type}</span>}
+                            {item.deadline && <span className="px-2 py-1 rounded-full bg-primary/10 text-primary text-[12px] font-bold">Due {new Date(item.deadline).toLocaleDateString()}</span>}
+                        </div>
+                    </Link>
+                );
 
             default:
                 return null;
