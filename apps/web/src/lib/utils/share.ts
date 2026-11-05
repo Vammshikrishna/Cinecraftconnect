@@ -39,6 +39,7 @@ export function getAppOrigin(): string {
  */
 export function sanitizeUrl(url: string): string {
   if (typeof url !== 'string') return '';
+  // eslint-disable-next-line no-control-regex
   const cleaned = url.replace(/[\u0000-\u001f\u007f]/g, '').trim();
   if (!cleaned) return '';
   try {

@@ -40,6 +40,7 @@ export type UrlCheck = { ok: true; value: string | null } | { ok: false; error: 
 export const validateActionUrl = (raw: string): UrlCheck => {
   const v = raw.trim();
   if (!v) return { ok: true, value: null };
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f\s\\]/.test(v)) return { ok: false, error: 'The link must not contain spaces or control characters.' };
   if (v.startsWith('/')) {
     if (v.startsWith('//')) return { ok: false, error: 'Use a path inside the app (like /feed) or a full https link.' };
